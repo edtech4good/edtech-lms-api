@@ -1,0 +1,103 @@
+import { QueryInterface, DataTypes } from "sequelize";
+
+module.exports = {
+  up: (queryInterface: QueryInterface) =>
+    queryInterface.sequelize.transaction(async (transaction) => {
+      // here go all migration changes
+      return Promise.all([
+        queryInterface.addColumn(
+          "schoolusers",
+          "created_at",
+          {
+            type: "TIMESTAMP",
+            defaultValue: queryInterface.sequelize.Sequelize.fn("NOW"),
+            allowNull: true,
+          },
+          {
+            transaction: transaction,
+          }
+        ),
+        queryInterface.addColumn(
+          "schoolusers",
+          "created_by",
+          {
+            type: DataTypes.STRING(36),
+            allowNull: true,
+          },
+          {
+            transaction: transaction,
+          }
+        ),
+        queryInterface.addColumn(
+          "schoolusers",
+          "updated_at",
+          {
+            type: "TIMESTAMP",
+            defaultValue: queryInterface.sequelize.Sequelize.fn("NOW"),
+            allowNull: true,
+          },
+          {
+            transaction: transaction,
+          }
+        ),
+        queryInterface.addColumn(
+          "schoolusers",
+          "updated_by",
+          {
+            type: DataTypes.STRING(36),
+            allowNull: true,
+          },
+          {
+            transaction: transaction,
+          }
+        ),
+        queryInterface.addColumn(
+          "schoolusers",
+          "deleted_at",
+          {
+            type: "TIMESTAMP",
+            allowNull: true,
+          },
+          {
+            transaction: transaction,
+          }
+        ),
+        queryInterface.addColumn(
+          "schoolusers",
+          "deleted_by",
+          {
+            type: DataTypes.STRING(36),
+            allowNull: true,
+          },
+          {
+            transaction: transaction,
+          }
+        ),
+      ]);
+    }),
+
+  down: (queryInterface: QueryInterface) =>
+    queryInterface.sequelize.transaction(async (transaction) => {
+      // here go all migration undo changes
+      return Promise.all([
+        queryInterface.removeColumn("schoolusers", "created_at", {
+          transaction,
+        }),
+        queryInterface.removeColumn("schoolusers", "created_by", {
+          transaction,
+        }),
+        queryInterface.removeColumn("schoolusers", "updated_at", {
+          transaction,
+        }),
+        queryInterface.removeColumn("schoolusers", "updated_by", {
+          transaction,
+        }),
+        queryInterface.removeColumn("schoolusers", "deleted_at", {
+          transaction,
+        }),
+        queryInterface.removeColumn("schoolusers", "deleted_by", {
+          transaction,
+        }),
+      ]);
+    }),
+};

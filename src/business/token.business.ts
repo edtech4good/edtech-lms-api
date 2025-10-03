@@ -1,0 +1,245 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { addMinutes } from "date-fns";
+import { sign, verify } from "jsonwebtoken";
+import { SUPERADMIN_USERNAME } from "src/models/enums/permissions.enum";
+import { LoginTokens } from "src/modules/auth";
+import { v4 as uuidv4 } from "uuid";
+import { Config } from "../config";
+import {
+  lmsusers,
+  lmsusersAttributes,
+  students,
+  tokens,
+} from "../models/data-models/init-models";
+import { TokenType } from "../models/enums";
+import { RolePermissionBusiness } from "./role-permission.business";
+
+export class TokenBusiness {
+  generateToken = (
+    userId: string,
+    exptime: number,
+    payload: any,
+    secret: string,
+    claims: string,
+    jti: string
+  ) => {
+    const newexpiery = addMinutes(new Date(), exptime);
+
+    const localpayload = {
+      sub: userId,
+      iat: new Date().getTime() / 1000,
+      jti,
+      exp: new Date(newexpiery).getTime() / 1000,
+      ...JSON.parse(JSON.stringify(payload)),
+      claims,
+    };
+    return sign(localpayload, secret);
+  };
+
+  saveToken = async (
+    token: string,
+    lmsuserid: string,
+    tokentype: TokenType
+  ) => {
+    await tokens.destroy({
+      where: {
+        lmsuserid,
+        tokentype,
+      },
+    });
+    const data: any = {
+      token,
+      lmsuserid,
+      tokentype,
+    };
+    return tokens.create(data);
+  };
+
+  deleteToken = (lmsuserid: string, tokentype: TokenType) => {
+    return tokens.destroy({
+      where: {
+        lmsuserid,
+        tokentype,
+      },
+    });
+  };
+  tokenExists = async (token: string) => {
+    const count = await tokens.count({
+      where: {
+        token,
+      },
+    });
+    return count > 0;
+  };
+
+  verifyToken = (token: string): Promise<any> =>
+    new Promise((resolve) => {
+      verify(
+        token,
+        Config.fortyk.api.applicationsecret,
+        async (err, decoded: any) => {
+          if (err) {
+            resolve(false);
+          } else {
+            const tokenDoc = await tokens.findOne({
+              where: { token: decoded.jti },
+            });
+            if (!tokenDoc) {
+              resolve(false);
+            }
+            resolve(tokenDoc);
+          }
+        }
+      );
+    });
+
+  verifyTokenBody = (token: string): Promise<any> =>
+    new Promise((resolve) => {
+      verify(
+        token,
+        Config.fortyk.api.applicationsecret,
+        async (err, decoded: any) => {
+          if (err) {
+            resolve(false);
+          } else {
+            const tokenDoc = await tokens.findOne({
+              where: { token: decoded.jti },
+            });
+            if (!tokenDoc) {
+              resolve(false);
+            }
+            resolve(decoded);
+          }
+        }
+      );
+    });
+
+  clearRefreshToken = (userid: string) =>
+    this.deleteToken(userid, TokenType.REFRESH);
+  clearAccessToken = (userid: string) =>
+    this.deleteToken(userid, TokenType.ACCESS);
+
+  generateAuthToken = async (
+    user: lmsusers
+  ): Promise<LoginTokens> => {
+    const isSuperAdmin = user.lmsusername === SUPERADMIN_USERNAME ? true : false;
+    const permissions = await new RolePermissionBusiness().convertRolesPermsToArrayOfString(user.roles, isSuperAdmin) ?? [];
+    const userpayload = {
+      lmsusername: user.lmsusername,
+      lmsuserrole: user.lmsuserrole,
+      lmsuserid: user.lmsuserid,
+      firstname: user.firstname,
+      lastname: user.lastname,
+      permissions: permissions,
+      countries: user.countries,
+      schools: user.schools,
+    };
+    const accessid = uuidv4();
+    const accessToken = this.generateToken(
+      user.lmsuserid,
+      Config.fortyk.api.accessexpirationminutes,
+      userpayload,
+      Config.fortyk.api.applicationsecret,
+      TokenType.ACCESS,
+      accessid
+    );
+    await this.clearRefreshToken(user.lmsuserid);
+    await this.clearAccessToken(user.lmsuserid);
+    const userdata = await user;
+    await this.saveToken(accessid, user.lmsuserid, TokenType.ACCESS);
+    const refreshToken = await this.generateMiscToken(
+      userdata,
+      Config.fortyk.api.changepasswordexpirationminutes,
+      TokenType.CHANGEPASSWORD,
+      TokenType.CHANGEPASSWORD
+    );
+
+    return {
+      accessToken,
+      refreshToken,
+    };
+  };
+
+  generateTeacherAuthToken = async (user: students): Promise<LoginTokens> => {
+    const userpayload = {
+      studentfirstname: user.studentfirstname,
+      studentlastname: user.studentlastname,
+      studentid: user.studentid,
+      schooluserid: user.schooluserid,
+      city: user.city,
+      contact: user.contact,
+      country: user.country,
+      dateofbirth: user.dateofbirth,
+      curriculumid: user.curriculumid,
+      dateofjoin: user.dateofjoin,
+      fathername: user.fathername,
+      genderid: user.genderid,
+      mothername: user.mothername,
+      schoolname: user.schoolname,
+      schooltype: user.schooltype,
+      standard: user.standard,
+      state: user.state,
+      startinglevelid: user.startinglevelid,
+      studentcurrentlessonid: user.studentcurrentlessonid,
+      studentcurrentlevelid: user.studentcurrentlevelid,
+      schoolusername: user.schooluser.schoolusername,
+      schooluserrole: user.schooluser.schooluserrole,
+    };
+    const accessid = uuidv4();
+    const accessToken = this.generateToken(
+      user.schooluserid,
+      Config.fortyk.api.accessexpirationminutes,
+      userpayload,
+      Config.fortyk.api.applicationsecret,
+      TokenType.ACCESS,
+      accessid
+    );
+    await this.clearAccessToken(user.schooluserid);
+    await this.saveToken(accessid, user.schooluserid, TokenType.ACCESS);
+    return {
+      accessToken,
+      refreshToken: "",
+    };
+  };
+
+  generateMiscToken = async (
+    user: lmsusersAttributes,
+    expiry: number,
+    tokentype: TokenType,
+    claim: string
+  ) => {
+    const misctokenid = uuidv4();
+    const miscToken = this.generateToken(
+      user.lmsuserid,
+      expiry,
+      {},
+      Config.fortyk.api.applicationsecret,
+      claim,
+      misctokenid
+    );
+    await this.saveToken(misctokenid, user.lmsuserid, tokentype);
+    return miscToken;
+  };
+
+  generateChangePasswordToken = (user: lmsusersAttributes) =>
+    this.generateMiscToken(
+      user,
+      Config.fortyk.api.changepasswordexpirationminutes,
+      TokenType.CHANGEPASSWORD,
+      TokenType.CHANGEPASSWORD
+    );
+
+  generateVerifyEmailToken = (user: lmsusersAttributes) =>
+    this.generateMiscToken(
+      user,
+      Config.fortyk.api.changepasswordexpirationminutes,
+      TokenType.VERIFYEMAIL,
+      TokenType.VERIFYEMAIL
+    );
+
+  clearChangePasswordToken = (userid: string) =>
+    this.deleteToken(userid, TokenType.CHANGEPASSWORD);
+
+  clearVerifyEmailToken = (userid: string) =>
+    this.deleteToken(userid, TokenType.VERIFYEMAIL);
+}

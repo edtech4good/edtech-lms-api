@@ -1,0 +1,1 @@
+export const FeedBackS3Path = 'feedback';
