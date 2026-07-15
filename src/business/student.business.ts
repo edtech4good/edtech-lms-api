@@ -434,6 +434,13 @@ WHERE
     );
 
   getstudentaccess = async (students: Array<string>) => {
+    // An empty list would build `userid in ()`, which is a MySQL syntax error.
+    // The student list is empty on any install that has no students yet, so the
+    // Students page fails before it can render its empty state.
+    if (students.length === 0) {
+      return [];
+    }
+
     const data1 = await dbinstance
       .getdbinstance()
       .query(
@@ -442,7 +449,15 @@ WHERE
           .join()}) group by userid`,
         { type: QueryTypes.SELECT, raw: true }
       );
-    const response = await axios.post(
+
+    // Login times held on the Pi cloud are supplementary: the local rows above
+    // already answer the query. Deployments without a Pi layer leave RPI_CLOUD
+    // unset, which leaves it as the "your-cloud-endpoint" placeholder and makes
+    // this call throw, so a whole page of students would fail to load over an
+    // optional enrichment. Degrade to the local rows instead.
+    let cloudAccess: Array<unknown> = [];
+    try {
+      const response = await axios.post(
         `${Config.fortyk.api.rpi.cloud}/student/logintime`,
         students,
         {
@@ -450,9 +465,17 @@ WHERE
             Authorization: Config.fortyk.api.serversynckey,
           },
         }
-      )
-    const data = unionBy(response.data.data, data1, 'userid');
-    return data
+      );
+      cloudAccess = response?.data?.data ?? [];
+    } catch (error) {
+      console.warn(
+        `Could not read student login times from ${Config.fortyk.api.rpi.cloud}: ${
+          (error as Error).message
+        }. Falling back to locally recorded login times.`
+      );
+    }
+
+    return unionBy(cloudAccess, data1, 'userid');
   }
 
   migrateStandards = async () => {
