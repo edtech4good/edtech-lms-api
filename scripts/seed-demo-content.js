@@ -15,11 +15,12 @@
  *
  * - This is a development and test fixture, NOT pilot content. A customer's real
  *   curriculum replaces it wholesale.
- * - It seeds no media. lessonlearnings point at documents rows whose filenames
- *   do not exist in any bucket, so a lesson will list and open but the video will
- *   not play until EXPO_PUBLIC_RESOURCE_URL points somewhere real and the files
- *   are there. Image and audio question templates are structurally valid and
- *   equally media-less.
+ * - Question images are real: they are generated into edtech-expo/public/media,
+ *   which Metro serves, so no bucket is needed locally. In a deployment these are
+ *   objects in the media store that EXPO_PUBLIC_RESOURCE_URL points at.
+ * - Lesson VIDEO is still absent: lessonlearnings point at documents rows whose
+ *   .mp4 files exist nowhere, so a lesson lists and opens but the player stays
+ *   empty. Audio on questions is likewise unseeded.
  * - Questions cover only the 15 template ids the tablet can actually render
  *   (1-8 and 18-24). Ids 9-17 are offered by the authoring API but have no client
  *   renderer, so seeding them would fabricate content that cannot be displayed.
@@ -88,6 +89,16 @@ const opt = (i, text, correct, extra = {}) => ({
   ...extra,
 });
 
+// Image options: MCQImageItem reads option.questionoptionfile.filename and builds
+// `${EXPO_PUBLIC_RESOURCE_URL}/${EXPO_PUBLIC_RESOURCE_PATH}/<filename>`. The files
+// live in edtech-expo/public/media, which Metro serves, so no bucket is needed for
+// local development. In a real deployment these are objects in the media store.
+const imgOpt = (i, filename, correct) =>
+  opt(i, filename.replace(/\.png$/, ""), correct, {
+    questionoptionistext: false,
+    questionoptionfile: { filename },
+  });
+
 /**
  * One question per renderable template. `note` records what a curriculum author
  * would supply that this fixture cannot, so nobody mistakes a media-less render
@@ -95,16 +106,16 @@ const opt = (i, text, correct, extra = {}) => ({
  */
 const QUESTIONS = [
   { t: 1,  ident: "DEMO-T01-mcq-single-text",   text: "Which number is larger?",                 options: [opt(1, "7", false), opt(2, "12", true), opt(3, "3", false)] },
-  { t: 2,  ident: "DEMO-T02-mcq-single-image",  text: "Tap the triangle.",                        options: [opt(1, "triangle", true), opt(2, "square", false)], note: "needs option images" },
+  { t: 2,  ident: "DEMO-T02-mcq-single-image",  text: "Tap the triangle.", options: [imgOpt(1, "triangle.png", true), imgOpt(2, "square.png", false)] },
   { t: 3,  ident: "DEMO-T03-mcq-multi-text",    text: "Select every even number.",                options: [opt(1, "2", true), opt(2, "5", false), opt(3, "8", true)] },
-  { t: 4,  ident: "DEMO-T04-mcq-multi-image",   text: "Select every shape with four sides.",      options: [opt(1, "square", true), opt(2, "circle", false), opt(3, "rectangle", true)], note: "needs option images" },
+  { t: 4,  ident: "DEMO-T04-mcq-multi-image",   text: "Select every shape with four sides.", options: [imgOpt(1, "square.png", true), imgOpt(2, "circle.png", false), imgOpt(3, "rectangle.png", true)] },
   { t: 5,  ident: "DEMO-T05-order-text",        text: "Put these numbers in order, smallest first.", options: [opt(1, "3", true), opt(2, "6", true), opt(3, "9", true)] },
-  { t: 6,  ident: "DEMO-T06-order-image",       text: "Put the pictures in the order the story happens.", options: [opt(1, "first", true), opt(2, "second", true), opt(3, "third", true)], note: "needs option images" },
+  { t: 6,  ident: "DEMO-T06-order-image",       text: "Put the pictures in the order the story happens.", options: [imgOpt(1, "story-1.png", true), imgOpt(2, "story-2.png", true), imgOpt(3, "story-3.png", true)] },
   { t: 7,  ident: "DEMO-T07-associate",         text: "Match each number to its word.",           options: [opt(1, "1", true, { questionassociate: { questionassociatetext: "one", questionassociatefile: null } }), opt(2, "2", true, { questionassociate: { questionassociatetext: "two", questionassociatefile: null } })] },
   { t: 8,  ident: "DEMO-T08-fill-blank",        text: "5 + ___ = 8",                              options: [opt(1, "3", true)], correctvalue: 3 },
-  { t: 18, ident: "DEMO-T18-doption1",          text: "Prototype: picture options, variant 1.",   options: [opt(1, "a", true), opt(2, "b", false)], note: "unnamed prototype; needs images" },
-  { t: 19, ident: "DEMO-T19-doption3",          text: "Prototype: picture options, variant 3.",   options: [opt(1, "a", true), opt(2, "b", false)], note: "unnamed prototype; needs images" },
-  { t: 20, ident: "DEMO-T20-doption4",          text: "Prototype: picture options, variant 4.",   options: [opt(1, "a", true), opt(2, "b", false)], note: "unnamed prototype; needs images" },
+  { t: 18, ident: "DEMO-T18-doption1",          text: "Prototype: picture options, variant 1.", options: [imgOpt(1, "triangle.png", true), imgOpt(2, "circle.png", false)] },
+  { t: 19, ident: "DEMO-T19-doption3",          text: "Prototype: picture options, variant 3.", options: [imgOpt(1, "square.png", true), imgOpt(2, "circle.png", false)] },
+  { t: 20, ident: "DEMO-T20-doption4",          text: "Prototype: picture options, variant 4.", options: [imgOpt(1, "circle.png", true), imgOpt(2, "triangle.png", false)] },
   { t: 21, ident: "DEMO-T21-foption1",          text: "Prototype: typed answer, variant 1.",      options: [opt(1, "4", true)], correctvalue: 4, note: "unnamed prototype" },
   { t: 22, ident: "DEMO-T22-foption2",          text: "Prototype: typed answer, variant 2.",      options: [opt(1, "6", true)], correctvalue: 6, note: "unnamed prototype" },
   { t: 23, ident: "DEMO-T23-foption4",          text: "Prototype: typed answer, variant 4.",      options: [opt(1, "9", true)], correctvalue: 9, note: "unnamed prototype" },
