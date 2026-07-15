@@ -1144,39 +1144,33 @@ export class ReportBusiness {
         const lineChartsFormat: Array<LineChartFormat> = [];
         const lastonemonth = subMonths(new Date(), 1);
         for await (const country of allcountries) {
-            const studentusages = await studentappusages.findAll({
-                attributes: [
-                    [fn('sum', col('time_spent')), 'time_spent'],
-                ],
-                where: {
-                    created_at: {
-                        [Op.gte]: lastonemonth
-                    }
-                },
-                include: [
-                    {
-                        model: schoolusers,
-                        required: true,
-                        attributes: ['schoolusername'],
-                        include: [
-                            {
-                                model: schools,
-                                required: true,
-                                where: { countryid: country.countryid },
-                                attributes: ['schoolname'],
-                                include: [
-                                    {
-                                        model: countries,
-                                        as: 'countries',
-                                        required: true,
-                                        attributes: ['countryname', 'expectedusage'],
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                ]
+            // This used to sum time_spent with the country filter expressed as a
+            // nested include. Sequelize injects the model's primary key whenever
+            // an include is present, so the query became `sum(time_spent)`
+            // alongside studentappusageid with no GROUP BY, which MySQL rejects
+            // under ONLY_FULL_GROUP_BY (the default since 5.7). The whole Impact
+            // page 500'd for any database with at least one country in it.
+            //
+            // Resolve the country's school users first and filter on them, so the
+            // aggregate runs with no include and no primary key is added. This is
+            // the same shape as the working aggregate in getStudentStatus above.
+            // schoolusers joins schools on schoolname, not an id.
+            const countryschools = await schools.findAll({
+                where: { countryid: country.countryid, isdeleted: false },
+                attributes: ['schoolname'],
             });
+            const countryschoolusers = await schoolusers.findAll({
+                where: { schoolname: { [Op.in]: countryschools.map(s => s.schoolname) } },
+                attributes: ['schooluserid'],
+            });
+            const usages = await studentappusages.findAll({
+                attributes: [[fn('sum', col('time_spent')), 'time_spent']],
+                where: {
+                    created_at: { [Op.gte]: lastonemonth },
+                    schooluserid: { [Op.in]: countryschoolusers.map(su => su.schooluserid) },
+                },
+            });
+            const totaltimespent = usages[0]?.time_spent ?? 0;
             const numberofstudents = await students.count({
                 where: { isactive: 1 },
                 include: [
@@ -1194,7 +1188,7 @@ export class ReportBusiness {
                 },
                 {
                     name: 'Actual',
-                    value: numberofstudents > 0 ? Math.round(((studentusages[0]?.time_spent/30)/numberofstudents + Number.EPSILON) * 100) / 100 : 0
+                    value: numberofstudents > 0 ? Math.round(((totaltimespent/30)/numberofstudents + Number.EPSILON) * 100) / 100 : 0
                 },
             ]
             lineChartsFormat.push({ name: country.countryname ?? 'N/A', series: itemCharts});
