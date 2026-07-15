@@ -1,10 +1,11 @@
-import { QueryInterface, DataTypes } from "sequelize";
+import { QueryInterface, DataTypes, Transaction } from "sequelize";
+import { addColumnIfMissing } from "../migration-helpers";
 
 module.exports = {
   up: (queryInterface: QueryInterface): Promise<void> =>
-    queryInterface.sequelize.transaction(async (transaction) => {
-      // here go all migration changes
-      await queryInterface.addColumn(
+    queryInterface.sequelize.transaction(async (transaction: Transaction) => {
+      await addColumnIfMissing(
+        queryInterface,
         "lessonlearnings",
         "points",
         {
@@ -12,11 +13,10 @@ module.exports = {
           allowNull: true,
           defaultValue: 0,
         },
-        {
-          transaction: transaction,
-        }
+        transaction,
       );
-      await queryInterface.addColumn(
+      await addColumnIfMissing(
+        queryInterface,
         "lessons",
         "brick_points",
         {
@@ -24,11 +24,10 @@ module.exports = {
           allowNull: true,
           defaultValue: null,
         },
-        {
-          transaction: transaction,
-        }
+        transaction,
       );
-      return await queryInterface.addColumn(
+      await addColumnIfMissing(
+        queryInterface,
         "lessons",
         "total_points",
         {
@@ -36,22 +35,19 @@ module.exports = {
           allowNull: true,
           defaultValue: null,
         },
-        {
-          transaction: transaction,
-        }
+        transaction,
       );
     }),
 
   down: (queryInterface: QueryInterface): Promise<void> =>
     queryInterface.sequelize.transaction(async (transaction) => {
-      // here go all migration undo changes
       await queryInterface.removeColumn("lessonlearnings", "points", {
         transaction,
       });
       await queryInterface.removeColumn("lessons", "brick_points", {
         transaction,
       });
-      return await queryInterface.removeColumn("lessons", "total_points", {
+      await queryInterface.removeColumn("lessons", "total_points", {
         transaction,
       });
     }),

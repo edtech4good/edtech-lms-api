@@ -2,6 +2,10 @@
 
 A comprehensive Learning Management System API built with NestJS, designed for educational technology applications. This API provides a robust backend for managing educational content, student progress, assessments, and more.
 
+## In the full system
+
+This is the **central (online) API**. Classroom Pis run [**edtech-lms-rpi-api**](../edtech-lms-rpi-api). See [**ARCHITECTURE.md**](../ARCHITECTURE.md) for sync flows and [**docs/**](../docs/README.md) for legacy guides.
+
 ## 🚀 Features
 
 - **User Management**: Authentication, authorization, and role-based access control
@@ -33,12 +37,9 @@ A comprehensive Learning Management System API built with NestJS, designed for e
 
 ## 🚀 Quick Start
 
-### 1. Clone the Repository
+### 1. Get the code
 
-```bash
-git clone https://github.com/your-username/edtech-lms-api.git
-cd edtech-lms-api
-```
+Clone or copy this repository into your workspace (see [**ARCHITECTURE.md**](../ARCHITECTURE.md) for sibling repos).
 
 ### 2. Install Dependencies
 
@@ -77,6 +78,10 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your-email@gmail.com
 SMTP_PASS=your-email-password
+
+# Pi sync (optional; also configurable via FORTYKAPICONFIG JSON — see src/config.ts)
+# RPI_CLOUD=https://your-pi-or-edge-host
+# SERVER_SYNC_KEY=Bearer-or-token-used-for-server-to-server-import
 ```
 
 ### 4. Database Setup
@@ -97,8 +102,15 @@ The API will be available at `http://localhost:3000`
 
 ## 📚 API Documentation
 
-Once the server is running, you can access the Swagger documentation at:
-- Development: `http://localhost:3000/api`
+Swagger UI is at **`/docs`** (default: `http://localhost:3000/docs`).
+
+## Sync with Raspberry Pi (summary)
+
+- **`GET /sync/content`** — download curriculum zip (used by clients such as Expo with `EXPO_PUBLIC_SYNC_URL`).
+- **`POST /sync/cloud`** — server-side push of that zip to **`{RPI_CLOUD}/import/master`** using `SERVER_SYNC_KEY` (see `src/modules/sync/sync.controller.ts`).
+- **`PUT /log/import`** — ingest student log zip from the Pi / tablet pipeline (multipart `importfile`).
+
+Details: [**ARCHITECTURE.md**](../ARCHITECTURE.md) § Sync playbook.
 
 ## 🗂️ Project Structure
 
@@ -165,11 +177,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🆘 Support
 
-If you encounter any issues or have questions:
-
-1. Check the [Issues](https://github.com/your-username/edtech-lms-api/issues) page
-2. Create a new issue if your problem isn't already reported
-3. Join our community discussions
+If you encounter any issues or have questions, use your team’s issue tracker or internal docs.
 
 ## 🙏 Acknowledgments
 

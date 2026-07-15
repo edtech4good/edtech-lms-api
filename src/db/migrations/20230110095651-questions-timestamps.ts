@@ -1,84 +1,75 @@
-import { QueryInterface, DataTypes } from "sequelize";
+import { QueryInterface, DataTypes, Transaction } from "sequelize";
+import { addColumnIfMissing } from "../migration-helpers";
 
 module.exports = {
   up: (queryInterface: QueryInterface) =>
-    queryInterface.sequelize.transaction(async (transaction) => {
-      // here go all migration changes
-      return Promise.all([
-        queryInterface.addColumn(
-          "questions",
-          "created_at",
-          {
-            type: "TIMESTAMP",
-            defaultValue: queryInterface.sequelize.Sequelize.fn("NOW"),
-            allowNull: true,
-          },
-          {
-            transaction: transaction,
-          }
-        ),
-        queryInterface.addColumn(
-          "questions",
-          "created_by",
-          {
-            type: DataTypes.STRING(36),
-            allowNull: true,
-          },
-          {
-            transaction: transaction,
-          }
-        ),
-        queryInterface.addColumn(
-          "questions",
-          "updated_at",
-          {
-            type: "TIMESTAMP",
-            defaultValue: queryInterface.sequelize.Sequelize.fn("NOW"),
-            allowNull: true,
-          },
-          {
-            transaction: transaction,
-          }
-        ),
-        queryInterface.addColumn(
-          "questions",
-          "updated_by",
-          {
-            type: DataTypes.STRING(36),
-            allowNull: true,
-          },
-          {
-            transaction: transaction,
-          }
-        ),
-        queryInterface.addColumn(
-          "questions",
-          "deleted_at",
-          {
-            type: "TIMESTAMP",
-            allowNull: true,
-          },
-          {
-            transaction: transaction,
-          }
-        ),
-        queryInterface.addColumn(
-          "questions",
-          "deleted_by",
-          {
-            type: DataTypes.STRING(36),
-            allowNull: true,
-          },
-          {
-            transaction: transaction,
-          }
-        ),
-      ]);
+    queryInterface.sequelize.transaction(async (transaction: Transaction) => {
+      await addColumnIfMissing(
+        queryInterface,
+        "questions",
+        "created_at",
+        {
+          type: "TIMESTAMP",
+          defaultValue: queryInterface.sequelize.Sequelize.fn("NOW"),
+          allowNull: true,
+        },
+        transaction,
+      );
+      await addColumnIfMissing(
+        queryInterface,
+        "questions",
+        "created_by",
+        {
+          type: DataTypes.STRING(36),
+          allowNull: true,
+        },
+        transaction,
+      );
+      await addColumnIfMissing(
+        queryInterface,
+        "questions",
+        "updated_at",
+        {
+          type: "TIMESTAMP",
+          defaultValue: queryInterface.sequelize.Sequelize.fn("NOW"),
+          allowNull: true,
+        },
+        transaction,
+      );
+      await addColumnIfMissing(
+        queryInterface,
+        "questions",
+        "updated_by",
+        {
+          type: DataTypes.STRING(36),
+          allowNull: true,
+        },
+        transaction,
+      );
+      await addColumnIfMissing(
+        queryInterface,
+        "questions",
+        "deleted_at",
+        {
+          type: "TIMESTAMP",
+          allowNull: true,
+        },
+        transaction,
+      );
+      await addColumnIfMissing(
+        queryInterface,
+        "questions",
+        "deleted_by",
+        {
+          type: DataTypes.STRING(36),
+          allowNull: true,
+        },
+        transaction,
+      );
     }),
 
   down: (queryInterface: QueryInterface) =>
     queryInterface.sequelize.transaction(async (transaction) => {
-      // here go all migration undo changes
       return Promise.all([
         queryInterface.removeColumn("questions", "created_at", {
           transaction,

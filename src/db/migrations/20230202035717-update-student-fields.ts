@@ -1,36 +1,33 @@
-import { QueryInterface, DataTypes } from "sequelize";
+import { QueryInterface, DataTypes, Transaction } from "sequelize";
+import { addColumnIfMissing } from "../migration-helpers";
 
 module.exports = {
   up: (queryInterface: QueryInterface): Promise<void> =>
-    queryInterface.sequelize.transaction(async (transaction) => {
-      // here go all migration changes
-      await queryInterface.addColumn(
+    queryInterface.sequelize.transaction(async (transaction: Transaction) => {
+      await addColumnIfMissing(
+        queryInterface,
         "students",
         "type",
         {
           type: DataTypes.STRING(10),
           allowNull: true,
         },
-        {
-          transaction: transaction,
-        }
+        transaction,
       );
-      return await queryInterface.addColumn(
+      await addColumnIfMissing(
+        queryInterface,
         "students",
         "profileimage",
         {
           type: DataTypes.STRING(250),
           allowNull: true,
         },
-        {
-          transaction: transaction,
-        }
+        transaction,
       );
     }),
 
   down: (queryInterface: QueryInterface): Promise<void> =>
     queryInterface.sequelize.transaction(async (transaction) => {
-      // here go all migration undo changes
       await queryInterface.removeColumn("students", "type", {
         transaction,
       });
