@@ -68,8 +68,10 @@ const STUDENTS = [
   { su: "b0000000-0000-4000-8000-000000000024", id: "b0000000-0000-4000-8000-000000000025", username: "demo.bopha", first: "Bopha", last: "Neang", gender: 2 },
 ];
 
+// questionoptionid is assigned per question in the insert loop below: it must be
+// unique across questions, because MatchingDropArea keys its drop targets on it.
 const opt = (i, text, correct, extra = {}) => ({
-  questionoptionid: `${ID.level}-opt-${i}`,
+  questionoptionid: null,
   questionoptiontext: text,
   questionoptionvalue: text,
   questionoptioniscorrect: correct,
@@ -98,7 +100,7 @@ const QUESTIONS = [
   { t: 4,  ident: "DEMO-T04-mcq-multi-image",   text: "Select every shape with four sides.",      options: [opt(1, "square", true), opt(2, "circle", false), opt(3, "rectangle", true)], note: "needs option images" },
   { t: 5,  ident: "DEMO-T05-order-text",        text: "Put these numbers in order, smallest first.", options: [opt(1, "3", true), opt(2, "6", true), opt(3, "9", true)] },
   { t: 6,  ident: "DEMO-T06-order-image",       text: "Put the pictures in the order the story happens.", options: [opt(1, "first", true), opt(2, "second", true), opt(3, "third", true)], note: "needs option images" },
-  { t: 7,  ident: "DEMO-T07-associate",         text: "Match each number to its word.",           options: [opt(1, "1", true, { questionassociate: { key: "1", value: "one" } }), opt(2, "2", true, { questionassociate: { key: "2", value: "two" } })] },
+  { t: 7,  ident: "DEMO-T07-associate",         text: "Match each number to its word.",           options: [opt(1, "1", true, { questionassociate: { questionassociatetext: "one", questionassociatefile: null } }), opt(2, "2", true, { questionassociate: { questionassociatetext: "two", questionassociatefile: null } })] },
   { t: 8,  ident: "DEMO-T08-fill-blank",        text: "5 + ___ = 8",                              options: [opt(1, "3", true)], correctvalue: 3 },
   { t: 18, ident: "DEMO-T18-doption1",          text: "Prototype: picture options, variant 1.",   options: [opt(1, "a", true), opt(2, "b", false)], note: "unnamed prototype; needs images" },
   { t: 19, ident: "DEMO-T19-doption3",          text: "Prototype: picture options, variant 3.",   options: [opt(1, "a", true), opt(2, "b", false)], note: "unnamed prototype; needs images" },
@@ -200,12 +202,26 @@ async function main() {
     for (let i = 0; i < QUESTIONS.length; i++) {
       const Q = QUESTIONS[i];
       const id = qid(i);
+
+      // Give every option an id unique to its question, and point each
+      // associate at the option it belongs to (QuestionAssociate.questionoptionid).
+      const options = Q.options.map((o, j) => {
+        const questionoptionid = `${id}-opt-${j + 1}`;
+        return {
+          ...o,
+          questionoptionid,
+          questionassociate: o.questionassociate
+            ? { ...o.questionassociate, questionoptionid }
+            : null,
+        };
+      });
+
       await q(`INSERT IGNORE INTO questions (questionid, questionheading, questionoptions, questiontext, questiondistractors, questionfile, templatetypeid, isdeleted, questionstatus, questionidentifier, questiontags, questioncorrectvalue)
                VALUES (?,?,?,?,?,?,?,0,1,?,?,?)`,
         [
           id,
           JSON.stringify({ headingtext: Q.text, headingfile: null }),
-          JSON.stringify(Q.options),
+          JSON.stringify(options),
           Q.text,
           JSON.stringify([]),
           null,
