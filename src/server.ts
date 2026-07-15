@@ -23,7 +23,18 @@ async function bootstrap() {
   const config = new DocumentBuilder().setTitle('Fortyk API').setDescription('Fortyk API').setVersion("1.0.0").addBearerAuth().build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document);
-  app.enableCors();
+  app.enableCors({
+    origin: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'Accept-Language',
+      'Cache-Control',
+      'TIMEOFFSET',
+    ],
+  });
   app.use(json({ limit: '50mb' }));
   app.use(
     helmet({

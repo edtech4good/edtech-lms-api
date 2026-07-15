@@ -229,6 +229,7 @@ export const PERMISSIONS_KEY_WORD = [
     {name: 'Export', desc: 'Export'},
     {name: 'Student', desc: 'Student'},
     {name: 'Standard', desc: 'Standard'},
+    {name: 'Subject', desc: 'Subject'},
     {name: 'Teacher', desc: 'Teacher'},
     {name: 'Baseline-endline', desc: 'Curriculum Baseline Endline'},
     {name: 'Country', desc: 'Country'},
