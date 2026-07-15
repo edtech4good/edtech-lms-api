@@ -17,6 +17,16 @@ const CORE_ROLES: Array<{ roleid: string; rolename: string }> = [
  * Fresh installs had empty permissionstitle/permissions and roles, so the JWT for
  * superadmin only contained "superadmin" and ngx-permissions hid most UI actions.
  * Mirrors RolePermissionBusiness.createPerm / createAllPerms and seeds fixed Role enum IDs.
+ *
+ * This is reference data, not development data, so it runs in every environment.
+ * Every statement below must therefore be additive and idempotent — it will meet
+ * databases that already have roles and grants configured by an operator.
+ *
+ * The filename still says "local-dev" only because renaming it would change its
+ * SequelizeMeta key and re-run it on databases where it has already been applied.
+ *
+ * The superadmin's development password used to be set here too. It now lives in
+ * scripts/seed-local-dev.js behind `npm run seed:local`.
  */
 module.exports = {
   up: async (queryInterface: QueryInterface): Promise<void> => {
@@ -111,21 +121,32 @@ module.exports = {
         );
       }
 
+      // lmsusers_roles has no primary key or unique index, so INSERT IGNORE
+      // would not deduplicate — it would just add a second identical binding.
       await sequelize.query(
-        `INSERT IGNORE INTO \`lmsusers_roles\` (\`roleid\`, \`lmsuserid\`, \`createdAt\`, \`updatedAt\`) VALUES ('Mapyr2Pw', :uid, :ts, :ts)`,
+        `INSERT INTO \`lmsusers_roles\` (\`roleid\`, \`lmsuserid\`, \`createdAt\`, \`updatedAt\`)
+         SELECT 'Mapyr2Pw', :uid, :ts, :ts FROM DUAL
+         WHERE NOT EXISTS (
+           SELECT 1 FROM \`lmsusers_roles\`
+           WHERE \`roleid\` = 'Mapyr2Pw' AND \`lmsuserid\` = :uid
+         )`,
         {
           replacements: { uid: SUPERADMIN_USER_ID, ts: nowRoles },
           transaction,
         }
       );
 
-      await sequelize.query(
-        "DELETE FROM `roles_permissions` WHERE `roleid` = 'Mapyr2Pw'",
-        { transaction }
-      );
+      // Grant Super Admin only the permissions it does not already hold.
+      // This previously deleted every Mapyr2Pw row and re-inserted the full
+      // permissions table, which discarded any grants an operator had changed.
       await sequelize.query(
         `INSERT INTO \`roles_permissions\` (\`roleid\`, \`permissionid\`, \`createdAt\`, \`updatedAt\`)
-         SELECT 'Mapyr2Pw', \`permissionid\`, :ts, :ts FROM \`permissions\``,
+         SELECT 'Mapyr2Pw', p.\`permissionid\`, :ts, :ts
+         FROM \`permissions\` p
+         WHERE NOT EXISTS (
+           SELECT 1 FROM \`roles_permissions\` rp
+           WHERE rp.\`roleid\` = 'Mapyr2Pw' AND rp.\`permissionid\` = p.\`permissionid\`
+         )`,
         { replacements: { ts: nowRoles }, transaction }
       );
     });

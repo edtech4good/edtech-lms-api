@@ -76,6 +76,38 @@ try {
 
 const Config: modelconfig = <modelconfig>configvalues;
 
+/**
+ * Fail closed on the placeholder secrets committed to this public repository.
+ * Checked against the resolved config so it covers both a FORTYKAPICONFIG blob
+ * and plain environment variables.
+ *
+ * Only auth material is checked here: these fail silently, signing or accepting
+ * tokens that anyone reading the repo could forge. A missing AWS or SMTP
+ * credential fails loudly at the point of use, so it is left alone.
+ *
+ * NODE_ENV must be "development" explicitly; unset is treated as production.
+ */
+if (!(process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test")) {
+  const checks: Array<[string, string, string]> = [
+    ["applicationsecret", Config.fortyk.api.applicationsecret, "APPLICATION_SECRET"],
+    ["serversynckey", Config.fortyk.api.serversynckey, "SERVER_SYNC_KEY"],
+    ["applicationapikey", Config.fortyk.api.applicationapikey, "APPLICATION_API_KEY"],
+    ["rpi.RPIsecret", Config.fortyk.api.rpi?.RPIsecret, "RPI_SECRET"],
+  ];
+  const insecure = checks
+    .filter(([, value]) => typeof value === "string" && value.startsWith("your-"))
+    .map(([name, , envvar]) => `${name} (set ${envvar})`);
+
+  if (insecure.length > 0) {
+    throw new Error(
+      `Refusing to start with placeholder secrets while NODE_ENV=${
+        process.env.NODE_ENV ?? "(unset)"
+      }:\n  - ${insecure.join("\n  - ")}\n` +
+        `Set real values, or set NODE_ENV=development for local work.`,
+    );
+  }
+}
+
 const buildLogger = (): winston.Logger => {
   const loggerConfig = new LoggerConfig();
   loggerConfig.APPLICATIONNAME = Config.fortyk.api.applicationname;

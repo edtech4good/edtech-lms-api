@@ -1,11 +1,20 @@
 import { QueryInterface, DataTypes } from 'sequelize';
+import { tableNameList } from '../migration-helpers';
 
 /**
  * Baseline table missing from original migration history.
  * `20221220143728-countries-schools` alters `schools` and expects it to exist.
+ *
+ * Guarded: on a database created before these baselines existed, `schools` is
+ * already present but this migration is not in SequelizeMeta, so it would run
+ * and abort on CREATE TABLE.
  */
 module.exports = {
   up: async (queryInterface: QueryInterface): Promise<void> => {
+    const names = await tableNameList(queryInterface);
+    if (names.includes('schools')) {
+      return;
+    }
     await queryInterface.createTable(
       'schools',
       {
