@@ -235,7 +235,8 @@ export class GradeController {
   })
   @UseInterceptors(new SchemaValidationInterceptor(showgradebycurriculum))
   @HttpCode(HttpStatus.OK)
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin))
+  // Role.teacher reads: feeds the grade filter on the report screens.
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.teacher))
   @ApiParam({ name: `curriculumid`, type: 'string', required: true })
   async getGradeByCurriculum(@Param('curriculumid') curriculumid: string): Promise<GradeGetAllByCurriculumResponse> {
     const data = await new GradeBusiness().getGradeByCurriculumid(curriculumid);

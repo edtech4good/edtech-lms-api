@@ -106,7 +106,8 @@ export class SchoolController {
     status: 400,
     description: "Error while exporting school",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin))
+  // Role.teacher reads: feeds the school filter on the report screens.
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.teacher))
   @HttpCode(HttpStatus.OK)
   async getAllSchools(): Promise<any> {
     return {
