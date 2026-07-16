@@ -26,7 +26,6 @@ import { User } from "src/decorators/user.decorator";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { BusinessValidationInterceptor, SchemaValidationInterceptor } from "src/interceptors";
-import { permissionsTitleAttributes } from "src/models/data-models/permissionstitle";
 // import { permissionsAttributes } from "src/models/data-models/permissions";
 import { rolesAttributes } from "src/models/data-models/roles";
 import { TokenType } from "src/models/enums";
@@ -35,10 +34,10 @@ import { Permission } from "src/models/enums/permissions.enum";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { LmsUserToken } from "src/models/token.model";
 import { RoleGetAllResponse } from "./models/RoleGetAllResponse";
-import { BindUserRolesRequest, OnePermissionRequest, PermissionRequest, RoleRequest } from "./models/RoleRequest";
-import { PermCreateResponse, PermissionGetAllResponse, PermissionNodeGetAllResponse, RoleCreateResponse } from "./models/RoleResponse";
-import { CheckKey, DeleteRole, EditRole } from "./role-perm.business.validator";
-import { bindUserRoles, createsPerm, createsRole, deleterole, showallroles, updaterole } from "./role-perm.request.validator";
+import { BindUserRolesRequest, RoleRequest } from "./models/RoleRequest";
+import { PermissionGetAllResponse, PermissionNodeGetAllResponse, RoleCreateResponse } from "./models/RoleResponse";
+import { DeleteRole, EditRole } from "./role-perm.business.validator";
+import { bindUserRoles, createsRole, deleterole, showallroles, updaterole } from "./role-perm.request.validator";
 import { IMultiPaging } from '../../models/IPaging';
 
 @ApiTags("Role-Permission")
@@ -183,93 +182,18 @@ export class RolePermissionController {
     };
   }
 
-  @Post("create-perm/:key")
-  @ApiResponse({
-    status: 200,
-    description: "permission created successfully",
-    schema: { $ref: getSchemaPath(PermCreateResponse) },
-  })
-  @ApiResponse({
-    status: 400,
-    description: "Error while creating permission",
-  })
-  @UseInterceptors(
-    new SchemaValidationInterceptor(createsPerm),
-    new BusinessValidationInterceptor([CheckKey])
-  )
-  @UseGuards(AccessGuard(TokenType.ACCESS))
-  @HttpCode(HttpStatus.OK)
-  @ApiParam({ name: `key`, type: "string", required: true })
-  async createpermission(
-    @Param("key") key: string,
-    @Body() body: PermissionRequest
-  ): Promise<PermCreateResponse> {
-    const temp: permissionsTitleAttributes = {
-      permissiontitleid: "",
-      permissiontitle: body.permissiontitle,
-      permissiondesc: body.permissiondesc
-    };
-    const data = await new RolePermissionBusiness().createPerm(temp);
-    return {
-      error: false,
-      data: data,
-    };
-  }
-
-  @Get("create-perm/:key")
-  @ApiResponse({
-    status: 200,
-    description: "permissions created successfully",
-  })
-  @ApiResponse({
-    status: 400,
-    description: "Error while creating permissions",
-  })
-  @UseInterceptors(
-    new BusinessValidationInterceptor([CheckKey])
-  )
-  @UseGuards(AccessGuard(TokenType.ACCESS))
-  @HttpCode(HttpStatus.OK)
-  @ApiParam({ name: `key`, type: "string", required: true })
-  async createpermissions(): Promise<any> {
-    const data = await new RolePermissionBusiness().createAllPerms();
-    return {
-      error: false,
-      data: data,
-    };
-  }
-
-  @Post("create-one-permission/:key")
-  @ApiResponse({
-    status: 200,
-    description: "permission created successfully",
-    schema: { $ref: getSchemaPath(PermCreateResponse) },
-  })
-  @ApiResponse({
-    status: 400,
-    description: "Error while creating permission",
-  })
-  @UseInterceptors(
-    new BusinessValidationInterceptor([CheckKey])
-  )
-  @UseGuards(AccessGuard(TokenType.ACCESS))
-  @HttpCode(HttpStatus.OK)
-  @ApiParam({ name: `key`, type: "string", required: true })
-  async createonepermission(
-    @Param("key") key: string,
-    @Body() body: OnePermissionRequest
-  ): Promise<PermCreateResponse> {
-    const temp: permissionsTitleAttributes = {
-      permissiontitleid: "",
-      permissiontitle: body.permissiontitle,
-      permissiondesc: body.permissiontitledesc
-    };
-    const data = await new RolePermissionBusiness().createOnePerm(temp, body.permissionname, body.permissiondesc);
-    return {
-      error: false,
-      data: data,
-    };
-  }
+  // Removed 16 Jul 2026: POST/GET `create-perm/:key` and
+  // POST `create-one-permission/:key`. They created permission rows guarded
+  // only by AccessGuard with no role (any authenticated staff account) plus a
+  // `:key` that was ADD_PERMISSIONS_KEY — a constant committed to this public
+  // repo (md5("40kplus")), so no protection at all. createAllPerms is fully
+  // replaced by migrations 20260407120500 + 20260716140000, which run the same
+  // generator idempotently in every environment as the provisioning step.
+  // Worse, createOnePerm let any staff account add an arbitrary permission row,
+  // which inflates COUNT(*) of permissions and so strips the `superadmin`
+  // wildcard (awarded by count) from every Super Admin. No client called any of
+  // them. Removed rather than gated, like POST /auth/register — see
+  // docs/authorization-model.md.
 
   // @Post("bind-perm")
   // @ApiResponse({

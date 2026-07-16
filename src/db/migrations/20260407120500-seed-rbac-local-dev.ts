@@ -16,7 +16,9 @@ const CORE_ROLES: Array<{ roleid: string; rolename: string }> = [
 /**
  * Fresh installs had empty permissionstitle/permissions and roles, so the JWT for
  * superadmin only contained "superadmin" and ngx-permissions hid most UI actions.
- * Mirrors RolePermissionBusiness.createPerm / createAllPerms and seeds fixed Role enum IDs.
+ * Generates the same permission grid the former RolePermissionBusiness.createPerm /
+ * createAllPerms produced (removed 16 Jul 2026 with the create-perm endpoints) and
+ * seeds fixed Role enum IDs.
  *
  * This is reference data, not development data, so it runs in every environment.
  * Every statement below must therefore be additive and idempotent — it will meet

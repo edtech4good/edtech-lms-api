@@ -5,11 +5,11 @@ import { permissions } from "src/models/data-models/permissions";
 import { BindRolePermissionRequest, BindUserRolesRequest } from "src/modules/role-permission/models/RoleRequest";
 import { Op, Transaction, WhereOptions } from "sequelize";
 import { lmsusers } from "src/models/data-models/lmsusers";
-import { permissionstitle, permissionsTitleAttributes } from "src/models/data-models/permissionstitle";
+import { permissionstitle } from "src/models/data-models/permissionstitle";
 import { NodeLeaf, TreeNode } from "src/modules/role-permission/models/RoleBase";
 import _ from "lodash";
 import { dbinstance } from "src/services/dbservice";
-import { PERMISSIONS_KEY_WORD, SUPERADMIN } from "src/models/enums/permissions.enum";
+import { SUPERADMIN } from "src/models/enums/permissions.enum";
 import { BadRequestException } from "@nestjs/common";
 import { LmsUserToken } from "src/models/token.model";
 import { IMultiPaging } from '../models/IPaging';
@@ -76,46 +76,12 @@ export class RolePermissionBusiness {
         }
     };
 
-    createPerm = async (perm: permissionsTitleAttributes) => {
-        perm.permissiontitleid = !perm.permissiontitleid ? uuidv4() : perm.permissiontitleid;
-        const createdPermTitle = await permissionstitle.findOne({ where: { permissiontitle: perm.permissiontitle }});
-        if(!createdPermTitle) {
-            const permtitle =  await permissionstitle.create(perm);
-            const title = permtitle.permissiontitle.toLowerCase();
-            const listperm = await permissions.create({permissionid: uuidv4(), permissionname: `list_${title}`, permissiondesc: `List ${permtitle.permissiontitle}`});
-            const createperm = await permissions.create({permissionid: uuidv4(), permissionname: `create_${title}`, permissiondesc: `Create ${permtitle.permissiontitle}`});
-            const updateperm = await permissions.create({permissionid: uuidv4(), permissionname: `update_${title}`, permissiondesc: `Update ${permtitle.permissiontitle}`});
-            const viewperm = await permissions.create({permissionid: uuidv4(), permissionname: `view_${title}`, permissiondesc: `View ${permtitle.permissiontitle}`});
-            const deleteperm = await permissions.create({permissionid: uuidv4(), permissionname: `delete_${title}`, permissiondesc: `Delete ${permtitle.permissiontitle}`});
-            await permtitle.addPermissions([listperm, createperm, updateperm, viewperm, deleteperm]);
-    
-            return permtitle
-        }
-    };
-
-    createAllPerms = async () => {
-        const permskey = PERMISSIONS_KEY_WORD;
-        for await (const permkey of permskey) {
-            const body: permissionsTitleAttributes = {
-                permissiontitleid: uuidv4(),
-                permissiontitle: permkey.name,
-                permissiondesc: permkey.desc,
-            }
-            await this.createPerm(body);
-        }
-        return "Permissions are created!"
-    };
-
-    createOnePerm = async (perm: permissionsTitleAttributes, permname: string, permdesc: string) => {
-        perm.permissiontitleid = !perm.permissiontitleid ? uuidv4() : perm.permissiontitleid;
-        let createdPermTitle = await permissionstitle.findOne({ where: { permissiontitle: perm.permissiontitle }});
-        if(!createdPermTitle) {
-            createdPermTitle =  await permissionstitle.create(perm);
-        }
-        const permission = await permissions.create({permissionid: uuidv4(), permissionname: permname, permissiondesc: permdesc});
-        await createdPermTitle.addPermissions([permission]);    
-        return createdPermTitle
-    };
+    // Removed 16 Jul 2026 with the create-perm/:key endpoints that were their
+    // only callers: createPerm, createAllPerms, createOnePerm. They created
+    // permission rows at runtime; createOnePerm in particular could add an
+    // arbitrary permission and so strip the count-based `superadmin` wildcard
+    // from every Super Admin. Permission seeding now lives solely in the
+    // idempotent migrations (20260407120500 + 20260716140000).
 
     getallRoles = async (paging: IMultiPaging) => {
         let where: WhereOptions<rolesAttributes> = {
