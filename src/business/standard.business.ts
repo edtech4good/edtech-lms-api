@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { literal, Op, WhereOptions } from "sequelize";
+import { Op, WhereOptions } from "sequelize";
 import { LmsUserToken } from "src/models/token.model";
 import { constructWhere } from "src/services/util.service";
 import { v4 as uuidv4 } from "uuid";
@@ -180,7 +180,7 @@ export class StandardBusiness {
   getStandardsWithFilter = async (standardname: string, schoolname: string) => {
     const where: WhereOptions<standardsAttributes> = {
       standardname: {
-        [Op.like]: literal(`'%${standardname.trim()}%'`)
+        [Op.like]: `%${standardname.trim()}%`
       }
     };
     if(schoolname) where["$school.schoolname$"] = schoolname;

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { BadRequestException } from "@nestjs/common";
-import { col, fn, literal, Op, WhereOptions } from "sequelize";
+import { col, fn, Op, WhereOptions } from "sequelize";
 import { IPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
 import { LessonAllBase } from "src/modules/lesson/models/LessonGetAllResponse";
@@ -149,7 +149,7 @@ export class LessonBusiness {
       isdeleted: false,
       lessonstatus: true,
       lessonname: {
-        [Op.like]: literal(`'%${lessonname.trim()}%'`)
+        [Op.like]: `%${lessonname.trim()}%`
       }
     };
     if(levelid){

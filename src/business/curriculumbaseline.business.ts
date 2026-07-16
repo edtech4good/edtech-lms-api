@@ -1,4 +1,4 @@
-import { Op, WhereOptions, literal } from "sequelize";
+import { Op, WhereOptions } from "sequelize";
 import { v4 as uuidv4 } from "uuid";
 import {
   curriculumbaseline,
@@ -243,12 +243,12 @@ export class CurriculumBaseLineBusiness {
     const where: WhereOptions<curriculumbaselineAttributes> = {
         isdeleted: false,
         // baselinename: {
-        //   [Op.like]: literal(`'%${cur.trim()}%'`)
+        //   [Op.like]: `%${cur.trim()}%`
         // }
       }
     if(baselinename.length > 0) {
       where.baselinename = {
-        [Op.like]: literal(`'%${baselinename.trim()}%'`)
+        [Op.like]: `%${baselinename.trim()}%`
       }
     }
     if(baselinetype > 0) {

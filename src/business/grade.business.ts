@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { literal, Op, WhereOptions } from "sequelize";
+import { Op, WhereOptions } from "sequelize";
 import { IPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
 import { GradeAllBase } from "src/modules/grade/models/GradeGetAllResponse";
@@ -149,7 +149,7 @@ export class GradeBusiness {
       isdeleted: false,
       gradestatus: true,
       gradename: {
-        [Op.like]: literal(`'%${gradename.trim()}%'`)
+        [Op.like]: `%${gradename.trim()}%`
       }
     };
     if(curid){

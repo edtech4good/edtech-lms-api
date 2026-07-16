@@ -1,4 +1,4 @@
-import { col, fn, literal, Op, WhereOptions } from "sequelize";
+import { col, fn, Op, WhereOptions } from "sequelize";
 import { countries } from "src/models/data-models/countries";
 import { curriculums } from "src/models/data-models/curriculums";
 import { schools, schoolsAttributes } from "src/models/data-models/school";
@@ -80,7 +80,7 @@ export class SchoolBusiness {
     const where: WhereOptions<schoolsAttributes> = {
       isdeleted: false,
       schoolname: {
-        [Op.like]: literal(`'%${schoolname.trim()}%'`)
+        [Op.like]: `%${schoolname.trim()}%`
       }
     };
     const order = ["schoolname"];

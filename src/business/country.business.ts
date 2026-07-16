@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { literal, Op, WhereOptions } from "sequelize";
+import { Op, WhereOptions } from "sequelize";
 import { IPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
 import { buildWhere } from "src/services/util.service";
@@ -44,7 +44,7 @@ export class CountryBusiness {
     const where: WhereOptions<countriesAttributes> = {
       isdeleted: false,
       countryname: {
-        [Op.like]: literal(`'%${countryname.trim()}%'`)
+        [Op.like]: `%${countryname.trim()}%`
       }
     };
     const order = ["countryname"];
