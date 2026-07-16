@@ -123,10 +123,17 @@ export class TokenBusiness {
     user: lmsusers
   ): Promise<LoginTokens> => {
     const isSuperAdmin = user.lmsusername === SUPERADMIN_USERNAME ? true : false;
-    const permissions = await new RolePermissionBusiness().convertRolesPermsToArrayOfString(user.roles, isSuperAdmin) ?? [];
+    const permissions = await new RolePermissionBusiness().convertRolesPermsToArrayOfString(user.roles ?? [], isSuperAdmin) ?? [];
+    // The roles this user actually holds. `roleid` is what the Role enum is
+    // built from, so these are directly comparable to the lists AccessGuard is
+    // given. lmsuserrole below is NOT: createUser stamps it superadmin for
+    // everyone, so it says nothing about who the bearer is. It stays in the
+    // payload because clients read it, but nothing authorizes on it.
+    const lmsuserroles = (user.roles ?? []).map((role) => role.roleid);
     const userpayload = {
       lmsusername: user.lmsusername,
       lmsuserrole: user.lmsuserrole,
+      lmsuserroles: lmsuserroles,
       lmsuserid: user.lmsuserid,
       firstname: user.firstname,
       lastname: user.lastname,

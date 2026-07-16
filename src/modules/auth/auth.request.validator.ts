@@ -1,5 +1,4 @@
 import joi from 'joi';
-import { Role } from 'src/models/enums';
 import { RequestValidator } from '../../models/RequestValidator';
 import { passwordvalidator } from '../../validators/custom.validator';
 // import { isemailtaken } from '../../business/user.business';
@@ -12,16 +11,6 @@ import { passwordvalidator } from '../../validators/custom.validator';
 //         : helpers.message({ 'any.base': 'Email already exists' });
 // };
 
-
-const register: RequestValidator = ({
-  body: joi.object().keys({
-    lmsusername: joi.string().required().label("Email").email().message('Invalid Email'),
-    lmsuserpassword: joi.string().custom(passwordvalidator).required(),
-    firstname: joi.string().required(),
-    lastname: joi.string(),
-    lmsuserrole: joi.string().valid(Role.user, Role.admin, Role.superadmin).required(),
-  }),
-});
 
 const login: RequestValidator = ({
   body: joi.object().keys({
@@ -71,5 +60,5 @@ const verifyEmail: RequestValidator = ({
   }),
 });
 
-export { register, login, refreshTokens, forgotPassword, changePassword, verifyEmail, sendverifyemail };
+export { login, refreshTokens, forgotPassword, changePassword, verifyEmail, sendverifyemail };
 

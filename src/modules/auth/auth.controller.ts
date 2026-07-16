@@ -20,7 +20,6 @@ import {
   getSchemaPath,
 } from "@nestjs/swagger";
 import { AccessGuard } from "src/guards/access.guard";
-import { lmsusersAttributes } from "src/models/data-models/lmsusers";
 import { TokenType } from "src/models/enums";
 import { AuthBusiness, TokenBusiness, UserBusiness } from "../../business";
 import { BusinessValidationInterceptor } from "../../interceptors/businessvalidation.interceptor";
@@ -38,7 +37,6 @@ import {
 import {
   changePassword,
   login,
-  register,
   sendverifyemail,
   teacherlogin,
 } from "./auth.request.validator";
@@ -49,60 +47,21 @@ import { EmailVerificationRequestBody } from "./models/EmailVerificationRequestB
 import { LoginRequestBody } from "./models/LoginRequestBody";
 import { LoginResponseModel, LoginTokens } from "./models/LoginResponse";
 import { LogoutResponse } from "./models/LogoutResponse";
-import { RegisterRequestBody } from "./models/RegisterRequestBody";
-import { RegisterResponse } from "./models/RegisterResponse";
-@ApiExtraModels(RegisterResponse)
 @ApiExtraModels(LoginTokens)
 @ApiExtraModels(LoginResponseModel)
 @ApiTags("Authentication")
 @Controller("auth")
 export class AuthController {
-  @Post("register")
-  @ApiResponse({
-    status: 200,
-    description: "user registered successfully",
-    schema: { $ref: getSchemaPath(RegisterResponse) },
-  })
-  @ApiResponse({
-    status: 400,
-    description: "Error while registering user",
-  })
-  @ApiResponse({
-    status: 404,
-    description: "Not found",
-  })
-  @ApiResponse({
-    status: 500,
-    description: "Server error",
-  })
-  @UseInterceptors(
-    new SchemaValidationInterceptor(register),
-    new BusinessValidationInterceptor([AuthBusinessUserEmailExistsValidator])
-  )
-  @HttpCode(HttpStatus.CREATED)
-  async register(@Body() body: RegisterRequestBody): Promise<RegisterResponse> {
-    const temp: lmsusersAttributes = {
-      lmsusername: body.lmsusername,
-      lmsuserpasswordhash: body.lmsuserpassword,
-      lmsuserid: "",
-      firstname: body.firstname,
-      lastname: body.lastname || "",
-      lmsuserrole: body.lmsuserrole,
-      isdisabled: false,
-      isverified: false,
-    };
-
-    await new UserBusiness().createUser(temp);
-    await sendverificationemail(
-      temp.lmsusername,
-      await new TokenBusiness().generateVerifyEmailToken(temp)
-    );
-
-    return {
-      data: true,
-      error: false,
-    };
-  }
+  // POST /auth/register is deliberately absent. It was public and
+  // unauthenticated, its validator accepted Role.superadmin from the request
+  // body, and UserBusiness.createUser stamps every account superadmin whatever
+  // role is asked for — so a working version of it was a public superadmin
+  // faucet. It never worked (createUser threw on an undefined roles list and
+  // the transaction rolled back), no client ever called it, and the fix that
+  // would have made it "work" was a one-line change anybody might make.
+  //
+  // Learner self-registration is wanted, but it needs designing rather than
+  // reviving: see docs/authorization-model.md.
 
   @Post("login")
   @ApiExtraModels(LoginTokens)

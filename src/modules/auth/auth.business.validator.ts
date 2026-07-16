@@ -3,8 +3,10 @@ import { ValidationError, ValidationErrorItem } from 'joi';
 import { UserBusiness } from 'src/business';
 import { IRequest } from 'src/models/IRequest';
 
+// Only /auth/changepassword reaches this now; the branch that read the email
+// from an unauthenticated request body went with POST /auth/register.
 const UserEmailExistsValidator = async (request: IRequest): Promise<ValidationError | null | undefined> => {
-  const userexists = await new UserBusiness().isemailtaken(request.path === '/auth/register' ? request.body.lmsusername : request.user.sub);
+  const userexists = await new UserBusiness().isemailtaken(request.user.sub);
   if (userexists) {
     const error = new ValidationError('Validation', {}, {});
     error.details = [];

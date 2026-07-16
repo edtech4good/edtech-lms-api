@@ -21,6 +21,14 @@ export class UserBusiness {
     try {
       user.lmsuserid = uuidv4();
       user.lmsuserpasswordhash = md5(user.lmsuserpasswordhash).toString();
+      // LEGACY, and not a claim about this user. The column is NOT NULL so it
+      // must be written, but authorization reads `lmsusers_roles` (via the
+      // token's lmsuserroles) — never this. It said `superadmin` for every
+      // account while AccessGuard still trusted it, which is how a
+      // zero-permission user could reach admin-only endpoints; see
+      // docs/authorization-model.md. Do not reintroduce a check on it. It
+      // wants dropping in its own migration, once the clients that read it
+      // from the JWT are off it.
       user.lmsuserrole = Role.superadmin;
       user.isverified = user.isverified || false;
       user.isdisabled = user.isdisabled || false;
@@ -58,8 +66,37 @@ export class UserBusiness {
     throw new BadRequestException('Please authenticate');
   };
 
+  /**
+   * The RBAC roles a user actually holds, with the permissions behind them.
+   *
+   * `roleid` is not decoration: it is the value the `Role` enum is built from,
+   * so it is what AccessGuard compares against. Loading only `rolename` leaves
+   * the token unable to say which roles its bearer has.
+   */
+  private static rolesInclude = {
+    model: roles,
+    attributes: ["roleid", "rolename"],
+    through: { attributes: [] },
+    include: [{
+      model: permissions,
+      attributes: ["permissionname"],
+      through: { attributes: [] }
+    }]
+  };
+
+  /**
+   * Loads roles because token generation needs them. Without them,
+   * `generateAuthToken` calls `roles.forEach` on undefined and throws, which
+   * `refreshAuth` swallows into "Please authenticate" — so before this, every
+   * non-superadmin was silently logged out the first time their token
+   * refreshed. Superadmin never noticed: the isSuperAdmin username check skips
+   * that branch entirely.
+   */
   getuserbyid = (lmsuserid: string) => {
-    return lmsusers.findOne({ where: { lmsuserid } });
+    return lmsusers.findOne({
+      where: { lmsuserid },
+      include: [UserBusiness.rolesInclude],
+    });
   };
 
   disableuserbyid = async (lmsuserid: string) => {
@@ -79,18 +116,9 @@ export class UserBusiness {
   };
 
   getuserbyemail = (lmsusername: string) => {
-    return lmsusers.findOne({ 
+    return lmsusers.findOne({
       where: { lmsusername, isdisabled: false },
-      include: [{
-        model: roles,
-        attributes: ["rolename"],
-        through: {attributes: []},
-        include: [{
-          model: permissions,
-          attributes: ["permissionname"],
-          through: {attributes: []}
-        }]
-      }]
+      include: [UserBusiness.rolesInclude]
     });
   };
 
@@ -119,11 +147,6 @@ export class UserBusiness {
   private updateuser = async (_user: lmsusersAttributes, where: WhereOptions<lmsusersAttributes>) => {
     return lmsusers.update(_user, { where });
   }
-  updateclaims = async (lmsuserid: string, claims: Role) => {
-    const _user = await this.getuser(lmsuserid);
-    _user.lmsuserrole = claims;
-    return this.updateuser(_user, { lmsuserid });
-  };
   activateuser = async (lmsuserid: string) => {
     const _user = await this.getuser(lmsuserid);
     _user.isdisabled = false;
