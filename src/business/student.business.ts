@@ -14,6 +14,8 @@ import {
 import { standards } from "src/models/data-models/standard";
 import { students, studentsAttributes } from "src/models/data-models/students";
 import { IStudentImportFormat } from "src/modules/students/models/studentimport";
+import { washingtonGroupColumnsForUpdate } from "src/modules/students/models/washington-group.mapper";
+import { WG_DOMAIN_COLUMNS } from "src/models/enums";
 import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
@@ -535,6 +537,7 @@ WHERE
         'fathername',
         'dateofbirth',
         'genderid',
+        ...WG_DOMAIN_COLUMNS,
         'city',
         'country',
         'state',
@@ -595,6 +598,12 @@ WHERE
         fathername: x.fathername ?? '',
         contact: x.contact ?? '',
         genderid: (x.genderid).toString() ?? '',
+        wg_seeing: x.wg_seeing?.toString() ?? '',
+        wg_hearing: x.wg_hearing?.toString() ?? '',
+        wg_walking: x.wg_walking?.toString() ?? '',
+        wg_remembering: x.wg_remembering?.toString() ?? '',
+        wg_selfcare: x.wg_selfcare?.toString() ?? '',
+        wg_communicating: x.wg_communicating?.toString() ?? '',
         dateofbirth: x.dateofbirth ? format(x.dateofbirth, 'dd-MM-yyyy') : '',
         dateofjoin: x.dateofjoin ? format(x.dateofjoin, 'dd-MM-yyyy') : '',
         schooltype: x.schooltype ?? '',
@@ -658,6 +667,7 @@ WHERE
           city: x.city,
           country: x.country,
           genderid: parseInt(x.genderid),
+          ...washingtonGroupColumnsForUpdate(x, student),
           isactive: 1,
           state: x.state,
           studentfirstname: x.studentfirstname,

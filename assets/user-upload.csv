@@ -1,2 +1,2 @@
-studentfirstname,studentlastname,familyname,mothername,fathername,dateofbirth,dateofjoin,genderid,contact,city,country,state,schoolusername,schooluserpasswordhash,type,is_teacher_acc
-sample001,sample001,sample001,,,01-01-2000,01-01-2023,1,,N/A,N/A,N/A,sample001,sample001,offline,
+studentfirstname,studentlastname,familyname,mothername,fathername,dateofbirth,dateofjoin,genderid,wg_seeing,wg_hearing,wg_walking,wg_remembering,wg_selfcare,wg_communicating,contact,city,country,state,schoolusername,schooluserpasswordhash,type,is_teacher_acc
+sample001,sample001,sample001,,,01-01-2000,01-01-2023,1,,,,,,,,N/A,N/A,N/A,sample001,sample001,offline,
