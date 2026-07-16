@@ -238,7 +238,6 @@ export const PERMISSIONS_KEY_WORD = [
     {name: 'Feedback', desc: 'Feedback'},
 ]
 
-export const ADD_PERMISSIONS_KEY = "7f51a28c949c486f3abe6eb30f24437c"; // md5(40kplus)
 export const SUPERADMIN = "superadmin";
 export const SUPERADMIN_USERNAME = "superadmin@superadmin.com";
 
