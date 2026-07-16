@@ -20,9 +20,17 @@ async function bootstrap() {
   Logger.info('Connected to DB');
   const app = await NestFactory.create(AppModule);
   //app.setGlobalPrefix("api");
-  const config = new DocumentBuilder().setTitle('Fortyk API').setDescription('Fortyk API').setVersion("1.0.0").addBearerAuth().build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document);
+  // Swagger (/docs and /docs-json) is a full map of the API surface — every
+  // route, param and DTO. Useful locally, an anonymous recon aid in production.
+  // Mounted only in local dev, gated on the same isLocalEnv the secret guard
+  // and CORS use. To expose it in production later, put it behind auth instead.
+  if (isLocalEnv) {
+    const config = new DocumentBuilder().setTitle('Fortyk API').setDescription('Fortyk API').setVersion("1.0.0").addBearerAuth().build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('docs', app, document);
+  } else {
+    Logger.info('Swagger /docs disabled (production)');
+  }
   // CORS: an allowlist in production, permissive in local dev.
   //
   // Auth here is a Bearer token, not a cookie, so this is defence in depth
