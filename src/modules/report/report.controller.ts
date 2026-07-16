@@ -90,6 +90,35 @@ export class ReportController {
     };
   }
 
+  @Get('disability')
+  @ApiResponse({
+    status: 200,
+    description: "Fetched students disability disaggregation successfully",
+  })
+  @ApiResponse({
+    status: 400,
+    description: "Error fetching students disability disaggregation",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @ApiQuery({ name: "countryid", required: false, type: 'string' })
+  @ApiQuery({ name: "schoolname", required: false, type: 'string' })
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(Permission.VIEW_PLUS_REACH, Permission.VIEW_SCHOOL_REACH)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  async getStudentDisability(
+    @Query("countryid") countryid: string = '',
+    @Query("schoolname") schoolname: string = '',
+  ): Promise<any> {
+    const data = await new ReportBusiness().getAllStudentsDisability(countryid, schoolname);
+    return {
+        data: data,
+        error: false,
+    };
+  }
+
   @Get('offlineonline')
   @ApiResponse({
     status: 200,

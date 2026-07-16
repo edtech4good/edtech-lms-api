@@ -15,6 +15,18 @@ export class StudentImport {
   dateofbirth: string = "";
   @ApiProperty()
   genderid: string = "0";
+  @ApiProperty({ required: false, description: 'Washington Group Short Set, "1"-"4"; blank = not collected' })
+  wg_seeing?: string = "";
+  @ApiProperty({ required: false })
+  wg_hearing?: string = "";
+  @ApiProperty({ required: false })
+  wg_walking?: string = "";
+  @ApiProperty({ required: false })
+  wg_remembering?: string = "";
+  @ApiProperty({ required: false })
+  wg_selfcare?: string = "";
+  @ApiProperty({ required: false })
+  wg_communicating?: string = "";
   @ApiProperty()
   schooltype: string = "";
   @ApiProperty()
@@ -70,6 +82,18 @@ export class StudentImportFormat {
   dateofbirth: string = '';
   @ApiProperty()
   genderid: string = '';
+  @ApiProperty({ required: false, description: 'Washington Group Short Set, "1"-"4"; blank = not collected' })
+  wg_seeing?: string = '';
+  @ApiProperty({ required: false })
+  wg_hearing?: string = '';
+  @ApiProperty({ required: false })
+  wg_walking?: string = '';
+  @ApiProperty({ required: false })
+  wg_remembering?: string = '';
+  @ApiProperty({ required: false })
+  wg_selfcare?: string = '';
+  @ApiProperty({ required: false })
+  wg_communicating?: string = '';
   @ApiProperty()
   standard: string = '';
   @ApiProperty()
@@ -115,6 +139,12 @@ export interface IStudentImportFormat {
   contact: string;
   dateofbirth: string;
   genderid: string;
+  wg_seeing?: string;
+  wg_hearing?: string;
+  wg_walking?: string;
+  wg_remembering?: string;
+  wg_selfcare?: string;
+  wg_communicating?: string;
   standard: string;
   schoolname: string;
   schooltype: string;

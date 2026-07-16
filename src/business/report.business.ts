@@ -23,6 +23,7 @@ import { studentprogress } from "src/models/data-models/studentprogress";
 import { students, studentsAttributes } from "src/models/data-models/students";
 import { syncs, syncsAttributes } from "src/models/data-models/syncrecord";
 import { Default_Test_Student_ID } from "src/models/enums/user.enum";
+import { WG_DISABILITY_CUTOFF, WG_DOMAIN_COLUMNS } from "src/models/enums/washington-group.enum";
 import { IMultiPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
 import { FeedbackData, FeedbackDataContent, TechDowntimeNumbers } from "src/modules/feedback/models/FeedbackBase";
@@ -115,13 +116,19 @@ export class ReportBusiness {
         return lineChartsFormat;
     }
 
-    getAllStudentsGender = async (countryid: string, schoolname: string) => {
+    /** Scope a student count to a country and/or school, as the reach charts do. */
+    private studentReachWhere = async (countryid: string, schoolname: string) => {
         const where: any = {};
         if(countryid && countryid !== 'all') {
             const country = await countries.findOne({ where: { countryid }});
             if(country) where.country = country.countryname;
         }
         if(schoolname) where.schoolname = schoolname;
+        return where;
+    }
+
+    getAllStudentsGender = async (countryid: string, schoolname: string) => {
+        const where = await this.studentReachWhere(countryid, schoolname);
         where.genderid = 1;
         const numberOfBoys = await students.count({
             where: where,
@@ -133,6 +140,44 @@ export class ReportBusiness {
         const chartFormat: Array<ChartItemFormat> = [];
         chartFormat.push({ name: 'girls', value: numberOfGirls });
         chartFormat.push({ name: 'boys', value: numberOfBoys });
+        return chartFormat;
+    }
+
+    /**
+     * Washington Group disaggregation. A learner counts as having a disability
+     * when at least one WG-SS domain is coded 3 (a lot of difficulty) or 4
+     * (cannot do at all) — the Washington Group's own cutoff.
+     *
+     * "Not collected" is reported as its own bucket rather than folded in with
+     * "no disability". Every learner enrolled before the questions were asked
+     * lands there, and a chart claiming they had no disability would be a
+     * statement about data we do not hold.
+     */
+    getAllStudentsDisability = async (countryid: string, schoolname: string) => {
+        const where = await this.studentReachWhere(countryid, schoolname);
+        const answered = {
+            [Op.or]: WG_DOMAIN_COLUMNS.map((column) => ({
+                [column]: { [Op.ne]: null },
+            })),
+        };
+        const atCutoff = {
+            [Op.or]: WG_DOMAIN_COLUMNS.map((column) => ({
+                [column]: { [Op.gte]: WG_DISABILITY_CUTOFF },
+            })),
+        };
+        const total = await students.count({ where });
+        const numberCollected = await students.count({
+            where: { ...where, ...answered },
+        });
+        // A domain at the cutoff is by definition not null, so this is a subset
+        // of numberCollected and the subtraction below cannot go negative.
+        const numberWithDisability = await students.count({
+            where: { ...where, ...atCutoff },
+        });
+        const chartFormat: Array<ChartItemFormat> = [];
+        chartFormat.push({ name: 'with disability', value: numberWithDisability });
+        chartFormat.push({ name: 'no disability', value: numberCollected - numberWithDisability });
+        chartFormat.push({ name: 'not collected', value: total - numberCollected });
         return chartFormat;
     }
 

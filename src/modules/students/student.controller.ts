@@ -58,6 +58,7 @@ import { CheckKey } from "../role-permission/role-perm.business.validator";
 import { SchoolExistsById } from "../school/school.business.validator";
 import { SchoolRole } from "./../../models/enums/school.role.enum";
 import { StudentEditedImportBody, StudentImportBody } from "./models/studentimport";
+import { washingtonGroupColumnsForCreate } from "./models/washington-group.mapper";
 import {
   BulkUpload,
   ValidateSchoolUserid,
@@ -244,6 +245,7 @@ export class StudentController {
               curriculumid: _body.curriculumid[0],
               curriculumids: _body.curriculumid,
               genderid: parseInt(x.genderid),
+              ...washingtonGroupColumnsForCreate(x),
               isactive: 1,
               schooluserid: resultEntry[x.schoolusername],
               state: x.state,

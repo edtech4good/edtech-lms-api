@@ -6,6 +6,24 @@ import {
   StudentEditedImportBody,
   StudentImportBody,
 } from "./models/studentimport";
+
+/**
+ * Washington Group Short Set domains. Optional on every path: an unanswered
+ * question must never block an enrolment, so blank is always valid and means
+ * "not collected".
+ */
+const wgDomain = () =>
+  joi.string().valid("1", "2", "3", "4").optional().allow("", null).default("");
+
+const washingtonGroupKeys = {
+  wg_seeing: wgDomain(),
+  wg_hearing: wgDomain(),
+  wg_walking: wgDomain(),
+  wg_remembering: wgDomain(),
+  wg_selfcare: wgDomain(),
+  wg_communicating: wgDomain(),
+};
+
 export const showallstudents: RequestValidator = {
   body: joi.object().keys(<SchemaMap<IPaging>>{
     pageindex: joi.number().min(0).message("Invalid page index"),
@@ -97,6 +115,7 @@ export const importStudents: RequestValidator = {
             .allow("", null)
             .default(""),
           genderid: joi.string().valid("1", "2").required(),
+          ...washingtonGroupKeys,
           state: joi.string().max(100).required(),
           schoolusername: joi
             .string()
@@ -173,6 +192,7 @@ export const importUpdatedStudents: RequestValidator = {
             .allow("", null)
             .default(""),
           genderid: joi.string().valid("1", "2").required(),
+          ...washingtonGroupKeys,
           contact: joi
             .string()
             .optional()
