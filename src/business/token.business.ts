@@ -4,7 +4,7 @@ import { sign, verify } from "jsonwebtoken";
 import { SUPERADMIN_USERNAME } from "src/models/enums/permissions.enum";
 import { LoginTokens } from "src/modules/auth";
 import { v4 as uuidv4 } from "uuid";
-import { Config } from "../config";
+import { Config, isLocalEnv } from "../config";
 import {
   lmsusers,
   lmsusersAttributes,
@@ -122,7 +122,17 @@ export class TokenBusiness {
   generateAuthToken = async (
     user: lmsusers
   ): Promise<LoginTokens> => {
-    const isSuperAdmin = user.lmsusername === SUPERADMIN_USERNAME ? true : false;
+    // Username shortcut: being `superadmin@superadmin.com` grants every
+    // permission plus the `superadmin` wildcard by email alone, bypassing RBAC.
+    // Honoured only in local/dev/test. In production the seeded superadmin holds
+    // the Super Admin role (migration 20260407120500 binds it, and migrations
+    // 20260407120500 + 20260716140000 together grant that role all 190
+    // permissions — both run in every environment), so it earns the same
+    // wildcard through the RBAC path — the shortcut is redundant there, and a
+    // liability: any production account renamed to this address would get
+    // everything.
+    const isSuperAdmin =
+      isLocalEnv && user.lmsusername === SUPERADMIN_USERNAME;
     const permissions = await new RolePermissionBusiness().convertRolesPermsToArrayOfString(user.roles ?? [], isSuperAdmin) ?? [];
     // The roles this user actually holds. `roleid` is what the Role enum is
     // built from, so these are directly comparable to the lists AccessGuard is

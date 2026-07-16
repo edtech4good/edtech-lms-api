@@ -77,6 +77,15 @@ try {
 const Config: modelconfig = <modelconfig>configvalues;
 
 /**
+ * Local means NODE_ENV is explicitly "development" or "test". Anything else —
+ * including unset — is treated as production. Single source of truth for the
+ * environment-gated safeguards: the placeholder-secret guard below, and the
+ * username superadmin shortcut in token.business (see generateAuthToken).
+ */
+export const isLocalEnv =
+  process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test";
+
+/**
  * Fail closed on the placeholder secrets committed to this public repository.
  * Checked against the resolved config so it covers both a FORTYKAPICONFIG blob
  * and plain environment variables.
@@ -87,7 +96,7 @@ const Config: modelconfig = <modelconfig>configvalues;
  *
  * NODE_ENV must be "development" explicitly; unset is treated as production.
  */
-if (!(process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test")) {
+if (!isLocalEnv) {
   const checks: Array<[string, string, string]> = [
     ["applicationsecret", Config.fortyk.api.applicationsecret, "APPLICATION_SECRET"],
     ["serversynckey", Config.fortyk.api.serversynckey, "SERVER_SYNC_KEY"],
