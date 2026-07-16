@@ -439,8 +439,29 @@ export class CurriculumBaseLineController {
     description: "Server error",
   })
   @ApiParam({ name: `curriculumbaselineid`, type: "string", required: true })
-  // @RequirePermissions(Permission.VIEW_BASELINEENDLINE)
-  // @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @ApiResponse({ status: 401, description: "Unauthenticated" })
+  @ApiResponse({ status: 403, description: "Missing view_download_student" })
+  // This streams a CSV of `studentfirstname`, `schoolusername`, `schoolname` and
+  // each learner's assessment result. It had NO guard at all — the two lines
+  // below were commented out — so it was an unauthenticated download of
+  // children's names and scores. Demonstrated, not theorised: an anonymous GET
+  // returned 200 and a row reading `សុខា,khmz3y6dh,Demo Primary School,…`.
+  //
+  // It looked harmless locally only because the proxy hop to the student API
+  // 401s when the two sides' SERVER_SYNC_KEY defaults differ, which is the case
+  // in local dev. Setting that key correctly is a REQUIRED go-live step, so
+  // fixing the config is what would have armed this. The accident was never the
+  // protection. See docs/authorization-model.md.
+  //
+  // Gated on `view_download_student` rather than the `view_baseline-endline`
+  // the commented-out line named: Teacher holds view_baseline-endline, and this
+  // payload is learner identity, which Teacher is deliberately denied
+  // (PILOT.md, 16 Jul). `view_download_student` is the existing "may download
+  // learner data" permission and Admin/Super Admin hold it. Note
+  // @RequirePermissions is OR, not AND — listing more permissions here widens
+  // access, it does not narrow it.
+  @RequirePermissions(Permission.DOWNLOAD_STUDENTS)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   async getStudentBaselineEndlineResults(
     @Param("curriculumbaselineid") curriculumbaselineid: string,
