@@ -53,7 +53,6 @@ import {
   updatestandard,
   showschoolid
 } from "./standard.request.validator";
-import { CheckKey } from "../role-permission/role-perm.business.validator";
 
 @ApiExtraModels(StandardBase)
 @ApiExtraModels(StandardCreateResponse)
@@ -272,7 +271,11 @@ export class StandardController {
     };
   }
 
-  @Post("migrate-standardid/:key")
+  // Super Admin only: a destructive one-off data migration. Was guarded by a
+  // `:key` matching ADD_PERMISSIONS_KEY, a constant committed to this public
+  // repo, so any authenticated staff account could run it. See
+  // docs/authorization-model.md.
+  @Post("migrate-standardid")
   @ApiResponse({
     status: 200,
     description: "migrated successfully",
@@ -281,15 +284,9 @@ export class StandardController {
     status: 400,
     description: "Error while migrating",
   })
-  @UseInterceptors(
-    new BusinessValidationInterceptor([CheckKey])
-  )
-  @UseGuards(AccessGuard(TokenType.ACCESS))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin))
   @HttpCode(HttpStatus.OK)
-  @ApiParam({ name: `key`, type: "string", required: true })
-  async migrateStandards(
-    @Param("key") key: string,
-  ): Promise<any> {
+  async migrateStandards(): Promise<any> {
     await new StandardBusiness().migrateStandards();
     return {
       error: false,
@@ -297,7 +294,9 @@ export class StandardController {
     }
   }
 
-  @Post("remove-standardid/:key")
+  // Super Admin only: hard-deletes standards with no students (same public-key
+  // history as migrate-standardid above).
+  @Post("remove-standardid")
   @ApiResponse({
     status: 200,
     description: "migrated successfully",
@@ -306,15 +305,9 @@ export class StandardController {
     status: 400,
     description: "Error while migrating",
   })
-  @UseInterceptors(
-    new BusinessValidationInterceptor([CheckKey])
-  )
-  @UseGuards(AccessGuard(TokenType.ACCESS))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin))
   @HttpCode(HttpStatus.OK)
-  @ApiParam({ name: `key`, type: "string", required: true })
-  async removeStandards(
-    @Param("key") key: string,
-  ): Promise<any> {
+  async removeStandards(): Promise<any> {
     await new StandardBusiness().removeStandards();
     return {
       error: false,

@@ -54,7 +54,6 @@ import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { LmsUserToken } from "src/models/token.model";
 import { dbinstance } from "src/services/dbservice";
 import { v4 as uuidv4 } from "uuid";
-import { CheckKey } from "../role-permission/role-perm.business.validator";
 import { SchoolExistsById } from "../school/school.business.validator";
 import { SchoolRole } from "./../../models/enums/school.role.enum";
 import { StudentEditedImportBody, StudentImportBody } from "./models/studentimport";
@@ -486,7 +485,11 @@ export class StudentController {
     };
   }
 
-  @Post("migrate-standardid/:key")
+  // Super Admin only: a one-off data migration. Was guarded only by a `:key`
+  // matching ADD_PERMISSIONS_KEY (committed to this public repo) with its
+  // AccessGuard commented out, so it leaned on the class guard alone. See
+  // docs/authorization-model.md.
+  @Post("migrate-standardid")
   @ApiResponse({
     status: 200,
     description: "migrated student standard successfully",
@@ -495,15 +498,9 @@ export class StudentController {
     status: 400,
     description: "Error while migrating student standard",
   })
-  @UseInterceptors(
-    new BusinessValidationInterceptor([CheckKey])
-  )
-  // @UseGuards(AccessGuard(TokenType.ACCESS))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin))
   @HttpCode(HttpStatus.OK)
-  @ApiParam({ name: `key`, type: "string", required: true })
-  async migrateStandards(
-    @Param("key") key: string,
-  ): Promise<any> {
+  async migrateStandards(): Promise<any> {
     await new StudentBusiness().migrateStandards();
     return {
       error: false,
@@ -551,7 +548,8 @@ export class StudentController {
     };
   }
 
-  @Post("migrate-subject-curriculum/:key")
+  // Super Admin only (same public-key history as migrate-standardid above).
+  @Post("migrate-subject-curriculum")
   @ApiResponse({
     status: 200,
     description: "migrated successfully",
@@ -560,15 +558,9 @@ export class StudentController {
     status: 400,
     description: "Error while migrating",
   })
-  @UseInterceptors(
-    new BusinessValidationInterceptor([CheckKey])
-  )
-  @UseGuards(AccessGuard(TokenType.ACCESS))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin))
   @HttpCode(HttpStatus.OK)
-  @ApiParam({ name: `key`, type: "string", required: true })
-  async migrateSubjectCurriculum(
-    @Param("key") key: string,
-  ): Promise<any> {
+  async migrateSubjectCurriculum(): Promise<any> {
     await new StudentBusiness().migrateSubjectCurriculum();
     return {
       error: false,
