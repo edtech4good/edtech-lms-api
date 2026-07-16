@@ -85,7 +85,14 @@ export const importStudents: RequestValidator = {
             .custom(dateString(false, "body,students,"))
             .max(10)
             .required(),
-          studentfirstname: joi.string().min(2).alphanum().max(100).required(),
+          // No .alphanum(): joi's alphanum is /^[a-zA-Z0-9]+$/, which rejects
+          // every Khmer character — so a learner could not be enrolled under
+          // their own name in a Khmer literacy programme. It was also the only
+          // name field with the restriction: last name, family name, mother's
+          // and father's names all accept Khmer, as does studentfirstname on
+          // the edit path below. The enforced workaround was to enrol a child
+          // as "Sokha" and rename them to "សុខា" afterwards.
+          studentfirstname: joi.string().min(2).max(100).required(),
           studentlastname: joi
             .string()
             .optional()
