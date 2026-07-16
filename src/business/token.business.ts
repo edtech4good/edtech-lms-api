@@ -125,10 +125,12 @@ export class TokenBusiness {
     // Username shortcut: being `superadmin@superadmin.com` grants every
     // permission plus the `superadmin` wildcard by email alone, bypassing RBAC.
     // Honoured only in local/dev/test. In production the seeded superadmin holds
-    // the Super Admin role (migration 20260407120500 binds it and grants it all
-    // permissions in every environment), so it earns the same wildcard through
-    // the RBAC path — the shortcut is redundant there, and a liability: any
-    // production account renamed to this address would otherwise get everything.
+    // the Super Admin role (migration 20260407120500 binds it, and migrations
+    // 20260407120500 + 20260716140000 together grant that role all 190
+    // permissions — both run in every environment), so it earns the same
+    // wildcard through the RBAC path — the shortcut is redundant there, and a
+    // liability: any production account renamed to this address would get
+    // everything.
     const isSuperAdmin =
       isLocalEnv && user.lmsusername === SUPERADMIN_USERNAME;
     const permissions = await new RolePermissionBusiness().convertRolesPermsToArrayOfString(user.roles ?? [], isSuperAdmin) ?? [];
