@@ -92,7 +92,8 @@ export class CountryController {
         description: "Error while fetching country",
     })
     @HttpCode(HttpStatus.OK)
-    @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin))
+    // Role.teacher reads: feeds the country filter on the report screens.
+    @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.teacher))
     @ApiBearerAuth()
     async getAll(): Promise<CountryAllResponse> {
         const data = await new CountryBusiness().getAllcountries();
