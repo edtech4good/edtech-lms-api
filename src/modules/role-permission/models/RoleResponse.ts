@@ -2,17 +2,6 @@ import { ApiExtraModels, ApiProperty } from "@nestjs/swagger";
 import { IResponse } from "src/models/IResponse";
 import { PermBase, RoleBase, RolePermBase, TreeNode } from "./RoleBase";
 
-export class PermCreateResponse extends IResponse<PermBase> {
-
-  @ApiProperty()
-  data?: PermBase;
-
-  constructor() {
-    super();
-    this.data = undefined;
-  }
-}
-
 export class RoleCreateResponse extends IResponse<RoleBase> {
 
   @ApiProperty()

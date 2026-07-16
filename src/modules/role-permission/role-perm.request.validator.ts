@@ -25,25 +25,6 @@ export const createsRole: RequestValidator = {
   }),
 };
 
-export const createsPerm: RequestValidator = {
-  body: joi.object().keys({
-    permissiontitle: joi
-      .string()
-      .required()
-      .max(300)
-      .min(1)
-      .custom(emptyString("Permission Title"))
-      .label("Permission Title"),
-    permissiondesc: joi
-      .string()
-      .required()
-      .max(500)
-      .min(1)
-      .custom(emptyString("Permission Description"))
-      .label("Permission Description"),
-  }),
-};
-
 export const bindRolesPerms: RequestValidator = {
   body: joi.object().keys({
     roleid: joi
