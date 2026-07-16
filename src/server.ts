@@ -3,7 +3,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import { Config, Logger } from './config';
+import { Config, Logger, isLocalEnv } from './config';
 import { GlobalExceptionFilter } from './filters/global-exception.filter';
 import { initModels } from './models/data-models/init-models';
 import { dbinstance } from "./services/dbservice"
@@ -23,8 +23,47 @@ async function bootstrap() {
   const config = new DocumentBuilder().setTitle('Fortyk API').setDescription('Fortyk API').setVersion("1.0.0").addBearerAuth().build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document);
+  // CORS: an allowlist in production, permissive in local dev.
+  //
+  // Auth here is a Bearer token, not a cookie, so this is defence in depth
+  // rather than the only thing standing between a site and the API. Production
+  // origins come from CORS_ORIGINS (comma-separated) plus the admin UI's
+  // UI_URL. Requests with no Origin header — the Expo native app,
+  // server-to-server proxying, curl and health checks — are always allowed;
+  // CORS only governs browser cross-origin requests.
+  //
+  // Local dev reflects any origin: the admin UI (4200), Expo web (8081/19006)
+  // and physical devices on LAN IPs all move around, and dev machines are not
+  // the threat model. Gated on the same isLocalEnv the secret guard uses.
+  const allowedOrigins = new Set<string>(
+    [
+      ...(process.env.CORS_ORIGINS ?? '').split(','),
+      process.env.UI_URL ?? '',
+    ]
+      .map((o) => o.trim())
+      .filter(Boolean)
+  );
+  if (!isLocalEnv && allowedOrigins.size === 0) {
+    Logger.warn(
+      'CORS: no allowed origins configured (set CORS_ORIGINS and/or UI_URL). ' +
+        'Browser clients will be blocked; no-Origin requests still work.'
+    );
+  }
+  Logger.info(
+    `CORS: ${
+      isLocalEnv
+        ? 'local dev — reflecting any origin'
+        : `allowlist [${[...allowedOrigins].join(', ') || '(none)'}]`
+    }`
+  );
   app.enableCors({
-    origin: true,
+    origin: isLocalEnv
+      ? true
+      : (origin, callback) => {
+          // No Origin header (native app, server-to-server, curl): allow.
+          if (!origin) return callback(null, true);
+          return callback(null, allowedOrigins.has(origin));
+        },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
