@@ -5,7 +5,7 @@ import { Permission } from "../../models/enums/permissions.enum";
 /**
  * The RBAC seed generates permissions from a {list,create,update,view,delete}
  * grid over PERMISSIONS_KEY_WORD — 27 entities x 5 = 135 rows. The Permission
- * enum defines 161. The 49 that do not fit the grid were therefore never
+ * enum defines 167. The 55 that do not fit the grid were therefore never
  * created, in any environment: RolePermissionBusiness.createAllPerms — the
  * production bootstrap behind GET /roles/create-perm/<key> — uses the same
  * generator. The only way to create one was createOnePerm, by hand, one at a

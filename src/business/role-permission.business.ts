@@ -410,6 +410,14 @@ export class RolePermissionBusiness {
                     perms.push(perm.permissionname);
                 }
             });
+            // Distinct, because the wildcard below is awarded by COUNT. Two roles
+            // that overlap pushed the same permission twice, so a bearer holding
+            // Admin (159) plus any 31-grant role reached 190 — COUNT(*) of
+            // permissions — and was handed `superadmin` while actually holding
+            // 159 distinct. The wildcard is a full server-side bypass in
+            // CheckPermissionsGuard, so this must count what is held, not how
+            // many times it was mentioned.
+            perms = [...new Set(perms)];
             const countallperms = await permissions.count();
             if(countallperms != 0 && perms.length === countallperms) perms.push(SUPERADMIN);
         } else {
