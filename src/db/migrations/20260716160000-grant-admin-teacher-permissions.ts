@@ -30,10 +30,39 @@ const TEACHER_ROLE_ID = "Q3Qs7PuD";
  * role is called. `view_*`/`delete_*` are excluded alongside them to keep staff
  * administration whole and in one place rather than half-delegated.
  *
- * ## Teacher: read-only
+ * ## Teacher: read-only, and no learner identities
  *
- * `view_` and `download_`. Reports, learners, schools and curriculum are
- * visible; nothing is writable.
+ * `view_` and `download_`, minus two: `view_student` and `view_download_student`.
+ * Reports, schools and curriculum are visible; nothing is writable; a learner's
+ * identity is not visible.
+ *
+ * The two exclusions are a deliberate decision (16 July, PILOT.md), not an
+ * oversight. `GET /student/all` returns a child's `studentfirstname`,
+ * `studentlastname`, `mothername`, `fathername`, `dateofbirth`, `contact` and
+ * all six `wg_*` Washington Group disability answers. That is categorically more
+ * than the reports show — `POST /report/studentstatus`, which Teacher may call,
+ * returns a learner's *username* and progress, and `GET /report/disability` is
+ * aggregated to counts. So the line is drawn at identity, and it is worth
+ * drawing.
+ *
+ * Both exclusions are load-bearing rather than cosmetic:
+ *
+ *   - `view_student` gates the Students entry in the sidebar. Teacher cannot
+ *     reach any student endpoint anyway (StudentController is role-gated by a
+ *     class-level guard), so holding it only produced a menu item leading to an
+ *     empty screen — the silent shape this codebase specializes in.
+ *   - `view_download_student` gates the "download students" button on the school
+ *     screen, which downloads exactly the CSV described above. Holding it while
+ *     the decision says otherwise is the contradiction worth removing, even
+ *     though the class guard would refuse the request.
+ *
+ * The exclusion is anchored (`^...$`) and not a prefix. `view_student_level_quiz`
+ * and `view_download_student_quiz_score` are quiz-score reads that Teacher keeps;
+ * an unanchored `view_student` would have stripped them silently.
+ *
+ * The cost, accepted: the student filter on the report screens has nothing to
+ * populate from, because every one of them fills it from `GET /student/all`. The
+ * reports still render — the filter just cannot narrow to one learner.
  *
  * Note this role cannot reach the 13 endpoints that carry a role list — every
  * one names `[admin, apikey, superadmin]`, and `Role.teacher` appears nowhere in
@@ -60,7 +89,7 @@ const TEACHER_ROLE_ID = "Q3Qs7PuD";
  * to any bearer whose grant count equals `COUNT(*)` of permissions. It compares
  * a raw array length and does not deduplicate across roles, so two roles whose
  * counts SUM to 190 earn the wildcard even when their permissions overlap
- * entirely. Admin lands at 159 and Teacher at 62: no pair of roles sums to 190,
+ * entirely. Admin lands at 159 and Teacher at 60: no pair of roles sums to 190,
  * so no combination silently becomes superadmin. The same commit deduplicates
  * that check so this stops being load-bearing arithmetic — but do not assume it
  * is safe to grow a role to exactly 190 minus another role's count.
@@ -76,6 +105,12 @@ const USER_ROLE_ADMINISTRATION = /^(create|view|update|delete)_(user|role)$/;
 /** Read-only: sees everything it is given, writes nothing. */
 const READ_ONLY = /^(view|download)_/;
 
+/**
+ * Reads that identify a learner. Anchored deliberately — see the note above:
+ * `view_student_level_quiz` and `view_download_student_quiz_score` must survive.
+ */
+const LEARNER_IDENTITY = /^(view_student|view_download_student)$/;
+
 const ALL_PERMISSIONS: string[] = Object.values(Permission);
 
 const ADMIN_PERMISSIONS = ALL_PERMISSIONS.filter(
@@ -83,7 +118,10 @@ const ADMIN_PERMISSIONS = ALL_PERMISSIONS.filter(
 );
 
 const TEACHER_PERMISSIONS = ALL_PERMISSIONS.filter(
-  (p) => READ_ONLY.test(p) && !USER_ROLE_ADMINISTRATION.test(p)
+  (p) =>
+    READ_ONLY.test(p) &&
+    !USER_ROLE_ADMINISTRATION.test(p) &&
+    !LEARNER_IDENTITY.test(p)
 );
 
 const GRANTS: Array<{ roleid: string; permissions: string[] }> = [
