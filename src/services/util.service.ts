@@ -4,7 +4,7 @@ import { parseISO } from "date-fns";
 // @ts-ignore
 import fileExtension from "file-extension";
 import { ExtractJwt } from "passport-jwt";
-import { literal, Op, WhereOptions } from "sequelize";
+import { Op, WhereOptions } from "sequelize";
 import { ValidationException } from "src/models";
 import { FileType } from "src/models/enums/filetype.enum.";
 import { FileMeta } from "src/models/filemeta.model";
@@ -118,7 +118,7 @@ export const buildWhere = <T>(
           } else if (array(x.value)) {
             return {
               [Op.and]: (x.value || []).map((xx) => ({
-                [x.key || ""]: { [Op.like]: literal(`'%${xx.trim()}%'`) },
+                [x.key || ""]: { [Op.like]: `%${xx.trim()}%` },
               })),
             };
           } else {
@@ -126,7 +126,7 @@ export const buildWhere = <T>(
             if (values.length > 0) {
               return {
                 [Op.and]: values.map((xx) => ({
-                  [x.key || ""]: { [Op.like]: literal(`'%${xx.trim()}%'`) },
+                  [x.key || ""]: { [Op.like]: `%${xx.trim()}%` },
                 })),
               };
             }
@@ -134,7 +134,7 @@ export const buildWhere = <T>(
         } else {
           return {
             [x.key || ""]: {
-              [Op.like]: literal(`'%${(x.value || "").trim()}%'`),
+              [Op.like]: `%${(x.value || "").trim()}%`,
             },
           };
         }
@@ -158,7 +158,7 @@ export const constructWhere = <T>(
             if (x.value.length > 0) {
               return {
                 [Op.or]: (x.value || []).map((xx) => ({
-                  [x.key || ""]: { [Op.like]: literal(`'%${xx.trim()}%'`) },
+                  [x.key || ""]: { [Op.like]: `%${xx.trim()}%` },
                 })),
               };
             }
@@ -168,7 +168,7 @@ export const constructWhere = <T>(
             if (values.length > 0) {
               return {
                 [Op.and]: values.map((xx) => ({
-                  [x.key || ""]: { [Op.like]: literal(`'%${xx.trim()}%'`) },
+                  [x.key || ""]: { [Op.like]: `%${xx.trim()}%` },
                 })),
               };
             }
@@ -202,7 +202,7 @@ export const buildWhereOR = <T>(
           } else if (array(x.value)) {
             return {
               [Op.or]: (x.value || []).map((xx) => ({
-                [x.key || ""]: { [Op.like]: literal(`'%${xx.trim()}%'`) },
+                [x.key || ""]: { [Op.like]: `%${xx.trim()}%` },
               })),
             };
           } else {
@@ -210,7 +210,7 @@ export const buildWhereOR = <T>(
             if (values.length > 0) {
               return {
                 [Op.or]: values.map((xx) => ({
-                  [x.key || ""]: { [Op.like]: literal(`'%${xx.trim()}%'`) },
+                  [x.key || ""]: { [Op.like]: `%${xx.trim()}%` },
                 })),
               };
             }
@@ -218,7 +218,7 @@ export const buildWhereOR = <T>(
         } else {
           return {
             [x.key || ""]: {
-              [Op.like]: literal(`'%${(x.value || "").trim()}%'`),
+              [Op.like]: `%${(x.value || "").trim()}%`,
             },
           };
         }

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { col, fn, literal, Op, WhereOptions } from "sequelize";
+import { col, fn, Op, WhereOptions } from "sequelize";
 import { IPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
 import { LevelAllBase } from "src/modules/level/models/LevelGetAllResponse";
@@ -140,7 +140,7 @@ export class LevelBusiness {
       isdeleted: false,
       levelstatus: true,
       levelname: {
-        [Op.like]: literal(`'%${levelname.trim()}%'`)
+        [Op.like]: `%${levelname.trim()}%`
       }
     };
     if(gradeid){

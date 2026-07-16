@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { BadRequestException } from "@nestjs/common";
 import { uniq } from "lodash";
-import { col, fn, literal, Op, WhereOptions } from "sequelize";
+import { col, fn, Op, WhereOptions } from "sequelize";
 import { IPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
 import { v4 as uuidv4 } from "uuid";
@@ -90,7 +90,7 @@ export class CurriculumBusiness {
       isdeleted: false,
       curriculumstatus: true,
       curriculumname: {
-        [Op.like]: literal(`'%${cur.trim()}%'`)
+        [Op.like]: `%${cur.trim()}%`
       }
     };
     if(studentid || standardid) {

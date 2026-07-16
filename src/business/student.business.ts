@@ -1,6 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import { format, isValid, parse } from "date-fns";
-import { literal, Op, QueryTypes } from "sequelize";
+import { Op, QueryTypes } from "sequelize";
 import { Transaction, WhereOptions } from "sequelize/types";
 import {
   curriculums,
@@ -203,7 +203,7 @@ export class StudentBusiness {
   getStudentsWithFilter = async (userid: string, schoolname: string, standard: string, teacher: boolean = false) => {
     const where: WhereOptions<studentsAttributes> = {
       "$schooluser.schoolusername$": {
-        [Op.like]: literal(`'%${userid.trim()}%'`)
+        [Op.like]: `%${userid.trim()}%`
       },
     };
     if(schoolname) where.schoolname = schoolname;
