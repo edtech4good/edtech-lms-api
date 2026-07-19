@@ -209,6 +209,8 @@ export class StudentBusiness {
       "$schooluser.schoolusername$": {
         [Op.like]: `%${userid.trim()}%`
       },
+      // Soft-deleted learners drop out of this filter list too.
+      isdeleted: false,
     };
     if(schoolname) where.schoolname = schoolname;
     if(standard) where.standard = standard;
@@ -539,6 +541,10 @@ WHERE
     if(schoolname && !schoolexists) throw new BadRequestException('School does not exists!');
     const where: WhereOptions<studentsAttributes> = {};
     where.isactive = 1;
+    // Soft-deleted learners are excluded here too, not just from getAllStudents:
+    // isactive is untouched by a delete, so without this they reappear in the
+    // edit list. History/reports still retain them.
+    where.isdeleted = false;
     if(countryid) where['$school.countryid$'] = countryid;
     if(schoolname) where.schoolname = schoolname;
     if(studentid) where.studentid = studentid;

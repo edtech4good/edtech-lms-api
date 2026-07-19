@@ -357,11 +357,19 @@ export class StudentController {
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
     try {
-      await new StudentBusiness().deletestudent(
+      // ValidateSchoolUserid confirms the learner exists but not that it is
+      // still active, so an already-deleted learner (a stale list, a retry)
+      // reaches here. The soft-delete UPDATE is scoped `isdeleted: false`, so it
+      // touches 0 rows in that case — report that honestly rather than a false
+      // success.
+      const [studentDeleted] = await new StudentBusiness().deletestudent(
         schooluserid,
         user.lmsuserid,
         tnx,
       );
+      if (!studentDeleted) {
+        throw new BadRequestException("Student already deleted or not found");
+      }
       await new SchoolUserBusiness().deleteschooluser(
         schooluserid,
         user.lmsuserid,

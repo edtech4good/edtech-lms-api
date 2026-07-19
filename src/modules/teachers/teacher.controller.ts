@@ -221,11 +221,16 @@ export class TeacherController {
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
     try {
-      await new SchoolUserBusiness().deleteschooluser(
+      // 0 rows updated means the teacher was already soft-deleted (stale list /
+      // retry); report that rather than a false success. See the student delete.
+      const [teacherDeleted] = await new SchoolUserBusiness().deleteschooluser(
         schooluserid,
         user.lmsuserid,
         tnx,
       );
+      if (!teacherDeleted) {
+        throw new BadRequestException("Teacher already deleted or not found");
+      }
       await tnx.commit();
 
       return {
