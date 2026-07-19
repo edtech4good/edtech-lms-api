@@ -42,6 +42,7 @@ export interface studentsAttributes {
   studentcurrentlevelid?: string;
   studentcurrentlessonid?: string;
   isactive: number;
+  isdeleted?: boolean;
   schooluserid: string;
   created_at?: Date;
   created_by?: string;
@@ -99,7 +100,8 @@ export type studentsOptionalAttributes =
   | "startinglevelid"
   | "studentcurrentlevelid"
   | "studentcurrentlessonid"
-  | "isactive";
+  | "isactive"
+  | "isdeleted";
 export type studentsCreationAttributes = Optional<
   studentsAttributes,
   studentsOptionalAttributes
@@ -139,6 +141,7 @@ export class students
   studentcurrentlevelid?: string;
   studentcurrentlessonid?: string;
   isactive!: number;
+  isdeleted!: boolean;
   schooluserid!: string;
   created_at!: Date;
   created_by!: string;
@@ -346,6 +349,11 @@ export class students
           type: DataTypes.BOOLEAN,
           allowNull: false,
           defaultValue: 0,
+        },
+        isdeleted: {
+          type: DataTypes.BOOLEAN,
+          allowNull: false,
+          defaultValue: false,
         },
         schooluserid: {
           type: DataTypes.STRING(36),

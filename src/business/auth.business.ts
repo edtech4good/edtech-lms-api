@@ -97,6 +97,7 @@ export class AuthBusiness {
     if (
       user.schooluserpasswordhash !== md5(password).toString() ||
       user.isdisabled ||
+      user.isdeleted ||
       !user.schooluserstatus
     ) {
       throw new BadRequestException("User/Password not matching");

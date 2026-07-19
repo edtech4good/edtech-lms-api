@@ -137,13 +137,25 @@ export class SchoolUserBusiness {
       },
     });
 
-  deleteschooluser = (schooluserid: string, transaction: Transaction) =>
-    schoolusers.destroy({
-      where: {
-        schooluserid,
+  deleteschooluser = (
+    schooluserid: string,
+    deletedby: string,
+    transaction: Transaction,
+  ) =>
+    schoolusers.update(
+      {
+        isdeleted: true,
+        deleted_at: new Date(),
+        deleted_by: deletedby,
       },
-      transaction,
-    });
+      {
+        where: {
+          schooluserid,
+          isdeleted: false,
+        },
+        transaction,
+      },
+    );
 
   getschoolusers = async () => {
     schoolusers.hasOne(students, {

@@ -72,6 +72,8 @@ export class TeacherBusiness {
         schooluserwhere
       ),
       schooluserrole: SchoolRole.TEACHER,
+      // Soft-deleted teachers drop off the roster, same as learners.
+      isdeleted: false,
     };
 
     const data = await schoolusers.findAndCountAll({

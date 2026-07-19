@@ -111,6 +111,10 @@ export class StudentBusiness {
         curriculumwhere
       ),
     };
+    // Soft-deleted learners drop off the active roster. Their rows and progress
+    // history stay in the database and in historical reports; this is the list
+    // staff manage enrolment from, so it shows the living roster only.
+    studentwhere = { ...studentwhere, isdeleted: false };
     const data = await students.findAndCountAll({
       where: studentwhere,
       order,
@@ -299,13 +303,25 @@ export class StudentBusiness {
   getstudentcountbystandard = (standard: string) =>
     students.count({ where: { standard } });
 
-  deletestudent = (schooluserid: string, transaction: Transaction) =>
-    students.destroy({
-      where: {
-        schooluserid,
+  deletestudent = (
+    schooluserid: string,
+    deletedby: string,
+    transaction: Transaction,
+  ) =>
+    students.update(
+      {
+        isdeleted: true,
+        deleted_at: new Date(),
+        deleted_by: deletedby,
       },
-      transaction,
-    });
+      {
+        where: {
+          schooluserid,
+          isdeleted: false,
+        },
+        transaction,
+      },
+    );
 
   getstudentstats = (studentid: string) =>
     dbinstance.getdbinstance().query(
