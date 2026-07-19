@@ -111,6 +111,10 @@ export class StudentBusiness {
         curriculumwhere
       ),
     };
+    // Soft-deleted learners drop off the active roster. Their rows and progress
+    // history stay in the database and in historical reports; this is the list
+    // staff manage enrolment from, so it shows the living roster only.
+    studentwhere = { ...studentwhere, isdeleted: false };
     const data = await students.findAndCountAll({
       where: studentwhere,
       order,
@@ -205,6 +209,8 @@ export class StudentBusiness {
       "$schooluser.schoolusername$": {
         [Op.like]: `%${userid.trim()}%`
       },
+      // Soft-deleted learners drop out of this filter list too.
+      isdeleted: false,
     };
     if(schoolname) where.schoolname = schoolname;
     if(standard) where.standard = standard;
@@ -299,13 +305,25 @@ export class StudentBusiness {
   getstudentcountbystandard = (standard: string) =>
     students.count({ where: { standard } });
 
-  deletestudent = (schooluserid: string, transaction: Transaction) =>
-    students.destroy({
-      where: {
-        schooluserid,
+  deletestudent = (
+    schooluserid: string,
+    deletedby: string,
+    transaction: Transaction,
+  ) =>
+    students.update(
+      {
+        isdeleted: true,
+        deleted_at: new Date(),
+        deleted_by: deletedby,
       },
-      transaction,
-    });
+      {
+        where: {
+          schooluserid,
+          isdeleted: false,
+        },
+        transaction,
+      },
+    );
 
   getstudentstats = (studentid: string) =>
     dbinstance.getdbinstance().query(
@@ -523,6 +541,10 @@ WHERE
     if(schoolname && !schoolexists) throw new BadRequestException('School does not exists!');
     const where: WhereOptions<studentsAttributes> = {};
     where.isactive = 1;
+    // Soft-deleted learners are excluded here too, not just from getAllStudents:
+    // isactive is untouched by a delete, so without this they reappear in the
+    // edit list. History/reports still retain them.
+    where.isdeleted = false;
     if(countryid) where['$school.countryid$'] = countryid;
     if(schoolname) where.schoolname = schoolname;
     if(studentid) where.studentid = studentid;

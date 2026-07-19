@@ -137,13 +137,31 @@ export class SchoolUserBusiness {
       },
     });
 
-  deleteschooluser = (schooluserid: string, transaction: Transaction) =>
-    schoolusers.destroy({
-      where: {
-        schooluserid,
+  // Soft delete keeps the row, so its `schoolusername` (a UNIQUE column) stays
+  // occupied — that exact handle cannot be re-enrolled while the deleted row
+  // exists. Deliberate: `schoolUserExists` rejects the reused name cleanly at
+  // create time (not a DB error), and freeing it would mean renaming the row,
+  // which corrupts the learner history this soft delete exists to keep.
+  // Learner usernames are auto-generated, so reuse pressure is near zero.
+  deleteschooluser = (
+    schooluserid: string,
+    deletedby: string,
+    transaction: Transaction,
+  ) =>
+    schoolusers.update(
+      {
+        isdeleted: true,
+        deleted_at: new Date(),
+        deleted_by: deletedby,
       },
-      transaction,
-    });
+      {
+        where: {
+          schooluserid,
+          isdeleted: false,
+        },
+        transaction,
+      },
+    );
 
   getschoolusers = async () => {
     schoolusers.hasOne(students, {

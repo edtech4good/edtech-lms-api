@@ -27,6 +27,7 @@ import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { TeacherBusiness } from "src/business/teacher.business";
 import { Config } from "src/config";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
+import { User } from "src/decorators/user.decorator";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import {
@@ -42,6 +43,7 @@ import { Permission } from "src/models/enums/permissions.enum";
 import { SchoolRole } from "src/models/enums/school.role.enum";
 import { IPaging } from "src/models/IPaging";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
+import { LmsUserToken } from "src/models/token.model";
 import { dbinstance } from "src/services/dbservice";
 import { v4 as uuidv4 } from "uuid";
 import { TeacherImportBody } from "./models/teachersimport";
@@ -213,18 +215,30 @@ export class TeacherController {
   @RequirePermissions(Permission.DELETE_TEACHER)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async deleteuser(@Param("schooluserid") schooluserid: string): Promise<any> {
+  async deleteuser(
+    @Param("schooluserid") schooluserid: string,
+    @User() user: LmsUserToken,
+  ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
     try {
-      await new SchoolUserBusiness().deleteschooluser(schooluserid, tnx);
-      tnx.commit();
+      // 0 rows updated means the teacher was already soft-deleted (stale list /
+      // retry); report that rather than a false success. See the student delete.
+      const [teacherDeleted] = await new SchoolUserBusiness().deleteschooluser(
+        schooluserid,
+        user.lmsuserid,
+        tnx,
+      );
+      if (!teacherDeleted) {
+        throw new BadRequestException("Teacher already deleted or not found");
+      }
+      await tnx.commit();
 
       return {
         error: false,
         data: true,
       };
     } catch (e) {
-      tnx.rollback();
+      await tnx.rollback();
       throw e;
     }
   }
