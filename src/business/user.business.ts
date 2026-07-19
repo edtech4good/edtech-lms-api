@@ -2,7 +2,7 @@
 import { lmsusers, lmsusersAttributes } from "../models/data-models/init-models"
 import { Role } from '../models/enums';
 import { BadRequestException } from '@nestjs/common';
-import md5 from 'crypto-js/md5';
+import { hashPassword } from 'src/services/password.service';
 import { v4 as uuidv4 } from 'uuid';
 import { TokenBusiness } from './token.business';
 import { WhereOptions } from "sequelize/types";
@@ -20,7 +20,7 @@ export class UserBusiness {
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
       user.lmsuserid = uuidv4();
-      user.lmsuserpasswordhash = md5(user.lmsuserpasswordhash).toString();
+      user.lmsuserpasswordhash = hashPassword(user.lmsuserpasswordhash);
       // LEGACY, and not a claim about this user. The column is NOT NULL so it
       // must be written, but authorization reads `lmsusers_roles` (via the
       // token's lmsuserroles) — never this. It said `superadmin` for every
@@ -138,7 +138,7 @@ export class UserBusiness {
 
   updatepassword = async (lmsuserid: string, password: string) => {
     const _user = await this.getuser(lmsuserid);
-    _user.lmsuserpasswordhash = md5(password).toString();
+    _user.lmsuserpasswordhash = hashPassword(password);
     const localuser = await this.updateuser(_user, { lmsuserid });
     const tokenbusiness = new TokenBusiness();
     await tokenbusiness.clearChangePasswordToken(lmsuserid);
@@ -243,7 +243,7 @@ export class UserBusiness {
       });
       if(user) {
         user.lmsusername = usr.lmsusername;
-        user.lmsuserpasswordhash = usr.lmsuserpasswordhash ? md5(usr.lmsuserpasswordhash).toString() : user.lmsuserpasswordhash;
+        user.lmsuserpasswordhash = usr.lmsuserpasswordhash ? hashPassword(usr.lmsuserpasswordhash) : user.lmsuserpasswordhash;
         user.countries = usr.countries;
         user.schools = usr.schools;
         if(currentuser){

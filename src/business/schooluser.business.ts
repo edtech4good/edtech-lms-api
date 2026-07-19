@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import md5 from "md5";
+import { hashPassword } from "src/services/password.service";
 import { Op, Transaction, WhereOptions } from "sequelize";
 import {
   schoolusers,
@@ -111,7 +111,7 @@ export class SchoolUserBusiness {
     schoolusers.bulkCreate(
       schoolusersdata.map((x) => ({
         ...x,
-        schooluserpasswordhash: md5(x.schooluserpasswordhash),
+        schooluserpasswordhash: hashPassword(x.schooluserpasswordhash),
       })),
       {
         transaction,
