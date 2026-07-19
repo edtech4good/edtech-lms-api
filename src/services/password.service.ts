@@ -4,6 +4,13 @@ import md5 from "crypto-js/md5";
 /**
  * Password hashing, mid-migration from unsalted MD5 to bcrypt.
  *
+ * ⚠️ MUST STAY IN SYNC with the byte-identical copy in
+ * `edtech-lms-rpi-api/src/services/password.service.ts`. Central mints a hash
+ * and the student API verifies it across the import/sync bridge, so any
+ * divergence in the format, the md5-wrap, or BCRYPT_ROUNDS silently breaks
+ * learner login on the tablet while central login still works. Change both, or
+ * neither. (No shared package exists between the two repos yet.)
+ *
  * Stored form is `bcrypt(md5(password))` — wrapping the *existing* md5 hash is
  * what lets the rewrap migration run with no user's password (we already hold
  * md5(password): it is the stored value). `bcryptjs` (pure JS) rather than
