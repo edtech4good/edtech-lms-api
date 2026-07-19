@@ -15,6 +15,13 @@ export class SchoolUserBusiness {
       schooluser: newschoolusersresult.get({ plain: true }),
     };
   };
+  // Feeds the student sync to the student API (`/import/students`). Load-bearing
+  // for soft delete: it must keep returning soft-deleted schoolusers (it filters
+  // `schooluserstatus`, NOT `isdeleted`) so `isdeleted: true` reaches the student
+  // API's schoolusers and its login refuses them (edtech-lms-rpi-api#8). If you
+  // ever add an `isdeleted: false` filter here — or make the soft delete also
+  // clear `schooluserstatus` — deleted learners drop out of this export, their
+  // `isdeleted` never syncs, and the tablet login-block silently stops working.
   getschooluserbyschoolname = async (schoolname: string, online: boolean = false) => {
     schoolusers.hasOne(students, {
       foreignKey: "schooluserid",
