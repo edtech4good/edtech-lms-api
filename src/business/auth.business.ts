@@ -1,6 +1,6 @@
 import { lmsusers, students } from "../models/data-models/init-models";
 import { BadRequestException, UnauthorizedException } from "@nestjs/common";
-import md5 from "crypto-js/md5";
+import { verifyPassword } from "src/services/password.service";
 import { TokenBusiness, UserBusiness } from ".";
 import { sendverificationemail } from "src/services/email.service";
 import { StudentBusiness } from "./student.business";
@@ -27,7 +27,7 @@ export class AuthBusiness {
     if (!user) {
       throw new BadRequestException("User/Password not matching");
     }
-    if (user.lmsuserpasswordhash !== md5(password).toString()) {
+    if (!verifyPassword(password, user.lmsuserpasswordhash)) {
       throw new BadRequestException("User/Password not matching");
     }
     await this.verifyuser(user);
@@ -95,7 +95,7 @@ export class AuthBusiness {
       throw new BadRequestException("User/Password not matching");
     }
     if (
-      user.schooluserpasswordhash !== md5(password).toString() ||
+      !verifyPassword(password, user.schooluserpasswordhash) ||
       user.isdisabled ||
       user.isdeleted ||
       !user.schooluserstatus

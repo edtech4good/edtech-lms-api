@@ -20,7 +20,7 @@ import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
 import { SchoolBusiness } from "./school.business";
-import md5 from "crypto-js/md5";
+import { hashPassword } from "src/services/password.service";
 import { LmsUserToken } from "src/models/token.model";
 import { CountryBusiness } from "./country.business";
 import axios from "axios";
@@ -741,7 +741,7 @@ WHERE
       }
       // change password
       if(x.schooluserpasswordhash) {
-        user.schooluserpasswordhash = md5(x.schooluserpasswordhash).toString();
+        user.schooluserpasswordhash = hashPassword(x.schooluserpasswordhash);
         await user.save({fields: ['schooluserpasswordhash'], transaction});
       }
       // removed student

@@ -1,4 +1,4 @@
-import * as md5 from "md5";
+import { hashPassword } from "src/services/password.service";
 import { Op, Transaction, WhereOptions } from "sequelize";
 import {
   schoolusers,
@@ -39,7 +39,7 @@ export class TeacherBusiness {
     try {
       const su = await schoolusers.bulkCreate(
         teachers.map((x) => ({
-          schooluserpasswordhash: md5.default(x.teacheruserpassword),
+          schooluserpasswordhash: hashPassword(x.teacheruserpassword),
           schoolusername: x.teacherusername,
           schooluserrole: SchoolRole.TEACHER,
           isdisabled: false,
