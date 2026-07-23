@@ -22,6 +22,7 @@ import {
 import { AccessGuard } from "src/guards/access.guard";
 import { TokenType } from "src/models/enums";
 import { AuthBusiness, TokenBusiness, UserBusiness } from "../../business";
+import { SchoolBusiness } from "../../business/school.business";
 import { BusinessValidationInterceptor } from "../../interceptors/businessvalidation.interceptor";
 import { SchemaValidationInterceptor } from "../../interceptors/schemavalidation.interceptor";
 import { IRequest } from "../../models/IRequest";
@@ -128,9 +129,19 @@ export class AuthController {
       body.lmsusername,
       body.lmsuserpassword
     );
+    // schoolname on `students` is denormalized (no join in the login path);
+    // look the school row up here, immediately before token generation, so
+    // TokenBusiness stays IO-free. Missing row -> generateTeacherAuthToken
+    // defaults to uitheme 'kids' / schoolid null.
+    const school = userloggedinfo.schoolname
+      ? await new SchoolBusiness().getschoolbyname(userloggedinfo.schoolname)
+      : null;
 
     return {
-      data: await new TokenBusiness().generateTeacherAuthToken(userloggedinfo),
+      data: await new TokenBusiness().generateTeacherAuthToken(
+        userloggedinfo,
+        school
+      ),
       error: false,
     };
   }

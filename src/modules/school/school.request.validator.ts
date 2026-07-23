@@ -33,7 +33,8 @@ export const updateschool: RequestValidator = {
       .custom(emptyString("School Name"))
       .label("School Name"),
     countryid: joi.string().required().uuid().label("Country ID"),
-    curriculums: joi.array().items(joi.string()).required().label("Curriculums")
+    curriculums: joi.array().items(joi.string()).required().label("Curriculums"),
+    uitheme: joi.string().valid("kids", "corporate").optional().label("UI Theme"),
 
   }),
   params: joi.object().keys({

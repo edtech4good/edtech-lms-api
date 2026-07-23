@@ -7,6 +7,8 @@ export class SchoolRequest {
   countryid: string;
   @ApiProperty()
   curriculums: Array<string>;
+  @ApiProperty({ required: false, enum: ["kids", "corporate"] })
+  uitheme?: string;
 
   constructor() {
     this.schoolname = "";

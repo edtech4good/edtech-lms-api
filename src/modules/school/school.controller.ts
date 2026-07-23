@@ -67,6 +67,46 @@ import {
 @ApiBearerAuth()
 export class SchoolController {
 
+  // Unguarded on purpose: the mobile app needs branding (logo, display name,
+  // kids/corporate theme) before a user has logged in, to paint the login
+  // screen itself. No guard, no permission check. Declared before every
+  // ":param" GET route below (Nest/Express match in declaration order) so
+  // `/school/branding` isn't swallowed by `@Get(":schoolid")`. Always
+  // resolving to 200 (never 404) isn't an anti-enumeration measure — a
+  // 'corporate' vs 'kids' response already distinguishes real schools from
+  // unknown ones — it exists so the app never has to special-case a 404 and
+  // so any lookup failure fails open to the safe 'kids' default.
+  @Get("branding")
+  @ApiResponse({
+    status: 200,
+    description: "School branding fetched successfully",
+  })
+  @ApiQuery({ name: "schoolname", required: false, type: "string" })
+  @HttpCode(HttpStatus.OK)
+  async getBranding(
+    @Query("schoolname") schoolname: unknown
+  ): Promise<any> {
+    const defaultBranding = { uitheme: "kids", brandingconfig: null };
+    // Express parses `?schoolname[x]=1` into an object, not a string; that
+    // would reach Sequelize's `where` and throw. Anything that isn't a
+    // non-empty string skips the query entirely and fails open to the
+    // default rather than surfacing a 500.
+    if (typeof schoolname !== "string" || !schoolname) {
+      return { error: false, data: defaultBranding };
+    }
+    const school = await new SchoolBusiness().getschoolbyname(schoolname);
+    if (!school) {
+      return { error: false, data: defaultBranding };
+    }
+    return {
+      error: false,
+      data: {
+        uitheme: school.uitheme ?? "kids",
+        brandingconfig: school.brandingconfig ?? null,
+      },
+    };
+  }
+
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -318,7 +358,8 @@ export class SchoolController {
       schoolid: schoolid,
       schoolname: body.schoolname,
       countryid: body.countryid,
-      curriculums: body.curriculums
+      curriculums: body.curriculums,
+      uitheme: body.uitheme
     }, user);
     return {
       error: false,
