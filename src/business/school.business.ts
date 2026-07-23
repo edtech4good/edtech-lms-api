@@ -15,7 +15,7 @@ import { StudentBusiness } from "./student.business";
 export class SchoolBusiness {
   getschoolbyname = (schoolname: string) =>
     schools.findOne({
-      where: { schoolname },
+      where: { schoolname, isdeleted: false },
     });
 
   getallschools = () =>
@@ -106,7 +106,15 @@ export class SchoolBusiness {
       tempdt.curriculums = school.curriculums;
       tempdt.updated_at = new Date();
       tempdt.updated_by = user.lmsuserid;
-      await tempdt.save({ fields: ["schoolname", "countryid", "curriculums", "updated_at", "updated_by"] });
+      const fields: (keyof schoolsAttributes)[] = ["schoolname", "countryid", "curriculums", "updated_at", "updated_by"];
+      // uitheme is optional on this endpoint (branding/logo upload is a
+      // later slice) — only touch it, and only save the column, when the
+      // caller actually sent one.
+      if (school.uitheme !== undefined) {
+        tempdt.uitheme = school.uitheme;
+        fields.push("uitheme");
+      }
+      await tempdt.save({ fields });
       //await tempdt.reload();
       return tempdt;
     } else {

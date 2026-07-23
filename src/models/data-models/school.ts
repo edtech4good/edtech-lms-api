@@ -11,6 +11,8 @@ export interface schoolsAttributes {
   expectedcontribution?: number;
   expectedusage?: number;
   isdeleted?: Boolean;
+  uitheme?: string;
+  brandingconfig?: object | null;
   created_at?: Date;
   created_by?: string;
   updated_at?: Date;
@@ -21,7 +23,7 @@ export interface schoolsAttributes {
 
 export type schoolsPk = "schoolid";
 export type schoolsId = schools[schoolsPk];
-export type schoolsOptionalAttributes = "schoolid" | "isdeleted";
+export type schoolsOptionalAttributes = "schoolid" | "isdeleted" | "uitheme" | "brandingconfig";
 export type schoolsCreationAttributes = Optional<schoolsAttributes, schoolsOptionalAttributes>;
 
 export class schools extends Model<schoolsAttributes, schoolsCreationAttributes> implements schoolsAttributes {
@@ -32,6 +34,8 @@ export class schools extends Model<schoolsAttributes, schoolsCreationAttributes>
   expectedcontribution!: number;
   expectedusage!: number;
   isdeleted!: Boolean;
+  uitheme!: string;
+  brandingconfig!: object | null;
   created_at!: Date;
   created_by!: string;
   updated_at!: Date;
@@ -83,6 +87,16 @@ export class schools extends Model<schoolsAttributes, schoolsCreationAttributes>
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: 0
+      },
+      uitheme: {
+        type: DataTypes.STRING(16),
+        allowNull: false,
+        defaultValue: 'kids'
+      },
+      brandingconfig: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: null
       },
       created_at: {
         type: 'TIMESTAMP',

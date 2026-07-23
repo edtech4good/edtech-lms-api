@@ -8,6 +8,7 @@ import { Config, isLocalEnv } from "../config";
 import {
   lmsusers,
   lmsusersAttributes,
+  schools,
   students,
   tokens,
 } from "../models/data-models/init-models";
@@ -177,7 +178,10 @@ export class TokenBusiness {
     };
   };
 
-  generateTeacherAuthToken = async (user: students): Promise<LoginTokens> => {
+  generateTeacherAuthToken = async (
+    user: students,
+    school?: schools | null
+  ): Promise<LoginTokens> => {
     const userpayload = {
       studentfirstname: user.studentfirstname,
       studentlastname: user.studentlastname,
@@ -201,6 +205,14 @@ export class TokenBusiness {
       studentcurrentlevelid: user.studentcurrentlevelid,
       schoolusername: user.schooluser.schoolusername,
       schooluserrole: user.schooluser.schooluserrole,
+      // `schools` is looked up by the caller (schoolname is a denormalized
+      // column here, not a join) and passed in so this stays pure of IO.
+      // Missing school row -> default theme, no schoolid.
+      // `uitheme`/`schoolid` are display/theming claims only, derived from a
+      // denormalized name match (not a foreign key) — nothing must ever
+      // authorize on them.
+      uitheme: school?.uitheme ?? "kids",
+      schoolid: school?.schoolid ?? null,
     };
     const accessid = uuidv4();
     const accessToken = this.generateToken(
