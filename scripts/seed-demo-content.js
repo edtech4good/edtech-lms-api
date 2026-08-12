@@ -3,7 +3,7 @@
  * Demo content for the central LMS: one complete vertical slice, from a country
  * down to individual quiz questions, plus students and their progress.
  *
- * Usage: npm run seed:demo
+ * Usage: npm run seed:demo (requires ALLOW_DEMO_SEED=true)
  *
  * Why this exists: an empty database is a poor test bed. Two 500s were found on
  * the Students page precisely because nothing had ever run against real rows,
@@ -135,8 +135,8 @@ const QUESTIONS = ALL_QUESTIONS.filter((qq) => !PROTOTYPE_TEMPLATE_IDS.has(qq.t)
 const qid = (i) => `b0000000-0000-4000-8000-0000000001${String(i).padStart(2, "0")}`;
 
 async function main() {
-  if (process.env.NODE_ENV === "production") {
-    console.error("Refusing to run: NODE_ENV=production. This seeds demo content.");
+  if (process.env.ALLOW_DEMO_SEED !== "true") {
+    console.error("Refusing to run: set ALLOW_DEMO_SEED=true to seed demo data. This replaces the old NODE_ENV check so UAT re-seeds are explicit and prod can never be seeded by accident.");
     process.exit(1);
   }
   const user = process.env.DB_USER;
