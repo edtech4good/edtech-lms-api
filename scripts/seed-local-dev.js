@@ -3,14 +3,14 @@
  * Sets a known password on the seeded superadmin (see 20230306155558-superadmin)
  * so you can log in to a freshly migrated local database.
  *
- * Usage: npm run seed:local
- *        SUPERADMIN_PASSWORD='something-else' npm run seed:local
+ * Usage: ALLOW_LOCAL_DEV_SEED=true npm run seed:local
+ *        ALLOW_LOCAL_DEV_SEED=true SUPERADMIN_PASSWORD='something-else' npm run seed:local
  *
  * This used to be a migration (20260407120000-superadmin-local-dev-password).
  * That was wrong: `npm run db:migrate` is the same command in every
  * environment, so running it against production reset the superadmin password
  * to a value published in LOCAL_DEVELOPMENT.md. Dev credentials belong behind
- * an explicit opt-in command, the same way the Pi API does it with seed:demo.
+ * an explicit opt-in command, guarded by ALLOW_LOCAL_DEV_SEED=true.
  *
  * Hashing is unsalted MD5 because that is what business/auth.business.ts
  * compares against. Do not copy this scheme into anything new.
@@ -26,10 +26,8 @@ const SUPERADMIN_USER_ID = "5ec8814c-4390-40e3-8d93-828adca9aa08";
 const DEFAULT_PASSWORD = "LocalDev_Superadmin1";
 
 async function main() {
-  if (process.env.NODE_ENV === "production") {
-    console.error(
-      "Refusing to run: NODE_ENV=production. This script seeds development credentials.",
-    );
+  if (process.env.ALLOW_LOCAL_DEV_SEED !== "true") {
+    console.error("Refusing to run: set ALLOW_LOCAL_DEV_SEED=true to seed LOCAL DEV credentials. This script overwrites the superadmin password with the published dev value and must never run outside a local dev database.");
     process.exit(1);
   }
 
