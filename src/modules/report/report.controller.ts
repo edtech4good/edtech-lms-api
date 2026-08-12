@@ -10,6 +10,7 @@ import {
   Response,
   StreamableFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { ApiTags, ApiBearerAuth, ApiResponse, ApiBody, ApiParam, ApiQuery } from "@nestjs/swagger";
 import axios from "axios";
@@ -20,12 +21,14 @@ import { Config } from "src/config";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
+import { SchemaValidationInterceptor } from "src/interceptors";
 import { TokenType } from "src/models/enums";
 import { Permission } from "src/models/enums/permissions.enum";
 import { IMultiPaging } from "src/models/IPaging";
 import { TechDownTime } from "./models/ReportRequest";
 import { LmsUserToken } from "src/models/token.model";
 import { User } from "src/decorators/user.decorator";
+import { showallsyncrecords } from "./report.request.validator";
 
 @ApiTags("Report")
 @Controller("report")
@@ -368,6 +371,7 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_SYNC_RECORD)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @UseInterceptors(new SchemaValidationInterceptor(showallsyncrecords))
   async getSyncRecords(
     @Body() body: IMultiPaging,
     @User() user: LmsUserToken
