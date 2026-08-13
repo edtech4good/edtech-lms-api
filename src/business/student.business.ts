@@ -365,8 +365,8 @@ FROM
         INNER JOIN
     grades ON grades.gradeid = levels.gradeid
 WHERE
-    ss.studentid = '${studentid}' LIMIT 1`,
-      { type: QueryTypes.SELECT, raw: true }
+    ss.studentid = ? LIMIT 1`,
+      { type: QueryTypes.SELECT, raw: true, replacements: [studentid] }
     );
 
   getstudentquizstats = (studentid: string) =>
@@ -395,9 +395,9 @@ WHERE
           INNER JOIN
       grades ON grades.gradeid = levels.gradeid
   WHERE
-      studentid = '${studentid}'
+      studentid = ?
           AND sp.progresstype = 2;`,
-      { type: QueryTypes.SELECT, raw: true }
+      { type: QueryTypes.SELECT, raw: true, replacements: [studentid] }
     );
 
   getstudentpracticestats = (studentid: string) =>
@@ -426,9 +426,9 @@ WHERE
           INNER JOIN
       grades ON grades.gradeid = levels.gradeid
   WHERE
-      studentid = '${studentid}'
+      studentid = ?
           AND sp.progresstype = 1;`,
-      { type: QueryTypes.SELECT, raw: true }
+      { type: QueryTypes.SELECT, raw: true, replacements: [studentid] }
     );
 
   getstudentlevelstats = (studentid: string) =>
@@ -448,9 +448,9 @@ WHERE
           INNER JOIN
       grades ON grades.gradeid = levels.gradeid
   WHERE
-     studentid = '${studentid}' AND
+     studentid = ? AND
           sp.progresstype = 3;`,
-      { type: QueryTypes.SELECT, raw: true }
+      { type: QueryTypes.SELECT, raw: true, replacements: [studentid] }
     );
 
   getstudentaccess = async (students: Array<string>) => {
@@ -461,13 +461,12 @@ WHERE
       return [];
     }
 
+    const placeholders = students.map(() => "?").join(",");
     const data1 = await dbinstance
       .getdbinstance()
       .query(
-        `SELECT max(logintime) as logintime, userid FROM rpiuseraccess where userid in (${students
-          .map((x) => `'${x}'`)
-          .join()}) group by userid`,
-        { type: QueryTypes.SELECT, raw: true }
+        `SELECT max(logintime) as logintime, userid FROM rpiuseraccess where userid in (${placeholders}) group by userid`,
+        { type: QueryTypes.SELECT, raw: true, replacements: students }
       );
 
     // Login times held on the Pi cloud are supplementary: the local rows above
