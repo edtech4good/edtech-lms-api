@@ -1002,7 +1002,7 @@ export class ReportBusiness {
         }
         const syncrecords = await syncs.findAndCountAll(
             {
-                order, limit, offset,
+                where, order, limit, offset,
                 include: [
                     {
                         model: schoolusers,
