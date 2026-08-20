@@ -12,6 +12,7 @@ export interface questionsAttributes {
   questiontext?: string;
   questiondistractors?: object;
   questionfile?: object;
+  questionfeedback?: object;
   templatetypeid: number;
   isdeleted: boolean;
   questionstatus: boolean;
@@ -29,7 +30,7 @@ export interface questionsAttributes {
 
 export type questionsPk = "questionid";
 export type questionsId = questions[questionsPk];
-export type questionsOptionalAttributes = "questionid" | "questionheading" | "questionoptions" | "questiontext" | "questiondistractors" | "questionfile" | "isdeleted" | "questionstatus" | "questiontags" | "lastupdated";
+export type questionsOptionalAttributes = "questionid" | "questionheading" | "questionoptions" | "questiontext" | "questiondistractors" | "questionfile" | "questionfeedback" | "isdeleted" | "questionstatus" | "questiontags" | "lastupdated";
 export type questionsCreationAttributes = Optional<questionsAttributes, questionsOptionalAttributes>;
 
 export class questions extends Model<questionsAttributes, questionsCreationAttributes> implements questionsAttributes {
@@ -39,6 +40,7 @@ export class questions extends Model<questionsAttributes, questionsCreationAttri
   questiontext?: string;
   questiondistractors?: object;
   questionfile?: object;
+  questionfeedback?: object;
   templatetypeid!: number;
   isdeleted!: boolean;
   questionstatus!: boolean;
@@ -114,6 +116,10 @@ export class questions extends Model<questionsAttributes, questionsCreationAttri
         allowNull: true
       },
       questionfile: {
+        type: DataTypes.JSON,
+        allowNull: true
+      },
+      questionfeedback: {
         type: DataTypes.JSON,
         allowNull: true
       },

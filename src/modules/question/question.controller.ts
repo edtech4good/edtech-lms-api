@@ -174,6 +174,7 @@ export class QuestionController {
               data.questiondistractors
             ),
             questionfile: <FileMeta>data.questionfile,
+            questionfeedback: data.questionfeedback,
             questionheading: <QuestionHeading>data.questionheading,
             questiontext: data.questiontext,
             questiontags: [],

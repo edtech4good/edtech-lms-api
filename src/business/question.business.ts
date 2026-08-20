@@ -75,6 +75,7 @@ export class QuestionBusiness {
       oldQuestion.questionidentifier = tempquestion.questionidentifier;
       oldQuestion.questiontext = tempquestion.questiontext;
       oldQuestion.questionfile = tempquestion.questionfile;
+      oldQuestion.questionfeedback = tempquestion.questionfeedback;
       oldQuestion.templatetypeid = tempquestion.templatetypeid;
       oldQuestion.questioncorrectvalue = tempquestion.questioncorrectvalue;
       oldQuestion.lastupdated = new Date();

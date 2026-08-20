@@ -33,5 +33,7 @@ export class Question {
     questiontags: Array<string> = [];
     @ApiProperty()
     questioncorrectvalue: number = 0;
+    @ApiProperty()
+    questionfeedback?: object;
 }
 
