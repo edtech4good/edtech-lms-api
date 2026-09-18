@@ -21,10 +21,26 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return;
     }
     const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+    const isHttpException = exception instanceof HttpException;
+    const maskmessage = !Config.fortyk.api.debug && !isHttpException;
+    if (maskmessage) {
+      // The client only gets "Something went wrong" below, so the real
+      // message and stack need a home that survives production's logging
+      // setup — Logger.debug (used above) is dropped there. Log at error
+      // level, keyed by logid, so an operator can still find this.
+      Logger.error("Unhandled exception", {
+        logid,
+        message: errordetails?.message,
+        stack: errordetails?.stack,
+      });
+    }
+    const clientmessage = maskmessage
+      ? "Something went wrong"
+      : errordetails?.response?.errormessage || errordetails.message;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const errorresponse: IErrorResponse = {
       error: true,
-      errormessage: errordetails?.response?.errormessage || errordetails.message,
+      errormessage: clientmessage,
       data: false,
     };
     if (Config.fortyk.api.debug && errordetails.stack && !isvalidationError) {

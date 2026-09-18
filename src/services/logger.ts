@@ -20,6 +20,12 @@ import { Console } from 'winston/lib/winston/transports';
 const debugfilter = format(info => (info.level === 'debug' ? info : false));
 const infoFilter = format(info => (info.level === 'info' || info.level === 'warn' ? info : false));
 const errorFilter = format(info => (info.level === 'error' ? info : false));
+// consolelogger's single transport used infoFilter, which drops 'error' (and
+// 'debug') entirely — the only logger type this app actually builds
+// (LOGGERTYPE is hardcoded to CONSOLE in config.ts) had no way to record an
+// error-level log anywhere. Pass info/warn/error through; keep debug out,
+// matching the other logger types' non-debug transports.
+const consoleFilter = format(info => (info.level === 'info' || info.level === 'warn' || info.level === 'error' ? info : false));
 const elasticsearchlogger = (
   LOGGERCONNECTIONSTRING: string,
   APPLICATIONNAME: string
@@ -257,11 +263,11 @@ const consolelogger = (
     }),
   ];
 
-  // Separate warn/error
+  // info/warn/error all go to the same console transport; debug stays out.
   const transports = [
     new Console({
       format: format.combine(
-        infoFilter(),
+        consoleFilter(),
         format.json(),
         format.timestamp(),
         format.errors({
