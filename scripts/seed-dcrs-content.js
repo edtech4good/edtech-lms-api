@@ -26,15 +26,20 @@
  * Idempotent: fixed UUIDs plus INSERT IGNORE, so re-running changes nothing.
  */
 const path = require("path");
-const crypto = require("crypto");
 const dotenv = require("dotenv");
 const mysql = require("mysql2/promise");
+const bcryptjs = require("bcryptjs");
+const md5 = require("crypto-js/md5");
 
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
-const md5 = (s) => crypto.createHash("md5").update(s).digest("hex");
 const DEMO_PASSWORD = "demo";
-const PASSWORD_HASH = md5(DEMO_PASSWORD);
+// Stored form must be bcrypt(md5(password)), matching
+// src/services/password.service.ts hashPassword() exactly (same bcryptjs and
+// crypto-js/md5 packages, same BCRYPT_ROUNDS) — that file's verifyPassword()
+// now rejects a bare md5 hash, so a raw md5 constant here seeds an account
+// that can never log in.
+const PASSWORD_HASH = bcryptjs.hashSync(md5(DEMO_PASSWORD).toString(), 10);
 
 // Identical to edtech-lms-rpi-api/scripts/seed-dcrs-content.js. Keep them in
 // step: same ids for the entities that exist in both databases.

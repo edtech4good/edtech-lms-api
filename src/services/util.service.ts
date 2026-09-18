@@ -19,10 +19,13 @@ export const jwtoptionsbuilder = (tokenformat: TokenType) => {
     case TokenType.ACCESS:
       return {
         secretOrKey: Config.fortyk.api.applicationsecret,
+        // No query-param extractor: an access token in a URL ends up in
+        // access/proxy logs, browser history and Referer headers. Both the
+        // Angular UI and the Expo app send it as the Authorization header
+        // only.
         jwtFromRequest: ExtractJwt.fromExtractors([
           ExtractJwt.fromAuthHeaderAsBearerToken(),
           ExtractJwt.fromBodyField(`accesstoken`),
-          ExtractJwt.fromUrlQueryParameter(`accesstoken`),
         ]),
       };
     case TokenType.CHANGEPASSWORD:
@@ -42,18 +45,24 @@ export const jwtoptionsbuilder = (tokenformat: TokenType) => {
     case TokenType.REFRESH:
       return {
         secretOrKey: Config.fortyk.api.applicationsecret,
+        // Query extractor kept because the UI sends it this way
+        // (auth.service.ts refreshtoken(): POST auth/refreshtoken?refreshtoken=...);
+        // moving it to the body would be a UI change. No client (UI or Expo)
+        // sends it as a body field, so that extractor is dropped.
         jwtFromRequest: ExtractJwt.fromExtractors([
-          ExtractJwt.fromBodyField(`refreshtoken`),
           ExtractJwt.fromUrlQueryParameter(`refreshtoken`),
         ]),
       };
     case TokenType.RPIACCESS:
       return {
         secretOrKey: Config.fortyk.api.rpi.RPIsecret,
+        // No query-param extractor: no route uses AccessGuard(TokenType.RPIACCESS)
+        // today, so there's no client to preserve a channel for, and leaving it
+        // in would silently reopen the URL-token path the ACCESS case just closed
+        // for whichever route wires this up first.
         jwtFromRequest: ExtractJwt.fromExtractors([
           ExtractJwt.fromAuthHeaderAsBearerToken(),
           ExtractJwt.fromBodyField(`accesstoken`),
-          ExtractJwt.fromUrlQueryParameter(`accesstoken`),
         ]),
       };
   }

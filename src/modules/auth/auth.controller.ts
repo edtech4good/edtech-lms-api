@@ -19,6 +19,7 @@ import {
   ApiTags,
   getSchemaPath,
 } from "@nestjs/swagger";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { AccessGuard } from "src/guards/access.guard";
 import { TokenType } from "src/models/enums";
 import { AuthBusiness, TokenBusiness, UserBusiness } from "../../business";
@@ -89,6 +90,8 @@ export class AuthController {
       AuthBusinessisNotUserEmailExistsValidator,
     ])
   )
+  @UseGuards(ThrottlerGuard)
+  @Throttle(10, 60)
   @HttpCode(HttpStatus.OK)
   async login(@Body() body: LoginRequestBody): Promise<LoginResponseModel> {
     const userloggedinfo = await new AuthBusiness().login(
@@ -121,6 +124,8 @@ export class AuthController {
     description: "Server error",
   })
   @UseInterceptors(new SchemaValidationInterceptor(teacherlogin))
+  @UseGuards(ThrottlerGuard)
+  @Throttle(10, 60)
   @HttpCode(HttpStatus.OK)
   async teacherlogin(
     @Body() body: LoginRequestBody
@@ -328,6 +333,8 @@ export class AuthController {
       AuthBusinessisNotUserEmailExistsValidator,
     ])
   )
+  @UseGuards(ThrottlerGuard)
+  @Throttle(5, 60)
   @HttpCode(HttpStatus.OK)
   async forgotpassword(
     @Body() body: EmailVerificationRequestBody

@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { APP_INTERCEPTOR } from "@nestjs/core";
 import { PassportModule } from "@nestjs/passport";
 import { MulterModule } from "@nestjs/platform-express";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { MorganInterceptor, MorganModule } from "nest-morgan";
 import { AppController } from "./app.controller";
 import { Config } from "./config";
@@ -63,6 +64,9 @@ const providers = () => {
 @Module({
   imports: [
     MorganModule,
+    // Applied per-route (login, school/login, forgotpassword) via
+    // @UseGuards(ThrottlerGuard) in AuthController, not as a global APP_GUARD.
+    ThrottlerModule.forRoot({ ttl: 60, limit: 10 }),
     AuthModule,
     SubjectModule,
     CurriculumModule,
