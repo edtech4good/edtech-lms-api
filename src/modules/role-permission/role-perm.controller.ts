@@ -186,9 +186,9 @@ export class RolePermissionController {
   // POST `create-one-permission/:key`. They created permission rows guarded
   // only by AccessGuard with no role (any authenticated staff account) plus a
   // `:key` that was ADD_PERMISSIONS_KEY — a constant committed to this public
-  // repo (md5("40kplus")), so no protection at all. createAllPerms is fully
-  // replaced by migrations 20260407120500 + 20260716140000, which run the same
-  // generator idempotently in every environment as the provisioning step.
+  // repo, so no protection at all. createAllPerms is fully replaced by
+  // migrations 20260407120500 + 20260716140000, which run the same generator
+  // idempotently in every environment as the provisioning step.
   // Worse, createOnePerm let any staff account add an arbitrary permission row,
   // which inflates COUNT(*) of permissions and so strips the `superadmin`
   // wildcard (awarded by count) from every Super Admin. No client called any of
