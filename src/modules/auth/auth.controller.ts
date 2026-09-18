@@ -214,7 +214,10 @@ export class AuthController {
   async verifyuserbyemailtoken(
     @Query(`verifyemailtoken`) VERIFYEMAILTOKEN: string
   ): Promise<EmailverficationResponse> {
-    const payload = await new TokenBusiness().verifyToken(VERIFYEMAILTOKEN);
+    const payload = await new TokenBusiness().verifyToken(
+      VERIFYEMAILTOKEN,
+      TokenType.VERIFYEMAIL
+    );
     if (!payload) {
       return {
         data: false,
@@ -374,7 +377,10 @@ export class AuthController {
     @Body() body: ChangePasswordBody,
     @Query("changepasswordtoken") CHANGEPASSWORDTOKEN: string
   ): Promise<EmailverficationResponse> {
-    const payload = await new TokenBusiness().verifyToken(CHANGEPASSWORDTOKEN);
+    const payload = await new TokenBusiness().verifyToken(
+      CHANGEPASSWORDTOKEN,
+      TokenType.CHANGEPASSWORD
+    );
     if (!payload) {
       return {
         data: false,
@@ -414,7 +420,10 @@ export class AuthController {
     @Query("changepasswordtoken") CHANGEPASSWORDTOKEN: string
   ): Promise<EmailverficationResponse> {
     return {
-      data: (await new TokenBusiness().verifyToken(CHANGEPASSWORDTOKEN))
+      data: (await new TokenBusiness().verifyToken(
+        CHANGEPASSWORDTOKEN,
+        TokenType.CHANGEPASSWORD
+      ))
         ? true
         : false,
       error: false,

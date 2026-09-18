@@ -1,6 +1,7 @@
 import { lmsusers, students } from "../models/data-models/init-models";
 import { BadRequestException, UnauthorizedException } from "@nestjs/common";
 import { verifyPassword } from "src/services/password.service";
+import { TokenType } from "src/models/enums";
 import { TokenBusiness, UserBusiness } from ".";
 import { sendverificationemail } from "src/services/email.service";
 import { StudentBusiness } from "./student.business";
@@ -43,7 +44,10 @@ export class AuthBusiness {
   refreshAuth = async (refreshToken: string) => {
     try {
       const tokenbusiness = new TokenBusiness();
-      const tokenpayload = await tokenbusiness.verifyToken(refreshToken);
+      const tokenpayload = await tokenbusiness.verifyToken(
+        refreshToken,
+        TokenType.REFRESH
+      );
       if (!tokenpayload) {
         throw new BadRequestException("");
       }
@@ -61,7 +65,8 @@ export class AuthBusiness {
   changePassword = async (changePasswordToken: string, newPassword: string) => {
     try {
       const tokenpayload = await new TokenBusiness().verifyToken(
-        changePasswordToken
+        changePasswordToken,
+        TokenType.CHANGEPASSWORD
       );
       if (!tokenpayload) {
         throw new BadRequestException("");
@@ -78,7 +83,8 @@ export class AuthBusiness {
   verifyEmail = async (verifyEmailToken: string) => {
     try {
       const tokenpayload = await new TokenBusiness().verifyToken(
-        verifyEmailToken
+        verifyEmailToken,
+        TokenType.VERIFYEMAIL
       );
       if (!tokenpayload) {
         throw new BadRequestException("");
