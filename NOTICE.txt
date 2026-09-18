@@ -1,0 +1,16 @@
+Third-party notices for edtech-lms-api. The following Apache-2.0 dependencies ship NOTICE files, reproduced here as the licence requires.
+
+aws-sdk 2.983.0
+
+AWS SDK for JavaScript
+Copyright 2012-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+This product includes software developed at
+Amazon Web Services, Inc. (http://aws.amazon.com/).
+
+import-in-the-middle 1.4.2
+
+Datadog import-in-the-middle
+Copyright 2021 Datadog, Inc.
+
+This product includes software developed at Datadog (https://www.datadoghq.com/).
