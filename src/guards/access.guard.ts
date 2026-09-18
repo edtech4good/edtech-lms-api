@@ -7,22 +7,14 @@ import { TokenType } from "./../models/enums/tokentype.enum";
 const AccessGuard = (tokentype: TokenType, ...role: Array<Role>) =>
   mixin(
     class LocalAccessGuard extends AuthGuard(`jwt-${tokentype}`) {
-      _request: Request | undefined;
-      canActivate(context: ExecutionContext) {
-        // Add your custom authentication logic here
-        // for example, call super.logIn(request) to establish a session.
-        const ctx = context.switchToHttp();
-        this._request = ctx.getRequest();
-        return super.canActivate(context);
-      }
-
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      handleRequest(err: any, user: any, _info: any) {
+      handleRequest(err: any, user: any, _info: any, context: ExecutionContext) {
         // You can throw an exception based on either "info" or "err" arguments
 
+        const request: Request = context.switchToHttp().getRequest();
         if (err || !user) {
           if (
-            this._request?.headers["authorization"] ===
+            request?.headers["authorization"] ===
               `Bearer ${Config.fortyk.api.applicationapikey}` &&
             role.find((x) => x === Role.apikey)
           ) {
