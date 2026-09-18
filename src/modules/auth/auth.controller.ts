@@ -22,6 +22,7 @@ import {
 } from "@nestjs/swagger";
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { AccessGuard } from "src/guards/access.guard";
+import { Logger } from "src/config";
 import { TokenType } from "src/models/enums";
 import { AuthBusiness, TokenBusiness, UserBusiness } from "../../business";
 import { SchoolBusiness } from "../../business/school.business";
@@ -85,12 +86,7 @@ export class AuthController {
     status: 500,
     description: "Server error",
   })
-  @UseInterceptors(
-    new SchemaValidationInterceptor(login),
-    new BusinessValidationInterceptor([
-      AuthBusinessisNotUserEmailExistsValidator,
-    ])
-  )
+  @UseInterceptors(new SchemaValidationInterceptor(login))
   @UseGuards(ThrottlerGuard)
   @Throttle(10, 60)
   @HttpCode(HttpStatus.OK)
@@ -328,29 +324,35 @@ export class AuthController {
     status: 500,
     description: "Server error",
   })
-  @UseInterceptors(
-    new SchemaValidationInterceptor(sendverifyemail),
-    new BusinessValidationInterceptor([
-      AuthBusinessisNotUserEmailExistsValidator,
-    ])
-  )
+  @UseInterceptors(new SchemaValidationInterceptor(sendverifyemail))
   @UseGuards(ThrottlerGuard)
   @Throttle(5, 60)
   @HttpCode(HttpStatus.OK)
   async forgotpassword(
     @Body() body: EmailVerificationRequestBody
   ): Promise<EmailResponse> {
+    // Same response whether or not the email exists, so the client cannot
+    // enumerate accounts (edtech4good/edtech-lms-api#38). Only send the
+    // email when the account is real. Token mint + send are fired without
+    // awaiting them, so the response time does not itself distinguish a
+    // known email (which used to await a ~2.5s SMTP round trip) from an
+    // unknown one (review finding B2); failures are logged, not thrown.
     const user = await new UserBusiness().getuserbyemail(body.lmsusername);
-    if (!user) {
-      return {
-        data: "User info not found",
-        error: false,
-      };
+    if (user) {
+      new TokenBusiness()
+        .generateChangePasswordToken(user)
+        .then((token) => sendchangepasswordemail(body.lmsusername, token))
+        .catch((error) => {
+          Logger.error("Forgot-password email failed to send", {
+            username: body.lmsusername,
+            error,
+          });
+        });
+    } else {
+      Logger.info("Forgot-password requested for unknown email", {
+        username: body.lmsusername,
+      });
     }
-    await sendchangepasswordemail(
-      body.lmsusername,
-      await new TokenBusiness().generateChangePasswordToken(user)
-    );
     return {
       data: "Password reset mail sent.",
       error: false,
