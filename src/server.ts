@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json } from 'express';
 import helmet from 'helmet';
@@ -18,8 +19,17 @@ async function bootstrap() {
 */
 
   Logger.info('Connected to DB');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   //app.setGlobalPrefix("api");
+  // UAT runs behind Caddy. Without trusting that hop, every request's socket
+  // peer is the proxy, so ThrottlerGuard (which keys on req.ip) rate-limits
+  // the proxy instead of the client, and everyone shares one bucket. Off by
+  // default: only set TRUST_PROXY=1 when the app is actually behind exactly
+  // one reverse proxy (UAT/prod Caddy) — set it here with nothing in front and
+  // a spoofed X-Forwarded-For lets a client pick its own rate-limit bucket.
+  if (process.env.TRUST_PROXY) {
+    app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
+  }
   // Swagger (/docs and /docs-json) is a full map of the API surface — every
   // route, param and DTO. Useful locally, an anonymous recon aid in production.
   // Mounted only in local dev, gated on the same isLocalEnv the secret guard
