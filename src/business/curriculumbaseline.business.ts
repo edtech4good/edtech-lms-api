@@ -20,7 +20,7 @@ export class CurriculumBaseLineBusiness {
       isdeleted: false,
     };
     if(old) {
-      where.created_by = null;
+      where.created_by = { [Op.is]: null };
       option.attributes = ['curriculumbaselineid', 'curriculumid', 'baselineid'];
     }
     option.where = where;
