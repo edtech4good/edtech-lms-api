@@ -95,7 +95,7 @@ export class TokenBusiness {
       );
     });
 
-  verifyTokenBody = (token: string): Promise<any> =>
+  verifyTokenBody = (token: string, expectedType: TokenType): Promise<any> =>
     new Promise((resolve) => {
       verify(
         token,
@@ -105,7 +105,7 @@ export class TokenBusiness {
             resolve(false);
           } else {
             const tokenDoc = await tokens.findOne({
-              where: { token: decoded.jti },
+              where: { token: decoded.jti, tokentype: expectedType },
             });
             if (!tokenDoc) {
               resolve(false);

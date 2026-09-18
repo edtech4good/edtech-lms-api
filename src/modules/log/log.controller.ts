@@ -19,6 +19,7 @@ import {
   ApiTags,
   getSchemaPath,
 } from "@nestjs/swagger";
+import { UploadLimits } from "src/constants/upload-limits";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { TokenType } from "src/models/enums";
@@ -48,6 +49,10 @@ export class LogController {
     status: 500,
     description: "Server error",
   })
+  @ApiResponse({
+    status: 413,
+    description: "File too large",
+  })
   @ApiBody({
     schema: {
       type: "object",
@@ -59,7 +64,9 @@ export class LogController {
       },
     },
   })
-  @UseInterceptors(FileInterceptor("importfile"))
+  @UseInterceptors(
+    FileInterceptor("importfile", { limits: UploadLimits.LOG_IMPORT })
+  )
   // @RequirePermissions(Permission.UPDATE_IMPORT, Permission.CREATE_IMPORT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiQuery({ name: "offline", required: false, type: Boolean })
