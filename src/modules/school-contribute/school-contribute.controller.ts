@@ -17,6 +17,8 @@ import { IPaging } from 'src/models/IPaging';
 import { CheckPermissionsGuard } from 'src/guards/checkPermission.guard';
 import { ReportDownload } from 'src/business/report.download';
 import { json2csv } from 'json-2-csv';
+import { RequirePermissions } from 'src/decorators/requirePermissions.decorator';
+import { Permission } from 'src/models/enums/permissions.enum';
 
 @ApiExtraModels(SchoolContributeBase)
 @ApiExtraModels(SchoolContributeCreateResponse)
@@ -40,7 +42,8 @@ export class SchoolContributeController {
     new BusinessValidationInterceptor([CreateSchoolContribute]),
 )
 @ApiBody({type: SchoolContributeRequest})
-@UseGuards(AccessGuard(TokenType.ACCESS))
+@RequirePermissions(Permission.CREATE_FEES_COLLECTION)
+@UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
 async createSchoolContribute(
     @Body() body: SchoolContributeRequest,
@@ -116,7 +119,8 @@ async getall(
     new SchemaValidationInterceptor(updateschoolcontribute),
     new BusinessValidationInterceptor([EditSchoolContribute])
 )
-@UseGuards(AccessGuard(TokenType.ACCESS))
+@RequirePermissions(Permission.UPDATE_FEES_COLLECTION)
+@UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
 @ApiParam({ name: `schoolid`, type: "string", required: true })
 async update(
@@ -149,7 +153,8 @@ async update(
     new SchemaValidationInterceptor(updateschooldashboard),
     new BusinessValidationInterceptor([EditSchoolContribute])
 )
-@UseGuards(AccessGuard(TokenType.ACCESS))
+@RequirePermissions(Permission.UPDATE_FEES_COLLECTION)
+@UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
 @ApiParam({ name: `schoolcontributeid`, type: "string", required: true })
 async updateschoolcontribute(
@@ -182,7 +187,8 @@ async updateschoolcontribute(
   new SchemaValidationInterceptor(deleteschoolcontribute),
   new BusinessValidationInterceptor([DeleteSchoolContribute])
 )
-@UseGuards(AccessGuard(TokenType.ACCESS))
+@RequirePermissions(Permission.DELETE_FEES_COLLECTION)
+@UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
 @ApiParam({ name: `schoolid`, type: "string", required: true })
 async delete(
@@ -210,7 +216,8 @@ async delete(
   new SchemaValidationInterceptor(schoolcontributeid),
   new BusinessValidationInterceptor([DeleteSchoolContributeId])
 )
-@UseGuards(AccessGuard(TokenType.ACCESS))
+@RequirePermissions(Permission.DELETE_FEES_COLLECTION)
+@UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
 @ApiParam({ name: `schoolcontributeid`, type: "string", required: true })
 async deleteschoolcontribute(
@@ -379,7 +386,11 @@ async getSchool(
   status: 500,
   description: "Server error",
 })
-@UseGuards(AccessGuard(TokenType.ACCESS))
+// VIEW_FEES_COLLECTION and VIEW_SCHOOL_CONTRIBUTION are cross-wired in the
+// enum (each holds the other's string) and granted identically to Admin,
+// Teacher and Super Admin, so this has no behavioural effect either way.
+@RequirePermissions(Permission.VIEW_FEES_COLLECTION)
+@UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
 @ApiBody({required: false, type: date })
 async downloadOfflineClassLevelQuizzes(

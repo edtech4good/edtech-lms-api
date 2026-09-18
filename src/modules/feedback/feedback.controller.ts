@@ -34,8 +34,8 @@ export class FeedbackController {
         description: "Server error",
     })
     @ApiBody({ type: FeedbackRequest })
-    // @RequirePermissions(Permission.CREATE_COUNTRY)
-    @UseGuards(AccessGuard(TokenType.ACCESS))
+    @RequirePermissions(Permission.CREATE_FEEDBACK)
+    @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
     @HttpCode(HttpStatus.OK)
     async create(
         @Body() body: FeedbackRequest,

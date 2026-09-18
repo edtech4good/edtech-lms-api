@@ -304,6 +304,12 @@ export class LevelQuizQuestionController {
     new SchemaValidationInterceptor(updatestatuslevelquizquestion),
     new BusinessValidationInterceptor([DeleteLevelQuizQuestion])
   )
+  // No UPDATE_LEVEL_QUIZ_QUESTION exists. setlesson rebinds an existing row's
+  // lessonid (business.setlesson -> tempdt.save({ fields: ['lessonid'] })),
+  // the same shape as orderquizquestion's row-field rebind above — so it
+  // reuses REORDER_LEVEL_QUIZ_QUESTION rather than CREATE_LEVEL_QUIZ_QUESTION,
+  // which gates inserting a brand-new row.
+  @RequirePermissions(Permission.REORDER_LEVEL_QUIZ_QUESTION)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `levelquizquestionid`, type: () => String, required: true })
