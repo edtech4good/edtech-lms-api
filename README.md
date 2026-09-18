@@ -1,186 +1,120 @@
 # EdTech LMS API
 
-A comprehensive Learning Management System API built with NestJS, designed for educational technology applications. This API provides a robust backend for managing educational content, student progress, assessments, and more.
+This is the central API for an offline-first learning management system built for classrooms in Cambodia. It runs in the cloud and holds the source of truth: schools, users, curriculum, quiz content and the student logs that come back from classrooms. It is a NestJS app on MySQL, with Sequelize for the data layer, JWT for auth, S3 for media and SMTP for email.
 
-## In the full system
+## How it fits with the other repos
 
-This is the **central (online) API**. Classroom Pis run [**edtech-lms-rpi-api**](../edtech-lms-rpi-api). See [**ARCHITECTURE.md**](../ARCHITECTURE.md) for sync flows and [**docs/**](../docs/README.md) for legacy guides.
+The system is seven repos under [github.com/edtech4good](https://github.com/edtech4good). Three matter from here:
 
-## 🚀 Features
+- [edtech-lms-ui](https://github.com/edtech4good/edtech-lms-ui), the Angular web app for admins, teachers and students. It talks to this API.
+- [edtech-lms-rpi-api](https://github.com/edtech4good/edtech-lms-rpi-api), the classroom API. It runs on a Raspberry Pi, or any Linux box, on the school's own network. Content goes from here to there and student logs come back.
+- [edtech-expo](https://github.com/edtech4good/edtech-expo), the student app for phones, tablets and web. It reads lessons from the classroom API and reaches this one for content sync and school login.
 
-- **User Management**: Authentication, authorization, and role-based access control
-- **Course Management**: Create and manage courses, lessons, and educational content
-- **Student Progress Tracking**: Monitor student learning progress and performance
-- **Assessment System**: Quizzes, tests, and evaluation tools
-- **File Management**: Upload and manage educational resources with AWS S3 integration
-- **Multi-tenant Support**: Support for multiple schools and organizations
-- **RESTful API**: Well-documented API with Swagger/OpenAPI documentation
-- **Database Migrations**: Sequelize-based database management
-- **Email Integration**: SMTP support for notifications and communications
+Content moves in two directions:
 
-## 🛠️ Technology Stack
+1. Cloud to classroom. `GET /sync/content` builds a curriculum zip. A client can download it and `PUT` it to the classroom API at `/import/master`, or this server can push it itself with `POST /sync/cloud`, which sends the zip to `{RPI_CLOUD}/import/master` using `SERVER_SYNC_KEY`.
+2. Classroom to cloud. The classroom API serves `GET /export/log`. A client downloads that zip and sends it here with `PUT /log/import` as a multipart upload in the `importfile` field.
 
-- **Framework**: NestJS (Node.js)
-- **Database**: MySQL with Sequelize ORM
-- **Authentication**: JWT (JSON Web Tokens)
-- **File Storage**: AWS S3
-- **Email**: SMTP integration
-- **Documentation**: Swagger/OpenAPI
-- **Language**: TypeScript
+Teachers and school accounts log in here with `POST /auth/school/login`. Students log in against the classroom API. Each user gets one access token at a time, so logging in from a second place, including with `curl`, ends the first session.
 
-## 📋 Prerequisites
+## What you need
 
-- Node.js (v14 or higher)
-- MySQL database (v5.7 or higher)
-- AWS S3 bucket (for file storage)
-- SMTP server (for email functionality)
+- Node 20. The deploy image is `node:20-alpine`. Node 20 reached end of life in April 2026, so expect this to move to Node 22.
+- MySQL 8.0
+- An S3 bucket for media, or an S3-compatible endpoint
+- An SMTP account if you want email to actually send. The app starts without one.
 
-## 🚀 Quick Start
-
-### 1. Get the code
-
-Clone or copy this repository into your workspace (see [**ARCHITECTURE.md**](../ARCHITECTURE.md) for sibling repos).
-
-### 2. Install Dependencies
+## Running it locally
 
 ```bash
 npm install
-```
-
-### 3. Environment Configuration
-
-Copy the example environment file and configure your settings:
-
-```bash
 cp env.example .env
+npm run db:migrate
+npm run start:dev
 ```
 
-Edit `.env` with your configuration:
+The API listens on port 3000. Swagger is at http://localhost:3000/docs.
+
+Configuration is read in `src/config.ts`. Every setting has a flat environment variable, and the whole block can also arrive as one JSON value in `FORTYKAPICONFIG`, which is how the deployed containers get it. The flat variables are easier for local work:
 
 ```env
-# Database Configuration
+PORT=3000
 DB_HOST=localhost
 DB_PORT=3306
 DB_NAME=edtech_lms
 DB_USER=your-db-user
 DB_PASSWORD=your-db-password
 
-# JWT Configuration
-APPLICATION_SECRET=your-jwt-secret-here
+APPLICATION_SECRET=your-jwt-secret
 
-# AWS Configuration
 AWS_ACCESS_KEY_ID=your-aws-access-key
 AWS_SECRET_ACCESS_KEY=your-aws-secret-key
 AWS_S3_BUCKET=your-s3-bucket-name
+AWS_ENDPOINT=https://s3.amazonaws.com
 
-# SMTP Configuration
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=your-email@gmail.com
+SMTP_USER=your-email@example.com
 SMTP_PASS=your-email-password
+SMTP_FROM=your-email@example.com
 
-# Pi sync (optional; also configurable via FORTYKAPICONFIG JSON — see src/config.ts)
-# RPI_CLOUD=https://your-pi-or-edge-host
-# SERVER_SYNC_KEY=Bearer-or-token-used-for-server-to-server-import
+# Only needed if this server pushes content to a classroom API itself
+RPI_CLOUD=https://classroom-api.example.com
+SERVER_SYNC_KEY=a-token-the-classroom-api-also-knows
 ```
 
-### 4. Database Setup
+`env.example` has the full list. Treat `SERVER_SYNC_KEY`, `RPI_SECRET` and `APPLICATION_SECRET` as secrets.
 
-Create your MySQL database and run migrations:
+## Seeding a database you can log in to
+
+The migrations create a superadmin whose password you don't know, and no content. Three scripts fix that. Each refuses to run without an explicit opt-in flag, so a migrate-and-seed habit can't touch production by accident.
 
 ```bash
-npm run db:migrate
+# Set a known password on the seeded superadmin
+ALLOW_LOCAL_DEV_SEED=true npm run seed:local
+
+# Synthetic demo content: one country down to quiz questions, plus students and their progress
+ALLOW_DEMO_SEED=true npm run seed:demo
+
+# A real client curriculum, loaded under a corporate-themed school
+ALLOW_DEMO_SEED=true npm run seed:dcrs
 ```
 
-### 5. Start the Development Server
+The demo and client seeds use fixed IDs that match the same-named seeds in edtech-lms-rpi-api. Seed both databases and they look the way they would after a real sync.
 
-```bash
-npm run start:dev
-```
+## Scripts
 
-The API will be available at `http://localhost:3000`
+- `npm run start:dev` runs Nest in watch mode.
+- `npm run build` then `npm start` (or `npm run start:prod`, same thing) is the production path. The build lands in `build/` and both run `build/server.js`.
+- `npm run db:migrate` runs the Sequelize migrations.
+- `npm run lint` runs ESLint with autofix. `npm run format` runs Prettier.
 
-## 📚 API Documentation
+There is no unit test suite in this repo. The end-to-end tests that exercise this API live in [edtech-lms-ui](https://github.com/edtech4good/edtech-lms-ui) under `e2e/` and run with Playwright against a local stack.
 
-Swagger UI is at **`/docs`** (default: `http://localhost:3000/docs`).
-
-## Sync with Raspberry Pi (summary)
-
-- **`GET /sync/content`** — download curriculum zip (used by clients such as Expo with `EXPO_PUBLIC_SYNC_URL`).
-- **`POST /sync/cloud`** — server-side push of that zip to **`{RPI_CLOUD}/import/master`** using `SERVER_SYNC_KEY` (see `src/modules/sync/sync.controller.ts`).
-- **`PUT /log/import`** — ingest student log zip from the Pi / tablet pipeline (multipart `importfile`).
-
-Details: [**ARCHITECTURE.md**](../ARCHITECTURE.md) § Sync playbook.
-
-## 🗂️ Project Structure
+## Layout
 
 ```
 src/
-├── business/          # Business logic services
-├── config/           # Configuration files
-├── db/              # Database models and migrations
-├── decorators/      # Custom decorators
-├── filters/         # Exception filters
-├── guards/          # Authentication guards
-├── interceptors/    # Request/response interceptors
-├── middlewares/     # Custom middlewares
-├── models/          # Data models and interfaces
-├── modules/         # Feature modules
-├── pipes/           # Validation pipes
-├── services/        # Core services
-└── validators/      # Input validation schemas
+├── business/       # Business logic
+├── config/         # Config validation
+├── db/             # Sequelize models and migrations
+├── decorators/
+├── filters/        # Exception filters
+├── guards/         # Auth guards
+├── interceptors/
+├── middlewares/
+├── models/         # Types and interfaces
+├── modules/        # Feature modules (controllers live here)
+├── pipes/
+├── services/
+└── validators/
+scripts/            # Seed scripts
 ```
 
-## 🧪 Testing
+## Contributing
 
-```bash
-# Run unit tests
-npm test
+See [CONTRIBUTING.md](CONTRIBUTING.md). One thing it does not say: this repo and edtech-lms-rpi-api share a lot of code by copy rather than by package. If you fix something here, check whether the classroom API has the same bug. It usually does.
 
-# Run e2e tests
-npm run test:e2e
+## License and support
 
-# Run test coverage
-npm run test:cov
-```
-
-## 🏗️ Building for Production
-
-```bash
-# Build the application
-npm run build
-
-# Start production server
-npm run start:prod
-```
-
-## 📝 Available Scripts
-
-- `npm run start` - Start the application
-- `npm run start:dev` - Start in development mode with hot reload
-- `npm run start:debug` - Start in debug mode
-- `npm run build` - Build the application
-- `npm run test` - Run unit tests
-- `npm run test:e2e` - Run end-to-end tests
-- `npm run test:cov` - Run tests with coverage
-- `npm run lint` - Run ESLint
-- `npm run format` - Format code with Prettier
-- `npm run db:migrate` - Run database migrations
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to contribute to this project.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-If you encounter any issues or have questions, use your team’s issue tracker or internal docs.
-
-## 🙏 Acknowledgments
-
-- Built with [NestJS](https://nestjs.com/)
-- Database management with [Sequelize](https://sequelize.org/)
-- Documentation with [Swagger](https://swagger.io/)
+MIT, see [LICENSE](LICENSE). Questions and bugs go to [GitHub Issues](https://github.com/edtech4good/edtech-lms-api/issues).
