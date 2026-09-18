@@ -8,6 +8,7 @@ import {
   Put,
   Query,
   Request,
+  UnauthorizedException,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
@@ -177,7 +178,10 @@ export class AuthController {
   ): Promise<LogoutResponse> {
     if ((auth || "").trim().length > 0) {
       const authtoken = replacecaseInsensitive(auth || "", "bearer").trim();
-      const _body = await new TokenBusiness().verifyTokenBody(authtoken || "");
+      const _body = await new TokenBusiness().verifyTokenBody(
+        authtoken || "",
+        TokenType.ACCESS
+      );
       if (_body) {
         await new AuthBusiness().logout(_body.sub);
         return {
@@ -186,10 +190,7 @@ export class AuthController {
         };
       }
     }
-    return {
-      data: false,
-      error: true,
-    };
+    throw new UnauthorizedException();
   }
 
   @Post("verify")

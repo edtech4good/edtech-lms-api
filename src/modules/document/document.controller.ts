@@ -23,6 +23,7 @@ import {
   getSchemaPath,
 } from "@nestjs/swagger";
 import "multer";
+import { UploadLimits } from "src/constants/upload-limits";
 import { AccessGuard } from "src/guards/access.guard";
 import { SchemaValidationInterceptor } from "src/interceptors";
 import { ValidationException } from "src/models";
@@ -64,6 +65,10 @@ export class DocumentController {
     status: 500,
     description: "Server error",
   })
+  @ApiResponse({
+    status: 413,
+    description: "File too large",
+  })
   @RequirePermissions(Permission.CREATE_DOCUMENT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
@@ -78,7 +83,7 @@ export class DocumentController {
       },
     },
   })
-  @UseInterceptors(AnyFilesInterceptor())
+  @UseInterceptors(AnyFilesInterceptor({ limits: UploadLimits.DOCUMENT_UPLOAD }))
   @ApiConsumes("multipart/form-data")
   async uploadFile(
     @UploadedFiles() files: Array<Express.Multer.File>,

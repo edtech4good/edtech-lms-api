@@ -20,6 +20,7 @@ import {
   getSchemaPath,
 } from "@nestjs/swagger";
 import { TeacherBusiness } from "src/business/teacher.business";
+import { UploadLimits } from "src/constants/upload-limits";
 import { AccessGuard } from "src/guards/access.guard";
 import {
   SchemaValidationInterceptor,
@@ -52,6 +53,10 @@ export class ImportController {
     status: 500,
     description: "Server error",
   })
+  @ApiResponse({
+    status: 413,
+    description: "File too large",
+  })
   @ApiBody({
     schema: {
       type: "object",
@@ -67,7 +72,9 @@ export class ImportController {
     new SchemaValidationInterceptor(getschoolstudents),
     new BusinessValidationInterceptor([SchoolExists])
   )
-  @UseInterceptors(FileInterceptor("importfile"))
+  @UseInterceptors(
+    FileInterceptor("importfile", { limits: UploadLimits.TEACHER_IMPORT })
+  )
   @ApiConsumes("multipart/form-data")
   @ApiParam({ name: `schoolname`, type: "string", required: true })
   @HttpCode(HttpStatus.OK)

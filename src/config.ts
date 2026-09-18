@@ -107,6 +107,10 @@ if (!isLocalEnv) {
     .filter(([, value]) => typeof value === "string" && value.startsWith("your-"))
     .map(([name, , envvar]) => `${name} (set ${envvar})`);
 
+  if (Config.fortyk.api.database?.password === "password") {
+    insecure.push("database.password (set DB_PASSWORD)");
+  }
+
   if (insecure.length > 0) {
     throw new Error(
       `Refusing to start with placeholder secrets while NODE_ENV=${
