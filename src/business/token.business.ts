@@ -64,16 +64,17 @@ export class TokenBusiness {
       },
     });
   };
-  tokenExists = async (token: string) => {
+  tokenExists = async (token: string, tokentype: TokenType) => {
     const count = await tokens.count({
       where: {
         token,
+        tokentype,
       },
     });
     return count > 0;
   };
 
-  verifyToken = (token: string): Promise<any> =>
+  verifyToken = (token: string, expectedType: TokenType): Promise<any> =>
     new Promise((resolve) => {
       verify(
         token,
@@ -83,7 +84,7 @@ export class TokenBusiness {
             resolve(false);
           } else {
             const tokenDoc = await tokens.findOne({
-              where: { token: decoded.jti },
+              where: { token: decoded.jti, tokentype: expectedType },
             });
             if (!tokenDoc) {
               resolve(false);
@@ -167,9 +168,9 @@ export class TokenBusiness {
     await this.saveToken(accessid, user.lmsuserid, TokenType.ACCESS);
     const refreshToken = await this.generateMiscToken(
       userdata,
-      Config.fortyk.api.changepasswordexpirationminutes,
-      TokenType.CHANGEPASSWORD,
-      TokenType.CHANGEPASSWORD
+      Config.fortyk.api.refreshexpirationminutes,
+      TokenType.REFRESH,
+      TokenType.REFRESH
     );
 
     return {

@@ -5,8 +5,8 @@ import { TokenBusiness } from "src/business";
 import { TokenType } from "./../models/enums";
 import { jwtoptionsbuilder } from "./util.service";
 
-const validateToken = async (payload: any) => {
-  if (await new TokenBusiness().tokenExists(payload.jti)) {
+const validateToken = async (payload: any, expectedType: TokenType) => {
+  if (await new TokenBusiness().tokenExists(payload.jti, expectedType)) {
     return { ...payload };
   } else {
     throw new UnauthorizedException();
@@ -23,7 +23,7 @@ export class JwtAccessStrategy extends PassportStrategy(
   }
 
   async validate(payload: any) {
-    return validateToken(payload);
+    return validateToken(payload, TokenType.ACCESS);
   }
 }
 
@@ -51,7 +51,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
   }
 
   async validate(payload: any) {
-    return validateToken(payload);
+    return validateToken(payload, TokenType.REFRESH);
   }
 }
 
@@ -65,7 +65,7 @@ export class JwtChangePasswordStrategy extends PassportStrategy(
   }
 
   async validate(payload: any) {
-    return validateToken(payload);
+    return validateToken(payload, TokenType.CHANGEPASSWORD);
   }
 }
 
@@ -79,6 +79,6 @@ export class JwtVerifyEmailStrategy extends PassportStrategy(
   }
 
   async validate(payload: any) {
-    return validateToken(payload);
+    return validateToken(payload, TokenType.VERIFYEMAIL);
   }
 }
