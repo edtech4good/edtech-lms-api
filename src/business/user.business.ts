@@ -43,6 +43,9 @@ export class UserBusiness {
         await createduser.setRoles(rls, {transaction});
       }
       await transaction.commit();
+      // Freshly hashed above so it can be written; must not ride along in
+      // the response.
+      (createduser as any).setDataValue('lmsuserpasswordhash', undefined);
       return createduser
     } catch (e) {
         await transaction.rollback();
@@ -165,12 +168,6 @@ export class UserBusiness {
     await tokenbusiness.clearVerifyEmailToken(userid);
     return localuser;
   };
-  sanitizeUser = (user: any) => ({
-    ...user,
-    _id: null,
-    passwordhash: null,
-  });
-
   getusersall = async (paging: IPaging) => {
     let where: WhereOptions<lmsusersAttributes> = {
       isdisabled: false
@@ -185,8 +182,10 @@ export class UserBusiness {
     where = { ...buildWhere<lmsusersAttributes>(paging, where) };
 
     const users = await lmsusers.findAndCountAll(
-      { 
+      {
         where, order, limit, offset,
+        distinct: true,
+        attributes: { exclude: ["lmsuserpasswordhash"] },
         include: [
           {
             model: roles,
@@ -207,8 +206,9 @@ export class UserBusiness {
   };
 
   getlmsuserbyid = async (lmsuserid: string) => {
-    const user = await lmsusers.findOne({ 
+    const user = await lmsusers.findOne({
       where: { lmsuserid },
+      attributes: { exclude: ["lmsuserpasswordhash"] },
       include: [{
         model: roles,
         attributes: ["roleid", "rolename"],
@@ -258,6 +258,9 @@ export class UserBusiness {
           await user.setRoles(rls, {transaction});
         }
         await transaction.commit();
+        // The hash is loaded above (old or newly-set) so it can be preserved
+        // or written on save; it must not ride along in the response.
+        (user as any).setDataValue('lmsuserpasswordhash', undefined);
         return user
       }
     } catch (e) {
