@@ -755,7 +755,7 @@ WHERE
   migrateSubjectCurriculum = async () => {
     const allstudents = await students.findAll({
       where: {
-        curriculumids: null
+        curriculumids: { [Op.is]: null }
       }
     });
     const transaction = await dbinstance.getdbinstance().transaction();

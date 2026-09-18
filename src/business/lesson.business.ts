@@ -289,13 +289,13 @@ export class LessonBusiness {
     const ls = await new LessonBusiness().getLessonid(lessonid);
     if(!ls) throw new BadRequestException("Lesson not found");
     const learnings = await lessonlearnings.count({
-      where: { lessonid, deleted_at: null },
+      where: { lessonid, deleted_at: { [Op.is]: null } },
     });
     const practices = await lessonpractices.count({
-      where: { lessonid, deleted_at: null },
+      where: { lessonid, deleted_at: { [Op.is]: null } },
     });
     const quizzes = await lessonquizzes.count({
-      where: { lessonid, deleted_at: null },
+      where: { lessonid, deleted_at: { [Op.is]: null } },
     });
     return { ls, learnings, practices, quizzes}
   };

@@ -43,7 +43,7 @@ export class RolePermissionBusiness {
         role.created_by = user.lmsuserid;
         const transaction = await dbinstance.getdbinstance().transaction();
         try {
-            const rl = await roles.create(role, { transaction });
+            const rl = await roles.create(role as any, { transaction });
             await this.bindRolePerms({roleid: role.roleid, permissionsid: role.perms ?? []}, rl, transaction);
             await transaction.commit();
             return rl;
