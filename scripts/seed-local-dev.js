@@ -12,13 +12,16 @@
  * to a value published in LOCAL_DEVELOPMENT.md. Dev credentials belong behind
  * an explicit opt-in command, guarded by ALLOW_LOCAL_DEV_SEED=true.
  *
- * Hashing is unsalted MD5 because that is what business/auth.business.ts
- * compares against. Do not copy this scheme into anything new.
+ * Stored value is bcrypt(md5(password)), matching hashPassword() in
+ * src/services/password.service.ts. That file's verifyPassword() rejects
+ * anything that is not a bcrypt hash (must start with `$2`), so a bare MD5
+ * write would seed an account that cannot log in.
  */
 const path = require("path");
-const crypto = require("crypto");
 const dotenv = require("dotenv");
 const mysql = require("mysql2/promise");
+const bcryptjs = require("bcryptjs");
+const md5 = require("crypto-js/md5");
 
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
@@ -43,7 +46,12 @@ async function main() {
   }
 
   const plaintext = process.env.SUPERADMIN_PASSWORD || DEFAULT_PASSWORD;
-  const hash = crypto.createHash("md5").update(plaintext).digest("hex");
+  // Stored form must be bcrypt(md5(password)), matching
+  // src/services/password.service.ts hashPassword() exactly (same bcryptjs and
+  // crypto-js/md5 packages, same BCRYPT_ROUNDS) — that file's verifyPassword()
+  // now rejects a bare md5 hash, so a raw md5 constant here seeds an account
+  // that can never log in.
+  const hash = bcryptjs.hashSync(md5(plaintext).toString(), 10);
 
   const conn = await mysql.createConnection({ host, port, user, password, database });
   try {
