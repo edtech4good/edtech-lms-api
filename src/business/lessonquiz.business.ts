@@ -155,7 +155,7 @@ export class LessonQuizBusiness {
             where = {
                 ...where,
                 lessonquizid: {
-                    [Op.not]: lessonquizid
+                    [Op.not]: lessonquizid as string
                 }
             }
         }

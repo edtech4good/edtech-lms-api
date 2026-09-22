@@ -70,7 +70,7 @@ try {
     configvalues = value;
   }
 } catch (error) {
-  console.warn(`Error parsing FORTYKAPICONFIG: ${error.message}. Using default configuration.`);
+  console.warn(`Error parsing FORTYKAPICONFIG: ${(error as Error).message}. Using default configuration.`);
   configvalues = defaultConfig;
 }
 

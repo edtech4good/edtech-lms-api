@@ -501,7 +501,7 @@ WHERE
     const allstandards = await standards.findAll({
       attributes: ['standardid','standardname', 'schoolid'],
       where: { isdeleted: false, schoolid: {
-        [Op.ne]: null
+        [Op.ne]: null as any
       }}
     });
     const allstudents = await students.findAll({
@@ -755,7 +755,7 @@ WHERE
   migrateSubjectCurriculum = async () => {
     const allstudents = await students.findAll({
       where: {
-        curriculumids: { [Op.is]: null }
+        curriculumids: { [Op.is]: null as any }
       }
     });
     const transaction = await dbinstance.getdbinstance().transaction();

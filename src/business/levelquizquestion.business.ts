@@ -184,7 +184,7 @@ export class LevelQuizQuestionBusiness {
             where = {
                 ...where,
                 levelquizquestionid: {
-                    [Op.not]: levelquizquestionid
+                    [Op.not]: levelquizquestionid as string
                 }
             }
         }

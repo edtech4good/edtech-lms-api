@@ -155,7 +155,7 @@ export class LessonPracticeBusiness {
             where = {
                 ...where,
                 lessonpracticeid: {
-                    [Op.not]: lessonpracticeid
+                    [Op.not]: lessonpracticeid as string
                 }
             }
         }

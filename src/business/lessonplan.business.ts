@@ -215,7 +215,7 @@ export class LessonPlanBusiness {
       where = {
         ...where,
         lessonplanid: {
-          [Op.not]: lessonplanid,
+          [Op.not]: lessonplanid as string,
         },
       };
     }

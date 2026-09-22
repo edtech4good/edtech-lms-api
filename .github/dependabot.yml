@@ -28,3 +28,5 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - version-update:semver-major
+      # reflect-metadata 0.2 conflicts with @nestjs/* 8 peer ranges; bump with the Nest upgrade.
+      - dependency-name: "reflect-metadata"
