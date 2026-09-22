@@ -2,6 +2,8 @@
 
 This is the central API for an offline-first learning management system built for classrooms in Cambodia. It runs in the cloud and holds the source of truth: schools, users, curriculum, quiz content and the student logs that come back from classrooms. It is a NestJS app on MySQL, with Sequelize for the data layer, JWT for auth, S3 for media and SMTP for email.
 
+For where this project came from, see [HISTORY.md](HISTORY.md).
+
 ## How it fits with the other repos
 
 The system is seven repos under [github.com/edtech4good](https://github.com/edtech4good). Three matter from here:
