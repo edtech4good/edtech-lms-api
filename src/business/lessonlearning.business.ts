@@ -216,7 +216,7 @@ export class LessonLearningBusiness {
       where = {
         ...where,
         lessonlearningid: {
-          [Op.not]: lessonlearningid,
+          [Op.not]: lessonlearningid as string,
         },
       };
     }

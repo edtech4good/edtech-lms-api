@@ -212,7 +212,7 @@ export class LessonQuizQuestionBusiness {
       where = {
         ...where,
         lessonquizquestionid: {
-          [Op.not]: lessonquizquestionid,
+          [Op.not]: lessonquizquestionid as string,
         },
       };
     }

@@ -337,7 +337,7 @@ export class SchoolcontributeBusiness {
             const month = new Date(getSchool?.created_at);
             const mmm = format(month, "MMM");
             const year = new Date(getSchool?.created_at).getFullYear();
-            data.push({name:`${day}/${mmm}/${year}/ ${getSchool.schoolname}` ?? '' ,series: item })
+            data.push({name:`${day}/${mmm}/${year}/ ${getSchool.schoolname}`,series: item })
         }
         return data;
 

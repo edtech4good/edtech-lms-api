@@ -1,95 +1,88 @@
 import { address } from "ip";
-import {
-  alternatives,
-  boolean,
-  number,
-  object,
-  string,
-  ValidationError,
-} from "joi";
+import Joi, { ValidationError } from "joi";
 import { hostname } from "os";
-const schema = object()
+const schema = Joi.object()
   .keys({
-    fortyk: object()
+    fortyk: Joi.object()
       .keys({
-        api: object()
+        api: Joi.object()
           .keys({
-            accessexpirationminutes: number()
+            accessexpirationminutes: Joi.number()
               .required()
               .description("accessexpirationminutes"),
-            refreshexpirationminutes: number()
+            refreshexpirationminutes: Joi.number()
               .required()
               .description("refreshexpirationminutes"),
-            changepasswordexpirationminutes: number()
+            changepasswordexpirationminutes: Joi.number()
               .required()
               .description("changepasswordexpirationminutes"),
-            verifyemailexpirationminutes: number()
+            verifyemailexpirationminutes: Joi.number()
               .required()
               .description("verifyemailexpirationminutes"),
-            applicationapikey: string()
+            applicationapikey: Joi.string()
               .required()
               .min(256)
               .max(256)
               .description("applicationapikey"),
-            port: number().required().description("port"),
-            applicationsecret: string()
+            port: Joi.number().required().description("port"),
+            applicationsecret: Joi.string()
               .required()
               .description("applicationsecret"),
-            serversynckey: string().required().description("serversynckey"),
-            serverip: string()
+            serversynckey: Joi.string().required().description("serversynckey"),
+            serverip: Joi.string()
               .ip()
               .default(address())
               .description("applicationsecret"),
-            servername: string().default(hostname()).description("servername"),
-            applicationname: string()
+            servername: Joi.string().default(hostname()).description("servername"),
+            applicationname: Joi.string()
               .default("LMS-API")
               .description("applicationname"),
-            debug: boolean().required().description("debug"),
-            database: object()
+            debug: Joi.boolean().required().description("debug"),
+            database: Joi.object()
               .keys({
-                name: string().required().description("name"),
-                user: string().required().description("user"),
-                password: string().required().description("password"),
-                port: number().required().default(3306).description("port"),
-                host: alternatives()
-                  .try(string().uri(), string().ip(), string())
+                name: Joi.string().required().description("name"),
+                user: Joi.string().required().description("user"),
+                password: Joi.string().required().description("password"),
+                port: Joi.number().required().default(3306).description("port"),
+                host: Joi.alternatives()
+                  .try(Joi.string().uri(), Joi.string().ip(), Joi.string())
                   .required()
                   .description("host"),
               })
               .unknown(true),
-            smtp: object()
+            smtp: Joi.object()
               .keys({
-                host: alternatives()
-                  .try(string().uri(), string().ip(), string())
+                host: Joi.alternatives()
+                  .try(Joi.string().uri(), Joi.string().ip(), Joi.string())
                   .required()
                   .description("host"),
-                port: number().required().description("port"),
-                username: string().required().description("username"),
-                password: string().required().description("password"),
-                secure: boolean().required().description("secure"),
-                requiretsl: boolean().required().description("requiretsl"),
-                emailfrom: string().email().required().description("emailfrom"),
+                port: Joi.number().required().description("port"),
+                username: Joi.string().required().description("username"),
+                password: Joi.string().required().description("password"),
+                secure: Joi.boolean().required().description("secure"),
+                requiretsl: Joi.boolean().required().description("requiretsl"),
+                emailfrom: Joi.string().email().required().description("emailfrom"),
               })
               .unknown(true),
-            aws: object()
+            aws: Joi.object()
               .keys({
-                accesskeyid: string().required().description("accesskeyid"),
-                secretaccesskey: string()
+                accesskeyid: Joi.string().required().description("accesskeyid"),
+                secretaccesskey: Joi.string()
                   .required()
                   .description("secretaccesskey"),
-                s3bucketname: string().required().description("s3bucketname"),
+                s3bucketname: Joi.string().required().description("s3bucketname"),
               })
               .unknown(true),
-            rpi: object()
+            rpi: Joi.object()
               .keys({
-                RPIsecret: string().required().description("RPIsecret"),
-                cloud: string().required().description("cloud"),
+                RPIsecret: Joi.string().required().description("RPIsecret"),
+                cloud: Joi.string().required().description("cloud"),
               })
               .unknown(true),
           })
           .unknown(true),
-        ui: alternatives()
-          .try(string().uri(), string().ip(), string())
+        ui: Joi.alternatives()
+          .try(Joi.string().uri(), Joi.string().ip(), Joi.string())
           .required()
           .description("ui"),
       })

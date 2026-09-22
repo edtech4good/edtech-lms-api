@@ -70,8 +70,8 @@ export class ReportDownload {
             // const flatcontribute = con.get({plain: true});
             const school: SchoolContributeData = {
                 school_contribute: con.schoolname ?? 'N/A',
-                expected: con.expected + '$' ?? '0',
-                actual: con.actual + '$' ?? '0',
+                expected: con.expected + '$',
+                actual: con.actual + '$',
                 date: (con.expected !== 0 && con.actual !== 0 ? con.created_at?.toLocaleDateString() : 'N/A') ?? 'N/A',
             }
             return school;
@@ -89,7 +89,7 @@ export class ReportDownload {
                 level: ls.level.levelname,
                 lesson: ls.lessonname,
                 marks: flatlesson.laststudentprogress ? `${flatlesson.laststudentprogress?.marks}` : 'N/A',
-                totalquestions: flatlesson.laststudentprogress ? `${flatlesson.laststudentprogress.getDataValue('totalquestions')}` ?? 'N/A' : 'N/A',
+                totalquestions: flatlesson.laststudentprogress ? `${flatlesson.laststudentprogress.getDataValue('totalquestions')}` : 'N/A',
                 percentage: (flatlesson.laststudentprogress ? flatlesson.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatlesson.laststudentprogress?.scores ?? 0,
                 result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
@@ -110,7 +110,7 @@ export class ReportDownload {
                 level: flatstudent.lesson?.level.levelname ?? '',
                 lesson: flatstudent.lesson?.lessonname ?? '',
                 marks: flatstudent.laststudentprogress ? `${flatstudent.laststudentprogress?.marks}` : 'N/A',
-                totalquestions: flatstudent.laststudentprogress ? `${flatstudent.laststudentprogress?.getDataValue('totalquestions')}` ?? 'N/A' : 'N/A',
+                totalquestions: flatstudent.laststudentprogress ? `${flatstudent.laststudentprogress?.getDataValue('totalquestions')}` : 'N/A',
                 percentage: (flatstudent.laststudentprogress ? flatstudent.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatstudent.laststudentprogress?.scores ?? 0,
                 result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
@@ -131,7 +131,7 @@ export class ReportDownload {
                 level: flatstudent.lesson?.level.levelname ?? '',
                 lesson: flatstudent.lesson?.lessonname ?? '',
                 marks: flatstudent.laststudentprogress ? `${flatstudent.laststudentprogress?.marks}` : 'N/A',
-                totalquestions: flatstudent.laststudentprogress ? `${(flatstudent.laststudentprogress as any)?.totalquestions}` ?? 'N/A' : 'N/A',
+                totalquestions: flatstudent.laststudentprogress ? `${(flatstudent.laststudentprogress as any)?.totalquestions}` : 'N/A',
                 percentage: (flatstudent.laststudentprogress ? flatstudent.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatstudent.laststudentprogress?.scores ?? 0,
                 result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
@@ -152,7 +152,7 @@ export class ReportDownload {
                 level: ls.level.levelname,
                 lesson: ls.lessonname,
                 marks: flatlesson.laststudentprogress ? `${flatlesson.laststudentprogress?.marks}` : 'N/A',
-                totalquestions: flatlesson.laststudentprogress ? `${(flatlesson.laststudentprogress as any)?.totalquestions}` ?? 'N/A' : 'N/A',
+                totalquestions: flatlesson.laststudentprogress ? `${(flatlesson.laststudentprogress as any)?.totalquestions}` : 'N/A',
                 percentage: (flatlesson.laststudentprogress ? flatlesson.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatlesson.laststudentprogress?.scores ?? 0,
                 result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
@@ -172,7 +172,7 @@ export class ReportDownload {
                 course: lv.grade.gradename,
                 level: lv.levelname,
                 marks: flatlesson.laststudentprogress ? `${flatlesson.laststudentprogress?.marks}` : 'N/A',
-                totalquestions: flatlesson.laststudentprogress ? `${flatlesson.laststudentprogress?.getDataValue('totalquestions')}` ?? 'N/A' : 'N/A',
+                totalquestions: flatlesson.laststudentprogress ? `${flatlesson.laststudentprogress?.getDataValue('totalquestions')}` : 'N/A',
                 percentage: (flatlesson.laststudentprogress ? flatlesson.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatlesson.laststudentprogress?.scores ?? 0,
                 result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
@@ -192,7 +192,7 @@ export class ReportDownload {
                 course: flatstudent.level?.grade.gradename ?? 'N/A',
                 level: flatstudent.level?.levelname ?? 'N/A',
                 marks: flatstudent.laststudentprogress ? `${flatstudent.laststudentprogress?.marks}` : 'N/A',
-                totalquestions: flatstudent.laststudentprogress ? `${flatstudent.laststudentprogress?.getDataValue('totalquestions')}` ?? 'N/A' : 'N/A',
+                totalquestions: flatstudent.laststudentprogress ? `${flatstudent.laststudentprogress?.getDataValue('totalquestions')}` : 'N/A',
                 percentage: (flatstudent.laststudentprogress ? flatstudent.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatstudent.laststudentprogress?.scores ?? 0,
                 result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
@@ -212,7 +212,7 @@ export class ReportDownload {
                 course: flatstudent.level?.grade.gradename ?? 'N/A',
                 level: flatstudent.level?.levelname ?? 'N/A',
                 marks: flatstudent.laststudentprogress ? `${flatstudent.laststudentprogress?.marks}` : 'N/A',
-                totalquestions: flatstudent.laststudentprogress ? `${(flatstudent.laststudentprogress as any)?.totalquestions}` ?? 'N/A' : 'N/A',
+                totalquestions: flatstudent.laststudentprogress ? `${(flatstudent.laststudentprogress as any)?.totalquestions}` : 'N/A',
                 percentage: (flatstudent.laststudentprogress ? flatstudent.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatstudent.laststudentprogress?.scores ?? 0,
                 result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
@@ -232,7 +232,7 @@ export class ReportDownload {
                 course: lv.grade.gradename,
                 level: lv.levelname,
                 marks: flatlesson.laststudentprogress ? `${flatlesson.laststudentprogress?.marks}` : 'N/A',
-                totalquestions: flatlesson.laststudentprogress ? `${(flatlesson.laststudentprogress as any)?.totalquestions}` ?? 'N/A' : 'N/A',
+                totalquestions: flatlesson.laststudentprogress ? `${(flatlesson.laststudentprogress as any)?.totalquestions}` : 'N/A',
                 percentage: (flatlesson.laststudentprogress ? flatlesson.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatlesson.laststudentprogress?.scores ?? 0,
                 result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'

@@ -86,7 +86,7 @@ export class BaselineQuestionBusiness {
         where = {
             ...where,
             baselinequestionid: {
-                [Op.not]: baselinequestionid
+                [Op.not]: baselinequestionid as string
             }
         }
     }

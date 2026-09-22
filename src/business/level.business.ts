@@ -256,7 +256,7 @@ export class LevelBusiness {
           [fn("sum", col("total_points")), "total_points"],
         ],
       });
-      level.points = (+lessonspoints[0]?.total_points ?? 0) + (+level.quiz_points ?? 0);
+      level.points = +lessonspoints[0]?.total_points + +level.quiz_points;
       await level.save({ fields: ["points"] });
       const grade = await level.getGrade();
       const lvls = await levels.findAll({

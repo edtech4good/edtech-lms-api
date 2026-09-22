@@ -128,7 +128,7 @@ export class StandardBusiness {
   migrateStandards = async () => {
     const alloldstandards = await standards.findAll({
       attributes: ['standardname'],
-      where: { isdeleted: false, schoolid: { [Op.is]: null } }
+      where: { isdeleted: false, schoolid: { [Op.is]: null as any } }
     });
     const allschools = await schools.findAll({
       where: { isdeleted: false }
