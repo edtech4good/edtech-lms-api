@@ -4,6 +4,7 @@
  * down to individual quiz questions, plus students and their progress.
  *
  * Usage: npm run seed:demo (requires ALLOW_DEMO_SEED=true)
+ *        SEED_DEMO_PASSWORD='...' npm run seed:demo   (any non-local target)
  *
  * Why this exists: an empty database is a poor test bed. Two 500s were found on
  * the Students page precisely because nothing had ever run against real rows,
@@ -36,7 +37,11 @@ const md5 = require("crypto-js/md5");
 
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
-const DEMO_PASSWORD = "demo";
+// The default is published in this public repo, so seeding any database that
+// is not a throwaway local one with it creates a real account whose password
+// anyone can read. Override it the way seed-local-dev.js takes
+// SUPERADMIN_PASSWORD.
+const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD || "demo";
 // Stored form must be bcrypt(md5(password)), matching
 // src/services/password.service.ts hashPassword() exactly (same bcryptjs and
 // crypto-js/md5 packages, same BCRYPT_ROUNDS) — that file's verifyPassword()

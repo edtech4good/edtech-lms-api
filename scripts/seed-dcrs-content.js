@@ -7,6 +7,7 @@
  * actual client content end to end.
  *
  * Usage: npm run seed:dcrs (requires ALLOW_DEMO_SEED=true)
+ *        SEED_DEMO_PASSWORD='...' npm run seed:dcrs   (any non-local target)
  *
  * This is separate from seed-demo-content.js (which stays generic/synthetic);
  * the two are independent and safe to run in either order or together.
@@ -33,7 +34,11 @@ const md5 = require("crypto-js/md5");
 
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
-const DEMO_PASSWORD = "demo";
+// The default is published in this public repo, so seeding any database that
+// is not a throwaway local one with it creates a real account whose password
+// anyone can read. Override it the way seed-local-dev.js takes
+// SUPERADMIN_PASSWORD.
+const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD || "demo";
 // Stored form must be bcrypt(md5(password)), matching
 // src/services/password.service.ts hashPassword() exactly (same bcryptjs and
 // crypto-js/md5 packages, same BCRYPT_ROUNDS) — that file's verifyPassword()
