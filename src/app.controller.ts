@@ -32,8 +32,7 @@ export class AppController {
   // @Claim(claimenum.access, claimenum.activateuser)
   @Get()
   getbase(): string {
-    // Deliberate type error to prove the `ci` build check can fail (CI PR mutation test).
-    return 12345;
+    return "FORTYK API ***";
   }
 
   @Get("version")
