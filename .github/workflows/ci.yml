@@ -13,9 +13,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Required check. Only steps that already pass on main today: install and
-  # build. Lint and unit tests are Phase 0 repairs (no ESLint config, no
-  # test runner exist yet) and are deliberately not included.
+  # Required check. Install, build, and now unit tests: this PR adds the
+  # first executable Jest suite (jest.config.js) and its own `test` script.
+  # Lint is still a Phase 0 repair (no ESLint config exists) and remains out.
   ci:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -27,6 +27,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - run: npm test -- --ci
 
   # Report-only: today's tree has advisories at the critical level, so a
   # blocking audit would fail every PR. The step itself always exits 0
