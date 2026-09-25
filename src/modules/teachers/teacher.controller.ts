@@ -44,7 +44,7 @@ import { SchoolRole } from "src/models/enums/school.role.enum";
 import { IPaging } from "src/models/IPaging";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { LmsUserToken } from "src/models/token.model";
-import { dbinstance } from "src/services/dbservice";
+import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import { v4 as uuidv4 } from "uuid";
 import { TeacherImportBody } from "./models/teachersimport";
 import {
@@ -141,9 +141,9 @@ export class TeacherController {
         tnx
       );
 
-      tnx.commit();
+      await tnx.commit();
     } catch (e) {
-      tnx.rollback();
+      await rollbackQuietly(tnx);
       throw e;
     }
     if (cloud) {
