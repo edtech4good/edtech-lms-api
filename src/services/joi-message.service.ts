@@ -9,8 +9,18 @@ import { ValidationFieldError } from 'src/models/ValidationException';
  * sent - so this only needs to reword the handful of common failure types
  * into friendlier English, not scrub anything out.
  */
+const REQUEST_PART_PREFIXES = new Set(['body', 'query', 'params']);
+
 export function toPlainFieldError(detail: ValidationErrorItem): ValidationFieldError {
-  const field = (detail.path && detail.path.length > 0 ? detail.path.join('.') : detail.context?.key) || 'input';
+  // SchemaValidationInterceptor validates the whole {body, query, params}
+  // envelope in one go, so Joi's path is prefixed with which part of the
+  // request it came from (e.g. ["body", "email"]) - the client only knows
+  // the field itself ("email"), so drop that prefix.
+  let path = detail.path ?? [];
+  if (path.length > 1 && REQUEST_PART_PREFIXES.has(String(path[0]))) {
+    path = path.slice(1);
+  }
+  const field = (path.length > 0 ? path.join('.') : detail.context?.key) || 'input';
   return { field: String(field), message: plainMessage(detail, field) };
 }
 
