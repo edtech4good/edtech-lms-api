@@ -1,4 +1,5 @@
-import { BadRequestException } from "@nestjs/common";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { Op, Transaction } from "sequelize";
 import { logfiles } from "src/models/data-models/logfiles";
 import { rpiuseraccess } from "src/models/data-models/rpiuseraccess";
@@ -262,11 +263,11 @@ export class LogBusiness {
   }
 
   recordSyncActivity = async (user: LmsUserToken, filename: string, offlineonline: boolean) => {
-    if(!user.schooluserid) throw new BadRequestException('Please login as a teacher!');
+    if(!user.schooluserid) throw new ApiError(ErrorCode.NOT_ALLOWED, "Only a teacher account can upload logs.");
     const teacher = await schoolusers.findOne({
       where: { schooluserid: user.schooluserid}
     });
-    if(!teacher) throw new BadRequestException('Teacher does not exist!');
+    if(!teacher) throw new ApiError(ErrorCode.NOT_FOUND, "That teacher doesn't exist.");
     await syncs.create({
       syncid: uuidv4(),
       filename,

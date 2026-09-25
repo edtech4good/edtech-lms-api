@@ -2,15 +2,19 @@ import {
   ArgumentsHost,
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  PayloadTooLargeException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ThrottlerException } from '@nestjs/throttler';
 import {
   ConnectionRefusedError,
+  DatabaseError,
   ForeignKeyConstraintError,
   UniqueConstraintError,
 } from 'sequelize';
+import Transport from 'winston-transport';
 import { GlobalExceptionFilter } from './global-exception.filter';
 import { Config, Logger } from '../config';
 import { ApiError } from '../models/ApiError';
@@ -206,17 +210,91 @@ describe('GlobalExceptionFilter', () => {
       expect(body.code).toBe(ErrorCode.INTERNAL);
     });
 
-    it('a plain BadRequestException with a string message is trusted as INVALID_INPUT (developer-written, user-facing text)', () => {
-      const body = catchAndGetBody(new BadRequestException('That school doesn\'t exist.'));
+    it('a plain HttpException message is NOT passed through - it can quote user input (spec: "Any other HttpException")', () => {
+      // Nest's own URIError wrapping for a bad %-encoded path param.
+      const body = catchAndGetBody(new BadRequestException("Failed to decode param '%E0%A4%AFsecretparam%FF'"));
       expect(statusMock).toHaveBeenCalledWith(400);
       expect(body.code).toBe(ErrorCode.INVALID_INPUT);
-      expect(body.errormessage).toBe("That school doesn't exist.");
+      expect(body.errormessage).toBe("Some of the information isn't valid.");
+      expect(JSON.stringify(body)).not.toContain('secretparam');
     });
 
-    it('a BadRequestException with an OBJECT payload never leaks it as errormessage (old-style throw site)', () => {
-      const body = catchAndGetBody(new BadRequestException({ error: true, errormessage: 'raw internal detail' } as any));
-      expect(body.errormessage).not.toBe('[object Object]');
-      expect(body.errormessage).toBe("Some of the information isn't valid.");
+    it('the repo\'s own {error, errormessage} HttpException shape keeps its message', () => {
+      const body = catchAndGetBody(new BadRequestException({ error: true, errormessage: 'That class is full.' } as any));
+      expect(body.code).toBe(ErrorCode.INVALID_INPUT);
+      expect(body.errormessage).toBe('That class is full.');
+    });
+
+    it.each([
+      [404, ErrorCode.NOT_FOUND, 404],
+      [409, ErrorCode.ALREADY_EXISTS, 409],
+      [413, ErrorCode.FILE_REJECTED, 413],
+      [429, ErrorCode.TOO_MANY_ATTEMPTS, 429],
+      [422, ErrorCode.INVALID_INPUT, 400],
+      [502, ErrorCode.INTERNAL, 500],
+    ])('any other HttpException with status %i maps by status to %s/%i with a generic message', (status, code, returned) => {
+      const body = catchAndGetBody(new HttpException('raw library text QUOTED_INPUT', status));
+      expect(statusMock).toHaveBeenCalledWith(returned);
+      expect(body.code).toBe(code);
+      expect(JSON.stringify(body)).not.toContain('QUOTED_INPUT');
+    });
+
+    it('PayloadTooLargeException (multer LIMIT_FILE_SIZE via Nest) returns 413, not the catalogue default 400', () => {
+      const body = catchAndGetBody(new PayloadTooLargeException('File too large'));
+      expect(statusMock).toHaveBeenCalledWith(413);
+      expect(body.code).toBe(ErrorCode.FILE_REJECTED);
+    });
+
+    it('a raw MulterError is matched by name (Nest bundles its own multer): size -> 413, other -> 400', () => {
+      const tooBig: any = new Error('File too large');
+      tooBig.name = 'MulterError';
+      tooBig.code = 'LIMIT_FILE_SIZE';
+      catchAndGetBody(tooBig);
+      expect(statusMock).toHaveBeenCalledWith(413);
+      const unexpected: any = new Error('Unexpected field');
+      unexpected.name = 'MulterError';
+      unexpected.code = 'LIMIT_UNEXPECTED_FILE';
+      const body = catchAndGetBody(unexpected);
+      expect(statusMock).toHaveBeenCalledWith(400);
+      expect(body.code).toBe(ErrorCode.FILE_REJECTED);
+    });
+
+    it.each(['Unexpected field', 'Too many files'])('Nest-transformed multer "%s" is FILE_REJECTED 400', (msg) => {
+      const body = catchAndGetBody(new BadRequestException(msg));
+      expect(statusMock).toHaveBeenCalledWith(400);
+      expect(body.code).toBe(ErrorCode.FILE_REJECTED);
+    });
+
+    it('busboy "Unexpected end of form" is FILE_REJECTED 400, not a 500', () => {
+      const body = catchAndGetBody(new Error('Unexpected end of form'));
+      expect(statusMock).toHaveBeenCalledWith(400);
+      expect(body.code).toBe(ErrorCode.FILE_REJECTED);
+    });
+
+    it('a DatabaseError with a data errno (1366) is INVALID_INPUT 400 - never 5xx, never the value', () => {
+      const original: any = new Error("Incorrect string value: 'DBVALUESECRET' for column 'x'");
+      original.errno = 1366;
+      original.code = 'ER_TRUNCATED_WRONG_VALUE_FOR_FIELD';
+      const body = catchAndGetBody(new DatabaseError(original));
+      expect(statusMock).toHaveBeenCalledWith(400);
+      expect(body.code).toBe(ErrorCode.INVALID_INPUT);
+      expect(JSON.stringify(body)).not.toContain('DBVALUESECRET');
+    });
+
+    it('INVALID_INPUT without fields has no "Check the highlighted fields." hint', () => {
+      const body = catchAndGetBody(new ForeignKeyConstraintError({}));
+      expect(body.code).toBe(ErrorCode.INVALID_INPUT);
+      expect(body.hint).toBeUndefined();
+    });
+
+    it('INVALID_INPUT with fields keeps the hint', () => {
+      const body = catchAndGetBody(new ValidationException([{ field: 'email', message: 'Enter a valid email address.' }]));
+      expect(body.hint).toBe('Check the highlighted fields.');
+    });
+
+    it('SERVICE_UNAVAILABLE hint is exactly the spec default', () => {
+      const body = catchAndGetBody(new ConnectionRefusedError(new Error('x')));
+      expect(body.hint).toBe('Try again in a few minutes.');
     });
 
     it('anything unrecognised (e.g. a plain thrown object) falls back to INTERNAL 500 and never echoes it', () => {
@@ -266,6 +344,52 @@ describe('GlobalExceptionFilter', () => {
       expect(serialized).not.toContain('hunter2');
       expect(serialized).not.toContain('a@b.com');
       errorSpy.mockRestore();
+    });
+  });
+
+  /**
+   * Against the REAL winston logger (a capture transport added to the
+   * app's Logger), not a jest spy: what actually reaches the log output.
+   */
+  describe('log contents (real logger)', () => {
+    class CaptureTransport extends Transport {
+      public lines: string[] = [];
+      log(info: any, cb: () => void) {
+        this.lines.push(JSON.stringify(info));
+        cb();
+      }
+    }
+    let capture: CaptureTransport;
+    beforeEach(() => {
+      capture = new CaptureTransport();
+      Logger.add(capture);
+    });
+    afterEach(() => Logger.remove(capture));
+
+    it('an axios error never logs its config (upstream URL, Authorization sync key)', () => {
+      const axiosLikeError: any = new Error('connect ECONNREFUSED');
+      axiosLikeError.isAxiosError = true;
+      axiosLikeError.config = {
+        url: 'http://rpi-internal.local:4000/import/teachers',
+        headers: { Authorization: 'SYNCKEYSECRET' },
+      };
+      catchAndGetBody(axiosLikeError);
+      expect(capture.lines.length).toBe(1);
+      expect(capture.lines[0]).not.toContain('SYNCKEYSECRET');
+      expect(capture.lines[0]).not.toContain('rpi-internal');
+    });
+
+    it('a Sequelize DatabaseError logs errno/code/class, never its message (which quotes the value)', () => {
+      const original: any = new Error("Incorrect string value: 'DBVALUESECRET' for column 'studentfirstname'");
+      original.errno = 1366;
+      original.code = 'ER_TRUNCATED_WRONG_VALUE_FOR_FIELD';
+      catchAndGetBody(new DatabaseError(original));
+      expect(capture.lines.length).toBe(1);
+      expect(capture.lines[0]).not.toContain('DBVALUESECRET');
+      expect(capture.lines[0]).not.toContain('studentfirstname');
+      const meta = JSON.parse(capture.lines[0]).metadata;
+      expect(meta.dberrno).toBe(1366);
+      expect(meta.dbcode).toBe('ER_TRUNCATED_WRONG_VALUE_FOR_FIELD');
     });
   });
 });

@@ -1,8 +1,9 @@
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import {schoolcontributedata, schoolcontributedataAttributes} from "../models/data-models/schoolcontributedata";
 import {LmsUserToken} from "../models/token.model";
 import {v4 as uuidv4} from "uuid";
 import { Op, WhereOptions } from "sequelize";
-import { BadRequestException } from "@nestjs/common";
 import { schools, schoolsAttributes } from "src/models/data-models/school";
 import { IPaging } from "src/models/IPaging";
 import { buildWhere } from "src/services/util.service";
@@ -186,7 +187,7 @@ export class SchoolcontributeBusiness {
                 temp.updated_at = new Date();
                 temp.updated_by = user.lmsuserid;
                 const findschool = await schoolcontributedata.findAll({ where: { schoolid: school.schoolid }});
-                if(!findschool) throw new BadRequestException('no school found');
+                if(!findschool) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
                 await temp.save({ fields: ["schoolname", "schoolid", "countryid", "updated_at", "updated_by"]});
             }else{
                 return null;
@@ -203,7 +204,7 @@ export class SchoolcontributeBusiness {
             temp.updated_at = new Date();
             temp.updated_by = user.lmsuserid;
             const findschool = await schoolcontributedata.findAll({ where: { schoolid: school.schoolcontributeid }});
-            if(!findschool) throw new BadRequestException('no school found');
+            if(!findschool) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
             await temp.save({ fields: ["expected","actual", "updated_at", "updated_by"]});
             return temp;
         } else {

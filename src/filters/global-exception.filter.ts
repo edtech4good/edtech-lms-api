@@ -1,6 +1,5 @@
 import {
   ArgumentsHost,
-  BadRequestException,
   Catch,
   ExceptionFilter,
   ForbiddenException,
@@ -11,8 +10,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ThrottlerException } from '@nestjs/throttler';
-import { MulterError } from 'multer';
 import {
+  BaseError as SequelizeBaseError,
   ConnectionError,
   ConnectionRefusedError,
   ConnectionTimedOutError,
@@ -34,12 +33,25 @@ import { IErrorFieldResponse, IErrorResponse } from '../models/IErrorResponse';
 import { ValidationException } from '../models/ValidationException';
 import { generateReference } from '../services/reference.service';
 
+/**
+ * How much of the ORIGINAL error the server log may carry.
+ * - 'full': class, message and stack.
+ * - 'classonly': class only. The message/stack can quote user input
+ *   (body-parser quotes the request body; Nest's 404 message is "Cannot GET
+ *   /path?query"; a URIError quotes the raw path param; multer/busboy quote
+ *   field names).
+ * - 'db': class plus MySQL errno/code only. A Sequelize message and stack
+ *   can carry SQL, parameter values and column names.
+ */
+type LogDetail = 'full' | 'classonly' | 'db';
+
 interface MappedError {
   code: ErrorCode;
   status: number;
   errormessage: string;
   hint?: string;
   fields?: IErrorFieldResponse[];
+  logDetail: LogDetail;
 }
 
 const SEQUELIZE_UNAVAILABLE_CLASSES = [
@@ -51,6 +63,21 @@ const SEQUELIZE_UNAVAILABLE_CLASSES = [
   HostNotReachableError,
   InvalidConnectionError,
 ];
+
+/** MySQL errno for a VALUE that can never be saved (not a connection problem). */
+const DATA_ERRNOS = [1048, 1264, 1292, 1366, 1406];
+
+/** multer limit messages, as re-thrown by Nest's transformException. */
+const MULTER_MESSAGES = new Set([
+  'Too many parts',
+  'Too many files',
+  'Field name too long',
+  'Field value too long',
+  'Too many fields',
+  'Unexpected field',
+]);
+
+const JSON_PARSE_MESSAGE = /JSON/;
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -83,8 +110,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     if (mapped.fields && mapped.fields.length > 0) {
       body.fields = mapped.fields;
     }
-    if (Config.fortyk.api.debug) {
+    if (Config.fortyk.api.debug && mapped.logDetail === 'full') {
       body.stack = (exception as any)?.stack;
+      body.logid = reference;
+    } else if (Config.fortyk.api.debug) {
       body.logid = reference;
     }
 
@@ -94,14 +123,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   }
 
   /**
-   * docs/api-errors.md's mapping table, in order: our own explicit codes
-   * first, then structured validation, then framework/library exceptions by
-   * type (never by message text - message text is not a contract), and only
-   * at the very end a catch-all that never trusts an unrecognised
-   * exception's message.
+   * docs/api-errors.md's mapping table. Only ApiError, ValidationException
+   * and the repo's own `{error, errormessage}` HttpException shape may carry
+   * a custom message; every other exception is mapped by TYPE or STATUS
+   * with the catalogue's generic message, because its message may quote
+   * user input.
    */
   private map(exception: unknown): MappedError {
-    const errordetails = exception as any;
+    const e = exception as any;
+
     if (exception instanceof ApiError) {
       return {
         code: exception.code,
@@ -109,70 +139,53 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         errormessage: exception.message,
         hint: exception.hint,
         fields: exception.fields,
+        logDetail: 'full',
       };
     }
 
     if (exception instanceof ValidationException) {
       const existsField = exception.fields.find((f) => f.exists);
       if (existsField) {
-        return this.fromCatalogue(ErrorCode.ALREADY_EXISTS, existsField.message);
+        return this.fromCatalogue(ErrorCode.ALREADY_EXISTS, { message: existsField.message });
       }
-      return this.fromCatalogue(
-        ErrorCode.INVALID_INPUT,
-        undefined,
-        exception.fields.map(({ field, message }) => ({ field, message })),
-      );
+      return this.fromCatalogue(ErrorCode.INVALID_INPUT, {
+        fields: exception.fields.map(({ field, message }) => ({ field, message })),
+      });
     }
 
     if (exception instanceof ThrottlerException) {
       return this.fromCatalogue(ErrorCode.TOO_MANY_ATTEMPTS);
     }
 
-    if (exception instanceof PayloadTooLargeException) {
-      return this.fromCatalogue(ErrorCode.FILE_REJECTED);
-    }
-    // @nestjs/platform-express bundles its own copy of `multer` under
-    // node_modules/@nestjs/platform-express/node_modules/multer - a
-    // different module instance than the `multer` this file imports, so
-    // `instanceof MulterError` can silently miss. Check by name too.
-    if (exception instanceof MulterError || errordetails?.name === 'MulterError') {
-      const status = errordetails?.code === 'LIMIT_FILE_SIZE' ? HttpStatus.PAYLOAD_TOO_LARGE : HttpStatus.BAD_REQUEST;
-      return { ...this.fromCatalogue(ErrorCode.FILE_REJECTED), status };
-    }
-    if (exception instanceof BadRequestException && exception.message === 'Too many files') {
-      return this.fromCatalogue(ErrorCode.FILE_REJECTED);
+    // Body-parser (JSON/urlencoded). Its messages quote the request body.
+    // Nest's RoutesResolver.mapExternalException rewraps body-parser's
+    // SyntaxError as `new BadRequestException(err.message)` before this
+    // filter sees it, dropping `.type` - so the message shape is checked too.
+    if (this.isBodyParserError(exception)) {
+      if (e?.type === 'entity.too.large' || e?.status === 413 || e?.statusCode === 413) {
+        return this.fromCatalogue(ErrorCode.FILE_REJECTED, { status: HttpStatus.PAYLOAD_TOO_LARGE, logDetail: 'classonly' });
+      }
+      return this.fromCatalogue(ErrorCode.INVALID_INPUT, { message: "The request body isn't valid.", logDetail: 'classonly' });
     }
 
-    // Express's body-parser (JSON/urlencoded) throws directly, before any
-    // Nest interceptor or controller runs - never an ApiError/ValidationException,
-    // and its message can vary by body-parser version. Detected by `.type`,
-    // a stable body-parser convention, and NEVER trusting `.message` (a
-    // malformed-JSON parse error is usually just a position, e.g. "Unexpected
-    // token h in JSON at position 1", but that isn't a guaranteed contract,
-    // so this never shows or logs it).
-    if (errordetails?.type === 'entity.parse.failed') {
-      return this.fromCatalogue(ErrorCode.INVALID_INPUT, "The request body isn't valid.");
+    // Multer. Nest bundles its own copy, so match on name, never instanceof.
+    // Nest's transformException turns LIMIT_FILE_SIZE into
+    // PayloadTooLargeException and the other limits into
+    // BadRequestException(message) - those are handled here too.
+    if (e?.name === 'MulterError') {
+      const status = e.code === 'LIMIT_FILE_SIZE' ? HttpStatus.PAYLOAD_TOO_LARGE : HttpStatus.BAD_REQUEST;
+      return this.fromCatalogue(ErrorCode.FILE_REJECTED, { status, logDetail: 'classonly' });
     }
-    if (errordetails?.type === 'entity.too.large') {
-      return { ...this.fromCatalogue(ErrorCode.FILE_REJECTED), status: HttpStatus.PAYLOAD_TOO_LARGE };
+    if (exception instanceof PayloadTooLargeException) {
+      return this.fromCatalogue(ErrorCode.FILE_REJECTED, { status: HttpStatus.PAYLOAD_TOO_LARGE, logDetail: 'classonly' });
     }
-    // Belt-and-braces for the SAME malformed-JSON case: Nest's own
-    // RoutesResolver.mapExternalException (routes-resolver.js) intercepts a
-    // SyntaxError from body-parser BEFORE it ever reaches this filter and
-    // rewraps it as `new BadRequestException(err.message)`, discarding the
-    // `.type` this filter checks above - so the branch right above this
-    // comment does NOT actually run for the common case; this one does.
-    // V8's JSON.parse error message is not just a position: with certain
-    // malformed input it quotes a snippet of the actual body back
-    // (confirmed empirically, e.g. `"not json at all hunter2 ..."` produces
-    // `Unexpected token 'o', "not json at"... is not valid JSON`), so this
-    // is a real leak path, not a theoretical one - detected by message shape
-    // since the `.type` is gone by the time we see it.
-    if (
-      exception instanceof BadRequestException &&
-      /is not valid JSON|JSON at position|in JSON at/i.test(errordetails?.message ?? '')
-    ) {
-      return this.fromCatalogue(ErrorCode.INVALID_INPUT, "The request body isn't valid.");
+    if (exception instanceof HttpException && exception.getStatus() === 400 && MULTER_MESSAGES.has(exception.message)) {
+      return this.fromCatalogue(ErrorCode.FILE_REJECTED, { status: HttpStatus.BAD_REQUEST, logDetail: 'classonly' });
+    }
+    // busboy (under multer) on a truncated/malformed multipart body: a plain
+    // Error, which would otherwise be a 500.
+    if (!(exception instanceof HttpException) && /^(Unexpected end of (form|multipart data)|Malformed part header|Multipart: Boundary not found)/.test(e?.message ?? '')) {
+      return this.fromCatalogue(ErrorCode.FILE_REJECTED, { status: HttpStatus.BAD_REQUEST, logDetail: 'classonly' });
     }
 
     if (exception instanceof UnauthorizedException) {
@@ -182,136 +195,155 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return this.fromCatalogue(ErrorCode.NOT_ALLOWED);
     }
     if (exception instanceof NotFoundException) {
-      // Covers both a deliberate NotFoundException and Nest's own "Cannot
-      // GET /path" for an unmatched route - never the exception's own
-      // message, which is exactly the path/method we must not leak.
-      return this.fromCatalogue(ErrorCode.NOT_FOUND);
+      // Nest's unmatched-route message is "Cannot GET /path?query" - never
+      // shown, never logged.
+      return this.fromCatalogue(ErrorCode.NOT_FOUND, { logDetail: 'classonly' });
     }
 
     if (exception instanceof UniqueConstraintError) {
-      return this.fromCatalogue(ErrorCode.ALREADY_EXISTS);
+      return this.fromCatalogue(ErrorCode.ALREADY_EXISTS, { logDetail: 'db' });
     }
     if (exception instanceof ForeignKeyConstraintError) {
-      return this.fromCatalogue(ErrorCode.INVALID_INPUT, "That refers to something that doesn't exist.");
+      return this.fromCatalogue(ErrorCode.INVALID_INPUT, {
+        message: "That refers to something that doesn't exist.",
+        logDetail: 'db',
+      });
     }
     if (SEQUELIZE_UNAVAILABLE_CLASSES.some((klass) => exception instanceof klass)) {
-      return this.fromCatalogue(ErrorCode.SERVICE_UNAVAILABLE);
+      return this.fromCatalogue(ErrorCode.SERVICE_UNAVAILABLE, { logDetail: 'db' });
     }
     if (exception instanceof SequelizeValidationError) {
-      // A model-level validation failure (e.g. a not-null/length check
-      // Sequelize enforces before ever reaching the DB) - generic message
-      // only; never the column name or the value that failed.
-      return this.fromCatalogue(ErrorCode.INVALID_INPUT);
+      return this.fromCatalogue(ErrorCode.INVALID_INPUT, { logDetail: 'db' });
     }
     if (exception instanceof DatabaseError) {
-      // MySQL errno for a bad VALUE, not a bad connection: not-null (1048),
-      // out of range (1264), truncated (1292), incorrect value (1366), data
-      // too long (1406). Never the column/value in the message. Anything
-      // else here is an unexpected DB failure - INTERNAL, not INVALID_INPUT.
-      const DATA_ERRNOS = [1048, 1264, 1292, 1366, 1406];
-      const errno = (exception as any)?.original?.errno;
-      if (DATA_ERRNOS.includes(errno)) {
-        return this.fromCatalogue(ErrorCode.INVALID_INPUT);
+      if (DATA_ERRNOS.includes(e?.original?.errno ?? e?.parent?.errno)) {
+        return this.fromCatalogue(ErrorCode.INVALID_INPUT, { logDetail: 'db' });
       }
-      return this.fromCatalogue(ErrorCode.INTERNAL);
+      return this.fromCatalogue(ErrorCode.INTERNAL, { logDetail: 'db' });
+    }
+    if (exception instanceof SequelizeBaseError) {
+      return this.fromCatalogue(ErrorCode.INTERNAL, { logDetail: 'db' });
     }
 
-    // Axios <1.0 (pinned here) has no exported AxiosError class to check
-    // instanceof, so this duck-types the shape every axios error has.
-    // Full pass-through of the upstream status/code is a later step
-    // (docs/api-errors.md "Delivery" #5); this is only a sane, non-leaking
-    // fallback for the meantime - and it never includes the upstream
-    // hostname/URL that lives on `errordetails.config`/`errordetails.request`.
-    if (errordetails?.isAxiosError) {
-      const reachedUpstream = !!errordetails.response;
-      return this.fromCatalogue(reachedUpstream ? ErrorCode.INTERNAL : ErrorCode.SERVICE_UNAVAILABLE);
-    }
-
-    // Safety net for a library exception that is neither an HttpException nor
-    // any of the specific shapes above, but still carries an HTTP-ish
-    // `status`/`statusCode` (e.g. `http-errors`-based libraries other than
-    // the ones already special-cased). Maps by that NUMBER only - never by
-    // the exception's own message.
-    const statusLike = errordetails?.status ?? errordetails?.statusCode;
-    if (!(exception instanceof HttpException) && typeof statusLike === 'number' && statusLike >= 400 && statusLike < 600) {
-      if (statusLike === 413) {
-        return { ...this.fromCatalogue(ErrorCode.FILE_REJECTED), status: HttpStatus.PAYLOAD_TOO_LARGE };
-      }
-      if (statusLike === 404) {
-        return this.fromCatalogue(ErrorCode.NOT_FOUND);
-      }
-      if (statusLike === 429) {
-        return this.fromCatalogue(ErrorCode.TOO_MANY_ATTEMPTS);
-      }
-      if (statusLike >= 500) {
-        return this.fromCatalogue(ErrorCode.INTERNAL);
-      }
-      return this.fromCatalogue(ErrorCode.INVALID_INPUT);
+    // axios 0.24 has no exported AxiosError class. Upstream pass-through is
+    // docs/api-errors.md Delivery step 5; for now: unreachable -> 503, else
+    // 500. Only class/message/stack are logged - never `config` (which holds
+    // the upstream URL and the Authorization sync key) or `response`.
+    if (e?.isAxiosError) {
+      return this.fromCatalogue(e.response ? ErrorCode.INTERNAL : ErrorCode.SERVICE_UNAVAILABLE);
     }
 
     if (exception instanceof HttpException) {
-      // A deliberate, still-unmapped HttpException from this codebase (e.g. a
-      // business precondition thrown as a plain BadRequestException). Its
-      // message was written by a developer as user-facing text, so unlike
-      // the catch-all below it's trusted - but only when it really is a
-      // string; an object payload (`new BadRequestException({...})`) is never
-      // read out here, so an old-style throw site that still sets one gets a
-      // safe generic message rather than "[object Object]".
-      const response = exception.getResponse();
-      // Nest wraps a string-constructed HttpException's message into
-      // `{statusCode, message, error}` - that `message` key is exception.message
-      // itself and safe to trust. An OLD-STYLE `new BadRequestException({error,
-      // errormessage})` has no such key, and exception.message there is only
-      // Nest's own generic "Bad Request Exception" (not the useful part, and
-      // not what a throw site meant to say) - fall back to the catalogue.
-      const hasStandardShape =
-        typeof response === 'string' || (typeof response === 'object' && response !== null && 'message' in response);
-      const safeMessage = hasStandardShape ? exception.message : undefined;
-      return this.fromCatalogue(ErrorCode.INVALID_INPUT, safeMessage);
+      // The repo's own `{error: true, errormessage: '...'}` shape is the only
+      // HttpException whose message is trusted.
+      const response = exception.getResponse() as any;
+      const ownMessage =
+        response && typeof response === 'object' && response.error === true && typeof response.errormessage === 'string'
+          ? response.errormessage
+          : undefined;
+      // Anything else (URIError "Failed to decode param '...'", Nest
+      // defaults, library errors) may quote input: message not shown, not
+      // logged.
+      return this.byStatus(exception.getStatus(), ownMessage, ownMessage ? 'full' : 'classonly');
     }
 
-    // Anything else - a raw Error, a driver exception, a typo'd throw of a
-    // plain object - is never shown to the client. This is the only branch
-    // that reaches INTERNAL/500 with the fully generic message.
+    // A non-HttpException library error that still carries an HTTP status.
+    const statusLike = e?.status ?? e?.statusCode;
+    if (typeof statusLike === 'number' && statusLike >= 400 && statusLike < 600) {
+      return this.byStatus(statusLike, undefined, 'classonly');
+    }
+
     return this.fromCatalogue(ErrorCode.INTERNAL);
   }
 
-  private fromCatalogue(code: ErrorCode, message?: string, fields?: IErrorFieldResponse[]): MappedError {
+  private isBodyParserError(exception: unknown): boolean {
+    const e = exception as any;
+    if (typeof e?.type === 'string' && /^(entity|charset|encoding)\./.test(e.type)) {
+      return true;
+    }
+    if (exception instanceof SyntaxError && (e?.status === 400 || e?.statusCode === 400)) {
+      return true;
+    }
+    return exception instanceof HttpException && exception.getStatus() === 400 && JSON_PARSE_MESSAGE.test(exception.message);
+  }
+
+  private byStatus(status: number, message: string | undefined, logDetail: LogDetail): MappedError {
+    if (status === 401) return this.fromCatalogue(ErrorCode.SIGN_IN_REQUIRED, { message, logDetail });
+    if (status === 403) return this.fromCatalogue(ErrorCode.NOT_ALLOWED, { message, logDetail });
+    if (status === 404) return this.fromCatalogue(ErrorCode.NOT_FOUND, { message, logDetail });
+    if (status === 409) return this.fromCatalogue(ErrorCode.ALREADY_EXISTS, { message, logDetail });
+    if (status === 413) {
+      return this.fromCatalogue(ErrorCode.FILE_REJECTED, { message, status: HttpStatus.PAYLOAD_TOO_LARGE, logDetail });
+    }
+    if (status === 429) return this.fromCatalogue(ErrorCode.TOO_MANY_ATTEMPTS, { message, logDetail });
+    if (status >= 500) return this.fromCatalogue(ErrorCode.INTERNAL, { message, logDetail });
+    return this.fromCatalogue(ErrorCode.INVALID_INPUT, { message, logDetail });
+  }
+
+  private fromCatalogue(
+    code: ErrorCode,
+    opts: { message?: string; fields?: IErrorFieldResponse[]; status?: number; logDetail?: LogDetail } = {},
+  ): MappedError {
     const catalogue = ErrorCatalogue[code];
+    const hasFields = !!opts.fields && opts.fields.length > 0;
     return {
       code,
-      status: catalogue.status,
-      errormessage: message ?? catalogue.errormessage,
-      hint: catalogue.hint,
-      fields,
+      status: opts.status ?? catalogue.status,
+      errormessage: opts.message ?? catalogue.errormessage,
+      // "Check the highlighted fields." only when there are fields to highlight.
+      hint: code === ErrorCode.INVALID_INPUT && !hasFields ? undefined : catalogue.hint,
+      fields: opts.fields,
+      logDetail: opts.logDetail ?? 'full',
     };
   }
 
   /**
    * Every error, logged exactly once: reference, code, status, method, route
-   * template (not the full URL/query string), the authenticated user id if
-   * any, and the ORIGINAL error's class/message/stack - never the request
-   * body, and never any header (so a bearer token or cookie can't land in a
-   * log line even indirectly). 4xx at warn, 5xx at error - both reach the
-   * production console transport (see services/logger.ts's consoleFilter).
+   * template (`request.route?.path ?? request.path`, never originalUrl or the
+   * query string), the authenticated user id, and as much of the original
+   * error as `logDetail` allows. Never the body, headers, cookies or tokens.
+   * 4xx at warn, 5xx at error.
    */
+  /**
+   * The matched route's template when there is one; otherwise
+   * `request.path` (never originalUrl, so never the query string). A path
+   * that failed to %-decode (Nest's URIError case) is not logged at all -
+   * the undecodable segment is the raw client input.
+   */
+  private routeFor(request: any): string | undefined {
+    if (request?.route?.path) {
+      return request.route.path;
+    }
+    const path: string | undefined = request?.path;
+    if (typeof path !== 'string') {
+      return undefined;
+    }
+    try {
+      decodeURIComponent(path);
+      return path;
+    } catch {
+      return '[undecodable path]';
+    }
+  }
+
   private logError(exception: unknown, mapped: MappedError, reference: string, request: any) {
-    const errordetails = exception as any;
-    const meta = {
+    const e = exception as any;
+    const meta: Record<string, unknown> = {
       reference,
       code: mapped.code,
       status: mapped.status,
       method: request?.method,
-      // `request.path` (Express) is already query-free; `route.path` (the
-      // matched route's template, e.g. "/school/:schoolid") is preferred
-      // when available since it doesn't vary per-id. Neither is
-      // `originalUrl`, which would carry the query string.
-      route: request?.route?.path ?? request?.path,
+      route: this.routeFor(request),
       userid: request?.user?.lmsuserid ?? request?.user?.schooluserid,
-      originalerrorclass: errordetails?.constructor?.name,
-      originalerrormessage: errordetails?.message,
-      stack: errordetails?.stack,
+      originalerrorclass: e?.constructor?.name,
     };
+    if (mapped.logDetail === 'full') {
+      meta.originalerrormessage = e?.message;
+      meta.stack = e?.stack;
+    } else if (mapped.logDetail === 'db') {
+      meta.dberrno = e?.original?.errno ?? e?.parent?.errno;
+      meta.dbcode = e?.original?.code ?? e?.parent?.code;
+    }
     if (mapped.status >= 500) {
       Logger.error('Request failed', meta);
     } else {

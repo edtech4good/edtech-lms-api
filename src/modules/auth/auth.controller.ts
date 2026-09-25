@@ -23,6 +23,24 @@ import {
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { AccessGuard } from "src/guards/access.guard";
 import { Logger } from "src/config";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
+
+/**
+ * UserBusiness.getuser throws NOT_FOUND for a missing user (right for
+ * admin-supplied ids). Here the id comes from the caller's own token, so a
+ * missing user means the session is no longer valid: SIGN_IN_REQUIRED.
+ */
+export const signInRequiredIfUserGone = async <T>(fn: () => Promise<T>): Promise<T> => {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof ApiError && e.code === ErrorCode.NOT_FOUND) {
+      throw new ApiError(ErrorCode.SIGN_IN_REQUIRED);
+    }
+    throw e;
+  }
+};
 import { TokenType } from "src/models/enums";
 import { AuthBusiness, TokenBusiness, UserBusiness } from "../../business";
 import { SchoolBusiness } from "../../business/school.business";
@@ -221,12 +239,10 @@ export class AuthController {
       TokenType.VERIFYEMAIL
     );
     if (!payload) {
-      return {
-        data: false,
-        error: true,
-      };
+      // Was a 200 with error:true.
+      throw new ApiError(ErrorCode.SIGN_IN_REQUIRED);
     }
-    await new UserBusiness().userverifyemail(payload.lmsuserid);
+    await signInRequiredIfUserGone(() => new UserBusiness().userverifyemail(payload.lmsuserid));
     return {
       data: true,
       error: false,
@@ -392,15 +408,13 @@ export class AuthController {
       TokenType.CHANGEPASSWORD
     );
     if (!payload) {
-      return {
-        data: false,
-        error: true,
-      };
+      // Was a 200 with error:true.
+      throw new ApiError(ErrorCode.SIGN_IN_REQUIRED);
     }
-    await new UserBusiness().updatepassword(
+    await signInRequiredIfUserGone(() => new UserBusiness().updatepassword(
       payload.lmsuserid,
       body.lmsuserpassword
-    );
+    ));
     return {
       data: true,
       error: false,

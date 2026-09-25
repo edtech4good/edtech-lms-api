@@ -32,7 +32,10 @@ export class ApiError extends HttpException {
     const status = opts?.status ?? catalogue.status;
     super(message ?? catalogue.errormessage, status);
     this.code = code;
-    this.hint = opts?.hint ?? catalogue.hint;
+    // "Check the highlighted fields." only makes sense when there are fields.
+    const defaultHint =
+      code === ErrorCode.INVALID_INPUT && !(opts?.fields && opts.fields.length > 0) ? undefined : catalogue.hint;
+    this.hint = opts?.hint ?? defaultHint;
     this.fields = opts?.fields;
   }
 }

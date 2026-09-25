@@ -67,7 +67,11 @@ export class UserBusiness {
       return _user.get({ plain: true });
     }
 
-    throw new ApiError(ErrorCode.SIGN_IN_REQUIRED);
+    // NOT_FOUND, not SIGN_IN_REQUIRED: the id here is often admin-supplied
+    // (EditUser/DeleteUser validators), and a 401 would sign the ADMIN out
+    // of lms-ui for editing a user that no longer exists. Token-derived
+    // callers (auth.business, auth.controller) map this to SIGN_IN_REQUIRED.
+    throw new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist.");
   };
 
   /**

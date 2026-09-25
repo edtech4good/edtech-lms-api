@@ -1,8 +1,10 @@
-import { Body, Controller, INestApplication, Module, Post } from '@nestjs/common';
+import { Body, Controller, Get, INestApplication, Module, Param, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { json } from 'express';
 import request from 'supertest';
+import Transport from 'winston-transport';
 import { GlobalExceptionFilter } from './global-exception.filter';
 import { Config, Logger } from '../config';
 
@@ -12,21 +14,45 @@ class ProbeController {
   echo(@Body() body: any) {
     return { error: false, data: body };
   }
+
+  @Get('item/:id')
+  item(@Param('id') id: string) {
+    return { error: false, data: id };
+  }
+
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10, files: 1 } }))
+  upload(@UploadedFile() file: Express.Multer.File) {
+    return { error: false, data: file?.size };
+  }
 }
 
 @Module({ controllers: [ProbeController] })
 class ProbeModule {}
 
 /**
- * Exercises the REAL pipeline (Express body-parser + Nest's routing +
- * GlobalExceptionFilter), not just the filter's catch() called directly -
- * per docs/testing-and-verification.md, "verify against the real thing".
- * This is how a body-parser SyntaxError (malformed/oversized JSON) actually
- * reaches the filter, which unit tests calling .catch() by hand can't prove.
+ * Captures what the REAL winston Logger (src/config.ts, not a jest mock)
+ * emits, after its formats have run, so a leak through `message`, `stack`
+ * or any metadata key shows up exactly as it would in the console log.
  */
-describe('GlobalExceptionFilter (integration, real Express pipeline)', () => {
+class CaptureTransport extends Transport {
+  public lines: string[] = [];
+
+  log(info: any, callback: () => void) {
+    this.lines.push(JSON.stringify(info));
+    callback();
+  }
+}
+
+/**
+ * Exercises the REAL pipeline (Express body-parser + Nest routing + multer +
+ * GlobalExceptionFilter + the real winston logger), not the filter's catch()
+ * called by hand.
+ */
+describe('GlobalExceptionFilter (integration, real Express pipeline and real logger)', () => {
   let app: INestApplication;
   let originalDebug: boolean;
+  let capture: CaptureTransport;
 
   beforeAll(async () => {
     originalDebug = Config.fortyk.api.debug;
@@ -37,58 +63,86 @@ describe('GlobalExceptionFilter (integration, real Express pipeline)', () => {
     await app.init();
   });
 
+  beforeEach(() => {
+    capture = new CaptureTransport();
+    Logger.add(capture);
+  });
+
+  afterEach(() => {
+    Logger.remove(capture);
+  });
+
   afterAll(async () => {
     Config.fortyk.api.debug = originalDebug;
     await app.close();
   });
 
-  it('malformed JSON never leaks the raw body text (which may contain a password fragment) into the response', async () => {
+  const logged = () => capture.lines.join('\n');
+
+  it('malformed JSON body "hunter2pass": neither the response nor the real log contains it', async () => {
     const res = await request(app.getHttpServer())
       .post('/probe/echo')
       .set('Content-Type', 'application/json')
-      .send('not json at all hunter2 secretvalue');
+      .send('hunter2pass');
 
     expect(res.status).toBe(400);
-    const serialized = JSON.stringify(res.body);
-    expect(serialized).not.toContain('hunter2');
-    expect(serialized).not.toContain('secretvalue');
     expect(res.body.code).toBe('INVALID_INPUT');
-    // The generic message, not Node's own JSON.parse error text (position-only
-    // today, but that is a V8 implementation detail, not a stable contract -
-    // this line is what actually proves the dedicated entity.parse.failed
-    // branch ran, not just that this V8's parse-error message happens to be
-    // safe).
     expect(res.body.errormessage).toBe("The request body isn't valid.");
+    expect(JSON.stringify(res.body)).not.toContain('hunter2pass');
+    expect(capture.lines.length).toBe(1);
+    expect(logged()).not.toContain('hunter2pass');
   });
 
-  it('malformed JSON is never logged with the raw body text either', async () => {
-    const warnSpy = jest.spyOn(Logger, 'warn').mockImplementation(() => Logger as any);
-    const errorSpy = jest.spyOn(Logger, 'error').mockImplementation(() => Logger as any);
+  it('unknown route with a query token: 404 NOT_FOUND, route template logged, no path/query in response or log', async () => {
+    const res = await request(app.getHttpServer()).get('/nope/route?token=QUERYTOKEN');
 
-    await request(app.getHttpServer())
-      .post('/probe/echo')
-      .set('Content-Type', 'application/json')
-      .send('{"lmsuserpassword": "hunter2", not valid json');
-
-    const allCalls = [...warnSpy.mock.calls, ...errorSpy.mock.calls];
-    expect(allCalls.length).toBeGreaterThan(0);
-    const serialized = JSON.stringify(allCalls);
-    expect(serialized).not.toContain('hunter2');
-    warnSpy.mockRestore();
-    errorSpy.mockRestore();
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('NOT_FOUND');
+    expect(JSON.stringify(res.body)).not.toContain('QUERYTOKEN');
+    expect(capture.lines.length).toBe(1);
+    expect(logged()).not.toContain('QUERYTOKEN');
+    expect(JSON.parse(capture.lines[0]).metadata.route).toBe('/nope/route');
   });
 
-  it('an oversized JSON body maps to FILE_REJECTED/INVALID_INPUT at 413, not a raw 500', async () => {
-    const bigPayload = JSON.stringify({ data: 'x'.repeat(5000) });
+  it('bad %-encoding in a path param (URIError): generic INVALID_INPUT, param never echoed or logged', async () => {
+    const res = await request(app.getHttpServer()).get('/probe/item/%E0%A4%AFsecretparam%FF');
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_INPUT');
+    expect(JSON.stringify(res.body)).not.toContain('secretparam');
+    expect(logged()).not.toContain('secretparam');
+  });
+
+  it('an oversized JSON body is FILE_REJECTED 413, not a 500', async () => {
     const res = await request(app.getHttpServer())
       .post('/probe/echo')
       .set('Content-Type', 'application/json')
-      .send(bigPayload);
+      .send(JSON.stringify({ data: 'x'.repeat(5000) }));
 
     expect(res.status).toBe(413);
+    expect(res.body.code).toBe('FILE_REJECTED');
   });
 
-  it('a valid request still passes through the filter untouched', async () => {
+  it('an upload over the multer size limit is FILE_REJECTED 413', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/probe/upload')
+      .attach('file', Buffer.from('this is more than ten bytes'), 'big.txt');
+
+    expect(res.status).toBe(413);
+    expect(res.body.code).toBe('FILE_REJECTED');
+  });
+
+  it('an upload in an unexpected multipart field is FILE_REJECTED 400, field name not logged', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/probe/upload')
+      .attach('secretfieldname', Buffer.from('tiny'), 'a.txt');
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('FILE_REJECTED');
+    expect(logged()).not.toContain('secretfieldname');
+  });
+
+  it('a valid request passes through untouched and logs nothing', async () => {
     const res = await request(app.getHttpServer())
       .post('/probe/echo')
       .set('Content-Type', 'application/json')
@@ -96,35 +150,15 @@ describe('GlobalExceptionFilter (integration, real Express pipeline)', () => {
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ error: false, data: { hello: 'world' } });
+    expect(capture.lines.length).toBe(0);
   });
 
-  it('logs the route template, not the raw URL with query string', async () => {
-    const warnSpy = jest.spyOn(Logger, 'warn').mockImplementation(() => Logger as any);
-    const errorSpy = jest.spyOn(Logger, 'error').mockImplementation(() => Logger as any);
-
-    await request(app.getHttpServer())
-      .post('/probe/echo?secret=shouldnotleak')
-      .set('Content-Type', 'application/json')
-      .send('not json at all');
-
-    const allCalls = [...warnSpy.mock.calls, ...errorSpy.mock.calls];
-    const meta: any = (allCalls[0] as any[] | undefined)?.[1];
-    expect(meta?.route).not.toContain('secret');
-    expect(meta?.route).not.toContain('?');
-    warnSpy.mockRestore();
-    errorSpy.mockRestore();
-  });
-
-  it('the reference in the logged metadata matches the reference returned to the client', async () => {
-    const errorSpy = jest.spyOn(Logger, 'warn').mockImplementation(() => Logger as any);
-
+  it('the reference logged server-side equals the reference returned to the client', async () => {
     const res = await request(app.getHttpServer())
       .post('/probe/echo')
       .set('Content-Type', 'application/json')
       .send('not json at all');
 
-    const meta: any = (errorSpy.mock.calls[0] as any[] | undefined)?.[1];
-    expect(meta?.reference).toBe(res.body.reference);
-    errorSpy.mockRestore();
+    expect(JSON.parse(capture.lines[0]).metadata.reference).toBe(res.body.reference);
   });
 });

@@ -1,5 +1,6 @@
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { BadRequestException } from "@nestjs/common";
 import { col, fn, Op, WhereOptions } from "sequelize";
 import { IPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
@@ -287,7 +288,7 @@ export class LessonBusiness {
 
   getLearningPracticeQuizPoints = async (lessonid: string) => {
     const ls = await new LessonBusiness().getLessonid(lessonid);
-    if(!ls) throw new BadRequestException("Lesson not found");
+    if(!ls) throw new ApiError(ErrorCode.NOT_FOUND, "That lesson doesn't exist.");
     const learnings = await lessonlearnings.count({
       where: { lessonid, deleted_at: { [Op.is]: null as any } },
     });

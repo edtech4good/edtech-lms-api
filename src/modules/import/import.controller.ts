@@ -120,7 +120,13 @@ export class ImportController {
     if (duplicates.length > 0) {
       // Was: joined the OTHER users' usernames into the error message -
       // docs/api-errors.md: never echo other users' names in a response.
-      throw new ApiError(ErrorCode.ALREADY_EXISTS, "Some teachers in this file already exist.");
+      // Row index + field, never the usernames themselves.
+      const taken = new Set(duplicates.map((x) => x.schoolusername));
+      const fields = newteachers
+        .map((x, i) => ({ x, i }))
+        .filter(({ x }) => taken.has(x.teacherusername))
+        .map(({ i }) => ({ field: `rows[${i}].teacherusername`, message: "That username is already taken." }));
+      throw new ApiError(ErrorCode.INVALID_INPUT, "Some usernames in this file are already taken.", { fields });
     }
     await tb.addteacheruserbyschoolname(newteachers, schoolname.trim());
     return {

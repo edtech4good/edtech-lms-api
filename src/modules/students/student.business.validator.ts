@@ -13,17 +13,19 @@ export const BulkUpload = async (
     data.students.map((x) => x.schoolusername)
   );
   if (tagexists.length > 0) {
+    // One field per clashing row (row index + field), so the admin can find
+    // it - without echoing anyone's username (docs/api-errors.md). A field
+    // error is INVALID_INPUT: `fields` are only allowed on INVALID_INPUT.
+    const taken = new Set(tagexists.map((x) => x.schoolusername));
     const error = new ValidationError("Validation", {}, {});
-    error.details = [];
-    const erroritem: ValidationErrorItem = {
-      message: "",
-      path: ["students"],
-      type: "any.exists",
-    };
-    // Was: joined the matching students' own usernames into the error
-    // message - docs/api-errors.md: user-supplied input is never echoed.
-    erroritem.message = "Some students in this file already exist.";
-    error.details.push(erroritem);
+    error.details = data.students
+      .map((x, i) => ({ x, i }))
+      .filter(({ x }) => taken.has(x.schoolusername))
+      .map(({ i }): ValidationErrorItem => ({
+        message: "That username is already taken.",
+        path: [`students[${i}].schoolusername`],
+        type: "any.invalid",
+      }));
     return [error];
   }
   return [];

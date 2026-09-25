@@ -1,3 +1,5 @@
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Op, WhereOptions } from "sequelize";
 import { LmsUserToken } from "src/models/token.model";
@@ -12,7 +14,6 @@ import { StudentBusiness } from "./student.business";
 import { schools } from '../models/data-models/school';
 import { IMultiPaging } from '../models/IPaging';
 import { dbinstance } from "src/services/dbservice";
-import { BadRequestException } from "@nestjs/common";
 
 export class StandardBusiness {
   createstandard = async (standard: standardsAttributes, user: LmsUserToken) => {
@@ -20,7 +21,7 @@ export class StandardBusiness {
     standard.isdeleted = false;
     standard.created_by = user.lmsuserid;
     const school = await schools.findOne({ where: { schoolid: standard.schoolid }});
-    if(!school) throw new BadRequestException('no school found');
+    if(!school) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
     standard.schoolname = school.schoolname;
     return await standards.create(standard);
   };
@@ -66,7 +67,7 @@ export class StandardBusiness {
       tempdt.updated_at = new Date();
       tempdt.updated_by = user.lmsuserid;
       const school = await schools.findOne({ where: { schoolid: standard.schoolid }});
-      if(!school) throw new BadRequestException('no school found');
+      if(!school) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
       tempdt.schoolname = school.schoolname;
       await tempdt.save({ fields: ["standardname", "updated_at", "updated_by", "schoolid", "schoolname"]});
       //await tempdt.reload();

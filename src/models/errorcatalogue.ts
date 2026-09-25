@@ -56,7 +56,9 @@ export const ErrorCatalogue: Record<ErrorCode, ErrorCatalogueEntry> = {
   [ErrorCode.SERVICE_UNAVAILABLE]: {
     status: HttpStatus.SERVICE_UNAVAILABLE,
     errormessage: 'The service is temporarily unavailable.',
-    hint: 'Try again in a few minutes. Your work is kept and retried.',
+    // Exactly the spec's default. lms-api is the admin API: nothing is kept on
+    // a device, so the result-save wording in the spec does not apply here.
+    hint: 'Try again in a few minutes.',
   },
   [ErrorCode.INTERNAL]: {
     status: HttpStatus.INTERNAL_SERVER_ERROR,

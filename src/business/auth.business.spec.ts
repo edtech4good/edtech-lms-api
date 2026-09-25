@@ -15,9 +15,25 @@ const LOGIN_FAILURE_MESSAGE = "The username or password is incorrect.";
 // UserBusiness()` internally, so the class itself is mocked rather than
 // spying on an instance method.
 const getuserbyemailMock = jest.fn();
+const updatepasswordMock = jest.fn();
 jest.mock("./user.business", () => ({
   UserBusiness: jest.fn().mockImplementation(() => ({
     getuserbyemail: getuserbyemailMock,
+    updatepassword: updatepasswordMock,
+  })),
+}));
+
+const verifyTokenMock = jest.fn();
+jest.mock("./token.business", () => ({
+  TokenBusiness: jest.fn().mockImplementation(() => ({
+    verifyToken: verifyTokenMock,
+  })),
+}));
+
+const getuserbynameMock = jest.fn();
+jest.mock("./schooluser.business", () => ({
+  SchoolUserBusiness: jest.fn().mockImplementation(() => ({
+    getuserbyname: getuserbynameMock,
   })),
 }));
 
@@ -110,5 +126,67 @@ describe("AuthBusiness.login (#56 enumeration guard)", () => {
     mockGetUserByEmail(realUser);
     const result = await new AuthBusiness().login(realUser.lmsusername, REAL_PASSWORD);
     expect(result).toBe(realUser);
+  });
+});
+
+/**
+ * teacherlogin mirrors login's #56 guard: same code/message for unknown user
+ * and wrong password, and the unknown-user branch still pays the bcrypt
+ * cost. Previously untested - removing the dummy verify stayed green.
+ */
+describe("AuthBusiness.teacherlogin (#56 enumeration guard)", () => {
+  const REAL_PASSWORD = "correct horse battery staple";
+  const realHash = passwordService.hashPassword(REAL_PASSWORD);
+  const realTeacher = {
+    schooluserid: "teacher-1",
+    schoolusername: "teacher1",
+    schooluserpasswordhash: realHash,
+    isdisabled: false,
+    isdeleted: false,
+    schooluserstatus: true,
+  } as any;
+  let verifyPasswordSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    verifyPasswordSpy = jest.spyOn(passwordService, "verifyPassword");
+    getuserbynameMock.mockReset();
+  });
+  afterEach(() => verifyPasswordSpy.mockRestore());
+
+  it("unknown teacher and wrong password reject with the identical code, message and status", async () => {
+    getuserbynameMock.mockResolvedValue(undefined);
+    const unknown: any = await new AuthBusiness().teacherlogin("nobody", "x").catch((e) => e);
+    getuserbynameMock.mockResolvedValue(realTeacher);
+    const wrong: any = await new AuthBusiness().teacherlogin("teacher1", "wrong").catch((e) => e);
+
+    expect(unknown).toMatchObject(new ApiError(ErrorCode.LOGIN_FAILED, LOGIN_FAILURE_MESSAGE));
+    expect(unknown.code).toBe(wrong.code);
+    expect(unknown.message).toBe(wrong.message);
+    expect(unknown.getStatus()).toBe(wrong.getStatus());
+  });
+
+  it("still calls verifyPassword against the dummy hash for an unknown teacher", async () => {
+    getuserbynameMock.mockResolvedValue(undefined);
+    await expect(new AuthBusiness().teacherlogin("nobody", "x")).rejects.toThrow();
+    expect(verifyPasswordSpy).toHaveBeenCalledTimes(1);
+    expect(verifyPasswordSpy.mock.calls[0][1]).not.toBe(realHash);
+  });
+});
+
+/**
+ * UserBusiness.getuser now throws NOT_FOUND (admin-supplied ids must not
+ * sign the admin out). Token-derived paths must still end as
+ * SIGN_IN_REQUIRED.
+ */
+describe("token-derived user lookups map a missing user to SIGN_IN_REQUIRED", () => {
+  beforeEach(() => {
+    verifyTokenMock.mockReset();
+    updatepasswordMock.mockReset();
+  });
+
+  it("AuthBusiness.changePassword: getuser NOT_FOUND -> SIGN_IN_REQUIRED", async () => {
+    verifyTokenMock.mockResolvedValue({ sub: "gone-user" });
+    updatepasswordMock.mockRejectedValue(new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist."));
+    await expect(new AuthBusiness().changePassword("t", "p")).rejects.toMatchObject({ code: ErrorCode.SIGN_IN_REQUIRED });
   });
 });
