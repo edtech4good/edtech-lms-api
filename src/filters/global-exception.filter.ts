@@ -16,12 +16,14 @@ import {
   ConnectionError,
   ConnectionRefusedError,
   ConnectionTimedOutError,
+  DatabaseError,
   ForeignKeyConstraintError,
   HostNotFoundError,
   HostNotReachableError,
   InvalidConnectionError,
   TimeoutError,
   UniqueConstraintError,
+  ValidationError as SequelizeValidationError,
 } from 'sequelize';
 import { Config, Logger } from '../config';
 import { ApiError } from '../models/ApiError';
@@ -99,6 +101,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
    * exception's message.
    */
   private map(exception: unknown): MappedError {
+    const errordetails = exception as any;
     if (exception instanceof ApiError) {
       return {
         code: exception.code,
@@ -128,12 +131,48 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     if (exception instanceof PayloadTooLargeException) {
       return this.fromCatalogue(ErrorCode.FILE_REJECTED);
     }
-    if (exception instanceof MulterError) {
-      const status = exception.code === 'LIMIT_FILE_SIZE' ? HttpStatus.PAYLOAD_TOO_LARGE : HttpStatus.BAD_REQUEST;
+    // @nestjs/platform-express bundles its own copy of `multer` under
+    // node_modules/@nestjs/platform-express/node_modules/multer - a
+    // different module instance than the `multer` this file imports, so
+    // `instanceof MulterError` can silently miss. Check by name too.
+    if (exception instanceof MulterError || errordetails?.name === 'MulterError') {
+      const status = errordetails?.code === 'LIMIT_FILE_SIZE' ? HttpStatus.PAYLOAD_TOO_LARGE : HttpStatus.BAD_REQUEST;
       return { ...this.fromCatalogue(ErrorCode.FILE_REJECTED), status };
     }
     if (exception instanceof BadRequestException && exception.message === 'Too many files') {
       return this.fromCatalogue(ErrorCode.FILE_REJECTED);
+    }
+
+    // Express's body-parser (JSON/urlencoded) throws directly, before any
+    // Nest interceptor or controller runs - never an ApiError/ValidationException,
+    // and its message can vary by body-parser version. Detected by `.type`,
+    // a stable body-parser convention, and NEVER trusting `.message` (a
+    // malformed-JSON parse error is usually just a position, e.g. "Unexpected
+    // token h in JSON at position 1", but that isn't a guaranteed contract,
+    // so this never shows or logs it).
+    if (errordetails?.type === 'entity.parse.failed') {
+      return this.fromCatalogue(ErrorCode.INVALID_INPUT, "The request body isn't valid.");
+    }
+    if (errordetails?.type === 'entity.too.large') {
+      return { ...this.fromCatalogue(ErrorCode.FILE_REJECTED), status: HttpStatus.PAYLOAD_TOO_LARGE };
+    }
+    // Belt-and-braces for the SAME malformed-JSON case: Nest's own
+    // RoutesResolver.mapExternalException (routes-resolver.js) intercepts a
+    // SyntaxError from body-parser BEFORE it ever reaches this filter and
+    // rewraps it as `new BadRequestException(err.message)`, discarding the
+    // `.type` this filter checks above - so the branch right above this
+    // comment does NOT actually run for the common case; this one does.
+    // V8's JSON.parse error message is not just a position: with certain
+    // malformed input it quotes a snippet of the actual body back
+    // (confirmed empirically, e.g. `"not json at all hunter2 ..."` produces
+    // `Unexpected token 'o', "not json at"... is not valid JSON`), so this
+    // is a real leak path, not a theoretical one - detected by message shape
+    // since the `.type` is gone by the time we see it.
+    if (
+      exception instanceof BadRequestException &&
+      /is not valid JSON|JSON at position|in JSON at/i.test(errordetails?.message ?? '')
+    ) {
+      return this.fromCatalogue(ErrorCode.INVALID_INPUT, "The request body isn't valid.");
     }
 
     if (exception instanceof UnauthorizedException) {
@@ -158,6 +197,24 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     if (SEQUELIZE_UNAVAILABLE_CLASSES.some((klass) => exception instanceof klass)) {
       return this.fromCatalogue(ErrorCode.SERVICE_UNAVAILABLE);
     }
+    if (exception instanceof SequelizeValidationError) {
+      // A model-level validation failure (e.g. a not-null/length check
+      // Sequelize enforces before ever reaching the DB) - generic message
+      // only; never the column name or the value that failed.
+      return this.fromCatalogue(ErrorCode.INVALID_INPUT);
+    }
+    if (exception instanceof DatabaseError) {
+      // MySQL errno for a bad VALUE, not a bad connection: not-null (1048),
+      // out of range (1264), truncated (1292), incorrect value (1366), data
+      // too long (1406). Never the column/value in the message. Anything
+      // else here is an unexpected DB failure - INTERNAL, not INVALID_INPUT.
+      const DATA_ERRNOS = [1048, 1264, 1292, 1366, 1406];
+      const errno = (exception as any)?.original?.errno;
+      if (DATA_ERRNOS.includes(errno)) {
+        return this.fromCatalogue(ErrorCode.INVALID_INPUT);
+      }
+      return this.fromCatalogue(ErrorCode.INTERNAL);
+    }
 
     // Axios <1.0 (pinned here) has no exported AxiosError class to check
     // instanceof, so this duck-types the shape every axios error has.
@@ -165,10 +222,31 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // (docs/api-errors.md "Delivery" #5); this is only a sane, non-leaking
     // fallback for the meantime - and it never includes the upstream
     // hostname/URL that lives on `errordetails.config`/`errordetails.request`.
-    const errordetails = exception as any;
     if (errordetails?.isAxiosError) {
       const reachedUpstream = !!errordetails.response;
       return this.fromCatalogue(reachedUpstream ? ErrorCode.INTERNAL : ErrorCode.SERVICE_UNAVAILABLE);
+    }
+
+    // Safety net for a library exception that is neither an HttpException nor
+    // any of the specific shapes above, but still carries an HTTP-ish
+    // `status`/`statusCode` (e.g. `http-errors`-based libraries other than
+    // the ones already special-cased). Maps by that NUMBER only - never by
+    // the exception's own message.
+    const statusLike = errordetails?.status ?? errordetails?.statusCode;
+    if (!(exception instanceof HttpException) && typeof statusLike === 'number' && statusLike >= 400 && statusLike < 600) {
+      if (statusLike === 413) {
+        return { ...this.fromCatalogue(ErrorCode.FILE_REJECTED), status: HttpStatus.PAYLOAD_TOO_LARGE };
+      }
+      if (statusLike === 404) {
+        return this.fromCatalogue(ErrorCode.NOT_FOUND);
+      }
+      if (statusLike === 429) {
+        return this.fromCatalogue(ErrorCode.TOO_MANY_ATTEMPTS);
+      }
+      if (statusLike >= 500) {
+        return this.fromCatalogue(ErrorCode.INTERNAL);
+      }
+      return this.fromCatalogue(ErrorCode.INVALID_INPUT);
     }
 
     if (exception instanceof HttpException) {
@@ -224,7 +302,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       code: mapped.code,
       status: mapped.status,
       method: request?.method,
-      route: request?.route?.path ?? request?.originalUrl?.split('?')[0],
+      // `request.path` (Express) is already query-free; `route.path` (the
+      // matched route's template, e.g. "/school/:schoolid") is preferred
+      // when available since it doesn't vary per-id. Neither is
+      // `originalUrl`, which would carry the query string.
+      route: request?.route?.path ?? request?.path,
       userid: request?.user?.lmsuserid ?? request?.user?.schooluserid,
       originalerrorclass: errordetails?.constructor?.name,
       originalerrormessage: errordetails?.message,
