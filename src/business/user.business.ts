@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { lmsusers, lmsusersAttributes } from "../models/data-models/init-models"
 import { Role } from '../models/enums';
-import { BadRequestException } from '@nestjs/common';
+import { ApiError } from 'src/models/ApiError';
+import { ErrorCode } from 'src/models/enums/errorcode.enum';
 import { hashPassword } from 'src/services/password.service';
 import { v4 as uuidv4 } from 'uuid';
 import { TokenBusiness } from './token.business';
@@ -66,7 +67,7 @@ export class UserBusiness {
       return _user.get({ plain: true });
     }
 
-    throw new BadRequestException('Please authenticate');
+    throw new ApiError(ErrorCode.SIGN_IN_REQUIRED);
   };
 
   /**

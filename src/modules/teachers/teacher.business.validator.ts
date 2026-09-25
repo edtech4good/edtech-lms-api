@@ -16,12 +16,13 @@ export const BulkUpload = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["teachers"],
+      type: "any.exists",
     };
-    erroritem.message = `Teachers already exists, ${tagexists
-      .map((x) => x.schoolusername)
-      .join(",")}`;
+    // Was: joined the matching teachers' own usernames into the error
+    // message - docs/api-errors.md: user-supplied input is never echoed.
+    // (Same fix as import.controller.ts's identical check.)
+    erroritem.message = "Some teachers in this file already exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -40,10 +41,10 @@ export const ValidateTeacherid = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schooluserid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid teacher user id";
+    erroritem.message = "That teacher doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -57,10 +58,10 @@ export const ValidateTeacherUserid = async (request: IRequest, data: any): Promi
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['schooluserid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid teacher user id';
+    erroritem.message = "That teacher doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }

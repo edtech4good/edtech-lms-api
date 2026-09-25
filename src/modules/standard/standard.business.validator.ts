@@ -19,10 +19,10 @@ export const CreateStandard = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['standardname'],
+      type: 'any.exists',
     };
-    erroritem.message = "standard already exists";
+    erroritem.message = "That standard already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -41,10 +41,10 @@ export const EditStandard = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['standardid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid standard id";
+    erroritem.message = "That standard doesn't exist.";
     error.details.push(erroritem);
     return [error];
   } else {
@@ -60,10 +60,10 @@ export const EditStandard = async (
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: "",
-        path: [""],
-        type: "",
+        path: ['standardname'],
+        type: 'any.exists',
       };
-      erroritem.message = "standard already exists";
+      erroritem.message = "That standard already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -82,10 +82,10 @@ export const DeleteStandard = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['standardid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid standard id";
+    erroritem.message = "That standard doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -94,11 +94,11 @@ export const DeleteStandard = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["standardid"],
+      type: "any.invalid",
     };
     erroritem.message =
-      "Standard has students assigned. Standard cannot be deleted";
+      "That standard has students and can't be deleted.";
     error.details.push(erroritem);
     return [error];
   }

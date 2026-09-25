@@ -17,12 +17,12 @@ export const BulkUpload = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["students"],
+      type: "any.exists",
     };
-    erroritem.message = `Students already exists, ${tagexists
-      .map((x) => x.schoolusername)
-      .join(",")}`;
+    // Was: joined the matching students' own usernames into the error
+    // message - docs/api-errors.md: user-supplied input is never echoed.
+    erroritem.message = "Some students in this file already exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -41,10 +41,10 @@ export const ValidateSchoolUserid = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schooluserid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid school user id";
+    erroritem.message = "That school user doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -61,10 +61,10 @@ export const ValidatestudentID = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['studentid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid student id";
+    erroritem.message = "That student doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }

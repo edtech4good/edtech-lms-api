@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   Get,
   HttpCode,
@@ -10,6 +9,8 @@ import {
   StreamableFile,
   UseGuards,
 } from "@nestjs/common";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { ApiBearerAuth, ApiResponse, ApiTags } from "@nestjs/swagger";
 import AdmZip from "adm-zip";
 import axios from "axios";
@@ -176,10 +177,7 @@ export class SyncController {
         true
       );
     if (studentusers.length <= 0) {
-      throw new BadRequestException({
-        error: true,
-        errormessage: "No student available",
-      });
+      throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to sync.");
     }
 
     const zip = new AdmZip();

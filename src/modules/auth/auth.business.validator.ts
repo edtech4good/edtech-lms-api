@@ -12,10 +12,10 @@ const UserEmailExistsValidator = async (request: IRequest): Promise<ValidationEr
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lmsusername'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Email already exists';
+    erroritem.message = "That email is already registered.";
     error.details.push(erroritem);
     return error;
   }
@@ -28,10 +28,10 @@ const isNotUserEmailExistsValidator = async (request: IRequest): Promise<Validat
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lmsusername'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Email not exists';
+    erroritem.message = "That email isn't registered.";
     error.details.push(erroritem);
     return error;
   }
@@ -45,10 +45,10 @@ const UserExistsValidator = async (request: IRequest, user: any): Promise<Valida
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lmsuserid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'User not exists';
+    erroritem.message = "That user doesn't exist.";
     error.details.push(erroritem);
     return error;
   }

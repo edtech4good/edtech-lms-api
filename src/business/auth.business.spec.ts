@@ -1,6 +1,14 @@
-import { BadRequestException } from "@nestjs/common";
 import * as passwordService from "src/services/password.service";
 import { AuthBusiness } from "./auth.business";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
+
+// The error contract's fixed message for ErrorCode.LOGIN_FAILED
+// (docs/api-errors.md) - deliberately identical across every login-failure
+// branch (unknown user, wrong password, unverified, disabled). Read from the
+// catalogue rather than hardcoded here, so this test can't drift from the
+// contract itself.
+const LOGIN_FAILURE_MESSAGE = "The username or password is incorrect.";
 
 // UserBusiness.getuserbyemail is an instance arrow-function property (not on
 // the prototype), and AuthBusiness.login constructs its own `new
@@ -46,22 +54,44 @@ describe("AuthBusiness.login (#56 enumeration guard)", () => {
   const mockGetUserByEmail = (result: any) =>
     getuserbyemailMock.mockResolvedValue(result);
 
-  it("rejects an unknown email with the same message as a wrong password", async () => {
+  it("rejects an unknown email with the same code and message as a wrong password", async () => {
     mockGetUserByEmail(undefined);
     await expect(
       new AuthBusiness().login("nobody@example.com", "whatever")
     ).rejects.toMatchObject(
-      new BadRequestException("User/Password not matching")
+      new ApiError(ErrorCode.LOGIN_FAILED, LOGIN_FAILURE_MESSAGE)
     );
   });
 
-  it("rejects a known email with the wrong password with the identical message", async () => {
+  it("rejects a known email with the wrong password with the identical code and message", async () => {
     mockGetUserByEmail(realUser);
     await expect(
       new AuthBusiness().login(realUser.lmsusername, "totally wrong")
     ).rejects.toMatchObject(
-      new BadRequestException("User/Password not matching")
+      new ApiError(ErrorCode.LOGIN_FAILED, LOGIN_FAILURE_MESSAGE)
     );
+  });
+
+  it("both failure paths reject with the exact same ApiError code and message (the anti-enumeration property under test)", async () => {
+    mockGetUserByEmail(undefined);
+    let unknownUserError: any;
+    try {
+      await new AuthBusiness().login("nobody@example.com", "whatever");
+    } catch (e) {
+      unknownUserError = e;
+    }
+
+    mockGetUserByEmail(realUser);
+    let wrongPasswordError: any;
+    try {
+      await new AuthBusiness().login(realUser.lmsusername, "totally wrong");
+    } catch (e) {
+      wrongPasswordError = e;
+    }
+
+    expect(unknownUserError.code).toBe(wrongPasswordError.code);
+    expect(unknownUserError.message).toBe(wrongPasswordError.message);
+    expect(unknownUserError.getStatus()).toBe(wrongPasswordError.getStatus());
   });
 
   it("still calls verifyPassword (pays the bcrypt cost) for an unknown user, so timing does not out the enumeration", async () => {

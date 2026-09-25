@@ -1,3 +1,4 @@
+export * from './ApiError';
 export * from './config.model';
 export * from './CustomForbiddenException';
 export * from './Ibusinessrule';

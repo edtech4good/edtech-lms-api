@@ -15,10 +15,10 @@ export const SchoolExists = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schoolname'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid School Name";
+    erroritem.message = "That school doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -37,10 +37,10 @@ export const SchoolExistsById = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schoolid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid School Name";
+    erroritem.message = "That school doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -63,10 +63,10 @@ export const CreateSchool = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schoolname'],
+      type: 'any.exists',
     };
-    erroritem.message = "Document tag already exists";
+    erroritem.message = "That school already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -83,10 +83,10 @@ export const EditSchool = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schoolid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid document tag id";
+    erroritem.message = "That school doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -122,10 +122,10 @@ export const DeleteSchool = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schoolid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid document tag id";
+    erroritem.message = "That school doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -134,11 +134,11 @@ export const DeleteSchool = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["schoolid"],
+      type: "any.invalid",
     };
     erroritem.message =
-      "School has students assigned. School cannot be deleted";
+      "That school has students and can't be deleted.";
     error.details.push(erroritem);
     return [error];
   }

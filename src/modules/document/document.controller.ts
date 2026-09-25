@@ -26,7 +26,8 @@ import "multer";
 import { UploadLimits } from "src/constants/upload-limits";
 import { AccessGuard } from "src/guards/access.guard";
 import { SchemaValidationInterceptor } from "src/interceptors";
-import { ValidationException } from "src/models";
+import { ApiError } from "src/models";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { documentsAttributes } from "src/models/data-models/documents";
 import { TokenType } from "src/models/enums";
 import { IPaging } from "src/models/IPaging";
@@ -90,28 +91,28 @@ export class DocumentController {
     @User() user: LmsUserToken
   ): Promise<ResponseBoolean> {
     if (!files || files.length <= 0) {
-      throw new ValidationException("Invalid file type");
+      throw new ApiError(ErrorCode.FILE_REJECTED, "That file type isn't supported.");
     }
     if (!files || files.length != 1) {
-      throw new ValidationException("Only one file upload allowed");
+      throw new ApiError(ErrorCode.FILE_REJECTED, "Upload one file at a time.");
     }
     const filenamevalidation = (
       (fileExtension(files[0].originalname) || "") as string
     ).trim();
     if (filenamevalidation.length <= 0) {
-      throw new ValidationException("Invalid file name");
+      throw new ApiError(ErrorCode.FILE_REJECTED, "That file name isn't allowed.");
     }
     const actualFilename = files[0].originalname.replace(
       `.${filenamevalidation}`,
       ""
     ).trim();
     if (!/^[a-zA-Z0-9_]+$/.test(actualFilename) || actualFilename.length > 25) {
-      throw new ValidationException("Invalid file name, only alpha numeric is allowed and file name max length of 25 characters only");
+      throw new ApiError(ErrorCode.FILE_REJECTED, "File names can only use letters, numbers and _, up to 25 characters.");
     }
     const db = new DocumentBusiness();
     const filename = filenameextractor(files[0].originalname);
     if (filename.filetype <= 0) {
-      throw new ValidationException("Invalid file type");
+      throw new ApiError(ErrorCode.FILE_REJECTED, "That file type isn't supported.");
     }
    
     const temp: documentsAttributes = {
@@ -123,8 +124,9 @@ export class DocumentController {
     };
 
     if (await db.isexistsdocumentName(temp)) {
-      throw new ValidationException(
-        "File exists, Please delete old file before upload"
+      throw new ApiError(
+        ErrorCode.ALREADY_EXISTS,
+        "A file with that name already exists. Delete the old one first.",
       );
     }
     const s3data = await AWSService.uploadS3(

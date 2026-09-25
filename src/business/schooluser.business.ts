@@ -1,4 +1,5 @@
-import { BadRequestException } from "@nestjs/common";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { hashPassword } from "src/services/password.service";
 import { Op, Transaction, WhereOptions } from "sequelize";
 import {
@@ -96,7 +97,7 @@ export class SchoolUserBusiness {
     if (_user) {
       return _user.get({ plain: true });
     }
-    throw new BadRequestException("Please authenticate");
+    throw new ApiError(ErrorCode.SIGN_IN_REQUIRED);
   };
 
   getuserbyid = (schooluserid: string) =>

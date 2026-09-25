@@ -12,10 +12,10 @@ export const CreateSchoolContribute = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schoolid'],
+      type: 'any.exists',
     };
-    erroritem.message = "School Contribute already create this month";
+    erroritem.message = "A school contribution has already been created for this month.";
     error.details.push(erroritem);
     return [error];
   }
@@ -32,10 +32,10 @@ export const EditSchoolContribute = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schoolid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "School Contribute not create yet";
+    erroritem.message = "No school contribution has been created for this yet.";
     error.details.push(erroritem);
     return [error];
   }
@@ -52,10 +52,10 @@ export const DeleteSchoolContribute = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schoolid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid schoolid";
+    erroritem.message = "That school doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -72,10 +72,10 @@ export const DeleteSchoolContributeId = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schoolcontributeid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid schoolcontributeid";
+    erroritem.message = "That school contribution doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -92,10 +92,10 @@ export const checkSchoolContribute = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['schoolid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Please Create SchoolContribute";
+    erroritem.message = "Create a school contribution first.";
     error.details.push(erroritem);
     return [error];
   }

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -15,6 +14,8 @@ import {
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import {
   ApiBearerAuth,
   ApiBody,
@@ -236,7 +237,7 @@ export class StudentController {
         _body.students.map(
           (x) => {
             if(parseInt(x.is_teacher_acc ?? '0') !== 1 && !_body.standard) {
-              throw new BadRequestException('Student must has a class!');
+              throw new ApiError(ErrorCode.INVALID_INPUT, "Choose a class for this student.", { fields: [{ field: 'standard', message: 'Choose a class for this student.' }] });
             }
             return <studentsAttributes>{
               city: x.city,
@@ -287,10 +288,7 @@ export class StudentController {
         result.map((x) => x.schooluserid)
       );
       if (studentusers.length <= 0) {
-        throw new BadRequestException({
-          error: true,
-          errormessage: "No student available",
-        });
+        throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to sync.");
       }
 
       const zip = new AdmZip();
@@ -368,7 +366,7 @@ export class StudentController {
         tnx,
       );
       if (!studentDeleted) {
-        throw new BadRequestException("Student already deleted or not found");
+        throw new ApiError(ErrorCode.NOT_FOUND, "That student doesn't exist. It may have already been removed.");
       }
       await new SchoolUserBusiness().deleteschooluser(
         schooluserid,
