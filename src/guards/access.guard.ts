@@ -1,9 +1,4 @@
-import {
-  ExecutionContext,
-  ForbiddenException,
-  mixin,
-  UnauthorizedException,
-} from "@nestjs/common";
+import { ExecutionContext, mixin, UnauthorizedException } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
 import { Request } from "express";
 import { Config } from "src/config";
@@ -44,7 +39,7 @@ const AccessGuard = (tokentype: TokenType, ...role: Array<Role>) =>
           // holding none — it fails closed, and the bearer logs in again.
           const userroles: Array<string> = user.lmsuserroles ?? [];
           if (!role.find((x) => userroles.includes(x))) {
-            throw new ForbiddenException();
+            throw new UnauthorizedException();
           }
         }
         return user;
