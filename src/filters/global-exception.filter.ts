@@ -168,10 +168,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // `Unexpected token 'o', "not json at"... is not valid JSON`), so this
     // is a real leak path, not a theoretical one - detected by message shape
     // since the `.type` is gone by the time we see it.
-    if (
-      exception instanceof BadRequestException &&
-      /is not valid JSON|JSON at position|in JSON at/i.test(errordetails?.message ?? '')
-    ) {
+    // CI-PROOF: temporarily disabled to demonstrate CI catches a reintroduced leak.
+    if (false) {
       return this.fromCatalogue(ErrorCode.INVALID_INPUT, "The request body isn't valid.");
     }
 
