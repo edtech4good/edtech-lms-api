@@ -11,7 +11,19 @@ import { ValidationFieldError } from 'src/models/ValidationException';
  */
 const REQUEST_PART_PREFIXES = new Set(['body', 'query', 'params']);
 
+export const UNKNOWN_FIELD_MESSAGE = "This request contains a field that isn't allowed.";
+
 export function toPlainFieldError(detail: ValidationErrorItem): ValidationFieldError {
+  // object.unknown: the path's last segment is a KEY the client chose (an
+  // extra field this API doesn't define), e.g. "evil<script>x" or
+  // "__proto__". Never echo it - not as the field name, not in the message
+  // (the message also becomes ValidationException's message and stack,
+  // which are logged). Report the request part it arrived in instead.
+  // Same rule as edtech-lms-rpi-api's fieldForJoiDetail.
+  if (detail.type === 'object.unknown') {
+    const part = detail.path && detail.path.length > 0 ? String(detail.path[0]) : '';
+    return { field: REQUEST_PART_PREFIXES.has(part) ? part : 'body', message: UNKNOWN_FIELD_MESSAGE };
+  }
   // SchemaValidationInterceptor validates the whole {body, query, params}
   // envelope in one go, so Joi's path is prefixed with which part of the
   // request it came from (e.g. ["body", "email"]) - the client only knows

@@ -3,7 +3,7 @@ import { schoolusers } from "../models/data-models/schoolusers";
 import { UserBusiness } from "./user.business";
 import { SchoolUserBusiness } from "./schooluser.business";
 import { EditUser, DeleteUser } from "../modules/user/user.business.validator";
-import { signInRequiredIfUserGone } from "../modules/auth/auth.controller";
+import { signInRequiredIfUserGone } from "../services/session.service";
 import { ApiError } from "../models/ApiError";
 import { ErrorCode } from "../models/enums/errorcode.enum";
 

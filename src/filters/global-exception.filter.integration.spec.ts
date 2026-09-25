@@ -3,7 +3,9 @@ import { NestFactory } from '@nestjs/core';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { json } from 'express';
+import joi from 'joi';
 import request from 'supertest';
+import { SchemaValidationInterceptor } from '../interceptors/schemavalidation.interceptor';
 import Transport from 'winston-transport';
 import { GlobalExceptionFilter } from './global-exception.filter';
 import { Config, Logger } from '../config';
@@ -18,6 +20,12 @@ class ProbeController {
   @Get('item/:id')
   item(@Param('id') id: string) {
     return { error: false, data: id };
+  }
+
+  @Post('strict')
+  @UseInterceptors(new SchemaValidationInterceptor({ body: joi.object({ studentfirstname: joi.string().required() }) }))
+  strict(@Body() body: any) {
+    return { error: false, data: body };
   }
 
   @Post('upload')
@@ -160,5 +168,21 @@ describe('GlobalExceptionFilter (integration, real Express pipeline and real log
       .send('not json at all');
 
     expect(JSON.parse(capture.lines[0]).metadata.reference).toBe(res.body.reference);
+  });
+
+  it('Joi unknown field: the client-chosen key is absent from the response AND the real log (rpi-api#75 parity)', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/probe/strict')
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ studentfirstname: 'សុខា', 'evil<script>x': 'y', evilKEY: 'z' }));
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_INPUT');
+    expect(res.body.fields).toEqual(
+      expect.arrayContaining([{ field: 'body', message: "This request contains a field that isn't allowed." }]),
+    );
+    expect(JSON.stringify(res.body)).not.toMatch(/evil/i);
+    expect(capture.lines.length).toBe(1);
+    expect(logged()).not.toMatch(/evil/i);
   });
 });
