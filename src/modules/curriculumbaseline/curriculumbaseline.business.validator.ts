@@ -19,10 +19,10 @@ export const CreateCurriculumBaseLine = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["curriculumid"],
+      type: "any.invalid",
     };
-    erroritem.message = "Curriculum does not exists";
+    erroritem.message = "That curriculum doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -34,10 +34,10 @@ export const CreateCurriculumBaseLine = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["curriculumid"],
+      type: "any.invalid",
     };
-    erroritem.message = `${name} Curriculum does not exists`;
+    erroritem.message = `That ${name.toLowerCase()} curriculum doesn't exist.`;
     error.details.push(erroritem);
     return [error];
   }
@@ -53,10 +53,10 @@ export const CreateCurriculumBaseLine = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["baselineid"],
+      type: "any.exists",
     };
-    erroritem.message = `${name} Curriculum already exists this year`;
+    erroritem.message = `A ${name.toLowerCase()} curriculum already exists for this year.`;
     error.details.push(erroritem);
     return [error];
   }
@@ -81,10 +81,10 @@ export const CurriculumBaseLineName = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["baselinename"],
+      type: "any.exists",
     };
-    erroritem.message = `${name} Name already exists`;
+    erroritem.message = `That ${name.toLowerCase()} name already exists.`;
     error.details.push(erroritem);
     return [error];
   }
@@ -107,10 +107,10 @@ export const DeleteCurriculumBaseLine = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["curriculumbaselineid"],
+      type: "any.invalid",
     };
-    erroritem.message = `Invalid curriculum ${name}`;
+    erroritem.message = `That ${name.toLowerCase()} curriculum doesn't exist.`;
     error.details.push(erroritem);
     return [error];
   }
@@ -130,10 +130,10 @@ export const ActivateCurriculumBaseLine = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["curriculumbaselineid"],
+      type: "any.invalid",
     };
-    erroritem.message = "Please add question!";
+    erroritem.message = "Add a question before doing that.";
     error.details.push(erroritem);
     return [error];
   }

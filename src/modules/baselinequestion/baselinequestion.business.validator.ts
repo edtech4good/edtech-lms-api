@@ -15,10 +15,10 @@ export const DeleteBaselineQuestion = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['baselinequestionid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid BaselineQuestion ID";
+    erroritem.message = "That baseline question doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -32,10 +32,10 @@ export const BaselineQuestionExists = async (request: IRequest, data: any): Prom
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['questionid'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Question already added to BaselineQuestion';
+    erroritem.message = "That question has already been added.";
     error.details.push(erroritem);
     return [error];
   }
@@ -55,10 +55,10 @@ export const CloneCurriculumBaseLine = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['curriculumbaselineid'],
+      type: 'any.exists',
     };
-    erroritem.message = "Curriculum Base Line already have question!";
+    erroritem.message = "That curriculum baseline already has a question.";
     error.details.push(erroritem);
     return [error];
   }
@@ -72,10 +72,10 @@ if (!curriculumbaselinequestionempty) {
   error.details = [];
   const erroritem: ValidationErrorItem = {
     message: "",
-    path: [""],
-    type: "",
+    path: ['curriculumbaselineid'],
+    type: 'any.invalid',
   };
-  erroritem.message = "Curriculum Base Line have empty question!";
+  erroritem.message = "Add a question to the curriculum baseline first.";
   error.details.push(erroritem);
   return [error];
 }

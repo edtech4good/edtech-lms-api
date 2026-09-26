@@ -12,10 +12,10 @@ export const CreateCurriculum = async (request: IRequest, data: any): Promise<Ar
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['subjectid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Subject';
+    erroritem.message = "That subject doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -24,10 +24,10 @@ export const CreateCurriculum = async (request: IRequest, data: any): Promise<Ar
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['curriculumname'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Curriculum already exists';
+    erroritem.message = "That curriculum already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -42,10 +42,10 @@ export const EditCurriculum = async (request: IRequest, data: any): Promise<Arra
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['subjectid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Subject';
+    erroritem.message = "That subject doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -54,10 +54,10 @@ export const EditCurriculum = async (request: IRequest, data: any): Promise<Arra
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['curriculumid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Curriculum id';
+    erroritem.message = "That curriculum doesn't exist.";
     error.details.push(erroritem);
     return [error];
   } else {
@@ -67,10 +67,10 @@ export const EditCurriculum = async (request: IRequest, data: any): Promise<Arra
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
-        path: [''],
-        type: '',
+        path: ['curriculumname'],
+        type: 'any.exists',
       };
-      erroritem.message = 'Curriculum already exists';
+      erroritem.message = "That curriculum already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -84,10 +84,10 @@ export const DeleteCurriculum = async (request: IRequest, data: any): Promise<Ar
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['curriculumid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Curriculum id';
+    erroritem.message = "That curriculum doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }

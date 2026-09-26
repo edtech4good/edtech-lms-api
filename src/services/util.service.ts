@@ -5,7 +5,8 @@ import { parseISO } from "date-fns";
 import fileExtension from "file-extension";
 import { ExtractJwt } from "passport-jwt";
 import { Op, WhereOptions } from "sequelize";
-import { ValidationException } from "src/models";
+import { ApiError } from "src/models";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { FileType } from "src/models/enums/filetype.enum.";
 import { FileMeta } from "src/models/filemeta.model";
 import { IFilter, IMultiFilter, IMultiPaging, IPaging } from "src/models/IPaging";
@@ -275,18 +276,18 @@ export const validateFile = (file: File | Express.Multer.File) => {
     (fileExtension(fileoriginalpath) || "") as string
   ).trim();
   if (filenamevalidation.length <= 0) {
-    throw new ValidationException("Invalid file name");
+    throw new ApiError(ErrorCode.FILE_REJECTED, "That file name isn't allowed.");
   }
   const actualFilename = fileoriginalpath.replace(
     `.${filenamevalidation}`,
     ""
   ).trim();
   if (!/^[a-zA-Z0-9-]+$/.test(actualFilename) || actualFilename.length > 30) {
-    throw new ValidationException("Invalid file name, only alpha numeric is allowed and file name max length of 25 characters only");
+    throw new ApiError(ErrorCode.FILE_REJECTED, "File names can only use letters, numbers, - and _, up to 25 characters.");
   }
   const filename = filenameextractor(fileoriginalpath);
   if (filename.filetype <= 0) {
-    throw new ValidationException("Invalid file type");
+    throw new ApiError(ErrorCode.FILE_REJECTED, "That file type isn't supported.");
   }
 
   return file
@@ -297,18 +298,18 @@ export const validateFileName = (filename: string) => {
     (fileExtension(filename) || "") as string
   ).trim();
   if (filenamevalidation.length <= 0) {
-    throw new ValidationException("Invalid file name");
+    throw new ApiError(ErrorCode.FILE_REJECTED, "That file name isn't allowed.");
   }
   const actualFilename = filename.replace(
     `.${filenamevalidation}`,
     ""
   ).trim();
   if (!/^[a-zA-Z0-9_-]+$/.test(actualFilename) || actualFilename.length > 50) {
-    throw new ValidationException("Invalid file name, only alpha numeric is allowed and file name max length of 25 characters only");
+    throw new ApiError(ErrorCode.FILE_REJECTED, "File names can only use letters, numbers, - and _, up to 25 characters.");
   }
   const filemeta = filenameextractor(filename);
   if (filemeta.filetype <= 0) {
-    throw new ValidationException("Invalid file type");
+    throw new ApiError(ErrorCode.FILE_REJECTED, "That file type isn't supported.");
   }
 
   return filemeta

@@ -1,4 +1,5 @@
-import { BadRequestException } from "@nestjs/common";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { format, isValid, parse } from "date-fns";
 import { Op, QueryTypes } from "sequelize";
 import { Transaction, WhereOptions } from "sequelize/types";
@@ -533,11 +534,11 @@ WHERE
     const countryexists = await new CountryBusiness().getcountrybyid(
       countryid
     );
-    if(countryid && !countryexists) throw new BadRequestException('Country does not exists!');
+    if(countryid && !countryexists) throw new ApiError(ErrorCode.NOT_FOUND, "That country doesn't exist.");
     const schoolexists = await new SchoolBusiness().getschoolbyname(
       schoolname
     );
-    if(schoolname && !schoolexists) throw new BadRequestException('School does not exists!');
+    if(schoolname && !schoolexists) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
     const where: WhereOptions<studentsAttributes> = {};
     where.isactive = 1;
     // Soft-deleted learners are excluded here too, not just from getAllStudents:
@@ -657,7 +658,7 @@ WHERE
           }
         ]
       });
-      if(!student) throw new BadRequestException('Student not found!');
+      if(!student) throw new ApiError(ErrorCode.NOT_FOUND, "That student doesn't exist.");
       const standard = await standards.findOne({
         where: { standardname: x.standard },
         attributes: ['standardid','standardname'],
@@ -670,7 +671,7 @@ WHERE
           }
         ]
       });
-      if(!standard && parseInt(x.is_teacher_acc ?? '0') !== 1) throw new BadRequestException('Schoolname or standard name not found!');
+      if(!standard && parseInt(x.is_teacher_acc ?? '0') !== 1) throw new ApiError(ErrorCode.INVALID_INPUT, "That school or class doesn't exist.", { fields: [{ field: 'standard', message: "That school or class doesn't exist." }] });
       const doj = x.dateofjoin;
       const dob = x.dateofbirth;
       const currs = await curriculums.findAll({
@@ -682,7 +683,7 @@ WHERE
         attributes: ['curriculumid'],
         raw: true,
       });
-      if(!currs || currs.length !== x.curriculums.split('/').length) throw new BadRequestException('Invalid curriculum name!');
+      if(!currs || currs.length !== x.curriculums.split('/').length) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
       await students.update(
         {
           city: x.city,
@@ -723,7 +724,7 @@ WHERE
         where: { schooluserid: student.schooluser.schooluserid }
       });
       if(!user) {
-        throw new BadRequestException('No user!');
+        throw new ApiError(ErrorCode.NOT_FOUND, "That student's account doesn't exist.");
       } else {
         // update school name
         user.schoolname = x.schoolname;

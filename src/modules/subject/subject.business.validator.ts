@@ -14,10 +14,10 @@ export const CreateSubject = async (request: IRequest, data: any): Promise<Array
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['subjectname'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Subject already exists';
+    erroritem.message = "That subject already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -31,10 +31,10 @@ export const EditSubject = async (request: IRequest, data: any): Promise<Array<V
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['subjectid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid subject id';
+    erroritem.message = "That subject doesn't exist.";
     error.details.push(erroritem);
     return [error];
   } else {
@@ -48,10 +48,10 @@ export const EditSubject = async (request: IRequest, data: any): Promise<Array<V
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
-        path: [''],
-        type: '',
+        path: ['subjectname'],
+        type: 'any.exists',
       };
-      erroritem.message = 'Subject already exists';
+      erroritem.message = "That subject already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -65,10 +65,10 @@ export const DeleteSubject = async (request: IRequest, data: any): Promise<Array
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['subjectid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid subject id';
+    erroritem.message = "That subject doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -78,10 +78,10 @@ export const DeleteSubject = async (request: IRequest, data: any): Promise<Array
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['subjectid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Subject is assigned to a curriculum.';
+    erroritem.message = "That subject is used by a curriculum and can't be deleted.";
     error.details.push(erroritem);
     return [error];
   }

@@ -20,10 +20,10 @@ export const CreateStandard = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['standardname'],
+      type: 'any.exists',
     };
-    erroritem.message = "standard already exists";
+    erroritem.message = "That standard already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -42,10 +42,10 @@ export const EditCountry = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['countryid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid country id";
+    erroritem.message = "That country doesn't exist.";
     error.details.push(erroritem);
     return [error];
   } else {
@@ -59,10 +59,10 @@ export const EditCountry = async (
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: "",
-        path: [""],
-        type: "",
+        path: ['countryname'],
+        type: 'any.exists',
       };
-      erroritem.message = "Country already exists";
+      erroritem.message = "That country already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -81,10 +81,10 @@ export const DeleteCountry = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['countryid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid country id";
+    erroritem.message = "That country doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -93,11 +93,11 @@ export const DeleteCountry = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["countryid"],
+      type: "any.invalid",
     };
     erroritem.message =
-      "Country is assigned. Country cannot be deleted";
+      "That country is in use and can't be deleted.";
     error.details.push(erroritem);
     return [error];
   }
@@ -116,10 +116,10 @@ export const ShowCountry = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['countryid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid country id";
+    erroritem.message = "That country doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }

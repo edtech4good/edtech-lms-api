@@ -1,5 +1,6 @@
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { BadRequestException } from "@nestjs/common";
 import { uniq } from "lodash";
 import { col, fn, Op, WhereOptions } from "sequelize";
 import { IPaging } from "src/models/IPaging";
@@ -389,7 +390,7 @@ export class CurriculumBusiness {
       }
     })
     if (countryid.length != cts.length) {
-      throw new BadRequestException('some country not found');
+      throw new ApiError(ErrorCode.NOT_FOUND, "One or more of those countries doesn't exist.");
     }
     const curriculumcountrys: curriculumcountryCreationAttributes[] = [];
     cts.forEach(ct => {
@@ -410,7 +411,7 @@ export class CurriculumBusiness {
       }
     })
     if (countryid.length != cts.length) {
-      throw new BadRequestException('some country not found');
+      throw new ApiError(ErrorCode.NOT_FOUND, "One or more of those countries doesn't exist.");
     }
     await curriculumcountry.destroy({
       where: {

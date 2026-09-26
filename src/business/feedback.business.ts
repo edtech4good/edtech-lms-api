@@ -1,4 +1,5 @@
-import { BadRequestException } from "@nestjs/common";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { Op, WhereOptions } from "sequelize";
 import { curriculums } from "src/models/data-models/curriculums";
 import { feedbackAttributes, feedbacks } from "src/models/data-models/feedback";
@@ -53,8 +54,9 @@ export class FeedbackBusiness {
       ...feedbackData.general.images,
     ];
     if (checkIfDuplicateExists(imagesname))
-      throw new BadRequestException(
-        "Duplicate file name, please check and rename your file!"
+      throw new ApiError(
+        ErrorCode.ALREADY_EXISTS,
+        "Two of your files have the same name. Rename one and try again.",
       );
     const dataInsertFeedback: feedbackAttributes = {
       feedbackid: uuidv4(),
@@ -102,8 +104,11 @@ export class FeedbackBusiness {
         FeedBackS3Path + "/" + img.filename
       );
       if (result)
-        throw new BadRequestException(
-          img.filename + " already exists, please rename your file!"
+        // Was: echoed the (server-generated, but still) filename back to the
+        // client - docs/api-errors.md: user-supplied input is never echoed.
+        throw new ApiError(
+          ErrorCode.ALREADY_EXISTS,
+          "A file with that name already exists. Rename it and try again.",
         );
       const filebuffer = Buffer.from(img.content, "base64");
       returnData.images.push({ filename: img.filename, content: filebuffer });

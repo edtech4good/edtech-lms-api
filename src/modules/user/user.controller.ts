@@ -21,6 +21,8 @@ import {
   getSchemaPath,
 } from "@nestjs/swagger";
 import { UserBusiness } from "src/business";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
 import { AccessGuard } from "src/guards/access.guard";
@@ -231,10 +233,8 @@ export class UserController {
     @User() user: LmsUserToken
   ): Promise<any> {
     if(user.lmsuserid === lmsuserid) {
-      return {
-        error: true,
-        errormessage: 'Can not delete current user!',
-      }  
+      // Was a 200 with error:true - the status must not contradict the body.
+      throw new ApiError(ErrorCode.INVALID_INPUT, "You can't delete your own account.");
     }
     await new UserBusiness().disableuserbyid(lmsuserid);
     return {

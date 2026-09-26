@@ -11,10 +11,10 @@ export const CreateQuestion = async (request: IRequest, data: any): Promise<Arra
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['questionidentifier'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Question identifier already exists';
+    erroritem.message = "That question identifier already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -28,10 +28,10 @@ export const EditQuestion = async (request: IRequest, data: any): Promise<Array<
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['questionid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid question id';
+    erroritem.message = "That question doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -44,10 +44,10 @@ export const EditQuestion = async (request: IRequest, data: any): Promise<Array<
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
-        path: [''],
-        type: '',
+        path: ['questionidentifier'],
+        type: 'any.exists',
       };
-      erroritem.message = 'Question identifier already exists';
+      erroritem.message = "That question identifier already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -61,10 +61,10 @@ export const DeleteQuestion = async (request: IRequest, data: any): Promise<Arra
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['questionid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid question id';
+    erroritem.message = "That question doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }

@@ -422,13 +422,13 @@ export class SchoolController {
     const response = new SchoolCurriculumResponse();
     const schoolbusiness = new SchoolBusiness();
     const school = await schoolbusiness.getschoolbyid(schoolid);
-    try {
-      response.data = await schoolbusiness.getschoolcurriculums(schoolid, school?.curriculums as [string]);
-      response.error = false;
-    } catch (error) {
-      response.error = true;
-      response.errormessage = "Could not get curriculums!";
-    }
+    // Was: catch-and-return-200 with `error: true` in the body - the HTTP
+    // status never told the truth, so nothing that checks a status code
+    // (client interceptors, retries) noticed a failure here. Let the real
+    // error reach GlobalExceptionFilter instead (docs/api-errors.md: "the
+    // body never contradicts [the HTTP status]").
+    response.data = await schoolbusiness.getschoolcurriculums(schoolid, school?.curriculums as [string]);
+    response.error = false;
     return response;
   }
 }
