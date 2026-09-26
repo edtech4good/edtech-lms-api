@@ -13,7 +13,7 @@ export const BulkUpload = async (
     data.students.map((x) => x.schoolusername)
   );
   if (tagexists.length > 0) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -37,7 +37,7 @@ export const ValidateSchoolUserid = async (
     data.schooluserid
   );
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -57,7 +57,7 @@ export const ValidatestudentID = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new StudentBusiness().studentExists(data.studentid);
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",

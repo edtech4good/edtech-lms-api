@@ -12,7 +12,7 @@ export const CreateDocument = async (request: IRequest, data: any): Promise<Arra
     lastupdated: new Date(),
   });
   if (tagexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -29,7 +29,7 @@ export const CreateDocument = async (request: IRequest, data: any): Promise<Arra
 export const EditDocument = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new DocumentBusiness().isexistsdocumentID(data.documentid);
   if (!tagexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -48,7 +48,7 @@ export const EditDocument = async (request: IRequest, data: any): Promise<Array<
       lastupdated: new Date(),
     });
     if (tagexistsnew) {
-      const error = new ValidationError('Validation', {}, {});
+      const error = new ValidationError('Validation', [], {});
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
@@ -65,7 +65,7 @@ export const EditDocument = async (request: IRequest, data: any): Promise<Array<
 export const DeleteDocument = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new DocumentBusiness().isexistsdocumentID(data.documentid);
   if (!tagexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',

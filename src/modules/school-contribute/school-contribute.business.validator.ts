@@ -8,7 +8,7 @@ export const CreateSchoolContribute = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new SchoolcontributeBusiness().isexistcreated_at(data.schoolid);
   if (tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -28,7 +28,7 @@ export const EditSchoolContribute = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new SchoolcontributeBusiness().isexistsschoolcontributeID(data.schoolid);
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -48,7 +48,7 @@ export const DeleteSchoolContribute = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new SchoolcontributeBusiness().isexistsschoolID(data.schoolid);
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -68,7 +68,7 @@ export const DeleteSchoolContributeId = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new SchoolcontributeBusiness().isexistsschoolcontributeID(data.schoolcontributeid);
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -88,7 +88,7 @@ export const checkSchoolContribute = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new SchoolcontributeBusiness().isexistsschoolcontributeID(data.schoolid);
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",

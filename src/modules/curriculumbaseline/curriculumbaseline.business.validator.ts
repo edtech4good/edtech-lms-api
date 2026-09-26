@@ -15,7 +15,7 @@ export const CreateCurriculumBaseLine = async (
     data.curriculumid
   );
   if (!curriculumexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -30,7 +30,7 @@ export const CreateCurriculumBaseLine = async (
   const curriculumbaselineexists =
     await new CurriculumBusiness().getCurriculumbyid(data.curriculumid);
   if (!curriculumbaselineexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -49,7 +49,7 @@ export const CreateCurriculumBaseLine = async (
       data.baselinetype
     );
   if (curriculumbaselineduplicate) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -77,7 +77,7 @@ export const CurriculumBaseLineName = async (
       data.baselinetype,
     );
   if (curriculumbaselineexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -103,7 +103,7 @@ export const DeleteCurriculumBaseLine = async (
       data.curriculumbaselineid
     );
   if (!curriculumbaselineexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -126,7 +126,7 @@ export const ActivateCurriculumBaseLine = async (
       data.curriculumbaselineid
     );
   if (!curriculumbaselinequestionexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
