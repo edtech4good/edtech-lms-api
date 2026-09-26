@@ -129,7 +129,7 @@
     "prettier": "2.3.1",
     "sequelize-auto": "0.8.8",
     "supertest": "6.1.3",
-    "ts-jest": "29.1.2",
+    "ts-jest": "29.4.12",
     "ts-loader": "8.0.18",
     "ts-node": "9.1.1",
     "tsconfig-paths": "3.9.0",
