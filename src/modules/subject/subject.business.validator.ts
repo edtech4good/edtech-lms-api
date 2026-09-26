@@ -10,7 +10,7 @@ export const CreateSubject = async (request: IRequest, data: any): Promise<Array
     isdeleted: false,
   });
   if (tagexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -27,7 +27,7 @@ export const CreateSubject = async (request: IRequest, data: any): Promise<Array
 export const EditSubject = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new SubjectBusiness().isexistssubjectID(data.subjectid);
   if (!tagexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -44,7 +44,7 @@ export const EditSubject = async (request: IRequest, data: any): Promise<Array<V
       isdeleted: false,
     });
     if (tagexistsnew) {
-      const error = new ValidationError('Validation', {}, {});
+      const error = new ValidationError('Validation', [], {});
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
@@ -61,7 +61,7 @@ export const EditSubject = async (request: IRequest, data: any): Promise<Array<V
 export const DeleteSubject = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new SubjectBusiness().isexistssubjectID(data.subjectid);
   if (!tagexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -74,7 +74,7 @@ export const DeleteSubject = async (request: IRequest, data: any): Promise<Array
   }
   const curriculumbinded = await new SubjectBusiness().subjectbindtocurriculum(data.subjectid);
   if (curriculumbinded) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',

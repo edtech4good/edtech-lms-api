@@ -11,7 +11,7 @@ export const DeleteBaselineQuestion = async (
       data.baselinequestionid
     );
   if (!baselinequestionexit) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -28,7 +28,7 @@ export const DeleteBaselineQuestion = async (
 export const BaselineQuestionExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const baselineexists = await new BaselineQuestionBusiness().isexistsBaselineQuestionAdded(data.curriculumbaselineid, data.questionid, data.baselinequestionid);
   if (baselineexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -51,7 +51,7 @@ export const CloneCurriculumBaseLine = async (
       data.clonecurriculumbaselineid
     );
   if (curriculumbaselinequestionexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -68,7 +68,7 @@ export const CloneCurriculumBaseLine = async (
     data.curriculumbaselineid
   );
 if (!curriculumbaselinequestionempty) {
-  const error = new ValidationError("Validation", {}, {});
+  const error = new ValidationError("Validation", [], {});
   error.details = [];
   const erroritem: ValidationErrorItem = {
     message: "",

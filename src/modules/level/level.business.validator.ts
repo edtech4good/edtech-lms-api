@@ -15,7 +15,7 @@ export const CreateLevel = async (request: IRequest, data: any): Promise<Array<V
     levelorder: 0
   });
   if (levelexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -32,7 +32,7 @@ export const CreateLevel = async (request: IRequest, data: any): Promise<Array<V
 export const EditLevel = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const levelexists = await new LevelBusiness().isexistsLevelID(data.levelid);
   if (!levelexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -53,7 +53,7 @@ export const EditLevel = async (request: IRequest, data: any): Promise<Array<Val
       levelorder: 0
     });
     if (levelexistsnew) {
-      const error = new ValidationError('Validation', {}, {});
+      const error = new ValidationError('Validation', [], {});
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
@@ -70,7 +70,7 @@ export const EditLevel = async (request: IRequest, data: any): Promise<Array<Val
 export const DeleteLevel = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const levelexists = await new LevelBusiness().isexistsLevelID(data.levelid);
   if (!levelexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -87,7 +87,7 @@ export const DeleteLevel = async (request: IRequest, data: any): Promise<Array<V
 export const DeleteLevelQuizQuestion = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const levelexists = await new LevelQuizQuestionBusiness().isexistsLevelQuizQuestionID(data.levelquizquestionid);
   if (!levelexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -104,7 +104,7 @@ export const DeleteLevelQuizQuestion = async (request: IRequest, data: any): Pro
 export const LevelQuizQuestionExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const levelexists = await new LevelQuizQuestionBusiness().isexistsLevelQuizQuestionAdded(data.levelid, data.questionid, data.levelquizquestionid);
   if (levelexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',

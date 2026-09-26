@@ -16,7 +16,7 @@ export const CreateStandard = async (
     isdeleted: false,
   });
   if (tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -38,7 +38,7 @@ export const EditCountry = async (
     data.countryid
   );
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -55,7 +55,7 @@ export const EditCountry = async (
       isdeleted: false,
     });
     if (tagexistsnew) {
-      const error = new ValidationError("Validation", {}, {});
+      const error = new ValidationError("Validation", [], {});
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: "",
@@ -77,7 +77,7 @@ export const DeleteCountry = async (
     data.countryid
   );
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -89,7 +89,7 @@ export const DeleteCountry = async (
     return [error];
   }
   if (await new CountryBusiness().countryIsBinded(data.countryid)) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -112,7 +112,7 @@ export const ShowCountry = async (
     data.countryid
   );
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",

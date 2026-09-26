@@ -10,7 +10,7 @@ export const CreateUser = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new UserBusiness().isemailtaken(data.lmsusername);
   if (tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -32,7 +32,7 @@ export const EditUser = async (
     data.lmsuserid
   );
   if (!user) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -53,7 +53,7 @@ export const DeleteUser = async (
     data.lmsuserid
   );
   if (!user) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -65,7 +65,7 @@ export const DeleteUser = async (
     return [error];
   }
   if (user.lmsusername === SUPERADMIN_USERNAME) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",

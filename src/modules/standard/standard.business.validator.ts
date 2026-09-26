@@ -15,7 +15,7 @@ export const CreateStandard = async (
     isdeleted: false,
   });
   if (tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -37,7 +37,7 @@ export const EditStandard = async (
     data.standardid
   );
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -56,7 +56,7 @@ export const EditStandard = async (
       isdeleted: false,
     });
     if (tagexistsnew) {
-      const error = new ValidationError("Validation", {}, {});
+      const error = new ValidationError("Validation", [], {});
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: "",
@@ -78,7 +78,7 @@ export const DeleteStandard = async (
     data.standardid
   );
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -90,7 +90,7 @@ export const DeleteStandard = async (
     return [error];
   }
   if (await new StandardBusiness().standardstudentexists(data.standardid)) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",

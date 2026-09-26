@@ -8,7 +8,7 @@ export const CreateCurriculum = async (request: IRequest, data: any): Promise<Ar
   const curriculumexists = await new CurriculumBusiness().isexistsCurriculumName({ curriculumname: data.curriculumname, curriculumid: "", curriculumstatus: false, curriculumdescription: "", isdeleted: false });
   const subjectexists = await new SubjectBusiness().isexistssubjectID(data.subjectid);
   if (!subjectexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -20,7 +20,7 @@ export const CreateCurriculum = async (request: IRequest, data: any): Promise<Ar
     return [error];
   }
   if (curriculumexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -38,7 +38,7 @@ export const EditCurriculum = async (request: IRequest, data: any): Promise<Arra
   const curriculumexists = await new CurriculumBusiness().isexistsCurriculumID(data.curriculumid);
   const subjectexists = await new SubjectBusiness().isexistssubjectID(data.subjectid);
   if (!subjectexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -50,7 +50,7 @@ export const EditCurriculum = async (request: IRequest, data: any): Promise<Arra
     return [error];
   }
   if (!curriculumexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -63,7 +63,7 @@ export const EditCurriculum = async (request: IRequest, data: any): Promise<Arra
   } else {
     const curriculumexistsnew = await new CurriculumBusiness().isexistsCurriculumName({ curriculumname: data.curriculumname, curriculumid: data.curriculumid, curriculumstatus: false, curriculumdescription: "", isdeleted: false });
     if (curriculumexistsnew) {
-      const error = new ValidationError('Validation', {}, {});
+      const error = new ValidationError('Validation', [], {});
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
@@ -80,7 +80,7 @@ export const EditCurriculum = async (request: IRequest, data: any): Promise<Arra
 export const DeleteCurriculum = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const curriculumexists = await new CurriculumBusiness().isexistsCurriculumID(data.curriculumid);
   if (!curriculumexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
