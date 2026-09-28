@@ -7,7 +7,7 @@ import { IRequest } from 'src/models/IRequest';
 export const CreateQuestion = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new QuestionBusiness().isexistsquestionIdentifier(<questionsAttributes>{ questionidentifier: data.questionidentifier, questionid: "", isdeleted: false });
   if (tagexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -24,7 +24,7 @@ export const CreateQuestion = async (request: IRequest, data: any): Promise<Arra
 export const EditQuestion = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new QuestionBusiness().isexistsquestionID(data.questionid);
   if (!tagexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -40,7 +40,7 @@ export const EditQuestion = async (request: IRequest, data: any): Promise<Array<
       questionidentifier: data.questionidentifier, questionid: data.questionid
     });
     if (tagexistsnew) {
-      const error = new ValidationError('Validation', {}, {});
+      const error = new ValidationError('Validation', [], {});
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
@@ -57,7 +57,7 @@ export const EditQuestion = async (request: IRequest, data: any): Promise<Array<
 export const DeleteQuestion = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new QuestionBusiness().isexistsquestionID(data.questionid);
   if (!tagexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',

@@ -11,7 +11,7 @@ export const SchoolExists = async (
     data.schoolname
   );
   if (!schoolexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -33,7 +33,7 @@ export const SchoolExistsById = async (
     data.schoolid
   );
   if (!schoolexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -59,7 +59,7 @@ export const CreateSchool = async (
     isdeleted: false,
   });
   if (tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -79,7 +79,7 @@ export const EditSchool = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new SchoolBusiness().isexistsschoolID(data.schoolid);
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -118,7 +118,7 @@ export const DeleteSchool = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new SchoolBusiness().isexistsschoolID(data.schoolid);
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -130,7 +130,7 @@ export const DeleteSchool = async (
     return [error];
   }
   if (await new SchoolBusiness().schoolstudentexists(data.schoolid)) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",

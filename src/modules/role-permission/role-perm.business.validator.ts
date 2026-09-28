@@ -9,7 +9,7 @@ export const EditRole = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new RolePermissionBusiness().isexistsroleID(data.roleid);
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -25,7 +25,7 @@ export const EditRole = async (
       roleid: data.roleid
     });
     if (tagexistsnew) {
-      const error = new ValidationError("Validation", {}, {});
+      const error = new ValidationError("Validation", [], {});
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: "",
@@ -45,7 +45,7 @@ export const DeleteRole = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new RolePermissionBusiness().isexistsroleID(data.roleid);
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -57,7 +57,7 @@ export const DeleteRole = async (
     return [error];
   }
   if (await new RolePermissionBusiness().checkRoleIsBinded(data.roleid)) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",

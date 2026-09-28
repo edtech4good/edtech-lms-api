@@ -14,7 +14,7 @@ export const CreateGrade = async (request: IRequest, data: any): Promise<Array<V
     gradeorder: 0
   });
   if (gradeexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -31,7 +31,7 @@ export const CreateGrade = async (request: IRequest, data: any): Promise<Array<V
 export const EditGrade = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const gradeexists = await new GradeBusiness().isexistsGradeID(data.gradeid);
   if (!gradeexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -52,7 +52,7 @@ export const EditGrade = async (request: IRequest, data: any): Promise<Array<Val
       gradeorder: 0
     });
     if (gradeexistsnew) {
-      const error = new ValidationError('Validation', {}, {});
+      const error = new ValidationError('Validation', [], {});
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
@@ -69,7 +69,7 @@ export const EditGrade = async (request: IRequest, data: any): Promise<Array<Val
 export const DeleteGrade = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const gradeexists = await new GradeBusiness().isexistsGradeID(data.gradeid);
   if (!gradeexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',

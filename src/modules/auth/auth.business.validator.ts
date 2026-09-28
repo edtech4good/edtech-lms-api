@@ -8,7 +8,7 @@ import { IRequest } from 'src/models/IRequest';
 const UserEmailExistsValidator = async (request: IRequest): Promise<ValidationError | null | undefined> => {
   const userexists = await new UserBusiness().isemailtaken(request.user.sub);
   if (userexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -24,7 +24,7 @@ const UserEmailExistsValidator = async (request: IRequest): Promise<ValidationEr
 const isNotUserEmailExistsValidator = async (request: IRequest): Promise<ValidationError | null | undefined> => {
   const userexists = await new UserBusiness().isemailtaken(request.body.lmsusername);
   if (!userexists) {
-    const error = new ValidationError('Validation', {}, {});
+    const error = new ValidationError('Validation', [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
@@ -41,7 +41,7 @@ const isNotUserEmailExistsValidator = async (request: IRequest): Promise<Validat
 const UserExistsValidator = async (request: IRequest, user: any): Promise<ValidationError | null | undefined> => {
   const userexists = await new UserBusiness().getuserbyid(user.lmsuserid);
   if (!userexists) {
-    const error = new ValidationError('Validation', {}, user);
+    const error = new ValidationError('Validation', [], user);
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',

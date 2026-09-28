@@ -5,7 +5,7 @@ import { BusinessValidationInterceptor } from './businessvalidation.interceptor'
 import { ValidationException } from '../models/ValidationException';
 
 const makeValidationError = (path: string[], message: string, type = ''): ValidationError => {
-  const error = new ValidationError('Validation', {}, {});
+  const error = new ValidationError('Validation', [], {});
   const item: ValidationErrorItem = { message, path, type };
   error.details = [item];
   return error;

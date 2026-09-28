@@ -17,7 +17,7 @@ export const BulkUpload = async (
     // it - without echoing anyone's username (docs/api-errors.md). A field
     // error is INVALID_INPUT: `fields` are only allowed on INVALID_INPUT.
     const taken = new Set(tagexists.map((x) => x.schoolusername));
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = data.students
       .map((x, i) => ({ x, i }))
       .filter(({ x }) => taken.has(x.schoolusername))
@@ -39,7 +39,7 @@ export const ValidateSchoolUserid = async (
     data.schooluserid
   );
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
@@ -59,7 +59,7 @@ export const ValidatestudentID = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new StudentBusiness().studentExists(data.studentid);
   if (!tagexists) {
-    const error = new ValidationError("Validation", {}, {});
+    const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
