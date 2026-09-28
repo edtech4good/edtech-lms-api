@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { Strategy } from "passport-jwt";
 import { TokenBusiness } from "src/business";
+import { STAFF_SCHOOL_ROLES } from "src/models/enums/school.role.enum";
 import { TokenType } from "./../models/enums";
 import { jwtoptionsbuilder } from "./util.service";
 
@@ -23,7 +24,18 @@ export class JwtAccessStrategy extends PassportStrategy(
   }
 
   async validate(payload: any) {
-    return validateToken(payload, TokenType.ACCESS);
+    const user = await validateToken(payload, TokenType.ACCESS);
+    // A school-user token (has `schooluserid`) for a non-staff account must
+    // be refused on every ACCESS-guarded route, not just the ones that
+    // happen to check the role themselves - including read-only routes, and
+    // including a token already issued before auth/school/login started
+    // enforcing this (a 60-minute access token otherwise stays valid for
+    // its full lifetime). An lmsuser token never carries `schooluserid`, so
+    // this never touches that path. (workspace#78, workspace#80, private.)
+    if (user.schooluserid && !STAFF_SCHOOL_ROLES.includes(user.schooluserrole)) {
+      throw new UnauthorizedException();
+    }
+    return user;
   }
 }
 
