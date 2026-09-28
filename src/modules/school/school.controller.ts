@@ -120,7 +120,9 @@ export class SchoolController {
     status: 500,
     description: "Server error",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS))
+  // Requires view_school like the other school reads. Refs workspace#80 (private).
+  @RequirePermissions(Permission.VIEW_SCHOOL)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiQuery({ name: "countryid", required: false, type: 'string' })
   @ApiQuery({ name: "school", required: false, type: 'string' })
   @HttpCode(HttpStatus.OK)
@@ -222,7 +224,9 @@ export class SchoolController {
     status: 500,
     description: "Server error",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS))
+  // Requires view_school like the other school reads. Refs workspace#80 (private).
+  @RequirePermissions(Permission.VIEW_SCHOOL)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiQuery({ name: "curriculumid", required: false, type: 'string' })
   @HttpCode(HttpStatus.OK)
   async getSchoolsCurriculum(
