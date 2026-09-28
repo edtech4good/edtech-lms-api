@@ -1,6 +1,6 @@
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
-import { SchoolRole } from "src/models/enums/school.role.enum";
+import { STAFF_SCHOOL_ROLES } from "src/models/enums/school.role.enum";
 import { Op, Transaction } from "sequelize";
 import { logfiles } from "src/models/data-models/logfiles";
 import { rpiuseraccess } from "src/models/data-models/rpiuseraccess";
@@ -272,8 +272,13 @@ export class LogBusiness {
     // Defence in depth alongside the role check at auth/school/login
     // (workspace#78, private): a school-user token predating that fix, or
     // any other future school-token route, must not let a student token
-    // write into central's log tables.
-    if(teacher.schooluserrole === SchoolRole.STUDENT) throw new ApiError(ErrorCode.NOT_ALLOWED, "Only a teacher account can upload logs.");
+    // write into central's log tables. Allow-list (not `!== STUDENT`): an
+    // unmapped role value must also be refused. Also refuses a disabled or
+    // deleted teacher account, whose already-issued token otherwise stays
+    // live for its full lifetime.
+    if(!STAFF_SCHOOL_ROLES.includes(teacher.schooluserrole) || teacher.isdisabled || teacher.isdeleted) {
+      throw new ApiError(ErrorCode.NOT_ALLOWED, "Only a teacher account can upload logs.");
+    }
     await syncs.create({
       syncid: uuidv4(),
       filename,

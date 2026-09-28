@@ -212,6 +212,13 @@ describe("AuthBusiness.teacherlogin (workspace#78: student school users are refu
       schoolusername: "student1",
       schooluserrole: SchoolRole.STUDENT,
     });
+    // A real (plain-object) student row, not left undefined: if the role
+    // check regresses and lets this account through, teacherlogin resolves
+    // instead of rejecting, and the assertion below fails on that -
+    // undefined would instead hit the `new students()` branch (a real,
+    // uninitialized Sequelize model) and blow up with an unrelated
+    // TypeError, masking the real assertion failure.
+    getstudentbyschooluseridMock.mockResolvedValue({ schooluserid: "student-1" } as any);
 
     const student: any = await new AuthBusiness()
       .teacherlogin("student1", REAL_PASSWORD)
@@ -225,6 +232,21 @@ describe("AuthBusiness.teacherlogin (workspace#78: student school users are refu
     expect(student.message).toBe(wrongPassword.message);
     expect(student.getStatus()).toBe(wrongPassword.getStatus());
     // Never reached the student lookup: refused on role alone.
+    expect(getstudentbyschooluseridMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unmapped/unknown school role value (allow-list, not a STUDENT deny-list)", async () => {
+    getuserbynameMock.mockResolvedValue({
+      ...baseSchoolUser,
+      schooluserid: "weird-1",
+      schoolusername: "weird1",
+      schooluserrole: 5,
+    });
+    getstudentbyschooluseridMock.mockResolvedValue({ schooluserid: "weird-1" } as any);
+
+    await expect(
+      new AuthBusiness().teacherlogin("weird1", REAL_PASSWORD)
+    ).rejects.toMatchObject(new ApiError(ErrorCode.LOGIN_FAILED, LOGIN_FAILURE_MESSAGE));
     expect(getstudentbyschooluseridMock).not.toHaveBeenCalled();
   });
 

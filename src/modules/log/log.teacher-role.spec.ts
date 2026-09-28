@@ -14,10 +14,18 @@ import { LogController } from "./log.controller";
  * a `schooluserid` - including a student's, since `auth/school/login`
  * (`AuthBusiness.teacherlogin`) never checked `schooluserrole` either. A
  * student token could overwrite or invent progress for any student in any
- * school (workspace#78, private). Fixed at both ends: the login route now
- * refuses a student account, and `LogBusiness.recordSyncActivity` asserts
- * the role again here, defence in depth, so a school-token route never has
- * to trust that the token in front of it was minted after the login fix.
+ * school (workspace#78, private). Fixed at three layers: the login route
+ * now refuses a non-staff account, `JwtAccessStrategy.validate` refuses a
+ * non-staff school-user token on every ACCESS-guarded route (see
+ * src/services/auth.strategy.spec.ts - that's where a student token's
+ * refusal on this exact route is proven, since the strategy now stops it
+ * before this controller ever runs), and `LogBusiness.recordSyncActivity`
+ * asserts the role again as its own defence in depth (see
+ * src/business/log.business.spec.ts, which unit-tests that check directly,
+ * independent of the strategy).
+ *
+ * This file only proves a TEACHER token still reaches file-content
+ * validation unaffected, and that no token is refused as before.
  *
  * Driven over real HTTP through the real JWT strategy with signed tokens.
  * The token-table lookup and the `schoolusers` row lookup are stubbed (no
@@ -56,11 +64,6 @@ const sign_ = (payload: Record<string, unknown>) =>
     { expiresIn: "5m" }
   )}`;
 
-const studentToken = sign_({
-  schooluserid: "student-1",
-  schoolusername: "student1",
-  schooluserrole: SchoolRole.STUDENT,
-});
 const teacherToken = sign_({
   schooluserid: "teacher-1",
   schoolusername: "teacher1",
@@ -79,8 +82,16 @@ const zipBuffer = zip.toBuffer();
 
 describe("PUT log/import enforces the teacher role on a school-user token", () => {
   let app: INestApplication;
+  let originalLogImportEnabled: string | undefined;
 
   beforeAll(async () => {
+    // Future-proofing against edtech-lms-api#89 (LOG_IMPORT_ENABLED),
+    // whichever order the two PRs land in: with #89 merged, this route is
+    // 404 unless the flag is set, which would otherwise turn the "teacher
+    // still gets through" assertion below into a false negative.
+    originalLogImportEnabled = process.env.LOG_IMPORT_ENABLED;
+    process.env.LOG_IMPORT_ENABLED = "true";
+
     const moduleRef = await Test.createTestingModule({
       controllers: [LogController],
       providers: [JwtAccessStrategy],
@@ -96,22 +107,12 @@ describe("PUT log/import enforces the teacher role on a school-user token", () =
   });
 
   afterAll(async () => {
+    if (originalLogImportEnabled === undefined) {
+      delete process.env.LOG_IMPORT_ENABLED;
+    } else {
+      process.env.LOG_IMPORT_ENABLED = originalLogImportEnabled;
+    }
     await app.close();
-  });
-
-  it("refuses a student's school-user token with 403, before any file is read", async () => {
-    schoolUserFindOne.mockResolvedValue({
-      schooluserid: "student-1",
-      schooluserrole: SchoolRole.STUDENT,
-    });
-
-    const res = await request(app.getHttpServer())
-      .put("/log/import")
-      .set("Authorization", studentToken)
-      .attach("importfile", zipBuffer, "log.zip")
-      .expect(403);
-
-    expect(res.body.code).toBe("NOT_ALLOWED");
   });
 
   it("lets a teacher's school-user token reach file-content validation (unchanged)", async () => {
