@@ -2,6 +2,7 @@ import * as passwordService from "src/services/password.service";
 import { AuthBusiness } from "./auth.business";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
+import { SchoolRole } from "src/models/enums/school.role.enum";
 
 // The error contract's fixed message for ErrorCode.LOGIN_FAILED
 // (docs/api-errors.md) - deliberately identical across every login-failure
@@ -34,6 +35,13 @@ const getuserbynameMock = jest.fn();
 jest.mock("./schooluser.business", () => ({
   SchoolUserBusiness: jest.fn().mockImplementation(() => ({
     getuserbyname: getuserbynameMock,
+  })),
+}));
+
+const getstudentbyschooluseridMock = jest.fn();
+jest.mock("./student.business", () => ({
+  StudentBusiness: jest.fn().mockImplementation(() => ({
+    getstudentbyschooluserid: getstudentbyschooluseridMock,
   })),
 }));
 
@@ -171,6 +179,75 @@ describe("AuthBusiness.teacherlogin (#56 enumeration guard)", () => {
     expect(verifyPasswordSpy).toHaveBeenCalledTimes(1);
     expect(verifyPasswordSpy.mock.calls[0][1]).not.toBe(realHash);
   });
+});
+
+/**
+ * `auth/school/login` used to hand out a token to ANY school user - it never
+ * checked `schooluserrole` - so a student account got the same token a
+ * teacher does, and nothing downstream (e.g. `PUT log/import`) enforced the
+ * role either (workspace#78, private). No shipped client logs a student in
+ * here, so a student account is refused with the exact same response as a
+ * wrong password: it must not reveal that the account exists or that it's a
+ * student. A staff account (superadmin/admin/teacher) is unaffected.
+ */
+describe("AuthBusiness.teacherlogin (workspace#78: student school users are refused)", () => {
+  const REAL_PASSWORD = "correct horse battery staple";
+  const realHash = passwordService.hashPassword(REAL_PASSWORD);
+  const baseSchoolUser = {
+    schooluserpasswordhash: realHash,
+    isdisabled: false,
+    isdeleted: false,
+    schooluserstatus: true,
+  } as any;
+
+  beforeEach(() => {
+    getuserbynameMock.mockReset();
+    getstudentbyschooluseridMock.mockReset();
+  });
+
+  it("refuses a student school user with the same code, message and status as a wrong password", async () => {
+    getuserbynameMock.mockResolvedValue({
+      ...baseSchoolUser,
+      schooluserid: "student-1",
+      schoolusername: "student1",
+      schooluserrole: SchoolRole.STUDENT,
+    });
+
+    const student: any = await new AuthBusiness()
+      .teacherlogin("student1", REAL_PASSWORD)
+      .catch((e) => e);
+    const wrongPassword: any = await new AuthBusiness()
+      .teacherlogin("student1", "totally wrong")
+      .catch((e) => e);
+
+    expect(student).toMatchObject(new ApiError(ErrorCode.LOGIN_FAILED, LOGIN_FAILURE_MESSAGE));
+    expect(student.code).toBe(wrongPassword.code);
+    expect(student.message).toBe(wrongPassword.message);
+    expect(student.getStatus()).toBe(wrongPassword.getStatus());
+    // Never reached the student lookup: refused on role alone.
+    expect(getstudentbyschooluseridMock).not.toHaveBeenCalled();
+  });
+
+  it.each([SchoolRole.SUPERADMIN, SchoolRole.ADMIN, SchoolRole.TEACHER])(
+    "still logs in a school user with SchoolRole %s",
+    async (role) => {
+      getuserbynameMock.mockResolvedValue({
+        ...baseSchoolUser,
+        schooluserid: "staff-1",
+        schoolusername: "staff1",
+        schooluserrole: role,
+      });
+      // Resolved to an existing (plain-object) student row, not undefined:
+      // the undefined branch constructs a real `students` Sequelize model
+      // instance, which needs the model initialized against a real
+      // database - out of scope for this business-logic unit test.
+      getstudentbyschooluseridMock.mockResolvedValue({ schooluserid: "staff-1" } as any);
+
+      await expect(
+        new AuthBusiness().teacherlogin("staff1", REAL_PASSWORD)
+      ).resolves.toMatchObject({ schooluserid: "staff-1" });
+    }
+  );
 });
 
 /**

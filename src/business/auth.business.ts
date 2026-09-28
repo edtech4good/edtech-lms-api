@@ -8,6 +8,7 @@ import { SchoolUserBusiness } from "./schooluser.business";
 import { Logger } from "src/config";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
+import { SchoolRole } from "src/models/enums/school.role.enum";
 
 // Client-facing message for any login failure. Kept identical across
 // unknown user, wrong password, unverified and disabled so the client
@@ -132,6 +133,19 @@ export class AuthBusiness {
     }
     if (user.isdisabled || user.isdeleted || !user.schooluserstatus) {
       Logger.info("Teacher login blocked: disabled/deleted/inactive user", {
+        username: email,
+      });
+      throw new ApiError(ErrorCode.LOGIN_FAILED, LOGIN_FAILURE_MESSAGE);
+    }
+    // This endpoint issues a token meant only for staff (superadmin/admin/
+    // teacher) accounts - see workspace#78 (private). No shipped client logs
+    // a student in here (edtech-expo's lmsLogin call is dead code; the
+    // archived edtech-android app is a read-only reference, never released -
+    // see ROADMAP.md), so a student account is refused with the same
+    // response as a wrong password, same as the other branches above,
+    // rather than revealing the account exists or its role.
+    if (user.schooluserrole === SchoolRole.STUDENT) {
+      Logger.info("Teacher login blocked: student account", {
         username: email,
       });
       throw new ApiError(ErrorCode.LOGIN_FAILED, LOGIN_FAILURE_MESSAGE);
