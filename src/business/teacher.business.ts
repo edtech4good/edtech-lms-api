@@ -6,7 +6,7 @@ import {
 } from "src/models/data-models/schoolusers";
 import { SchoolRole } from "src/models/enums/school.role.enum";
 import { IPaging } from "src/models/IPaging";
-import { dbinstance } from "src/services/dbservice";
+import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import { buildWhere } from "src/services/util.service";
 import { v4 } from "uuid";
 
@@ -48,10 +48,11 @@ export class TeacherBusiness {
         })),
         { transaction: tnx }
       );
-      tnx.commit();
+      await tnx.commit();
       return su;
     } catch (error) {
-      tnx.rollback();
+      await rollbackQuietly(tnx);
+      throw error;
     }
   };
 
