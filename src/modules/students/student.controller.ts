@@ -130,7 +130,14 @@ export class StudentController {
     status: 500,
     description: "Server error",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS))
+  // Was any ACCESS token, no role and no permission - it returned full
+  // student rows (name, family, contact, DOB, and the wg_* Washington Group
+  // disability fields) for any school. See docs/authorization-model.md and
+  // workspace#80 (private). The class-level guard already restricts this to
+  // admin/superadmin/apikey; this adds the same permission check the other
+  // student reads carry.
+  @RequirePermissions(Permission.VIEW_STUDENT)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiQuery({ name: "userid", required: false, type: 'string' })
   @ApiQuery({ name: "standard", required: false, type: 'string' })
   @ApiQuery({ name: "schoolname", required: false, type: 'string' })
