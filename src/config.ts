@@ -121,6 +121,24 @@ if (!isLocalEnv) {
   }
 }
 
+/**
+ * `PUT log/import` (the teacher Pi-log upload) writes uploaded progress data
+ * straight into central with `updateOnDuplicate` and no school scoping or
+ * origin check. Nothing calls it today: the Android teacher app is archived
+ * and edtech-expo's upload step is commented out. Off by default; turn it on
+ * only for a deployment with classroom Pis, once a proper signed, event-based
+ * design replaces this route - see workspace docs/teacher-log-sync-pi-to-cloud.md.
+ *
+ * A function, not a value computed once at module load (compare
+ * `Config.fortyk.api.*`, frozen at process start from `FORTYKAPICONFIG`/env at
+ * import time): `LogImportGuard` calls this on every request, so the flag can
+ * be exercised per-request in tests, and a running process picks up a change
+ * to the env var without needing this module re-imported.
+ */
+export const isLogImportEnabled = (): boolean =>
+  process.env.LOG_IMPORT_ENABLED === "true" ||
+  process.env.LOG_IMPORT_ENABLED === "1";
+
 const buildLogger = (): winston.Logger => {
   const loggerConfig = new LoggerConfig();
   loggerConfig.APPLICATIONNAME = Config.fortyk.api.applicationname;
