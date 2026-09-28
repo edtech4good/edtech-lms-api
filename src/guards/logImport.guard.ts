@@ -16,11 +16,15 @@ import { ErrorCode } from "src/models/enums/errorcode.enum";
  *
  * `NOT_FOUND` (404) rather than a "feature off" code: it is the least
  * revealing status the error contract has (docs/api-errors.md) - a token
- * probe against a disabled route gets exactly what a probe against a
- * nonexistent route gets. The message is still plain language, because the
- * audience for this response is whoever operates the deployment (checking
- * why a real teacher upload started failing), not a caller trying to learn
- * whether the route exists.
+ * probe against a disabled route gets the same status and the same
+ * `NOT_FOUND` code an unmatched route gets, whatever token it carries (see
+ * log.guard.spec.ts). The message differs ("Log upload is turned off on
+ * this server." here, vs. the generic catalogue text for an unmatched
+ * route), but that's not a meaningful leak: the route is public in this
+ * open-source repo, so a plain-language message tells a caller nothing they
+ * couldn't already read in source. It does make the response useful to
+ * whoever operates the deployment, checking why a real teacher upload
+ * started failing.
  */
 @Injectable()
 export class LogImportGuard implements CanActivate {
