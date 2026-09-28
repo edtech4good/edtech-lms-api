@@ -19,10 +19,10 @@ export const CreateLevel = async (request: IRequest, data: any): Promise<Array<V
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['levelname'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Level already exists';
+    erroritem.message = "That level already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -36,10 +36,10 @@ export const EditLevel = async (request: IRequest, data: any): Promise<Array<Val
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['levelid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Level id';
+    erroritem.message = "That level doesn't exist.";
     error.details.push(erroritem);
     return [error];
   } else {
@@ -57,10 +57,10 @@ export const EditLevel = async (request: IRequest, data: any): Promise<Array<Val
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
-        path: [''],
-        type: '',
+        path: ['levelname'],
+        type: 'any.exists',
       };
-      erroritem.message = 'Level already exists';
+      erroritem.message = "That level already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -74,10 +74,10 @@ export const DeleteLevel = async (request: IRequest, data: any): Promise<Array<V
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['levelid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Level id';
+    erroritem.message = "That level doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -91,10 +91,10 @@ export const DeleteLevelQuizQuestion = async (request: IRequest, data: any): Pro
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['levelquizquestionid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Level quiz question id';
+    erroritem.message = "That level quiz question doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -108,10 +108,10 @@ export const LevelQuizQuestionExists = async (request: IRequest, data: any): Pro
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['questionid'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Question already added to level';
+    erroritem.message = "That question has already been added to this level.";
     error.details.push(erroritem);
     return [error];
   }

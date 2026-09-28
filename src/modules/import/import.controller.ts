@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   HttpCode,
   HttpStatus,
@@ -20,6 +19,8 @@ import {
   getSchemaPath,
 } from "@nestjs/swagger";
 import { TeacherBusiness } from "src/business/teacher.business";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { UploadLimits } from "src/constants/upload-limits";
 import { AccessGuard } from "src/guards/access.guard";
 import {
@@ -97,10 +98,7 @@ export class ImportController {
         newteachers.push(record);
       }
     } catch (e) {
-      throw new BadRequestException({
-        error: true,
-        errormessage: "Invalid file",
-      });
+      throw new ApiError(ErrorCode.FILE_REJECTED, "That file can't be read. Check it's a CSV and try again.");
     }
 
     if (
@@ -112,10 +110,7 @@ export class ImportController {
           (teacher.teacheruserpassword || "").length <= 0
       )
     ) {
-      throw new BadRequestException({
-        error: true,
-        errormessage: "Invalid file",
-      });
+      throw new ApiError(ErrorCode.FILE_REJECTED, "That file is missing a username or password for one or more teachers.");
     }
     const tb = new TeacherBusiness();
     const duplicates = await tb.getteacherusersbyschoolname(
@@ -123,12 +118,15 @@ export class ImportController {
       newteachers.map((x) => x.teacherusername)
     );
     if (duplicates.length > 0) {
-      throw new BadRequestException({
-        error: true,
-        errormessage: `Duplicate teacher found : ${duplicates
-          .map((x) => x.schoolusername)
-          .join()}`,
-      });
+      // Was: joined the OTHER users' usernames into the error message -
+      // docs/api-errors.md: never echo other users' names in a response.
+      // Row index + field, never the usernames themselves.
+      const taken = new Set(duplicates.map((x) => x.schoolusername));
+      const fields = newteachers
+        .map((x, i) => ({ x, i }))
+        .filter(({ x }) => taken.has(x.teacherusername))
+        .map(({ i }) => ({ field: `rows[${i}].teacherusername`, message: "That username is already taken." }));
+      throw new ApiError(ErrorCode.INVALID_INPUT, "Some usernames in this file are already taken.", { fields });
     }
     await tb.addteacheruserbyschoolname(newteachers, schoolname.trim());
     return {

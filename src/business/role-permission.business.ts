@@ -1,3 +1,5 @@
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 // import { col, fn } from "sequelize";
 import { v4 as uuidv4 } from "uuid";
 import { rolePermAttributes, roles, rolesAttributes } from "src/models/data-models/roles";
@@ -10,7 +12,6 @@ import { NodeLeaf, TreeNode } from "src/modules/role-permission/models/RoleBase"
 import _ from "lodash";
 import { dbinstance } from "src/services/dbservice";
 import { SUPERADMIN } from "src/models/enums/permissions.enum";
-import { BadRequestException } from "@nestjs/common";
 import { LmsUserToken } from "src/models/token.model";
 import { IMultiPaging } from '../models/IPaging';
 import { constructWhere } from '../services/util.service';
@@ -68,7 +69,7 @@ export class RolePermissionBusiness {
                 await transaction.commit();
                 return rl;
             } else {
-                throw new BadRequestException('Role Not Found');
+                throw new ApiError(ErrorCode.NOT_FOUND, "That role doesn't exist.");
             }
         } catch (e) {
             await transaction.rollback();
@@ -422,7 +423,7 @@ export class RolePermissionBusiness {
                 await transaction.commit();
                 return rl;
             } else {
-                throw new BadRequestException('Role Not Found');
+                throw new ApiError(ErrorCode.NOT_FOUND, "That role doesn't exist.");
             }
         } catch (e) {
             await transaction.rollback();

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -11,6 +10,8 @@ import {
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import {
   ApiBearerAuth,
   ApiBody,
@@ -151,10 +152,7 @@ export class TeacherController {
         result.map((x) => x.schooluserid)
       );
       if (teacherusers.length <= 0) {
-        throw new BadRequestException({
-          error: true,
-          errormessage: "No teachers available",
-        });
+        throw new ApiError(ErrorCode.NOT_FOUND, "There are no teachers to sync.");
       }
 
       const zip = new AdmZip();
@@ -229,7 +227,7 @@ export class TeacherController {
         tnx,
       );
       if (!teacherDeleted) {
-        throw new BadRequestException("Teacher already deleted or not found");
+        throw new ApiError(ErrorCode.NOT_FOUND, "That teacher doesn't exist. It may have already been removed.");
       }
       await tnx.commit();
 

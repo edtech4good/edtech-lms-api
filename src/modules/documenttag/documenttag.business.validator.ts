@@ -14,10 +14,10 @@ export const CreateDocumentTag = async (request: IRequest, data: any): Promise<A
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['documenttagname'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Document tag already exists';
+    erroritem.message = "That document tag already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -31,10 +31,10 @@ export const EditDocumentTag = async (request: IRequest, data: any): Promise<Arr
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['documenttagid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid document tag id';
+    erroritem.message = "That document tag doesn't exist.";
     error.details.push(erroritem);
     return [error];
   } else {
@@ -48,10 +48,10 @@ export const EditDocumentTag = async (request: IRequest, data: any): Promise<Arr
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
-        path: [''],
-        type: '',
+        path: ['documenttagname'],
+        type: 'any.exists',
       };
-      erroritem.message = 'Document tag already exists';
+      erroritem.message = "That document tag already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -65,10 +65,10 @@ export const DeleteDocumentTag = async (request: IRequest, data: any): Promise<A
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['documenttagid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid document tag id';
+    erroritem.message = "That document tag doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }

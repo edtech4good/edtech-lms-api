@@ -1,5 +1,6 @@
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import {
-  BadRequestException,
   Controller,
   Get,
   HttpCode,
@@ -67,10 +68,7 @@ export class ExportController {
         online
       );
     if (studentusers.length <= 0) {
-      throw new BadRequestException({
-        error: true,
-        errormessage: "No student available",
-      });
+      throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to export.");
     }
     res.set({
       "Content-Type": "application/zip",
@@ -130,10 +128,7 @@ export class ExportController {
       schoolname.trim()
     );
     if (teacherusers.length <= 0) {
-      throw new BadRequestException({
-        error: true,
-        errormessage: "No teacher available",
-      });
+      throw new ApiError(ErrorCode.NOT_FOUND, "There are no teachers to export.");
     }
     res.set({
       "Content-Type": "application/zip",

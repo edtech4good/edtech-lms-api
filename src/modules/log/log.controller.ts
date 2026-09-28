@@ -1,8 +1,6 @@
 import {
-  BadRequestException,
   Controller,
   HttpCode,
-  HttpException,
   HttpStatus,
   Logger,
   Put,
@@ -22,6 +20,8 @@ import {
   getSchemaPath,
 } from "@nestjs/swagger";
 import { UploadLimits } from "src/constants/upload-limits";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { TokenType } from "src/models/enums";
@@ -52,7 +52,7 @@ const bufferWithLimit = (
       total += chunk.length;
       if (total > maxBytes) {
         stream.destroy();
-        reject(new BadRequestException("import too large"));
+        reject(new ApiError(ErrorCode.FILE_REJECTED, "That file is too large.", { status: HttpStatus.PAYLOAD_TOO_LARGE }));
         return;
       }
       chunks.push(chunk);
@@ -112,12 +112,12 @@ export class LogController {
       directory = await Open.buffer(zipfile.buffer);
     } catch (e: any) {
       logger.warn(`Failed to open log import zip: ${e?.message ?? e}`);
-      throw new BadRequestException("Invalid file");
+      throw new ApiError(ErrorCode.FILE_REJECTED, "That file can't be read.");
     }
     if (directory.files.length > 0) {
       for (const file of directory.files) {
         if (file.uncompressedSize > LOG_ZIP_DECOMPRESSED_MAX_BYTES) {
-          throw new BadRequestException("import too large");
+          throw new ApiError(ErrorCode.FILE_REJECTED, "That file is too large.", { status: HttpStatus.PAYLOAD_TOO_LARGE });
         }
       }
       const tnx = await dbinstance.getdbinstance().transaction();
@@ -141,7 +141,7 @@ export class LogController {
           } else if(file.path.includes('RPI-API')) {
             await logbusiness.createstudentaccesslogfiles(file, parentfileid);
           } else {
-            throw new BadRequestException('There is invalid file inside zip-file');
+            throw new ApiError(ErrorCode.FILE_REJECTED, "That zip file contains something we can't import.");
           }
         }
         await logbusiness.uploadZipFileToAWSS3(zipfile, zipAWSS3filename, parentfileid);
@@ -152,21 +152,14 @@ export class LogController {
         };
       } catch (e: any) {
         await tnx.rollback();
-        if (e instanceof HttpException) {
-          throw e;
-        }
-        throw new BadRequestException(
-          {
-            error: true,
-            errormessage: e,
-          },
-          "Invalid File"
-        );
+        // Unwrap: `e` here can be a DB failure (e.g. a dropped connection
+        // mid-transaction), not bad input - pass the ORIGINAL error through
+        // so the filter can map it to SERVICE_UNAVAILABLE/INTERNAL instead
+        // of a 400 carrying its raw message (docs/api-errors.md "wrapped
+        // errors must be unwrapped first").
+        throw e;
       }
     }
-    throw new BadRequestException({
-      error: true,
-      errormessage: "Invalid file (Zip-file is empty)",
-    });
+    throw new ApiError(ErrorCode.FILE_REJECTED, "That zip file is empty.");
   }
 }

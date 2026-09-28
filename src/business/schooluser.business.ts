@@ -1,4 +1,5 @@
-import { BadRequestException } from "@nestjs/common";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { hashPassword } from "src/services/password.service";
 import { Op, Transaction, WhereOptions } from "sequelize";
 import {
@@ -96,7 +97,11 @@ export class SchoolUserBusiness {
     if (_user) {
       return _user.get({ plain: true });
     }
-    throw new BadRequestException("Please authenticate");
+    // NOT_FOUND, not SIGN_IN_REQUIRED: the id here is often admin-supplied
+    // (EditUser/DeleteUser validators), and a 401 would sign the ADMIN out
+    // of lms-ui for editing a user that no longer exists. Token-derived
+    // callers (auth.business, auth.controller) map this to SIGN_IN_REQUIRED.
+    throw new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist.");
   };
 
   getuserbyid = (schooluserid: string) =>

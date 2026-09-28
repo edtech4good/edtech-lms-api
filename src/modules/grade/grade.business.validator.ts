@@ -18,10 +18,10 @@ export const CreateGrade = async (request: IRequest, data: any): Promise<Array<V
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['gradename'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Grade already exists';
+    erroritem.message = "That grade already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -35,10 +35,10 @@ export const EditGrade = async (request: IRequest, data: any): Promise<Array<Val
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['gradeid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Grade id';
+    erroritem.message = "That grade doesn't exist.";
     error.details.push(erroritem);
     return [error];
   } else {
@@ -56,10 +56,10 @@ export const EditGrade = async (request: IRequest, data: any): Promise<Array<Val
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
-        path: [''],
-        type: '',
+        path: ['gradename'],
+        type: 'any.exists',
       };
-      erroritem.message = 'Grade already exists';
+      erroritem.message = "That grade already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -73,10 +73,10 @@ export const DeleteGrade = async (request: IRequest, data: any): Promise<Array<V
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['gradeid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Grade id';
+    erroritem.message = "That grade doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }

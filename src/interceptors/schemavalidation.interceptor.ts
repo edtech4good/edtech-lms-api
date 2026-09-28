@@ -4,6 +4,7 @@ import { pick } from 'lodash';
 import { Observable } from 'rxjs';
 import { RequestValidator } from 'src/models';
 import { ValidationException } from '../models/ValidationException';
+import { toPlainFieldError } from '../services/joi-message.service';
 
 @Injectable()
 export class SchemaValidationInterceptor implements NestInterceptor {
@@ -14,31 +15,17 @@ export class SchemaValidationInterceptor implements NestInterceptor {
     const request: any = ctx.getRequest();
     const validSchema = pick(this.schema, ['params', 'query', 'body']);
     const object = pick(request, Object.keys(validSchema));
+    // abortEarly: false so a single request reports every invalid field at
+    // once (docs/api-errors.md's `fields` array), not just the first Joi
+    // happens to find - cheap here since SchemaValidationInterceptor already
+    // ran the whole schema either way to produce that first error.
     const { error } = joi.compile(this.schema)
-      .prefs({ errors: { label: 'key' } })
+      .prefs({ errors: { label: 'key' }, abortEarly: false })
       .validate(object);
 
     if (error) {
-      const errorMessage = error.details.map(details => details.message).join(', ');
-      throw new ValidationException(errorMessage);
+      throw new ValidationException(error.details.map(toPlainFieldError));
     }
     return next.handle();
   }
 }
-
-/*
-const validate = (schema) => (req, res, next) => {
-  const validSchema = pick(schema, ['params', 'query', 'body']);
-  const object = pick(req, Object.keys(validSchema));
-  const { value, error } = Joi.compile(validSchema)
-    .prefs({ errors: { label: 'key' }, abortEarly: false })
-    .validate(object);
-
-  if (error) {
-    const errorMessage = error.details.map((details) => details.message).join(', ');
-    return next(new ApiError(httpStatus.BAD_REQUEST, errorMessage));
-  }
-  Object.assign(req, value);
-  return next();
-};
-*/

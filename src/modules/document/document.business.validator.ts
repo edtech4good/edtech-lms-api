@@ -16,10 +16,10 @@ export const CreateDocument = async (request: IRequest, data: any): Promise<Arra
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['documentname'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Document already exists';
+    erroritem.message = "That document already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -33,10 +33,10 @@ export const EditDocument = async (request: IRequest, data: any): Promise<Array<
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['documentid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid document id';
+    erroritem.message = "That document doesn't exist.";
     error.details.push(erroritem);
     return [error];
   } else {
@@ -52,10 +52,10 @@ export const EditDocument = async (request: IRequest, data: any): Promise<Array<
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
-        path: [''],
-        type: '',
+        path: ['documentname'],
+        type: 'any.exists',
       };
-      erroritem.message = 'Document already exists';
+      erroritem.message = "That document already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -69,10 +69,10 @@ export const DeleteDocument = async (request: IRequest, data: any): Promise<Arra
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['documentid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid document id';
+    erroritem.message = "That document doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }

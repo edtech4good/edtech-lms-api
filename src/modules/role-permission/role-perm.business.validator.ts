@@ -13,10 +13,10 @@ export const EditRole = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['roleid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid role id";
+    erroritem.message = "That role doesn't exist.";
     error.details.push(erroritem);
     return [error];
   } else {
@@ -29,10 +29,10 @@ export const EditRole = async (
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: "",
-        path: [""],
-        type: "",
+        path: ['rolename'],
+        type: 'any.exists',
       };
-      erroritem.message = "Role name already exists";
+      erroritem.message = "That role name already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -49,10 +49,10 @@ export const DeleteRole = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['roleid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid role id";
+    erroritem.message = "That role doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -61,11 +61,11 @@ export const DeleteRole = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ["roleid"],
+      type: "any.invalid",
     };
     erroritem.message =
-      "Role is binded, role cannot be deleted";
+      "That role is in use and can't be deleted.";
     error.details.push(erroritem);
     return [error];
   }

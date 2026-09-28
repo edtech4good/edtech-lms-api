@@ -27,10 +27,10 @@ export const CreateLesson = async (request: IRequest, data: any): Promise<Array<
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lessonname'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Lesson already exists';
+    erroritem.message = "That lesson already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -44,10 +44,10 @@ export const EditLesson = async (request: IRequest, data: any): Promise<Array<Va
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lessonid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Lesson id';
+    erroritem.message = "That lesson doesn't exist.";
     error.details.push(erroritem);
     return [error];
   } else {
@@ -68,10 +68,10 @@ export const EditLesson = async (request: IRequest, data: any): Promise<Array<Va
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
-        path: [''],
-        type: '',
+        path: ['lessonname'],
+        type: 'any.exists',
       };
-      erroritem.message = 'Lesson already exists';
+      erroritem.message = "That lesson already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -85,10 +85,10 @@ export const DeleteLesson = async (request: IRequest, data: any): Promise<Array<
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lessonid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Lesson id';
+    erroritem.message = "That lesson doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -101,10 +101,10 @@ export const LessonLearningExists = async (request: IRequest, data: any): Promis
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['documentid'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Learning document already added to lesson';
+    erroritem.message = "That learning document has already been added to this lesson.";
     error.details.push(erroritem);
     return [error];
   }
@@ -117,10 +117,10 @@ export const LessonPlanExists = async (request: IRequest, data: any): Promise<Ar
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['documentid'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Plan document already added to lesson';
+    erroritem.message = "That plan document has already been added to this lesson.";
     error.details.push(erroritem);
     return [error];
   }
@@ -134,10 +134,10 @@ export const DeleteLessonLearning = async (request: IRequest, data: any): Promis
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lessonlearningid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid lesson learning id';
+    erroritem.message = "That lesson learning item doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -151,10 +151,10 @@ export const DeleteLessonPlan = async (request: IRequest, data: any): Promise<Ar
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lessonplanid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid lesson plan id';
+    erroritem.message = "That lesson plan doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -168,10 +168,10 @@ export const LessonPracticeExists = async (request: IRequest, data: any): Promis
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lessonpracticename'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Practice name already added to lesson';
+    erroritem.message = "That practice name has already been added to this lesson.";
     error.details.push(erroritem);
     return [error];
   }
@@ -185,10 +185,10 @@ export const DeleteLessonPractice = async (request: IRequest, data: any): Promis
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lessonpracticeid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid lesson learning id';
+    erroritem.message = "That lesson practice doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -202,10 +202,10 @@ export const LessonQuizExists = async (request: IRequest, data: any): Promise<Ar
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lessonquizname'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Quiz name already added to lesson';
+    erroritem.message = "That quiz name has already been added to this lesson.";
     error.details.push(erroritem);
     return [error];
   }
@@ -219,10 +219,10 @@ export const DeleteLessonQuiz = async (request: IRequest, data: any): Promise<Ar
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lessonquizid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid lesson learning id';
+    erroritem.message = "That lesson quiz doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -236,10 +236,10 @@ export const DeleteLessonQuizQuestion = async (request: IRequest, data: any): Pr
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lessonquizquestionid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Lesson quiz question id';
+    erroritem.message = "That lesson quiz question doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -253,10 +253,10 @@ export const LessonQuizQuestionExists = async (request: IRequest, data: any): Pr
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['questionid'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Question already added to lesson quiz';
+    erroritem.message = "That question has already been added to this quiz.";
     error.details.push(erroritem);
     return [error];
   }
@@ -270,10 +270,10 @@ export const DeleteLessonPracticeQuestion = async (request: IRequest, data: any)
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['lessonpracticequestionid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid Lesson practice question id';
+    erroritem.message = "That lesson practice question doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -287,10 +287,10 @@ export const LessonPracticeQuestionExists = async (request: IRequest, data: any)
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['questionid'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Question already added to lesson practice';
+    erroritem.message = "That question has already been added to this practice.";
     error.details.push(erroritem);
     return [error];
   }

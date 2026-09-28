@@ -14,10 +14,10 @@ export const CreateUser = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['lmsusername'],
+      type: 'any.exists',
     };
-    erroritem.message = "user email already exists";
+    erroritem.message = "That email is already registered.";
     error.details.push(erroritem);
     return [error];
   }
@@ -36,10 +36,10 @@ export const EditUser = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['lmsuserid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid user id";
+    erroritem.message = "That user doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -57,10 +57,10 @@ export const DeleteUser = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['lmsuserid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Invalid user id";
+    erroritem.message = "That user doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -69,10 +69,10 @@ export const DeleteUser = async (
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: "",
-      path: [""],
-      type: "",
+      path: ['lmsuserid'],
+      type: 'any.invalid',
     };
-    erroritem.message = "Could not delete superadmin";
+    erroritem.message = "The superadmin account can't be deleted.";
     error.details.push(erroritem);
     return [error];
   }

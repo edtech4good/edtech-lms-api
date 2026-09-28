@@ -10,10 +10,10 @@ export const CreateQuestionTag = async (request: IRequest, data: any): Promise<A
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['questiontagname'],
+      type: 'any.exists',
     };
-    erroritem.message = 'Question tag already exists';
+    erroritem.message = "That question tag already exists.";
     error.details.push(erroritem);
     return [error];
   }
@@ -27,10 +27,10 @@ export const EditQuestionTag = async (request: IRequest, data: any): Promise<Arr
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['questiontagid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid question tag id';
+    erroritem.message = "That question tag doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
@@ -41,10 +41,10 @@ export const EditQuestionTag = async (request: IRequest, data: any): Promise<Arr
       error.details = [];
       const erroritem: ValidationErrorItem = {
         message: '',
-        path: [''],
-        type: '',
+        path: ['questiontagname'],
+        type: 'any.exists',
       };
-      erroritem.message = 'Question tag already exists';
+      erroritem.message = "That question tag already exists.";
       error.details.push(erroritem);
       return [error];
     }
@@ -58,10 +58,10 @@ export const DeleteQuestionTag = async (request: IRequest, data: any): Promise<A
     error.details = [];
     const erroritem: ValidationErrorItem = {
       message: '',
-      path: [''],
-      type: '',
+      path: ['questiontagid'],
+      type: 'any.invalid',
     };
-    erroritem.message = 'Invalid question tag id';
+    erroritem.message = "That question tag doesn't exist.";
     error.details.push(erroritem);
     return [error];
   }
