@@ -120,9 +120,7 @@ export class SchoolController {
     status: 500,
     description: "Server error",
   })
-  // Was any ACCESS token, no role and no permission - scoping only applies
-  // when the token carries a `schools` claim, which school (learner/teacher)
-  // tokens never do. See docs/authorization-model.md and workspace#80 (private).
+  // Requires view_school like the other school reads. Refs workspace#80 (private).
   @RequirePermissions(Permission.VIEW_SCHOOL)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiQuery({ name: "countryid", required: false, type: 'string' })
@@ -226,8 +224,7 @@ export class SchoolController {
     status: 500,
     description: "Server error",
   })
-  // Same gap as GET school/all above - see docs/authorization-model.md and
-  // workspace#80 (private).
+  // Requires view_school like the other school reads. Refs workspace#80 (private).
   @RequirePermissions(Permission.VIEW_SCHOOL)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiQuery({ name: "curriculumid", required: false, type: 'string' })

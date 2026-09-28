@@ -8,15 +8,12 @@ import { JwtAccessStrategy } from "src/services/auth.strategy";
 import { StudentController } from "./student.controller";
 
 /**
- * GET student/all accepted any ACCESS token with no role and no permission
- * check, and returned full student rows - names, family, contact, date of
- * birth, and the wg_* Washington Group disability fields - for any school.
- * See docs/authorization-model.md and workspace#80 (private).
+ * Adds the same view_student check the other student reads carry, on top of
+ * the class-level role guard on StudentController (apikey/superadmin/admin).
+ * Refs workspace#80 (private).
  *
- * The class-level guard on StudentController already restricts this route to
- * apikey/superadmin/admin; this locks in the added Permission.VIEW_STUDENT
- * check on top of that, driven over real HTTP through the real JWT strategy
- * and guards, in the style of src/modules/import/import.guard.spec.ts.
+ * Driven over real HTTP through the real JWT strategy and guards, in the
+ * style of src/modules/import/import.guard.spec.ts.
  */
 const tokenExists = jest.fn();
 jest.mock("src/business", () => ({

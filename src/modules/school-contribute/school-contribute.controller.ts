@@ -83,9 +83,8 @@ async createSchoolContribute(
 @UseInterceptors(new SchemaValidationInterceptor(showscholcontribute))
 @ApiBody({ required: false, type: IPaging })
 @ApiParam({ name: `schoolid`, type: "string", required: true })
-// Already carried CheckPermissionsGuard with no @RequirePermissions to check,
-// so it was effectively open to any ACCESS token. See
-// docs/authorization-model.md and workspace#80 (private).
+// Already carried CheckPermissionsGuard; adds the permission check it was
+// missing. Refs workspace#80 (private).
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -251,8 +250,8 @@ async deleteschoolcontribute(
 @UseInterceptors(
     new SchemaValidationInterceptor(schoolcontributeid)
 )
-// Was any ACCESS token, no role and no permission. See
-// docs/authorization-model.md and workspace#80 (private).
+// Requires view_school_contribution like the other school-contribute reads.
+// Refs workspace#80 (private).
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -281,8 +280,8 @@ async getSchoolsContributeId(@Param('schoolcontributeid') schoolcontributeid: st
 @UseInterceptors(
     new SchemaValidationInterceptor(getschooldashboardbyid)
 )
-// Same gap as getSchoolsContributeId above - see docs/authorization-model.md
-// and workspace#80 (private).
+// Requires view_school_contribution like the other school-contribute reads.
+// Refs workspace#80 (private).
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -308,8 +307,8 @@ async getSchoolsReport(@Param('schoolid') schoolid: string): Promise<any> {
     status: 500,
     description: "Server error",
 })
-// Same gap as getSchoolsContributeId above - see docs/authorization-model.md
-// and workspace#80 (private).
+// Requires view_school_contribution like the other school-contribute reads.
+// Refs workspace#80 (private).
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -334,8 +333,8 @@ async getAllSchoolsReport(): Promise<any> {
   status: 500,
   description: "Server error",
 })
-// Same gap as getSchoolsContributeId above - see docs/authorization-model.md
-// and workspace#80 (private).
+// Requires view_school_contribution like the other school-contribute reads.
+// Refs workspace#80 (private).
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -356,8 +355,8 @@ async getSchoolsName(@Param('schoolid') schoolid: string): Promise<any> {
     status: 400,
     description: "Error while creating SchoolContribute",
 })
-// Same gap as getSchoolsContributeId above - see docs/authorization-model.md
-// and workspace#80 (private).
+// Requires view_school_contribution like the other school-contribute reads.
+// Refs workspace#80 (private).
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -374,8 +373,8 @@ async getSchoolContribute(): Promise<any> {
     status: 400,
     description: "Error while creating SchoolContribute",
 })
-// Same gap as getSchoolsContributeId above - see docs/authorization-model.md
-// and workspace#80 (private).
+// Requires view_school_contribution like the other school-contribute reads.
+// Refs workspace#80 (private).
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)

@@ -8,11 +8,8 @@ import { JwtAccessStrategy } from "src/services/auth.strategy";
 import { SchoolController } from "./school.controller";
 
 /**
- * GET school/all and GET school/curriculumid accepted any ACCESS token with
- * no permission check. Scoping only applies when the token carries a
- * `schools` claim, which school (learner/teacher) tokens never do, so any
- * logged-in account - including one with zero RBAC permissions - could read
- * every school. See docs/authorization-model.md and workspace#80 (private).
+ * Requires view_school on GET school/all and GET school/curriculumid, like
+ * the other school reads. Refs workspace#80 (private).
  *
  * Driven over real HTTP through the real JWT strategy and guards, in the
  * style of src/modules/import/import.guard.spec.ts.
@@ -48,6 +45,18 @@ const buildToken = (roles: Array<string>, permissions: Array<string>) =>
 const userNoPermission = buildToken([Role.user], []);
 const userWithPermission = buildToken([Role.user], ["view_school"]);
 const superadminWildcard = buildToken([Role.superadmin], ["superadmin"]);
+
+// A school-user (teacher) token, shaped the way generateTeacherAuthToken
+// issues it: schooluserid/schooluserrole, no lmsuserroles, no permissions.
+const schoolTeacherToken = `Bearer ${sign(
+  {
+    jti: "test-jti",
+    schooluserid: "school-user-1",
+    schooluserrole: 3,
+  },
+  Config.fortyk.api.applicationsecret,
+  { expiresIn: "5m" }
+)}`;
 
 const ROUTES: Array<[string, string]> = [
   ["/school/all", "GET school/all"],
@@ -101,6 +110,14 @@ describe("School read routes require view_school", () => {
 
   it.each(ROUTES)("%s refuses no token with 401", async (path) => {
     await request(app.getHttpServer()).get(path).expect(401);
+    expect(getSchoolsWithFilter).not.toHaveBeenCalled();
+  });
+
+  it.each(ROUTES)("%s refuses a school-user (teacher) token with 403", async (path) => {
+    await request(app.getHttpServer())
+      .get(path)
+      .set("Authorization", schoolTeacherToken)
+      .expect(403);
     expect(getSchoolsWithFilter).not.toHaveBeenCalled();
   });
 });

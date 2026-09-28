@@ -8,17 +8,16 @@ import { JwtAccessStrategy } from "src/services/auth.strategy";
 import { SchoolContributeController } from "./school-contribute.controller";
 
 /**
- * These school-contribute (fee collection) reads accepted any ACCESS token
- * with no permission check:
+ * Requires view_school_contribution on the school-contribute (fee collection)
+ * reads:
  *   GET school-contribute/all
  *   GET school-contribute/getallschooldashboard
  *   GET school-contribute/getschooldashboardid/:schoolid
  *   GET school-contribute/getschooldashboard/schoolcontributeid/:id
  *   GET school-contribute/getschoolcontribute/:schoolid
  *   GET school-contribute/getallschoolcontribute
- * and POST school-contribute/getallschoolcontribute/:schoolid already carried
- * CheckPermissionsGuard but no @RequirePermissions, so it was effectively
- * open too. See docs/authorization-model.md and workspace#80 (private).
+ *   POST school-contribute/getallschoolcontribute/:schoolid
+ * Refs workspace#80 (private).
  *
  * Driven over real HTTP through the real JWT strategy and guards, in the
  * style of src/modules/import/import.guard.spec.ts.
@@ -67,6 +66,18 @@ const buildToken = (roles: Array<string>, permissions: Array<string>) =>
 const userNoPermission = buildToken([Role.user], []);
 const userWithPermission = buildToken([Role.user], ["view_school_contribution"]);
 const superadminWildcard = buildToken([Role.superadmin], ["superadmin"]);
+
+// A school-user (teacher) token, shaped the way generateTeacherAuthToken
+// issues it: schooluserid/schooluserrole, no lmsuserroles, no permissions.
+const schoolTeacherToken = `Bearer ${sign(
+  {
+    jti: "test-jti",
+    schooluserid: "school-user-1",
+    schooluserrole: 3,
+  },
+  Config.fortyk.api.applicationsecret,
+  { expiresIn: "5m" }
+)}`;
 
 // getschooldashboardid/:schoolid and getschooldashboard/schoolcontributeid/:id
 // are schema-validated as UUIDs (school-contribute.request.validator.ts);
@@ -141,6 +152,14 @@ describe("School-contribute read routes require view_school_contribution", () =>
     expect(mock).not.toHaveBeenCalled();
   });
 
+  it.each(GET_ROUTES)("GET %s refuses a school-user (teacher) token with 403", async (path, mock) => {
+    await request(app.getHttpServer())
+      .get(path)
+      .set("Authorization", schoolTeacherToken)
+      .expect(403);
+    expect(mock).not.toHaveBeenCalled();
+  });
+
   describe("POST school-contribute/getallschoolcontribute/:schoolid", () => {
     // showscholcontribute validates :schoolid as a UUID.
     const path = `/school-contribute/getallschoolcontribute/${SCHOOL_UUID}`;
@@ -174,6 +193,15 @@ describe("School-contribute read routes require view_school_contribution", () =>
 
     it("refuses no token with 401", async () => {
       await request(app.getHttpServer()).post(path).send({}).expect(401);
+      expect(getAllSchoolContributeId).not.toHaveBeenCalled();
+    });
+
+    it("refuses a school-user (teacher) token with 403", async () => {
+      await request(app.getHttpServer())
+        .post(path)
+        .set("Authorization", schoolTeacherToken)
+        .send({})
+        .expect(403);
       expect(getAllSchoolContributeId).not.toHaveBeenCalled();
     });
   });
