@@ -24,6 +24,7 @@ import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
+import { LogImportGuard } from "src/guards/logImport.guard";
 import { TokenType } from "src/models/enums";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { dbinstance } from "src/services/dbservice";
@@ -98,7 +99,10 @@ export class LogController {
     FileInterceptor("importfile", { limits: UploadLimits.LOG_IMPORT })
   )
   // @RequirePermissions(Permission.UPDATE_IMPORT, Permission.CREATE_IMPORT)
-  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  // LogImportGuard must run first: it rejects a disabled server before
+  // AccessGuard inspects the bearer token and before FileInterceptor parses
+  // the upload. See src/guards/logImport.guard.ts.
+  @UseGuards(LogImportGuard, AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiQuery({ name: "offline", required: false, type: Boolean })
   @HttpCode(HttpStatus.OK)
   @ApiConsumes("multipart/form-data")

@@ -15,7 +15,7 @@ The system is seven repos under [github.com/edtech4good](https://github.com/edte
 Content moves in two directions:
 
 1. Cloud to classroom. `GET /sync/content` builds a curriculum zip. A client can download it and `PUT` it to the classroom API at `/import/master`, or this server can push it itself with `POST /sync/cloud`, which sends the zip to `{RPI_CLOUD}/import/master` using `SERVER_SYNC_KEY`.
-2. Classroom to cloud. The classroom API serves `GET /export/log`. A client downloads that zip and sends it here with `PUT /log/import` as a multipart upload in the `importfile` field.
+2. Classroom to cloud. The classroom API serves `GET /export/log`. A client downloads that zip and sends it here with `PUT /log/import` as a multipart upload in the `importfile` field. This route is off by default (see `LOG_IMPORT_ENABLED` below) — nothing calls it today, and it writes uploaded progress straight into the database with no school scoping or origin check.
 
 Teachers and school accounts log in here with `POST /auth/school/login`. Students log in against the classroom API. Each user gets one access token at a time, so logging in from a second place, including with `curl`, ends the first session.
 
@@ -66,6 +66,8 @@ SERVER_SYNC_KEY=a-token-the-classroom-api-also-knows
 ```
 
 `env.example` has the full list. Treat `SERVER_SYNC_KEY`, `RPI_SECRET` and `APPLICATION_SECRET` as secrets.
+
+`LOG_IMPORT_ENABLED` (`true`/`1`, off by default) turns on `PUT log/import`. Leave it unset in UAT and prod. Turn it on only for a deployment with classroom Pis, once a proper signed, event-based design replaces this route — see workspace docs/teacher-log-sync-pi-to-cloud.md.
 
 ## Seeding a database you can log in to
 
