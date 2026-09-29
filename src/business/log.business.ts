@@ -270,7 +270,7 @@ export class LogBusiness {
     });
     if(!teacher) throw new ApiError(ErrorCode.NOT_FOUND, "That teacher doesn't exist.");
     // Defence in depth alongside the role check at auth/school/login
-    // (workspace#78, private): a school-user token predating that fix, or
+    // (#90): a school-user token predating that fix, or
     // any other future school-token route, must not let a student token
     // write into central's log tables. Allow-list (not `!== STUDENT`): an
     // unmapped role value must also be refused. Also refuses a disabled or

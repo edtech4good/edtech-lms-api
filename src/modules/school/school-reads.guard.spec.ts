@@ -9,7 +9,7 @@ import { SchoolController } from "./school.controller";
 
 /**
  * Requires view_school on GET school/all and GET school/curriculumid, like
- * the other school reads. Refs workspace#80 (private).
+ * the other school reads. Refs #91.
  *
  * Driven over real HTTP through the real JWT strategy and guards, in the
  * style of src/modules/import/import.guard.spec.ts.

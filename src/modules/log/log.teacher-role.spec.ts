@@ -14,7 +14,7 @@ import { LogController } from "./log.controller";
  * a `schooluserid` - including a student's, since `auth/school/login`
  * (`AuthBusiness.teacherlogin`) never checked `schooluserrole` either. A
  * student token could overwrite or invent progress for any student in any
- * school (workspace#78, private). Fixed at three layers: the login route
+ * school (#90). Fixed at three layers: the login route
  * now refuses a non-staff account, `JwtAccessStrategy.validate` refuses a
  * non-staff school-user token on every ACCESS-guarded route (see
  * src/services/auth.strategy.spec.ts - that's where a student token's

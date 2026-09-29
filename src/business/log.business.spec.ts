@@ -17,8 +17,8 @@ const { LogBusiness } = require("./log.business");
 
 /**
  * `LogBusiness.recordSyncActivity`'s own role check - the defence-in-depth
- * layer alongside auth/school/login and JwtAccessStrategy (workspace#78,
- * workspace#80, private). Unit-tested directly against the business method
+ * layer alongside auth/school/login and JwtAccessStrategy (#90). Unit-tested
+ * directly against the business method
  * (transaction and the `schoolusers`/`syncs` models stubbed, no HTTP, no
  * strategy), so this stays red on its own if the check regresses even were
  * the strategy-level guard ever to regress too.

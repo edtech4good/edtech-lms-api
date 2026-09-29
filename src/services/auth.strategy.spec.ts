@@ -23,7 +23,7 @@ import { JwtAccessStrategy } from "./auth.strategy";
  * Fixed at the strategy: a school-user token (has `schooluserid`) for a
  * non-staff role is refused at the JWT layer, before any controller or
  * guard downstream ever sees it - covering every current and future
- * ACCESS-guarded route in one place. (workspace#78, workspace#80, private.)
+ * ACCESS-guarded route in one place. (#90.)
  *
  * Driven over real HTTP through the real strategy with signed tokens; only
  * the token-table lookup and each route's business/DB dependencies are

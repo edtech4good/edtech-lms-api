@@ -185,12 +185,12 @@ describe("AuthBusiness.teacherlogin (#56 enumeration guard)", () => {
  * `auth/school/login` used to hand out a token to ANY school user - it never
  * checked `schooluserrole` - so a student account got the same token a
  * teacher does, and nothing downstream (e.g. `PUT log/import`) enforced the
- * role either (workspace#78, private). No shipped client logs a student in
+ * role either (#90). No shipped client logs a student in
  * here, so a student account is refused with the exact same response as a
  * wrong password: it must not reveal that the account exists or that it's a
  * student. A staff account (superadmin/admin/teacher) is unaffected.
  */
-describe("AuthBusiness.teacherlogin (workspace#78: student school users are refused)", () => {
+describe("AuthBusiness.teacherlogin (#90: student school users are refused)", () => {
   const REAL_PASSWORD = "correct horse battery staple";
   const realHash = passwordService.hashPassword(REAL_PASSWORD);
   const baseSchoolUser = {

@@ -31,7 +31,7 @@ export class JwtAccessStrategy extends PassportStrategy(
     // including a token already issued before auth/school/login started
     // enforcing this (a 60-minute access token otherwise stays valid for
     // its full lifetime). An lmsuser token never carries `schooluserid`, so
-    // this never touches that path. (workspace#78, workspace#80, private.)
+    // this never touches that path. (#90.)
     if (user.schooluserid && !STAFF_SCHOOL_ROLES.includes(user.schooluserrole)) {
       throw new UnauthorizedException();
     }

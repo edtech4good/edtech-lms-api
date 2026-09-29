@@ -10,7 +10,7 @@ import { StudentController } from "./student.controller";
 /**
  * Adds the same view_student check the other student reads carry, on top of
  * the class-level role guard on StudentController (apikey/superadmin/admin).
- * Refs workspace#80 (private).
+ * Refs #91.
  *
  * Driven over real HTTP through the real JWT strategy and guards, in the
  * style of src/modules/import/import.guard.spec.ts.
