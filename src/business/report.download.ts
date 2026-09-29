@@ -17,7 +17,6 @@ interface IQuizzesScores {
     percentage: string;
     quizscore: number;
     result: string;
-    verified: boolean;
 }
 
 interface ICurrentLevel {
@@ -31,7 +30,6 @@ interface ICurrentLevel {
     lesson: string;
     score: string;
     result: string;
-    verified: boolean;
 }
 
 interface ILevelQuizzesScores {
@@ -46,7 +44,6 @@ interface ILevelQuizzesScores {
     percentage: string;
     quizscore: number;
     result: string;
-    verified: boolean;
 }
 
 interface SchoolContributeData {
@@ -95,8 +92,7 @@ export class ReportDownload {
                 totalquestions: flatlesson.laststudentprogress ? `${flatlesson.laststudentprogress.getDataValue('totalquestions')}` : 'N/A',
                 percentage: (flatlesson.laststudentprogress ? flatlesson.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatlesson.laststudentprogress?.scores ?? 0,
-                result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A',
-                verified: flatlesson.laststudentprogress?.verified ?? false
+                result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
             }
             return lesson;
         })
@@ -117,8 +113,7 @@ export class ReportDownload {
                 totalquestions: flatstudent.laststudentprogress ? `${flatstudent.laststudentprogress?.getDataValue('totalquestions')}` : 'N/A',
                 percentage: (flatstudent.laststudentprogress ? flatstudent.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatstudent.laststudentprogress?.scores ?? 0,
-                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A',
-                verified: flatstudent.laststudentprogress?.verified ?? false
+                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
             }
             return lesson;
         })
@@ -139,8 +134,7 @@ export class ReportDownload {
                 totalquestions: flatstudent.laststudentprogress ? `${(flatstudent.laststudentprogress as any)?.totalquestions}` : 'N/A',
                 percentage: (flatstudent.laststudentprogress ? flatstudent.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatstudent.laststudentprogress?.scores ?? 0,
-                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A',
-                verified: flatstudent.laststudentprogress?.verified ?? false
+                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
             }
             return lesson;
         })
@@ -161,8 +155,7 @@ export class ReportDownload {
                 totalquestions: flatlesson.laststudentprogress ? `${(flatlesson.laststudentprogress as any)?.totalquestions}` : 'N/A',
                 percentage: (flatlesson.laststudentprogress ? flatlesson.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatlesson.laststudentprogress?.scores ?? 0,
-                result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A',
-                verified: flatlesson.laststudentprogress?.verified ?? false
+                result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
             }
             return lesson;
         })
@@ -182,8 +175,7 @@ export class ReportDownload {
                 totalquestions: flatlesson.laststudentprogress ? `${flatlesson.laststudentprogress?.getDataValue('totalquestions')}` : 'N/A',
                 percentage: (flatlesson.laststudentprogress ? flatlesson.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatlesson.laststudentprogress?.scores ?? 0,
-                result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A',
-                verified: flatlesson.laststudentprogress?.verified ?? false
+                result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
             }
             return lesson;
         })
@@ -203,8 +195,7 @@ export class ReportDownload {
                 totalquestions: flatstudent.laststudentprogress ? `${flatstudent.laststudentprogress?.getDataValue('totalquestions')}` : 'N/A',
                 percentage: (flatstudent.laststudentprogress ? flatstudent.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatstudent.laststudentprogress?.scores ?? 0,
-                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A',
-                verified: flatstudent.laststudentprogress?.verified ?? false
+                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
             }
             return lesson;
         })
@@ -224,8 +215,7 @@ export class ReportDownload {
                 totalquestions: flatstudent.laststudentprogress ? `${(flatstudent.laststudentprogress as any)?.totalquestions}` : 'N/A',
                 percentage: (flatstudent.laststudentprogress ? flatstudent.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatstudent.laststudentprogress?.scores ?? 0,
-                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A',
-                verified: flatstudent.laststudentprogress?.verified ?? false
+                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
             }
             return lesson;
         })
@@ -245,8 +235,7 @@ export class ReportDownload {
                 totalquestions: flatlesson.laststudentprogress ? `${(flatlesson.laststudentprogress as any)?.totalquestions}` : 'N/A',
                 percentage: (flatlesson.laststudentprogress ? flatlesson.laststudentprogress?.resultpercentage : 0) + '%',
                 quizscore: flatlesson.laststudentprogress?.scores ?? 0,
-                result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A',
-                verified: flatlesson.laststudentprogress?.verified ?? false
+                result: flatlesson.laststudentprogress ? (flatlesson.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
             }
             return lesson;
         })
@@ -266,8 +255,7 @@ export class ReportDownload {
                 level: flatstudent.laststudentprogress?.lessonquiz?.lesson?.level?.levelname ?? 'N/A',
                 lesson: flatstudent.laststudentprogress?.lessonquiz?.lesson?.lessonname ?? 'N/A',
                 score: flatstudent.laststudentprogress ? flatstudent.laststudentprogress?.resultpercentage + ' %' : 'N/A',
-                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A',
-                verified: flatstudent.laststudentprogress?.verified ?? false
+                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
             }
             return lesson;
         })
@@ -287,8 +275,7 @@ export class ReportDownload {
                 level: flatstudent.laststudentprogress?.lessonquiz?.lesson?.level?.levelname ?? 'N/A',
                 lesson: flatstudent.laststudentprogress?.lessonquiz?.lesson?.lessonname ?? 'N/A',
                 score: flatstudent.laststudentprogress ? flatstudent.laststudentprogress?.resultpercentage + ' %' : 'N/A',
-                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A',
-                verified: flatstudent.laststudentprogress?.verified ?? false
+                result: flatstudent.laststudentprogress ? (flatstudent.laststudentprogress.resultpercentage >= 80 ? 'Pass' : 'Redo') : 'N/A'
             }
             return lesson;
         })
