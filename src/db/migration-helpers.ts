@@ -60,14 +60,19 @@ export async function addColumnIfMissing(
   await queryInterface.addColumn(table, column, definition, { transaction });
 }
 
-/** The `down()` mirror of `addColumnIfMissing` - safe against a column (or the whole table) already being gone. */
+/** The `down()` mirror of `addColumnIfMissing` - safe against a column (or the whole table) already being gone. Unlike `addColumnIfMissing`, this must tolerate the table itself not existing (a `down()` can run against a database where `up()`'s table-creation branch never ran, or where the table pre-dates the migration and was never touched), so a `describeTable` failure is treated as "nothing to remove" rather than propagated. */
 export async function removeColumnIfPresent(
   queryInterface: QueryInterface,
   table: string,
   column: string,
   transaction: Transaction,
 ): Promise<void> {
-  const desc = await queryInterface.describeTable(table);
+  let desc: Record<string, unknown>;
+  try {
+    desc = await queryInterface.describeTable(table);
+  } catch {
+    return;
+  }
   if (!desc[column]) {
     return;
   }

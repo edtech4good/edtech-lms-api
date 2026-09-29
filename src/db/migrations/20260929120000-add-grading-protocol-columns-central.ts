@@ -138,32 +138,17 @@ module.exports = {
 
   down: (queryInterface: QueryInterface): Promise<void> =>
     queryInterface.sequelize.transaction(async (transaction: Transaction) => {
-      const names = await tableNameList(queryInterface);
-
-      if (names.includes(TABLE)) {
-        const [rows] = await queryInterface.sequelize.query(
-          `SELECT COUNT(*) AS c FROM \`${TABLE}\``,
-          { transaction },
-        );
-        const count = Number((rows as { c?: number | string }[])[0]?.c ?? 0);
-
-        if (count === 0) {
-          // Empty: either this migration created it moments ago, or it's an
-          // unused legacy table - either way there's no data to lose, so
-          // drop it entirely rather than leaving a half-reverted table.
-          await queryInterface.dropTable(TABLE, { transaction });
-        } else {
-          // Has rows: don't touch a table with real data in it (whether
-          // this migration created it earlier in the same run, or it's an
-          // older dev table with its own history) - just undo the two
-          // columns this migration added.
-          await removeColumnIfPresent(queryInterface, TABLE, "servergrade", transaction);
-          await removeColumnIfPresent(queryInterface, TABLE, "clientiscorrect", transaction);
-        }
-      }
-
+      // Never drop `studentprogressquestions` itself: on an older dev
+      // database that already had the table (the schema-drift case this
+      // migration's `up()` guards against), the table pre-dates this
+      // migration - it isn't ours to remove, empty or not, since the model
+      // and `log/import` already depend on it existing. `down()` only ever
+      // undoes what `up()` actually added: the two columns here (guarded
+      // against the table itself being missing) and `verified` below.
+      await removeColumnIfPresent(queryInterface, TABLE, "servergrade", transaction);
+      await removeColumnIfPresent(queryInterface, TABLE, "clientiscorrect", transaction);
       await removeColumnIfPresent(queryInterface, "studentprogress", "verified", transaction);
       // MySQL leaves the servergrade ENUM type attached to nothing once the
-      // column (or table) is dropped - nothing further to clean up here.
+      // column is dropped - nothing further to clean up here.
     }),
 };

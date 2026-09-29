@@ -134,26 +134,8 @@ describe("20260929120000-add-grading-protocol-columns-central up()", () => {
 });
 
 describe("20260929120000-add-grading-protocol-columns-central down()", () => {
-  it("drops the table when it exists and is empty", async () => {
+  it("removes only the added columns when the table exists and is empty (never drops it)", async () => {
     const qi = makeQueryInterface();
-    qi.showAllTables.mockResolvedValue(["studentprogress", "studentprogressquestions"]);
-    qi.sequelize.query.mockResolvedValue([[{ c: 0 }]]);
-    qi.describeTable.mockResolvedValue({ verified: {} });
-
-    await migration.down(qi);
-
-    expect(qi.dropTable).toHaveBeenCalledWith("studentprogressquestions", expect.anything());
-    expect(qi.removeColumn).toHaveBeenCalledWith(
-      "studentprogress",
-      "verified",
-      expect.anything()
-    );
-  });
-
-  it("only removes the two added columns (never drops the table) when it has rows", async () => {
-    const qi = makeQueryInterface();
-    qi.showAllTables.mockResolvedValue(["studentprogress", "studentprogressquestions"]);
-    qi.sequelize.query.mockResolvedValue([[{ c: 5 }]]);
     qi.describeTable.mockImplementation((table: string) => {
       if (table === "studentprogressquestions") {
         return Promise.resolve({
@@ -178,18 +160,60 @@ describe("20260929120000-add-grading-protocol-columns-central down()", () => {
     );
   });
 
-  it("doesn't crash when the table is already missing", async () => {
+  it("removes only the added columns when the table has rows (never drops it)", async () => {
+    // down() never queries row counts any more - a pre-existing table (the
+    // schema-drift case) isn't up()'s to remove regardless of whether it's
+    // empty, so there's nothing for a row count to decide here.
     const qi = makeQueryInterface();
-    qi.showAllTables.mockResolvedValue(["studentprogress"]);
-    qi.describeTable.mockResolvedValue({ verified: {} });
+    qi.describeTable.mockImplementation((table: string) => {
+      if (table === "studentprogressquestions") {
+        return Promise.resolve({
+          studentprogressid: {},
+          studentprogressquestionid: {},
+          tries: {},
+          iscorrect: {},
+          referencequestionid: {},
+          clientiscorrect: {},
+          servergrade: {},
+        });
+      }
+      return Promise.resolve({ verified: {} });
+    });
+
+    await migration.down(qi);
+
+    expect(qi.dropTable).not.toHaveBeenCalled();
+    expect(qi.sequelize.query).not.toHaveBeenCalled();
+    const removedColumns = qi.removeColumn.mock.calls.map((c: unknown[]) => c[1]);
+    expect(removedColumns).toEqual(
+      expect.arrayContaining(["servergrade", "clientiscorrect", "verified"])
+    );
+  });
+
+  it("doesn't crash when the table is already missing, and never drops it", async () => {
+    const qi = makeQueryInterface();
+    qi.describeTable.mockImplementation((table: string) => {
+      if (table === "studentprogressquestions") {
+        // describeTable on a genuinely missing table throws in real
+        // Sequelize - removeColumnIfPresent must handle this the same way
+        // addColumnIfMissing does, by treating a thrown describeTable as
+        // "nothing to do" rather than letting it propagate.
+        return Promise.reject(new Error("No description found for \"studentprogressquestions\" table."));
+      }
+      return Promise.resolve({ verified: {} });
+    });
 
     await expect(migration.down(qi)).resolves.toBeUndefined();
 
-    expect(qi.sequelize.query).not.toHaveBeenCalled();
     expect(qi.dropTable).not.toHaveBeenCalled();
     expect(qi.removeColumn).toHaveBeenCalledWith(
       "studentprogress",
       "verified",
+      expect.anything()
+    );
+    expect(qi.removeColumn).not.toHaveBeenCalledWith(
+      "studentprogressquestions",
+      expect.anything(),
       expect.anything()
     );
   });
