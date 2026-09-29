@@ -18,6 +18,8 @@ export interface studentprogressAttributes {
   points: number,
   fullpoints: number,
   scores: number,
+  /** True only when the student API that submitted this row scored every active question server-side (the server-grading protocol). Default false; never trusted from an import - see LogBusiness.importprogresslog. Not backfilled for existing rows. */
+  verified?: boolean;
 
   totalquestions?: number;
 
@@ -26,7 +28,7 @@ export interface studentprogressAttributes {
 
 export type studentprogressPk = "studentprogressid";
 export type studentprogressId = studentprogress[studentprogressPk];
-export type studentprogressOptionalAttributes = "starttime" | "endtime" | "studentprogressid";
+export type studentprogressOptionalAttributes = "starttime" | "endtime" | "studentprogressid" | "verified";
 export type studentprogressCreationAttributes = Optional<studentprogressAttributes, studentprogressOptionalAttributes>;
 
 export class studentprogress extends Model<studentprogressAttributes, studentprogressCreationAttributes> implements studentprogressAttributes {
@@ -42,6 +44,7 @@ export class studentprogress extends Model<studentprogressAttributes, studentpro
   points!: number;
   fullpoints!: number;
   scores!: number;
+  verified?: boolean;
 
   // studentprogress hasMany studentprogressquestions via studentprogressid
   studentprogressquestions!: studentprogressquestions[];
@@ -114,6 +117,11 @@ export class studentprogress extends Model<studentprogressAttributes, studentpro
       type: DataTypes.INTEGER.UNSIGNED,
       allowNull: true,
       defaultValue: null,
+    },
+    verified: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
     },
   }, {
     sequelize,

@@ -50,22 +50,31 @@ export class LogBusiness {
       updateOnDuplicate: ["userid", "logintime", "ipaddress", "logouttime", "timespent", "status"],
     });
   importprogresslog = (progress: Array<studentprogress>) =>
-    studentprogress.bulkCreate(progress, {
-      transaction: this._transaction,
-      updateOnDuplicate: [
-        "studentid",
-        "ispass",
-        "studentprogressreferenceid",
-        "starttime",
-        "endtime",
-        "progresstype",
-        "marks",
-        "points",
-        "resultpercentage",
-        "fullpoints",
-        "scores"
-      ],
-    });
+    studentprogress.bulkCreate(
+      // Central never trusts an imported `verified` - it means "the
+      // student API scored this server-side", and central has no way to
+      // check that claim. Force false on every row regardless of what the
+      // payload says; bulkCreate has no `fields` list here, so anything we
+      // don't override is inserted as-is from the payload (workspace#79).
+      progress.map((p: any) => ({ ...p, verified: false })),
+      {
+        transaction: this._transaction,
+        updateOnDuplicate: [
+          "studentid",
+          "ispass",
+          "studentprogressreferenceid",
+          "starttime",
+          "endtime",
+          "progresstype",
+          "marks",
+          "points",
+          "resultpercentage",
+          "fullpoints",
+          "scores",
+          "verified",
+        ],
+      }
+    );
   importstudentprogresslog = async (progress: studentprogresslog) => {
     await studentactives.bulkCreate(progress.studentactives, {
       transaction: this._transaction,
@@ -167,15 +176,34 @@ export class LogBusiness {
   importprogressquestionlog = (
     progressquestions: Array<studentprogressquestions>
   ) =>
-    studentprogressquestions.bulkCreate(progressquestions, {
-      transaction: this._transaction,
-      updateOnDuplicate: [
-        "studentprogressid",
-        "tries",
-        "iscorrect",
-        "referencequestionid",
-      ],
-    });
+    studentprogressquestions.bulkCreate(
+      // Explicit field list rather than passing the payload through: an
+      // old payload has only the fields below and imports unchanged: a new
+      // one also carries `clientiscorrect`/`servergrade`, imported for
+      // future reporting of client/server disagreement, and `answer`,
+      // which is deliberately left out below - central does not store raw
+      // learner answers (data minimisation, workspace#79).
+      progressquestions.map((q: any) => ({
+        studentprogressid: q.studentprogressid,
+        studentprogressquestionid: q.studentprogressquestionid,
+        tries: q.tries,
+        iscorrect: q.iscorrect,
+        referencequestionid: q.referencequestionid,
+        clientiscorrect: q.clientiscorrect ?? null,
+        servergrade: q.servergrade ?? null,
+      })),
+      {
+        transaction: this._transaction,
+        updateOnDuplicate: [
+          "studentprogressid",
+          "tries",
+          "iscorrect",
+          "referencequestionid",
+          "clientiscorrect",
+          "servergrade",
+        ],
+      }
+    );
   clearuseraccesslogs = async (
     rpiuseraccessid: Array<string>
   ): Promise<boolean> => {
