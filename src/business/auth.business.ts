@@ -138,10 +138,10 @@ export class AuthBusiness {
       throw new ApiError(ErrorCode.LOGIN_FAILED, LOGIN_FAILURE_MESSAGE);
     }
     // This endpoint issues a token meant only for staff (superadmin/admin/
-    // teacher) accounts - see workspace#78 (private). No shipped client logs
+    // teacher) accounts - see #90. No shipped client logs
     // a student in here (edtech-expo's lmsLogin call is dead code; the
-    // archived edtech-android app is a read-only reference, never released -
-    // see ROADMAP.md), so any non-staff account is refused with the same
+    // archived edtech-android app is a read-only reference, never released),
+    // so any non-staff account is refused with the same
     // response as a wrong password, same as the other branches above,
     // rather than revealing the account exists or its role. Allow-list, not
     // `!== SchoolRole.STUDENT`: an unmapped role value must also be refused.

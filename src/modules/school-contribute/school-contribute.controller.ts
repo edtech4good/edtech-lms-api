@@ -84,7 +84,7 @@ async createSchoolContribute(
 @ApiBody({ required: false, type: IPaging })
 @ApiParam({ name: `schoolid`, type: "string", required: true })
 // Already carried CheckPermissionsGuard; adds the permission check it was
-// missing. Refs workspace#80 (private).
+// missing. Refs #91.
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -251,7 +251,7 @@ async deleteschoolcontribute(
     new SchemaValidationInterceptor(schoolcontributeid)
 )
 // Requires view_school_contribution like the other school-contribute reads.
-// Refs workspace#80 (private).
+// Refs #91.
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -281,7 +281,7 @@ async getSchoolsContributeId(@Param('schoolcontributeid') schoolcontributeid: st
     new SchemaValidationInterceptor(getschooldashboardbyid)
 )
 // Requires view_school_contribution like the other school-contribute reads.
-// Refs workspace#80 (private).
+// Refs #91.
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -308,7 +308,7 @@ async getSchoolsReport(@Param('schoolid') schoolid: string): Promise<any> {
     description: "Server error",
 })
 // Requires view_school_contribution like the other school-contribute reads.
-// Refs workspace#80 (private).
+// Refs #91.
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -334,7 +334,7 @@ async getAllSchoolsReport(): Promise<any> {
   description: "Server error",
 })
 // Requires view_school_contribution like the other school-contribute reads.
-// Refs workspace#80 (private).
+// Refs #91.
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -356,7 +356,7 @@ async getSchoolsName(@Param('schoolid') schoolid: string): Promise<any> {
     description: "Error while creating SchoolContribute",
 })
 // Requires view_school_contribution like the other school-contribute reads.
-// Refs workspace#80 (private).
+// Refs #91.
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
@@ -374,7 +374,7 @@ async getSchoolContribute(): Promise<any> {
     description: "Error while creating SchoolContribute",
 })
 // Requires view_school_contribution like the other school-contribute reads.
-// Refs workspace#80 (private).
+// Refs #91.
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)

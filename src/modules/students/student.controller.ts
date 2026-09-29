@@ -131,7 +131,7 @@ export class StudentController {
     description: "Server error",
   })
   // Adds the same view_student check the other student reads carry, on top
-  // of the class-level role guard. Refs workspace#80 (private).
+  // of the class-level role guard. Refs #91.
   @RequirePermissions(Permission.VIEW_STUDENT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiQuery({ name: "userid", required: false, type: 'string' })
