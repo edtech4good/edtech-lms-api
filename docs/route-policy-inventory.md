@@ -18,20 +18,23 @@ date, and when a route has no policy.
 A policy is a requirement on the routes that declare it. Declaring one does
 not enforce it: enforcement arrives in later packages. The **Enforced**
 column says which routes a guard already backs (`yes`) and which do not yet
-(`pending`); the pending routes are pinned in
+(`pending`); `public` routes show `n/a`, because no guard backs them. The
+pending routes are pinned in
 `src/route-policy/pending-enforcement.snapshot.txt`.
 
-Of **281** routes, **25** are enforced and **256** are pending.
+Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-| Policy | Routes | Enforced | Pending |
-|---|---|---|---|
-| public | 11 | 11 | 0 |
-| self | 4 | 4 | 0 |
-| owned | 243 | 0 | 243 |
-| platform | 17 | 5 | 12 |
-| server | 1 | 0 | 1 |
-| global | 5 | 5 | 0 |
-| **all** | **281** | **25** | **256** |
+Of **281** routes, **14** are enforced by a guard (self, global, and platform routes with `PlatformGuard`), **11** are not applicable (public) and **256** are pending.
+
+| Policy | Routes | Enforced by a guard | Not applicable | Pending |
+|---|---|---|---|---|
+| public | 11 | 0 | 11 | 0 |
+| self | 4 | 4 | 0 | 0 |
+| owned | 243 | 0 | 0 | 243 |
+| platform | 17 | 5 | 0 | 12 |
+| server | 1 | 0 | 0 | 1 |
+| global | 5 | 5 | 0 | 0 |
+| **all** | **281** | **14** | **11** | **256** |
 
 ## Policies
 
@@ -48,9 +51,9 @@ A route used by both a user token and the API key is classified by its user path
 
 ## Columns
 
-- **Enforced**: `yes` when a guard already backs the policy, `pending` otherwise.
+- **Enforced**: `yes` when a guard already backs the policy, `n/a` for `public` routes (no guard backs them), `pending` otherwise.
 - **API key**: `yes` when every `AccessGuard` on the route lists the application API key, so a caller with no user gets through.
-- **School-user token**: `yes` when a school-user (teacher or classroom device) access token gets through every guard on the route, derived from the guard metadata: every `AccessGuard` is the access token type with no role list, there is no `PlatformGuard`, and no permission is required.
+- **School-user token**: `yes` when a school-user (teacher or classroom device) access token gets through every guard on the route, derived from the guard metadata: every `AccessGuard` is the access token type with no role list, there is no `PlatformGuard`, and no permission is required. Feature switches such as `LogImportGuard` aside.
 
 Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 
@@ -58,18 +61,18 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 
 | Method | Path | Handler | Policy | Enforced | API key | School-user token | Guards | Note |
 |---|---|---|---|---|---|---|---|---|
-| GET | `/` | AppController.getbase | public | yes |  |  | none |  |
-| GET | `/assets/teacher-upload.csv` | AppController.getteacheruploadFile | public | yes |  |  | none | Serves a static CSV template. |
-| GET | `/assets/user-upload.csv` | AppController.getstudentuploadFile | public | yes |  |  | none | Serves a static CSV template. |
-| GET | `/version` | AppController.getversion | public | yes |  |  | none |  |
+| GET | `/` | AppController.getbase | public | n/a |  |  | none |  |
+| GET | `/assets/teacher-upload.csv` | AppController.getteacheruploadFile | public | n/a |  |  | none | Serves a static CSV template. |
+| GET | `/assets/user-upload.csv` | AppController.getstudentuploadFile | public | n/a |  |  | none | Serves a static CSV template. |
+| GET | `/version` | AppController.getversion | public | n/a |  |  | none |  |
 | PUT | `/auth/changepassword` | AuthController.changepassword | self | yes |  |  | AccessGuard(CHANGEPASSWORD) | Must act only on the account named by the change-password token. |
-| POST | `/auth/forgotpassword` | AuthController.forgotpassword | public | yes |  |  | ThrottlerGuard |  |
-| POST | `/auth/login` | AuthController.login | public | yes |  |  | ThrottlerGuard | Staff sign-in. |
+| POST | `/auth/forgotpassword` | AuthController.forgotpassword | public | n/a |  |  | ThrottlerGuard |  |
+| POST | `/auth/login` | AuthController.login | public | n/a |  |  | ThrottlerGuard | Staff sign-in. |
 | POST | `/auth/logout` | AuthController.logout | self | yes |  |  | none | Named exception: the bearer token is checked in the handler, not by a guard. |
 | POST | `/auth/refreshtoken` | AuthController.createrefreshtoken | self | yes |  |  | AccessGuard(REFRESH) | Must act only on the session named by the refresh token. |
-| POST | `/auth/school/login` | AuthController.teacherlogin | public | yes |  |  | ThrottlerGuard | School-user (teacher and classroom device) sign-in. |
-| PUT | `/auth/sendverificationemail` | AuthController.verifyemail | public | yes |  |  | none |  |
-| POST | `/auth/token/validate/changepassword` | AuthController.changepasswordvalidate | public | yes |  |  | none | The reset token in the query proves the request. |
+| POST | `/auth/school/login` | AuthController.teacherlogin | public | n/a |  |  | ThrottlerGuard | School-user (teacher and classroom device) sign-in. |
+| PUT | `/auth/sendverificationemail` | AuthController.verifyemail | public | n/a |  |  | none |  |
+| POST | `/auth/token/validate/changepassword` | AuthController.changepasswordvalidate | public | n/a |  |  | none | The reset token in the query proves the request. |
 | POST | `/auth/verify` | AuthController.verifyuserbyemailtoken | self | yes |  |  | AccessGuard(VERIFYEMAIL) | Must act only on the account named by the email-verification token. |
 | DELETE | `/baselinequestion/:baselinequestionid` | BaselinequestionController.deletequizquestion | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_baseline-endline] |  |
 | PUT | `/baselinequestion/activate/:baselinequestionid` | BaselinequestionController.activate | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
@@ -78,7 +81,7 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | PUT | `/baselinequestion/deactivate/:baselinequestionid` | BaselinequestionController.deactivate | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
 | GET | `/baselinequestion/getall/:curriculumbaselineid` | BaselinequestionController.getall | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
 | PUT | `/baselinequestion/order/:baselinequestionid/:baselinequestionorder` | BaselinequestionController.orderquizquestion | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
-| GET | `/dropdown/templatetype` | CommonController.getTemplateType | public | yes |  |  | none | Returns a static list of template types. |
+| GET | `/dropdown/templatetype` | CommonController.getTemplateType | public | n/a |  |  | none | Returns a static list of template types. |
 | GET | `/country` | CountryController.getAll | owned | pending | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.teacher) | Must list only countries linked to the caller's organisation. |
 | POST | `/country` | CountryController.getall | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_country] | Must list only countries linked to the caller's organisation. |
 | DELETE | `/country/:countryid` | CountryController.delete | platform | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_country] | Writes to global reference data (countries) must be restricted to platform users. |
@@ -293,7 +296,7 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | GET | `/school/:schoolid` | SchoolController.get | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
 | GET | `/school/:schoolid/curriculums` | SchoolController.getCurriculums | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
 | GET | `/school/all` | SchoolController.getAllSchoolsWithFilter | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
-| GET | `/school/branding` | SchoolController.getBranding | public | yes |  |  | none | Deliberately published before sign-in: returns only the theme and branding of the named school. |
+| GET | `/school/branding` | SchoolController.getBranding | public | n/a |  |  | none | Deliberately published before sign-in: returns only the theme and branding of the named school. |
 | GET | `/school/country/:countryid` | SchoolController.getSchool | owned | pending | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin) |  |
 | GET | `/school/country/:countryid/curriculum/:curriculumid` | SchoolController.getSchoolCurriculum | owned | pending | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin) |  |
 | POST | `/school/create` | SchoolController.createschool | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_school] |  |
@@ -338,4 +341,4 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | DELETE | `/user/:lmsuserid` | UserController.deleteuser | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_user] |  |
 | GET | `/user/:lmsuserid` | UserController.get | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_user] |  |
 | PUT | `/user/:lmsuserid` | UserController.update | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_user] |  |
-| POST | `/user/create` | UserController.create | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_user] | Staff accounts belong to an organisation. |
+| POST | `/user/create` | UserController.create | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_user] | Must create the account in the caller's organisation; only a platform caller may choose one. |

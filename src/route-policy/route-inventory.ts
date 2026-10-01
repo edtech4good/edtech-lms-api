@@ -4,12 +4,14 @@ import {
   GUARDS_METADATA,
   METHOD_METADATA,
   PATH_METADATA,
+  MODULE_PATH,
   VERSION_METADATA,
 } from "@nestjs/common/constants";
 import { addLeadingSlash } from "@nestjs/common/utils/shared.utils";
 import {
   ApplicationConfig,
   DiscoveryModule,
+  ModulesContainer,
   DiscoveryService,
   MetadataScanner,
   NestFactory,
@@ -157,6 +159,19 @@ const pathsOf = (value: string | string[]): string[] =>
 @Module({ imports: [AppModule, DiscoveryModule] })
 class RouteInventoryRootModule {}
 
+/**
+ * Modules that carry Nest's RouterModule module-path metadata. Nest prepends
+ * that path to every route of the module, which the inventory does not model.
+ * RouterModule stores it on the module class under a key that starts with
+ * MODULE_PATH (followed by the application id), so any such key counts.
+ */
+export const modulesWithModulePath = (
+  modules: Array<{ name: string }>,
+): string[] =>
+  modules
+    .filter((m) => Reflect.getMetadataKeys(m).some((k) => String(k).startsWith(MODULE_PATH)))
+    .map((m) => m.name);
+
 export async function enumerateRoutes(): Promise<RouteRecord[]> {
   const app = await NestFactory.createApplicationContext(
     RouteInventoryRootModule,
@@ -168,6 +183,16 @@ export async function enumerateRoutes(): Promise<RouteRecord[]> {
     // no HTTP application config to ask, so versioning metadata is refused
     // below and src/server.ts (where a prefix would be set) is checked by the
     // spec.
+    const prefixed = modulesWithModulePath(
+      [...app.get(ModulesContainer).values()].map((m) => m.metatype as { name: string }),
+    );
+    if (prefixed.length > 0) {
+      throw new Error(
+        `Module-path metadata (RouterModule) is set on ${prefixed.join(", ")}; ` +
+          "its paths are prefixed, which the route inventory does not model.",
+      );
+    }
+
     const discovery = app.get(DiscoveryService);
     const reflector = new Reflector();
     const scanner = new MetadataScanner();
@@ -317,6 +342,19 @@ export const isPendingEnforcement = (route: RouteRecord): boolean =>
   route.policy === "owned" ||
   route.policy === "server";
 
+/**
+ * `yes`: a guard backs the policy (self and global routes, and platform routes
+ * with PlatformGuard). `n/a`: public routes, which no guard backs and none is
+ * needed. `pending`: see isPendingEnforcement.
+ */
+export type EnforcementState = "yes" | "n/a" | "pending";
+export const enforcementState = (r: RouteRecord): EnforcementState =>
+  isPendingEnforcement(r) ? "pending" : r.policy === "public" ? "n/a" : "yes";
+
+/** Said in the generated document and in the snapshot header. */
+export const PENDING_MEANING =
+  "Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.";
+
 const byCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** The policy as written in the snapshot: `owned`, or `owned+apikey`. */
@@ -326,6 +364,7 @@ export const policyLabel = (r: RouteRecord): string =>
 export const PENDING_SNAPSHOT_HEADER = [
   "# Routes whose organisation policy is declared but not yet enforced by a guard.",
   "# Enforcement arrives in a later package; entries are removed as it does.",
+  `# ${PENDING_MEANING}`,
   "# One route per line, sorted by path then method: METHOD /path  policy",
   "# `+apikey` marks a route whose guards also admit the application API key.",
   "# Generated: `npm run routes:policy -- --write`. Checked by route-inventory.spec.ts.",
@@ -366,6 +405,8 @@ export const INVENTORY_DOC_PATH = "docs/route-policy-inventory.md";
  */
 export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
   const pending = routes.filter(isPendingEnforcement).length;
+  const notApplicable = routes.filter((r) => enforcementState(r) === "n/a").length;
+  const enforced = routes.length - pending - notApplicable;
   const apiKey = routes.filter((r) => r.admitsApiKey);
   const schoolUser = routes.filter((r) => r.schoolUserAdmitted);
   const ordered = [...routes].sort(
@@ -395,19 +436,22 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "A policy is a requirement on the routes that declare it. Declaring one does",
     "not enforce it: enforcement arrives in later packages. The **Enforced**",
     "column says which routes a guard already backs (`yes`) and which do not yet",
-    "(`pending`); the pending routes are pinned in",
+    "(`pending`); `public` routes show `n/a`, because no guard backs them. The",
+    "pending routes are pinned in",
     "`src/route-policy/pending-enforcement.snapshot.txt`.",
     "",
-    `Of **${routes.length}** routes, **${routes.length - pending}** are enforced and **${pending}** are pending.`,
+    PENDING_MEANING,
     "",
-    "| Policy | Routes | Enforced | Pending |",
-    "|---|---|---|---|",
+    `Of **${routes.length}** routes, **${enforced}** are enforced by a guard (self, global, and platform routes with \`PlatformGuard\`), **${notApplicable}** are not applicable (public) and **${pending}** are pending.`,
+    "",
+    "| Policy | Routes | Enforced by a guard | Not applicable | Pending |",
+    "|---|---|---|---|---|",
     ...POLICY_NAMES.map((p) => {
       const n = routes.filter((r) => r.policy === p);
-      const pend = n.filter(isPendingEnforcement).length;
-      return `| ${p} | ${n.length} | ${n.length - pend} | ${pend} |`;
+      const count = (s: EnforcementState) => n.filter((r) => enforcementState(r) === s).length;
+      return `| ${p} | ${n.length} | ${count("yes")} | ${count("n/a")} | ${count("pending")} |`;
     }),
-    `| **all** | **${routes.length}** | **${routes.length - pending}** | **${pending}** |`,
+    `| **all** | **${routes.length}** | **${enforced}** | **${notApplicable}** | **${pending}** |`,
     "",
     "## Policies",
     "",
@@ -419,9 +463,9 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "",
     "## Columns",
     "",
-    "- **Enforced**: `yes` when a guard already backs the policy, `pending` otherwise.",
+    "- **Enforced**: `yes` when a guard already backs the policy, `n/a` for `public` routes (no guard backs them), `pending` otherwise.",
     "- **API key**: `yes` when every `AccessGuard` on the route lists the application API key, so a caller with no user gets through.",
-    "- **School-user token**: `yes` when a school-user (teacher or classroom device) access token gets through every guard on the route, derived from the guard metadata: every `AccessGuard` is the access token type with no role list, there is no `PlatformGuard`, and no permission is required.",
+    "- **School-user token**: `yes` when a school-user (teacher or classroom device) access token gets through every guard on the route, derived from the guard metadata: every `AccessGuard` is the access token type with no role list, there is no `PlatformGuard`, and no permission is required. Feature switches such as `LogImportGuard` aside.",
     "",
     `Routes admitting the API key: ${apiKey.length}. Routes admitting a school-user token: ${schoolUser.length}.`,
     "",
@@ -431,9 +475,7 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "|---|---|---|---|---|---|---|---|---|",
     ...ordered.map(
       (r) =>
-        `| ${r.method} | \`${cell(r.path)}\` | ${r.controller}.${r.handler} | ${r.policy ?? "(none)"} | ${
-          isPendingEnforcement(r) ? "pending" : "yes"
-        } | ${r.admitsApiKey ? "yes" : ""} | ${r.schoolUserAdmitted ? "yes" : ""} | ${cell(guardsCell(r))} | ${cell(
+        `| ${r.method} | \`${cell(r.path)}\` | ${r.controller}.${r.handler} | ${r.policy ?? "(none)"} | ${enforcementState(r)} | ${r.admitsApiKey ? "yes" : ""} | ${r.schoolUserAdmitted ? "yes" : ""} | ${cell(guardsCell(r))} | ${cell(
           r.note ?? "",
         )} |`,
     ),

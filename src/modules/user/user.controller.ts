@@ -58,7 +58,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @Controller("user")
 @ApiBearerAuth()
 export class UserController {
-  @OrgPolicy("owned", { note: "Staff accounts belong to an organisation." })
+  @OrgPolicy("owned", { note: "Must create the account in the caller's organisation; only a platform caller may choose one." })
   @Post("create")
   @ApiResponse({
     status: 200,

@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { mixin } from "@nestjs/common";
+import { MODULE_PATH } from "@nestjs/common/constants";
 import * as ts from "typescript";
 import {
   ORG_POLICIES,
@@ -12,6 +13,10 @@ import { TokenType } from "src/models/enums";
 import {
   countByPolicy,
   describeGuard,
+  enforcementState,
+  modulesWithModulePath,
+  PENDING_MEANING,
+  renderPendingSnapshot,
   duplicateRoutes,
   enumerateRoutes,
   globalRouteViolations,
@@ -57,6 +62,16 @@ const EXPECTED_BY_POLICY = {
   server: 1,
   global: 5,
 };
+
+// How the routes divide by enforcement, stated explicitly (they sum to the
+// total):
+//  - enforced by a guard: self 4 + global 5 + platform with PlatformGuard 5 = 14
+//  - not applicable (public): 11
+//  - pending the organisation boundary: owned 243 + platform without
+//    PlatformGuard 12 + server 1 = 256
+const EXPECTED_ENFORCED_BY_GUARD = 14;
+const EXPECTED_NOT_APPLICABLE = 11;
+const EXPECTED_PENDING = 256;
 
 // The `self` and `global` sets are pinned by name, so moving a route into
 // either one is a conscious edit.
@@ -119,6 +134,22 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("pending enforcement", () => {
+    it("divides the routes into 14 enforced by a guard, 11 not applicable (public) and 256 pending", () => {
+      const count = (state: string) => routes.filter((r) => enforcementState(r) === state).length;
+      expect(count("yes")).toBe(EXPECTED_ENFORCED_BY_GUARD);
+      expect(count("n/a")).toBe(EXPECTED_NOT_APPLICABLE);
+      expect(count("pending")).toBe(EXPECTED_PENDING);
+      expect(EXPECTED_ENFORCED_BY_GUARD + EXPECTED_NOT_APPLICABLE + EXPECTED_PENDING).toBe(EXPECTED_TOTAL);
+      expect(pendingEnforcementLines(routes)).toHaveLength(EXPECTED_PENDING);
+      expect(routes.filter((r) => r.policy === "public").every((r) => enforcementState(r) === "n/a")).toBe(true);
+    });
+
+    it("the snapshot file, header included, is exactly what the generator writes", () => {
+      const text = readFileSync(SNAPSHOT_FILE, "utf8");
+      expect(text).toBe(renderPendingSnapshot(routes));
+      expect(text).toContain(PENDING_MEANING);
+    });
+
     it("matches the checked-in snapshot exactly", () => {
       const snapshot = parsePendingSnapshot(readFileSync(SNAPSHOT_FILE, "utf8"));
       expect(pendingEnforcementLines(routes)).toEqual(snapshot);
@@ -258,6 +289,24 @@ describe("route inventory checks (synthetic routes, to prove they can fail)", ()
   it("reports two routes with the same method and path, but not different methods", () => {
     expect(duplicateRoutes([route({ handler: "a" }), route({ handler: "b" })])).toHaveLength(1);
     expect(duplicateRoutes([route({}), route({ method: "POST" })])).toHaveLength(0);
+  });
+
+  it("reports a module that carries RouterModule module-path metadata, and no other", () => {
+    class Plain {}
+    class Prefixed {}
+    Reflect.defineMetadata(`${MODULE_PATH}some-application-id`, "/api", Prefixed);
+    expect(modulesWithModulePath([Plain])).toEqual([]);
+    expect(modulesWithModulePath([Plain, Prefixed])).toEqual(["Prefixed"]);
+  });
+
+  it("shows `n/a` for public routes, `yes` for guard-backed ones and `pending` for the rest", () => {
+    expect(enforcementState(route({ policy: "public" }))).toBe("n/a");
+    expect(enforcementState(route({ policy: "self" }))).toBe("yes");
+    expect(enforcementState(route({ policy: "global" }))).toBe("yes");
+    expect(enforcementState(route({ policy: "platform", hasPlatformGuard: true }))).toBe("yes");
+    expect(enforcementState(route({ policy: "platform" }))).toBe("pending");
+    expect(enforcementState(route({ policy: "owned" }))).toBe("pending");
+    expect(enforcementState(route({ policy: "server" }))).toBe("pending");
   });
 
   it("marks an API-key route in the snapshot line", () => {
