@@ -13,7 +13,14 @@
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const migration = require("./migrations/20261001120200-add-organisationid-to-schools-and-lmsusers");
 
-type IndexRow = { name: string; unique?: boolean; columnName?: string };
+/** An index as the real Sequelize MySQL `showIndex` returns it (verified against MySQL 8): one row per index. */
+type IndexRow = { name: string; unique?: boolean; fields?: Array<{ attribute: string }> };
+
+const idx = (name: string, unique: boolean, ...columns: string[]): IndexRow => ({
+  name,
+  unique,
+  fields: columns.map((attribute) => ({ attribute })),
+});
 
 type MockQI = {
   describeTable: jest.Mock;
@@ -50,7 +57,7 @@ const makeQueryInterface = (state: State = {}): MockQI => {
       Promise.resolve(hasColumn.has(table) ? { organisationid: {} } : {}),
     ),
     showIndex: jest.fn((table: string) =>
-      Promise.resolve([{ name: "PRIMARY", unique: true, columnName: "x" }, ...(indexes[table] ?? [])]),
+      Promise.resolve([idx("PRIMARY", true, "x"), ...(indexes[table] ?? [])]),
     ),
     addIndex: jest.fn().mockResolvedValue(undefined),
     removeIndex: jest.fn().mockResolvedValue(undefined),
@@ -240,10 +247,10 @@ describe("20261001120200 up()", () => {
     const qi = makeQueryInterface({
       hasColumn: ["schools", "lmsusers"],
       indexes: {
-        schools: [{ name: "schools_organisationid_idx", unique: false, columnName: "organisationid" }],
+        schools: [idx("schools_organisationid_idx", false, "organisationid")],
         lmsusers: [
-          { name: "lmsusers_organisationid_idx", unique: false, columnName: "organisationid" },
-          { name: "lmsusers_lmsusername_unique", unique: true, columnName: "lmsusername" },
+          idx("lmsusers_organisationid_idx", false, "organisationid"),
+          idx("lmsusers_lmsusername_unique", true, "lmsusername"),
         ],
       },
       constraints: ["schools.schools_organisationid_fk", "lmsusers.lmsusers_organisationid_fk"],
@@ -256,7 +263,7 @@ describe("20261001120200 up()", () => {
   it("completes a half-applied run: lmsusers column exists but its index, foreign key and the unique index do not", async () => {
     const qi = makeQueryInterface({
       hasColumn: ["schools", "lmsusers"],
-      indexes: { schools: [{ name: "schools_organisationid_idx", unique: false, columnName: "organisationid" }] },
+      indexes: { schools: [idx("schools_organisationid_idx", false, "organisationid")] },
       constraints: ["schools.schools_organisationid_fk"],
     });
     await migration.up(qi);
@@ -270,7 +277,7 @@ describe("20261001120200 up()", () => {
 
   it("does not add a second unique index when one already covers exactly lmsusername under another name", async () => {
     const qi = makeQueryInterface({
-      indexes: { lmsusers: [{ name: "lmsusername", unique: true, columnName: "lmsusername" }] },
+      indexes: { lmsusers: [idx("lmsusername", true, "lmsusername")] },
     });
     await migration.up(qi);
     expect(qi.addIndex.mock.calls.some((c) => c[1][0] === "lmsusername")).toBe(false);
@@ -280,8 +287,7 @@ describe("20261001120200 up()", () => {
     const qi = makeQueryInterface({
       indexes: {
         lmsusers: [
-          { name: "composite", unique: true, columnName: "lmsusername" },
-          { name: "composite", unique: true, columnName: "isverified" },
+          idx("composite", true, "lmsusername", "isverified"),
         ],
       },
     });
@@ -295,10 +301,10 @@ describe("20261001120200 down()", () => {
     makeQueryInterface({
       hasColumn: ["schools", "lmsusers"],
       indexes: {
-        schools: [{ name: "schools_organisationid_idx", unique: false, columnName: "organisationid" }],
+        schools: [idx("schools_organisationid_idx", false, "organisationid")],
         lmsusers: [
-          { name: "lmsusers_organisationid_idx", unique: false, columnName: "organisationid" },
-          { name: "lmsusers_lmsusername_unique", unique: true, columnName: "lmsusername" },
+          idx("lmsusers_organisationid_idx", false, "organisationid"),
+          idx("lmsusers_lmsusername_unique", true, "lmsusername"),
         ],
       },
       constraints: ["schools.schools_organisationid_fk", "lmsusers.lmsusers_organisationid_fk"],

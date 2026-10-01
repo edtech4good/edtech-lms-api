@@ -100,6 +100,12 @@ describe("PlatformGuard", () => {
     expect(() => run({ lmsuserid: 7, isplatform: true })).toThrow(ForbiddenException);
   });
 
+  it("refuses a payload that carries a school-user id as well, even with isplatform true", () => {
+    expect(() => run(platform({ schooluserid: "s1" }))).toThrow(ForbiddenException);
+    expect(() => run(platform({ schooluserid: "s1", schooluserrole: 3 }))).toThrow(ForbiddenException);
+    expect(isPlatformUser(platform({ schooluserid: "s1" }))).toBe(false);
+  });
+
   it("exposes the same rule as isPlatformUser, false for anything that is not an object", () => {
     expect(isPlatformUser(platform())).toBe(true);
     expect(isPlatformUser(platform({ isplatform: false }))).toBe(false);

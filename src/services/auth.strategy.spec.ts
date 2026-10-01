@@ -30,10 +30,14 @@ import { hasOrganisationClaims, JwtAccessStrategy } from "./auth.strategy";
  * stubbed.
  */
 const tokenExists = jest.fn();
+const validateStaffAccessToken = jest.fn();
 const getGradesWithFilter = jest.fn().mockResolvedValue([]);
 jest.mock("src/business", () => ({
   ...jest.requireActual("src/business"),
-  TokenBusiness: jest.fn().mockImplementation(() => ({ tokenExists })),
+  TokenBusiness: jest.fn().mockImplementation(() => ({
+    tokenExists,
+    validateStaffAccessToken: (...args: unknown[]) => validateStaffAccessToken(...args),
+  })),
   GradeBusiness: jest.fn().mockImplementation(() => ({
     getGradesWithFilter: (...args: any[]) => getGradesWithFilter(...args),
   })),
@@ -83,6 +87,7 @@ const lmsuserToken = sign_({
   isplatform: false,
 });
 
+const ORG = "33333333-3333-4333-8333-333333333333";
 const zip = new AdmZip();
 zip.addFile("junk.txt", Buffer.from("not a real log"));
 const zipBuffer = zip.toBuffer();
@@ -108,6 +113,7 @@ describe("JwtAccessStrategy refuses a non-staff school-user token on every ACCES
 
   beforeEach(() => {
     tokenExists.mockResolvedValue(true);
+    validateStaffAccessToken.mockResolvedValue(true);
     schoolUserFindOne.mockReset();
     schoolUserFindOne.mockResolvedValue({
       schooluserid: "teacher-1",
@@ -190,7 +196,10 @@ describe("JwtAccessStrategy requires the organisation claims on a staff token", 
   });
 
   beforeEach(() => {
+    tokenExists.mockReset();
+    validateStaffAccessToken.mockReset();
     tokenExists.mockResolvedValue(true);
+    validateStaffAccessToken.mockResolvedValue(true);
     getGradesWithFilter.mockClear();
   });
 
@@ -243,9 +252,63 @@ describe("JwtAccessStrategy requires the organisation claims on a staff token", 
     await get(staff({ organisationid: "33333333-3333-4333-8333-333333333333", isplatform: false })).expect(200);
   });
 
-  it("still refuses a revoked token (not in the tokens table) with the claims present", async () => {
-    tokenExists.mockResolvedValue(false);
+  it("still refuses a revoked token (the per-request check says no) with the claims present", async () => {
+    validateStaffAccessToken.mockResolvedValue(false);
     await get(staff({ organisationid: null, isplatform: false })).expect(401);
+    expect(getGradesWithFilter).not.toHaveBeenCalled();
+  });
+
+  it("asks the per-request check about a staff token, with the verified payload, and never the plain token lookup", async () => {
+    await get(staff({ organisationid: ORG, isplatform: false })).expect(200);
+    expect(validateStaffAccessToken).toHaveBeenCalledTimes(1);
+    expect(validateStaffAccessToken.mock.calls[0][0]).toMatchObject({
+      lmsuserid: "lmsuser-1",
+      organisationid: ORG,
+      isplatform: false,
+      jti: "test-jti",
+    });
+    expect(tokenExists).not.toHaveBeenCalled();
+  });
+
+  it("does not run the per-request staff check for a malformed staff token: the claims are checked first", async () => {
+    await get(staff({})).expect(401);
+    expect(validateStaffAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("a school-user token keeps the plain token lookup and never reaches the staff check", async () => {
+    const teacher = sign_({ schooluserid: "teacher-1", schooluserrole: SchoolRole.TEACHER });
+    await get(teacher).expect(200);
+    expect(tokenExists).toHaveBeenCalledTimes(1);
+    expect(validateStaffAccessToken).not.toHaveBeenCalled();
+    tokenExists.mockResolvedValue(false);
+    await get(teacher).expect(401);
+  });
+
+  it("refuses organisationid that is the empty string, or not UUID-shaped", async () => {
+    await get(staff({ organisationid: "", isplatform: false })).expect(401);
+    await get(staff({ organisationid: "o1", isplatform: false })).expect(401);
+    await get(staff({ organisationid: "33333333-3333-4333-8333-33333333333", isplatform: false })).expect(401);
+    expect(validateStaffAccessToken).not.toHaveBeenCalled();
+  });
+
+  describe("mixed-shape tokens are refused", () => {
+    const teacher = { schooluserid: "teacher-1", schooluserrole: SchoolRole.TEACHER };
+
+    it("a school-user id together with a staff id", async () => {
+      await get(sign_({ ...teacher, lmsuserid: "lmsuser-1" })).expect(401);
+      await get(sign_({ ...teacher, lmsuserid: "lmsuser-1", organisationid: null, isplatform: true })).expect(401);
+    });
+
+    it("a school-user id together with either organisation claim", async () => {
+      await get(sign_({ ...teacher, organisationid: null })).expect(401);
+      await get(sign_({ ...teacher, isplatform: true })).expect(401);
+      await get(sign_({ ...teacher, organisationid: ORG, isplatform: false })).expect(401);
+      expect(getGradesWithFilter).not.toHaveBeenCalled();
+    });
+
+    it("the plain teacher token is still fine", async () => {
+      await get(sign_(teacher)).expect(200);
+    });
   });
 
   it("does not ask for the claims on a school-user (teacher) token: it keeps working unchanged", async () => {
@@ -258,16 +321,6 @@ describe("JwtAccessStrategy requires the organisation claims on a staff token", 
     expect(getGradesWithFilter).toHaveBeenCalledTimes(1);
   });
 
-  it("a school-user token that DOES carry organisation claims is not treated as staff and is unaffected", async () => {
-    const teacher = sign_({
-      schooluserid: "teacher-1",
-      schooluserrole: SchoolRole.TEACHER,
-      organisationid: null,
-      isplatform: true,
-    });
-    await get(teacher).expect(200);
-  });
-
   it("refuses a token with neither a staff id nor a school-user id and no claims", async () => {
     await get(sign_({ sub: "someone" })).expect(401);
   });
@@ -276,12 +329,15 @@ describe("JwtAccessStrategy requires the organisation claims on a staff token", 
 describe("hasOrganisationClaims", () => {
   it("is true only for organisationid string|null AND isplatform boolean", () => {
     expect(hasOrganisationClaims({ organisationid: null, isplatform: false })).toBe(true);
-    expect(hasOrganisationClaims({ organisationid: "x", isplatform: true })).toBe(true);
     expect(hasOrganisationClaims({ isplatform: false })).toBe(false);
     expect(hasOrganisationClaims({ organisationid: null })).toBe(false);
     expect(hasOrganisationClaims({ organisationid: undefined, isplatform: false })).toBe(false);
     expect(hasOrganisationClaims({ organisationid: null, isplatform: undefined })).toBe(false);
     expect(hasOrganisationClaims({ organisationid: 1, isplatform: false })).toBe(false);
+    // null or a UUID-shaped string only: the empty string and other text are not organisations
+    expect(hasOrganisationClaims({ organisationid: "", isplatform: false })).toBe(false);
+    expect(hasOrganisationClaims({ organisationid: "x", isplatform: false })).toBe(false);
+    expect(hasOrganisationClaims({ organisationid: "33333333-3333-4333-8333-333333333333", isplatform: true })).toBe(true);
     expect(hasOrganisationClaims({})).toBe(false);
     expect(hasOrganisationClaims(null)).toBe(false);
     expect(hasOrganisationClaims(undefined)).toBe(false);

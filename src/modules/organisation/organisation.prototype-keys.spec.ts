@@ -30,7 +30,11 @@ import { OrganisationController } from "./organisation.controller";
 const tokenExists = jest.fn();
 jest.mock("src/business", () => ({
   ...jest.requireActual("src/business"),
-  TokenBusiness: jest.fn().mockImplementation(() => ({ tokenExists })),
+  TokenBusiness: jest.fn().mockImplementation(() => ({
+    tokenExists,
+    // The staff-token check is one database query in production; here it answers like the token lookup.
+    validateStaffAccessToken: (...args: unknown[]) => tokenExists(...args),
+  })),
 }));
 
 const COUNTRY = "22222222-2222-4222-8222-222222222222";

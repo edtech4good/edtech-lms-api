@@ -57,6 +57,9 @@ describe("orgOf", () => {
     ["organisationid of the wrong type", staff({ organisationid: 7 })],
     ["isplatform as a string", staff({ isplatform: "true" })],
     ["an empty staff id", staff({ lmsuserid: "" })],
+    ["a staff token that also carries a school-user id", staff({ schooluserid: "s1" })],
+    ["an organisationid that is the empty string", staff({ organisationid: "" })],
+    ["an organisationid that is not UUID-shaped", staff({ organisationid: "o1" })],
     ["a missing staff id", { organisationid: null, isplatform: true }],
   ])("throws 401 for %s", (_name, user) => {
     expect(() => orgOf(user)).toThrow(UnauthorizedException);
@@ -66,7 +69,11 @@ describe("orgOf", () => {
 const tokenExists = jest.fn();
 jest.mock("src/business", () => ({
   ...jest.requireActual("src/business"),
-  TokenBusiness: jest.fn().mockImplementation(() => ({ tokenExists })),
+  TokenBusiness: jest.fn().mockImplementation(() => ({
+    tokenExists,
+    // The staff-token check is one database query in production; here it answers like the token lookup.
+    validateStaffAccessToken: (...args: unknown[]) => tokenExists(...args),
+  })),
 }));
 
 @Controller("org-decorator-test")

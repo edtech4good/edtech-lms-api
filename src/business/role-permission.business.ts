@@ -12,9 +12,11 @@ import { NodeLeaf, TreeNode } from "src/modules/role-permission/models/RoleBase"
 import _ from "lodash";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import {
+  assertMaySetRoles,
   holdsSuperAdmin,
   revokeIfSuperAdminRemoved,
 } from "./session-revocation";
+import { OrgContext } from "src/decorators/org.decorator";
 import { SUPERADMIN } from "src/models/enums/permissions.enum";
 import { LmsUserToken } from "src/models/token.model";
 import { IMultiPaging } from '../models/IPaging';
@@ -260,16 +262,23 @@ export class RolePermissionBusiness {
         return perms;
     }
 
-    bindUserRoles = async (rolePerms: BindUserRolesRequest) => {
+    bindUserRoles = async (rolePerms: BindUserRolesRequest, org: OrgContext) => {
         // One transaction: the new role set and, if Super Admin is being
         // removed, the end of that user's sessions commit together.
         const transaction = await dbinstance.getdbinstance().transaction();
         try {
-            const user = await lmsusers.findOne({ where: { lmsuserid: rolePerms.lmsuserid }, transaction });
+            const user = await lmsusers.findOne({ where: { lmsuserid: rolePerms.lmsuserid }, transaction, lock: Transaction.LOCK.UPDATE });
             const selectedroles = await roles.findAll({ where: { roleid: { [Op.in]: rolePerms.rolesid} }, transaction });
             let result;
             if (user) {
                 const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
+                // Refused (403) before the roles are touched.
+                assertMaySetRoles({
+                    caller: org,
+                    hadSuperAdmin,
+                    newRoleIds: selectedroles.map((r) => r.roleid),
+                    targetOrganisationid: user.organisationid,
+                });
                 result = await user.setRoles(selectedroles, { transaction });
                 await revokeIfSuperAdminRemoved(
                     user.lmsuserid,

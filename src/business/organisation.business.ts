@@ -140,7 +140,10 @@ const countriesInvalid = () =>
  * or roll back together.
  *
  * It finds staff by `lmsusers.organisationid`. A platform user who is only
- * ACTING as the organisation is not one of its staff and is not touched.
+ * ACTING as the organisation is not one of its staff and has no row to delete
+ * here; their token stops working on the next request because
+ * JwtAccessStrategy refuses a token whose organisation is no longer live and
+ * active.
  */
 const revokeStaffTokens = async (organisationid: string, transaction: Transaction) => {
   const staff = await lmsusers.findAll({

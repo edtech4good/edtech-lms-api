@@ -11,6 +11,8 @@ import { PlatformGuard } from "src/guards/platform.guard";
 import { organisations } from "src/models/data-models/organisations";
 import { tokens } from "src/models/data-models/tokens";
 import { Role, TokenType } from "src/models/enums";
+import { dbinstance } from "src/services/dbservice";
+import { STAFF_SESSION_SQL } from "src/business/token.business";
 import { hashPassword } from "src/services/password.service";
 import { JwtAccessStrategy, JwtRefreshStrategy } from "src/services/auth.strategy";
 import { AuthController } from "./auth.controller";
@@ -171,6 +173,33 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
       usableOrg(o.where.organisationid) ? 1 : 0) as never);
     jest.spyOn(organisations, "findOne").mockImplementation((async (o: { where: { organisationid: string } }) =>
       usableOrg(o.where.organisationid) ? orgTable.get(o.where.organisationid) : null) as never);
+
+    // The per-request staff-token query (STAFF_SESSION_SQL), answered from the
+    // same in-memory tables. The SQL text itself is exercised on a real database
+    // (see the PR description); here the answer follows the tables.
+    jest.spyOn(dbinstance.getdbinstance(), "query").mockImplementation((async (
+      sql: string,
+      options: { replacements: Record<string, string | null> },
+    ) => {
+      expect(sql).toBe(STAFF_SESSION_SQL);
+      const r = options.replacements;
+      const row = tokenTable.find(
+        (t) => t.token === r.jti && t.tokentype === r.tokentype && t.lmsuserid === r.userid,
+      );
+      const u = users[r.userid as string];
+      if (!row || !u) return [];
+      const o = r.claimedorganisationid ? orgTable.get(r.claimedorganisationid) : undefined;
+      return [
+        {
+          isdisabled: u.isdisabled ? 1 : 0,
+          userorganisationid: u.organisationid,
+          claimedorganisationid: o ? o.organisationid : null,
+          claimedisdeleted: o ? (o.isdeleted ? 1 : 0) : null,
+          claimedstatus: o ? (o.organisationstatus ? 1 : 0) : null,
+          issuperadmin: u.roles.some((x) => x.roleid === r.superadminrole) ? 1 : 0,
+        },
+      ];
+    }) as never);
 
     jest.spyOn(tokens, "create").mockImplementation((async (row: TokenRow) => {
       tokenTable.push({ ...row });
@@ -418,6 +447,7 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
           username: "platform@example.com",
           fromorganisationid: null,
           toorganisationid: ORG_A,
+          ip: expect.stringMatching(/127\.0\.0\.1/),
         }),
       );
       await switchTo(toA.accessToken, null).expect(200);
@@ -480,12 +510,12 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
         expect(JSON.stringify(tokenTable)).toBe(before);
       });
 
-      it("the database decides too: a token still claiming platform for a user who is no longer one is refused", async () => {
+      it("a token still claiming platform for a user who is no longer one is refused on the request itself (401), before the switcher runs", async () => {
         const { accessToken } = await signIn("platform@example.com");
         // Super Admin removed WITHOUT the tokens being revoked (e.g. by hand in SQL).
         users["u-platform"].roles = [role(Role.admin)];
         const before = JSON.stringify(tokenTable);
-        await switchTo(accessToken, ORG_A).expect(403);
+        await switchTo(accessToken, ORG_A).expect(401);
         expect(JSON.stringify(tokenTable)).toBe(before);
       });
 

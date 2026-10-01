@@ -133,18 +133,25 @@ export class AuthController {
     new RejectPrototypeKeysInterceptor(),
     new SchemaValidationInterceptor(switchorganisation)
   )
-  @UseGuards(AccessGuard(TokenType.ACCESS), PlatformGuard)
+  // Rate limited like the sign-in routes (the throttler keys on the client IP),
+  // after authentication and PlatformGuard so that unauthenticated requests do
+  // not use up a caller's allowance. Each call replaces the user's tokens.
+  @UseGuards(AccessGuard(TokenType.ACCESS), PlatformGuard, ThrottlerGuard)
+  @Throttle(20, 60)
+  @ApiResponse({ status: 429, description: "Too many switches in a minute" })
   @HttpCode(HttpStatus.OK)
   async switchorganisation(
     @Body() body: SwitchOrganisationRequestBody,
     @User() user: LmsUserToken,
-    @Org() org: OrgContext
+    @Org() org: OrgContext,
+    @Request() request: IRequest
   ): Promise<LoginResponseModel> {
     return {
       data: await new AuthBusiness().switchOrganisation(
         user,
         org.organisationid,
-        body.organisationid
+        body.organisationid,
+        request.ip
       ),
       error: false,
     };

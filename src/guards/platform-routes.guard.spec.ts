@@ -28,7 +28,11 @@ import { JwtAccessStrategy } from "src/services/auth.strategy";
 const tokenExists = jest.fn();
 jest.mock("src/business", () => ({
   ...jest.requireActual("src/business"),
-  TokenBusiness: jest.fn().mockImplementation(() => ({ tokenExists })),
+  TokenBusiness: jest.fn().mockImplementation(() => ({
+    tokenExists,
+    // The staff-token check is one database query in production; here it answers like the token lookup.
+    validateStaffAccessToken: (...args: unknown[]) => tokenExists(...args),
+  })),
 }));
 
 const mocks = {

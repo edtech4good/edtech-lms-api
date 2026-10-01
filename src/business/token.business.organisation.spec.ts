@@ -4,7 +4,14 @@ import { organisations } from "src/models/data-models/organisations";
 import { tokens } from "src/models/data-models/tokens";
 import { Role, TokenType } from "src/models/enums";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
-import { organisationClaims, TokenBusiness } from "./token.business";
+import { dbinstance } from "src/services/dbservice";
+import {
+  isStaffSessionCurrent,
+  organisationClaims,
+  STAFF_SESSION_SQL,
+  StaffSessionRow,
+  TokenBusiness,
+} from "./token.business";
 
 /**
  * The organisation claims on a staff access token, and the refusal to mint one
@@ -162,5 +169,159 @@ describe("TokenBusiness.generateAuthToken (organisation claims and the refusal)"
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ token: jti, lmsuserid: "u-1", tokentype: TokenType.ACCESS }),
     );
+  });
+});
+
+/**
+ * The per-request check on a staff access token: one query, then a pure rule.
+ * The SQL runs on a real database in the PR description; here the rule is
+ * driven row by row, and the call is checked for what it binds.
+ */
+describe("isStaffSessionCurrent (the rule applied to the query's row)", () => {
+  const row = (over: Partial<StaffSessionRow> = {}): StaffSessionRow => ({
+    isdisabled: 0,
+    userorganisationid: null,
+    claimedorganisationid: null,
+    claimedisdeleted: null,
+    claimedstatus: null,
+    issuperadmin: 0,
+    ...over,
+  });
+  const live = { claimedorganisationid: ORG, claimedisdeleted: 0, claimedstatus: 1 };
+
+  it("a platform token is current while the user has no organisation and holds Super Admin", () => {
+    expect(isStaffSessionCurrent(row({ issuperadmin: 1 }), { organisationid: null, isplatform: true })).toBe(true);
+  });
+
+  it("a platform token acting as a live, active organisation is current", () => {
+    expect(
+      isStaffSessionCurrent(row({ issuperadmin: 1, ...live }), { organisationid: ORG, isplatform: true }),
+    ).toBe(true);
+  });
+
+  it("an organisation's staff token is current while the user is still in that organisation and it is live and active", () => {
+    expect(
+      isStaffSessionCurrent(row({ userorganisationid: ORG, ...live }), { organisationid: ORG, isplatform: false }),
+    ).toBe(true);
+  });
+
+  it("an unassigned staff token (null, not platform) is current while the user is still unassigned", () => {
+    expect(isStaffSessionCurrent(row(), { organisationid: null, isplatform: false })).toBe(true);
+  });
+
+  it("refuses when the token row is gone", () => {
+    expect(isStaffSessionCurrent(undefined, { organisationid: null, isplatform: true })).toBe(false);
+  });
+
+  it("refuses when the user is disabled", () => {
+    expect(isStaffSessionCurrent(row({ isdisabled: 1, issuperadmin: 1 }), { organisationid: null, isplatform: true })).toBe(false);
+    expect(isStaffSessionCurrent(row({ isdisabled: true as never }), { organisationid: null, isplatform: false })).toBe(false);
+  });
+
+  it("refuses when the claimed organisation is suspended, deleted or does not exist - for staff and for a platform user acting as it", () => {
+    for (const claim of [
+      { organisationid: ORG, isplatform: false },
+      { organisationid: ORG, isplatform: true },
+    ]) {
+      const user = claim.isplatform ? { issuperadmin: 1 } : { userorganisationid: ORG };
+      expect(isStaffSessionCurrent(row({ ...user, ...live }), claim)).toBe(true);
+      expect(isStaffSessionCurrent(row({ ...user, ...live, claimedstatus: 0 }), claim)).toBe(false);
+      expect(isStaffSessionCurrent(row({ ...user, ...live, claimedisdeleted: 1 }), claim)).toBe(false);
+      expect(isStaffSessionCurrent(row({ ...user, claimedorganisationid: null }), claim)).toBe(false);
+    }
+  });
+
+  it("refuses a non-platform token when the user's organisation is no longer the claimed one", () => {
+    expect(
+      isStaffSessionCurrent(row({ userorganisationid: OTHER, claimedorganisationid: ORG, claimedisdeleted: 0, claimedstatus: 1 }), {
+        organisationid: ORG,
+        isplatform: false,
+      }),
+    ).toBe(false);
+    // moved out of every organisation
+    expect(isStaffSessionCurrent(row({ userorganisationid: null, ...live }), { organisationid: ORG, isplatform: false })).toBe(false);
+    // an unassigned token whose user has since been given an organisation
+    expect(isStaffSessionCurrent(row({ userorganisationid: ORG }), { organisationid: null, isplatform: false })).toBe(false);
+  });
+
+  it("refuses a platform token when the user now has an organisation, or no longer holds Super Admin", () => {
+    expect(isStaffSessionCurrent(row({ issuperadmin: 1, userorganisationid: ORG }), { organisationid: null, isplatform: true })).toBe(false);
+    expect(isStaffSessionCurrent(row({ issuperadmin: 0 }), { organisationid: null, isplatform: true })).toBe(false);
+    expect(isStaffSessionCurrent(row({ issuperadmin: 1, userorganisationid: OTHER, ...live }), { organisationid: ORG, isplatform: true })).toBe(false);
+  });
+});
+
+describe("TokenBusiness.validateStaffAccessToken", () => {
+  let query: jest.SpyInstance;
+  beforeEach(() => {
+    query = jest.spyOn(dbinstance.getdbinstance(), "query");
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const payload = { jti: "jti-1", lmsuserid: "u-1", organisationid: ORG as string | null, isplatform: false };
+  const goodRow = {
+    isdisabled: 0,
+    userorganisationid: ORG,
+    claimedorganisationid: ORG,
+    claimedisdeleted: 0,
+    claimedstatus: 1,
+    issuperadmin: 0,
+  };
+
+  it("runs exactly one query, binding the token's jti, user id, type and claimed organisation, and the Super Admin role", async () => {
+    query.mockResolvedValue([goodRow] as never);
+    await expect(new TokenBusiness().validateStaffAccessToken(payload)).resolves.toBe(true);
+    expect(query).toHaveBeenCalledTimes(1);
+    const [sql, options] = query.mock.calls[0];
+    expect(sql).toBe(STAFF_SESSION_SQL);
+    expect(options.replacements).toEqual({
+      jti: "jti-1",
+      userid: "u-1",
+      tokentype: TokenType.ACCESS,
+      claimedorganisationid: ORG,
+      superadminrole: Role.superadmin,
+    });
+  });
+
+  it("the SQL joins tokens to lmsusers and left-joins organisations, and compares no column of one table with a column of another", () => {
+    expect(STAFF_SESSION_SQL).toMatch(/FROM tokens t\s+JOIN lmsusers u ON u\.lmsuserid = :userid\s+LEFT JOIN organisations o ON o\.organisationid = :claimedorganisationid/);
+    expect(STAFF_SESSION_SQL).toMatch(/t\.token = :jti AND t\.tokentype = :tokentype AND t\.lmsuserid = :userid/);
+    expect(STAFF_SESSION_SQL).not.toMatch(/t\.lmsuserid = u\.|u\.lmsuserid = t\.|r\.lmsuserid = u\./);
+  });
+
+  it("binds null for a token that claims no organisation", async () => {
+    query.mockResolvedValue([{ ...goodRow, userorganisationid: null, claimedorganisationid: null }] as never);
+    await expect(
+      new TokenBusiness().validateStaffAccessToken({ ...payload, organisationid: null }),
+    ).resolves.toBe(true);
+    expect(query.mock.calls[0][1].replacements.claimedorganisationid).toBeNull();
+  });
+
+  it("is false when no row comes back (the token row is gone)", async () => {
+    query.mockResolvedValue([] as never);
+    await expect(new TokenBusiness().validateStaffAccessToken(payload)).resolves.toBe(false);
+  });
+
+  it("is false when the row says the organisation is suspended", async () => {
+    query.mockResolvedValue([{ ...goodRow, claimedstatus: 0 }] as never);
+    await expect(new TokenBusiness().validateStaffAccessToken(payload)).resolves.toBe(false);
+  });
+
+  it("asks nothing, and is false, for a payload without a jti or a staff id or well-formed claims", async () => {
+    for (const bad of [
+      { ...payload, jti: undefined },
+      { ...payload, lmsuserid: undefined },
+      { ...payload, lmsuserid: "" },
+      { ...payload, organisationid: undefined },
+      { ...payload, isplatform: "true" },
+    ]) {
+      await expect(new TokenBusiness().validateStaffAccessToken(bad as never)).resolves.toBe(false);
+    }
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("lets a database error through: a failed lookup is not an accepted token", async () => {
+    query.mockRejectedValue(new Error("db down"));
+    await expect(new TokenBusiness().validateStaffAccessToken(payload)).rejects.toThrow("db down");
   });
 });

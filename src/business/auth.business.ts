@@ -104,12 +104,14 @@ export class AuthBusiness {
    * for all three, so the answer does not reveal which.
    *
    * The token's own organisation ("from") is written to the audit line with
-   * the target ("to"), once, after the new token exists.
+   * the target ("to") and the client IP, once, after the new token exists. No
+   * token is logged. (The project's logger has no request id on success paths.)
    */
   switchOrganisation = async (
     caller: LmsUserToken,
     fromorganisationid: string | null,
-    organisationid: string | null
+    organisationid: string | null,
+    clientip?: string
   ) => {
     const user = await new UserBusiness().getuserbyid(caller.lmsuserid);
     if (!user || user.isdisabled) {
@@ -134,6 +136,7 @@ export class AuthBusiness {
       username: user.lmsusername,
       fromorganisationid,
       toorganisationid: organisationid,
+      ip: clientip,
     });
     return tokens;
   };

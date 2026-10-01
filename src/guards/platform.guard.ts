@@ -5,6 +5,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
+import { hasSchoolUserId } from "src/services/organisation-claims";
 
 /**
  * "Platform only": the route may be used by the people who run the whole
@@ -59,10 +60,10 @@ export class PlatformGuard implements CanActivate {
  * Exported so the rule can be asserted directly. Strict about shape: the claim
  * must be the boolean `true` (a string or a number does not count), and the
  * bearer must be a staff user (`lmsuserid`), since a platform action is
- * recorded against one.
+ * recorded against one, and must not also carry a school-user id.
  */
 export const isPlatformUser = (user: unknown): boolean => {
-  if (typeof user !== "object" || user === null) {
+  if (typeof user !== "object" || user === null || hasSchoolUserId(user)) {
     return false;
   }
   const { lmsuserid, isplatform } = user as {

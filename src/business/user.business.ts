@@ -7,18 +7,34 @@ import { hashPassword } from 'src/services/password.service';
 import { v4 as uuidv4 } from 'uuid';
 import { TokenBusiness } from './token.business';
 import { WhereOptions } from "sequelize/types";
+import { Transaction } from "sequelize";
 import { roles } from "src/models/data-models/roles";
 import { permissions } from "src/models/data-models/permissions";
 import { IPaging } from "src/models/IPaging";
 import { buildWhere } from "src/services/util.service";
 import { LmsUserToken } from "src/models/token.model";
 import { dbinstance } from "src/services/dbservice";
-import { holdsSuperAdmin, revokeIfSuperAdminRemoved } from "./session-revocation";
+import { OrgContext } from "src/decorators/org.decorator";
+import {
+  assertMaySetRoles,
+  holdsSuperAdmin,
+  revokeIfSuperAdminRemoved,
+  revokeStaffSessions,
+} from "./session-revocation";
 import { RolePermissionBusiness } from "./role-permission.business";
 
 export class UserBusiness {
 
-  createUser = async (user: lmsusersAttributes, lmsuserroles?: string[], currentuser?: LmsUserToken) => {
+  createUser = async (user: lmsusersAttributes, lmsuserroles: string[] | undefined, currentuser: LmsUserToken | undefined, org: OrgContext) => {
+    // A new account has no organisation, so it is a platform account if it is
+    // given Super Admin: only a platform caller may do that. Refused before
+    // anything is written.
+    assertMaySetRoles({
+      caller: org,
+      hadSuperAdmin: false,
+      newRoleIds: lmsuserroles ?? [],
+      targetOrganisationid: user.organisationid ?? null,
+    });
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
       user.lmsuserid = uuidv4();
@@ -108,16 +124,19 @@ export class UserBusiness {
     });
   };
 
-  disableuserbyid = async (lmsuserid: string) => {
+  disableuserbyid = async (lmsuserid: string, org: OrgContext) => {
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
       const lmsuser = await lmsusers.findOne({ where: { lmsuserid } });
       if(lmsuser) {
         const hadSuperAdmin = await holdsSuperAdmin(lmsuser, transaction);
+        // Deleting a user clears every role, Super Admin included.
+        assertMaySetRoles({ caller: org, hadSuperAdmin, newRoleIds: [], targetOrganisationid: lmsuser.organisationid });
         lmsuser.isdisabled = true;
         await lmsuser.save({fields: ['isdisabled'], transaction});
         await lmsuser.setRoles([], {transaction});
-        await revokeIfSuperAdminRemoved(lmsuser.lmsuserid, hadSuperAdmin, [], transaction);
+        // A disabled user's sessions end whatever roles they held.
+        await revokeStaffSessions(lmsuser.lmsuserid, transaction);
       }
       await transaction.commit();
     } catch (e) {
@@ -243,13 +262,31 @@ export class UserBusiness {
     }
   };
 
-  updateUser = async (usr: lmsusersAttributes, lmsuserroles?: string[], currentuser?: LmsUserToken) => {
+  updateUser = async (usr: lmsusersAttributes, lmsuserroles: string[] | undefined, currentuser: LmsUserToken | undefined, org: OrgContext) => {
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
       const user = await lmsusers.findOne({
-        where: { lmsuserid: usr.lmsuserid }
+        where: { lmsuserid: usr.lmsuserid },
+        transaction,
+        lock: Transaction.LOCK.UPDATE,
       });
       if(user) {
+        const rls = await roles.findAll({
+          where: { roleid: lmsuserroles },
+          transaction,
+        });
+        const applyRoles = rls.length === lmsuserroles?.length;
+        // The Super Admin rule runs before anything is written: a refusal here
+        // leaves the user exactly as it was.
+        const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
+        if(applyRoles) {
+          assertMaySetRoles({
+            caller: org,
+            hadSuperAdmin,
+            newRoleIds: rls.map((r) => r.roleid),
+            targetOrganisationid: user.organisationid,
+          });
+        }
         user.lmsusername = usr.lmsusername;
         user.lmsuserpasswordhash = usr.lmsuserpasswordhash ? hashPassword(usr.lmsuserpasswordhash) : user.lmsuserpasswordhash;
         user.countries = usr.countries;
@@ -259,11 +296,7 @@ export class UserBusiness {
           user.updated_by = currentuser.lmsuserid;
         }
         await user.save({ fields: ['lmsusername', 'lmsuserpasswordhash', 'countries', 'schools', 'updated_at', 'updated_by'], transaction});
-        const rls = await roles.findAll({
-          where: { roleid: lmsuserroles }
-        });
-        if(rls.length === lmsuserroles?.length) {
-          const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
+        if(applyRoles) {
           await user.setRoles(rls, {transaction});
           await revokeIfSuperAdminRemoved(user.lmsuserid, hadSuperAdmin, rls.map((r) => r.roleid), transaction);
         }

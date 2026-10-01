@@ -23,6 +23,7 @@ import {
 import { RolePermissionBusiness } from "src/business/role-permission.business";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 import { AccessGuard } from "src/guards/access.guard";
 import { PlatformGuard } from "src/guards/platform.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
@@ -252,13 +253,14 @@ export class RolePermissionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   async binduserrole(
-    @Body() body: BindUserRolesRequest
+    @Body() body: BindUserRolesRequest,
+    @Org() org: OrgContext
   ) {
     // const temp: permissionsAttributes = {
     //   permissionid: "",
     //   permissionname: body.permissionname
     // };
-    const data = await new RolePermissionBusiness().bindUserRoles(body);
+    const data = await new RolePermissionBusiness().bindUserRoles(body, org);
     return {
       error: false,
       data: data,

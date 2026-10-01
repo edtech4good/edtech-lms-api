@@ -20,6 +20,10 @@ const tnx = { id: "tnx", commit: jest.fn(), rollback: jest.fn() } as unknown as 
   rollback: jest.Mock;
 };
 
+// The caller context for these tests: a platform user (the Super Admin rule itself is in
+// src/modules/user/super-admin-rule.guard.spec.ts).
+const PLATFORM = { organisationid: null, isplatform: true };
+
 const roleRow = (roleid: string) => ({ roleid, rolename: roleid });
 
 type FakeUser = {
@@ -86,7 +90,7 @@ describe("POST /roles/user-bind-role (RolePermissionBusiness.bindUserRoles)", ()
     jest.spyOn(roles, "findAll").mockResolvedValue(newRoleIds.map(roleRow) as never);
     return {
       user,
-      run: () => new RolePermissionBusiness().bindUserRoles({ lmsuserid: "u-1", rolesid: newRoleIds }),
+      run: () => new RolePermissionBusiness().bindUserRoles({ lmsuserid: "u-1", rolesid: newRoleIds }, PLATFORM),
     };
   };
 
@@ -140,7 +144,7 @@ describe("POST /roles/user-bind-role (RolePermissionBusiness.bindUserRoles)", ()
     jest.spyOn(lmsusers, "findOne").mockResolvedValue(null as never);
     jest.spyOn(roles, "findAll").mockResolvedValue([] as never);
     await expect(
-      new RolePermissionBusiness().bindUserRoles({ lmsuserid: "nobody", rolesid: [] }),
+      new RolePermissionBusiness().bindUserRoles({ lmsuserid: "nobody", rolesid: [] }, PLATFORM),
     ).resolves.toBeUndefined();
     expect(destroy).not.toHaveBeenCalled();
   });
@@ -159,6 +163,7 @@ describe("user update (UserBusiness.updateUser)", () => {
           { lmsuserid: "u-1", lmsusername: "someone@example.com" } as never,
           newRoleIds,
           { lmsuserid: "admin-1" } as never,
+          PLATFORM,
         ),
     };
   };
@@ -185,6 +190,7 @@ describe("user update (UserBusiness.updateUser)", () => {
       { lmsuserid: "u-1", lmsusername: "someone@example.com" } as never,
       [Role.admin, "no-such-role"],
       { lmsuserid: "admin-1" } as never,
+      PLATFORM,
     );
     expect(user.setRoles).not.toHaveBeenCalled();
     expect(destroy).not.toHaveBeenCalled();
@@ -204,16 +210,24 @@ describe("user delete (UserBusiness.disableuserbyid, which clears every role)", 
     const user = fakeUser([Role.superadmin]);
     setRolesCalled(user);
     jest.spyOn(lmsusers, "findOne").mockResolvedValue(user as never);
-    await new UserBusiness().disableuserbyid("u-1");
+    await new UserBusiness().disableuserbyid("u-1", PLATFORM);
     expect(user.setRoles).toHaveBeenCalledWith([], { transaction: tnx });
     expect(destroy).toHaveBeenCalledWith({ where: { lmsuserid: "u-1" }, transaction: tnx });
     expect(order).toEqual(["setRoles", "revoke", "commit"]);
   });
 
-  it("a disabled user who was not Super Admin: no revocation here", async () => {
+  it("a disabled user who was NOT Super Admin loses their sessions too: disabling any staff user ends their session", async () => {
     const user = fakeUser([Role.admin]);
+    setRolesCalled(user);
     jest.spyOn(lmsusers, "findOne").mockResolvedValue(user as never);
-    await new UserBusiness().disableuserbyid("u-1");
+    await new UserBusiness().disableuserbyid("u-1", PLATFORM);
+    expect(destroy).toHaveBeenCalledWith({ where: { lmsuserid: "u-1" }, transaction: tnx });
+    expect(order).toEqual(["setRoles", "revoke", "commit"]);
+  });
+
+  it("an unknown user revokes nothing", async () => {
+    jest.spyOn(lmsusers, "findOne").mockResolvedValue(null as never);
+    await new UserBusiness().disableuserbyid("nobody", PLATFORM);
     expect(destroy).not.toHaveBeenCalled();
   });
 });

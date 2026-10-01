@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { addMinutes } from "date-fns";
+import { QueryTypes } from "sequelize";
+import { dbinstance } from "src/services/dbservice";
 import { sign, verify } from "jsonwebtoken";
 import { SUPERADMIN_USERNAME } from "src/models/enums/permissions.enum";
 import { LoginTokens } from "src/modules/auth";
@@ -53,6 +55,82 @@ export const organisationClaims = (
   }
   return { organisationid: isplatform ? acting ?? null : own, isplatform };
 };
+
+/** What the per-request staff-token query returns (one row, or none). */
+export interface StaffSessionRow {
+  isdisabled: unknown;
+  userorganisationid: string | null;
+  claimedorganisationid: string | null;
+  claimedisdeleted: unknown;
+  claimedstatus: unknown;
+  issuperadmin: unknown;
+}
+
+/** The claims of a staff access token that are checked against the database on every request. */
+export interface StaffSessionClaims {
+  organisationid: string | null;
+  isplatform: boolean;
+}
+
+const yes = (value: unknown) => value === true || value === 1 || value === "1";
+
+/**
+ * Is a staff access token still valid, given the database row for it? `row` is
+ * undefined when the token row is gone. Refuses when:
+ *  - the token row is gone;
+ *  - the user is disabled;
+ *  - the organisation the token claims is missing, deleted or suspended (that
+ *    includes a platform user who is acting as it);
+ *  - the token is not platform and the user's organisation is not the claimed
+ *    one now;
+ *  - the token is platform and the user now has an organisation or no longer
+ *    holds Super Admin.
+ */
+export const isStaffSessionCurrent = (
+  row: StaffSessionRow | undefined,
+  claims: StaffSessionClaims,
+): boolean => {
+  if (!row || yes(row.isdisabled)) {
+    return false;
+  }
+  if (claims.organisationid !== null) {
+    if (
+      row.claimedorganisationid === null ||
+      row.claimedorganisationid === undefined ||
+      yes(row.claimedisdeleted) ||
+      !yes(row.claimedstatus)
+    ) {
+      return false;
+    }
+  }
+  const userorganisationid = row.userorganisationid ?? null;
+  if (!claims.isplatform) {
+    return userorganisationid === claims.organisationid;
+  }
+  return userorganisationid === null && yes(row.issuperadmin);
+};
+
+/**
+ * The one query behind every staff request: the token row, the user it belongs
+ * to, the organisation the token claims (left join: none when the claim is
+ * null) and whether the user holds Super Admin, in a single round trip. The
+ * user id is bound from the signed token for the user, role and token lookups,
+ * so each is a primary-key or index lookup and no column of one table is
+ * compared with a column of another (the tables are not guaranteed to share a
+ * collation in every database).
+ */
+export const STAFF_SESSION_SQL = `SELECT u.isdisabled AS isdisabled,
+       u.organisationid AS userorganisationid,
+       o.organisationid AS claimedorganisationid,
+       o.isdeleted AS claimedisdeleted,
+       o.organisationstatus AS claimedstatus,
+       EXISTS (SELECT 1 FROM lmsusers_roles r
+               WHERE r.lmsuserid = :userid AND r.roleid = :superadminrole) AS issuperadmin
+FROM tokens t
+JOIN lmsusers u ON u.lmsuserid = :userid
+LEFT JOIN organisations o ON o.organisationid = :claimedorganisationid
+WHERE t.token = :jti AND t.tokentype = :tokentype AND t.lmsuserid = :userid
+LIMIT 1`;
 
 export class TokenBusiness {
   generateToken = (
@@ -111,6 +189,43 @@ export class TokenBusiness {
       },
     });
     return count > 0;
+  };
+
+  /**
+   * Is this staff (lmsusers) ACCESS token valid right now? One query
+   * (STAFF_SESSION_SQL); see isStaffSessionCurrent for what refuses it. `payload`
+   * is the verified token payload, which JwtAccessStrategy has already checked
+   * for the organisation claims.
+   */
+  validateStaffAccessToken = async (payload: {
+    jti?: unknown;
+    lmsuserid?: unknown;
+    organisationid?: unknown;
+    isplatform?: unknown;
+  }): Promise<boolean> => {
+    if (
+      typeof payload.jti !== "string" ||
+      typeof payload.lmsuserid !== "string" ||
+      payload.lmsuserid.length === 0 ||
+      !(payload.organisationid === null || typeof payload.organisationid === "string") ||
+      typeof payload.isplatform !== "boolean"
+    ) {
+      return false;
+    }
+    const rows = (await dbinstance.getdbinstance().query(STAFF_SESSION_SQL, {
+      replacements: {
+        jti: payload.jti,
+        userid: payload.lmsuserid,
+        tokentype: TokenType.ACCESS,
+        claimedorganisationid: payload.organisationid,
+        superadminrole: Role.superadmin,
+      },
+      type: QueryTypes.SELECT,
+    })) as StaffSessionRow[];
+    return isStaffSessionCurrent(rows[0], {
+      organisationid: payload.organisationid,
+      isplatform: payload.isplatform,
+    });
   };
 
   verifyToken = (token: string, expectedType: TokenType): Promise<any> =>

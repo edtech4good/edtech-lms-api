@@ -1,4 +1,7 @@
 import { Transaction } from "sequelize";
+import { OrgContext } from "../decorators/org.decorator";
+import { ApiError } from "../models/ApiError";
+import { ErrorCode } from "../models/enums/errorcode.enum";
 import { lmsusers } from "../models/data-models/lmsusers";
 import { tokens } from "../models/data-models/tokens";
 import { Role } from "../models/enums";
@@ -30,5 +33,46 @@ export const revokeIfSuperAdminRemoved = async (
 ) => {
   if (hadSuperAdmin && !newRoleIds.includes(Role.superadmin)) {
     await revokeStaffSessions(lmsuserid, transaction);
+  }
+};
+
+/**
+ * The rule for who may change the Super Admin role, applied wherever a user's
+ * roles are set (create, update, bind, delete). It is what keeps the platform
+ * a closed group: `isplatform` is "no organisation AND Super Admin", so
+ * whoever can hand out Super Admin can mint platform accounts.
+ *
+ *  - The new role set includes Super Admin (granting it, or keeping it while
+ *    editing): the caller must be a platform user, and the target must have no
+ *    organisation, whoever the caller is.
+ *  - The target holds Super Admin now and the new set does not (removing it,
+ *    including by clearing every role): the caller must be a platform user.
+ *  - Anything else is not about Super Admin and is not restricted here.
+ *
+ * Refused with 403 (NOT_ALLOWED) before anything is written. A missing caller
+ * context counts as not platform.
+ */
+export const assertMaySetRoles = (opts: {
+  caller: OrgContext | undefined;
+  hadSuperAdmin: boolean;
+  newRoleIds: ReadonlyArray<string>;
+  targetOrganisationid: string | null | undefined;
+}) => {
+  const callerIsPlatform = opts.caller?.isplatform === true;
+  const willHold = opts.newRoleIds.includes(Role.superadmin);
+  if (willHold) {
+    if (!callerIsPlatform || (opts.targetOrganisationid ?? null) !== null) {
+      throw new ApiError(
+        ErrorCode.NOT_ALLOWED,
+        "The Super Admin role can only be given to a platform account, by a platform user.",
+      );
+    }
+    return;
+  }
+  if (opts.hadSuperAdmin && !callerIsPlatform) {
+    throw new ApiError(
+      ErrorCode.NOT_ALLOWED,
+      "Only a platform user can remove the Super Admin role.",
+    );
   }
 };

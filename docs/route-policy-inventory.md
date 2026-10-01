@@ -69,7 +69,7 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | POST | `/auth/forgotpassword` | AuthController.forgotpassword | public | n/a |  |  | ThrottlerGuard |  |
 | POST | `/auth/login` | AuthController.login | public | n/a |  |  | ThrottlerGuard | Staff sign-in. |
 | POST | `/auth/logout` | AuthController.logout | self | yes |  |  | none | Named exception: the bearer token is checked in the handler, not by a guard. |
-| POST | `/auth/organisation` | AuthController.switchorganisation | platform | yes |  |  | AccessGuard(ACCESS), PlatformGuard | Platform users only: chooses the organisation the new token acts in. |
+| POST | `/auth/organisation` | AuthController.switchorganisation | platform | yes |  |  | AccessGuard(ACCESS), PlatformGuard, ThrottlerGuard | Platform users only: chooses the organisation the new token acts in. |
 | POST | `/auth/refreshtoken` | AuthController.createrefreshtoken | self | yes |  |  | AccessGuard(REFRESH) | Must act only on the session named by the refresh token. |
 | POST | `/auth/school/login` | AuthController.teacherlogin | public | n/a |  |  | ThrottlerGuard | School-user (teacher and classroom device) sign-in. |
 | PUT | `/auth/sendverificationemail` | AuthController.verifyemail | public | n/a |  |  | none |  |

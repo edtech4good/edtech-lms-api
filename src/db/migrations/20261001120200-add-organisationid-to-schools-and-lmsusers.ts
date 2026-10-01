@@ -78,7 +78,8 @@ const USERNAME_INDEX = "lmsusers_lmsusername_unique";
 /** What a charset or collation name from information_schema looks like. */
 const SQL_NAME = /^[A-Za-z0-9_]+$/;
 
-type IndexRow = { name?: string; unique?: boolean; columnName?: string; seqInIndex?: number };
+/** One index as Sequelize's MySQL `showIndex` returns it: one row per index, columns in `fields`. */
+type IndexRow = { name?: string; unique?: boolean; fields?: Array<{ attribute?: string }> };
 
 async function indexRows(queryInterface: QueryInterface, table: string): Promise<IndexRow[]> {
   return (await queryInterface.showIndex(table)) as IndexRow[];
@@ -86,14 +87,12 @@ async function indexRows(queryInterface: QueryInterface, table: string): Promise
 
 /** Is there already a UNIQUE index on exactly the one column `lmsusername`, by any name? */
 function hasUniqueIndexOnUsername(rows: IndexRow[]): boolean {
-  const byName = new Map<string, IndexRow[]>();
-  for (const row of rows) {
-    const name = String(row.name);
-    byName.set(name, [...(byName.get(name) ?? []), row]);
-  }
-  return [...byName.values()].some(
-    (cols) =>
-      cols.length === 1 && cols[0].unique === true && cols[0].columnName === USERNAME_COLUMN,
+  return rows.some(
+    (row) =>
+      row.unique === true &&
+      Array.isArray(row.fields) &&
+      row.fields.length === 1 &&
+      row.fields[0].attribute === USERNAME_COLUMN,
   );
 }
 

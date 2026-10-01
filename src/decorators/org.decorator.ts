@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   UnauthorizedException,
 } from "@nestjs/common";
+import { hasOrganisationClaims, hasSchoolUserId } from "src/services/organisation-claims";
 
 /** The organisation context of a validated staff access token. */
 export interface OrgContext {
@@ -19,12 +20,12 @@ export interface OrgContext {
  * query string or a body.
  *
  * Throws 401 when the request has no staff user: no user at all, the
- * application API key (`{ user: "API KEY" }`), a school-user token, or a
+ * application API key (`{ user: "API KEY" }`), a school-user token (including one that also carries staff claims), or a
  * staff-shaped value whose organisation claims are not well formed. Use it on
  * a route that has `AccessGuard(TokenType.ACCESS)`.
  */
 export const orgOf = (user: unknown): OrgContext => {
-  if (typeof user !== "object" || user === null) {
+  if (typeof user !== "object" || user === null || hasSchoolUserId(user)) {
     throw new UnauthorizedException();
   }
   const { lmsuserid, organisationid, isplatform } = user as {
@@ -35,12 +36,11 @@ export const orgOf = (user: unknown): OrgContext => {
   if (
     typeof lmsuserid !== "string" ||
     lmsuserid.length === 0 ||
-    !(organisationid === null || typeof organisationid === "string") ||
-    typeof isplatform !== "boolean"
+    !hasOrganisationClaims(user)
   ) {
     throw new UnauthorizedException();
   }
-  return { organisationid, isplatform };
+  return { organisationid: organisationid as string | null, isplatform: isplatform as boolean };
 };
 
 export const Org = createParamDecorator(
