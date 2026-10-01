@@ -29,11 +29,13 @@ import { TokenType } from "src/models/enums";
 import { Permission } from "src/models/enums/permissions.enum";
 import { SchoolExists } from "../school/school.business.validator";
 import { getschoolstudents } from "../school/school.request.validator";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiTags("Export")
 @Controller("export")
 @ApiBearerAuth()
 export class ExportController {
+  @OrgPolicy("owned")
   @Get(":schoolname/students")
   @ApiResponse({
     status: 200,
@@ -99,6 +101,7 @@ export class ExportController {
     return new StreamableFile(zip.toBuffer());
   }
 
+  @OrgPolicy("owned")
   @Get(":schoolname/teachers")
   @ApiResponse({
     status: 200,
@@ -149,6 +152,7 @@ export class ExportController {
     return new StreamableFile(zip.toBuffer());
   }
 
+  @OrgPolicy("owned")
   @Get("documents/:curriculumid")
   @ApiParam({ name: `curriculumid`, type: "string", required: true })
   @HttpCode(HttpStatus.OK)

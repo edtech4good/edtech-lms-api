@@ -51,6 +51,7 @@ import {
   showschoolscurriculum,
   updateschool,
 } from "./school.request.validator";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiTags("School")
 @Controller("school")
@@ -76,6 +77,7 @@ export class SchoolController {
   // 'corporate' vs 'kids' response already distinguishes real schools from
   // unknown ones — it exists so the app never has to special-case a 404 and
   // so any lookup failure fails open to the safe 'kids' default.
+  @OrgPolicy("public", { note: "Pre-sign-in branding for the login screen; returns only theme and branding of the named school." })
   @Get("branding")
   @ApiResponse({
     status: 200,
@@ -107,6 +109,7 @@ export class SchoolController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -138,6 +141,7 @@ export class SchoolController {
     };
   }
 
+  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
   @Get("")
   @ApiResponse({
     status: 200,
@@ -158,6 +162,7 @@ export class SchoolController {
     };
   }
 
+  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
   @Get("country/:countryid")
   @ApiResponse({
     status: 200,
@@ -181,6 +186,7 @@ export class SchoolController {
     };
   }
 
+  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
   @Get("country/:countryid/curriculum/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -211,6 +217,7 @@ export class SchoolController {
     return response;
   }
 
+  @OrgPolicy("owned")
   @Get('curriculumid')
   @ApiResponse({
     status: 200,
@@ -241,6 +248,7 @@ export class SchoolController {
     return data;
   }
 
+  @OrgPolicy("owned")
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -277,6 +285,7 @@ export class SchoolController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":schoolid")
   @ApiResponse({
     status: 200,
@@ -306,6 +315,7 @@ export class SchoolController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(":schoolid")
   @ApiResponse({
     status: 200,
@@ -334,6 +344,7 @@ export class SchoolController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("update/:schoolid")
   @ApiResponse({
     status: 200,
@@ -371,6 +382,7 @@ export class SchoolController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("")
   @ApiResponse({
     status: 200,
@@ -402,6 +414,7 @@ export class SchoolController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(":schoolid/curriculums")
   @ApiResponse({
     status: 200,

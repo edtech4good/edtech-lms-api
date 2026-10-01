@@ -37,11 +37,13 @@ import { CreateSubject, DeleteSubject, EditSubject } from "./subject.business.va
 import { SubjectGetAllResponse } from "./models/SubjectGetAllResponse";
 import { IMultiPaging } from "src/models/IPaging";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiTags("Subjects")
 @Controller("subject")
 @ApiBearerAuth()
 export class SubjectController {
+  @OrgPolicy("owned")
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -81,6 +83,7 @@ export class SubjectController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('')
   @ApiResponse({
     status: 200,
@@ -117,6 +120,7 @@ export class SubjectController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(':subjectid')
   @ApiResponse({
     status: 200,
@@ -148,6 +152,7 @@ export class SubjectController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(':subjectid')
   @ApiResponse({
     status: 200,
@@ -175,6 +180,7 @@ export class SubjectController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(':subjectid')
   @ApiResponse({
     status: 200,

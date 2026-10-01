@@ -35,11 +35,13 @@ import { parse } from "csv";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { Permission } from "src/models/enums/permissions.enum";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiTags("Import")
 @Controller("import")
 @ApiBearerAuth()
 export class ImportController {
+  @OrgPolicy("owned")
   @Put(":schoolname/teachers")
   @ApiResponse({
     status: 200,

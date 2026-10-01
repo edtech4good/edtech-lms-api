@@ -56,6 +56,7 @@ import { CurriculumBaseLineRequest } from "./models/CurriculumBaseLineRequest";
 import { json2csv } from "json-2-csv";
 import axios from "axios";
 import { Config } from "src/config";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 // import { schoolsAttributes } from "src/models/data-models/school";
 
 @ApiExtraModels(CurriculumBaseLineBase)
@@ -65,6 +66,7 @@ import { Config } from "src/config";
 @Controller("curriculumbaseline")
 @ApiBearerAuth()
 export class CurriculumBaseLineController {
+  @OrgPolicy("owned")
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -111,6 +113,7 @@ export class CurriculumBaseLineController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":curriculumbaselineid")
   @ApiResponse({
     status: 200,
@@ -147,6 +150,7 @@ export class CurriculumBaseLineController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("update/:curriculumbaselineid")
   @ApiResponse({
     status: 200,
@@ -192,6 +196,7 @@ export class CurriculumBaseLineController {
     }
   }
 
+  @OrgPolicy("owned")
   @Put("activate/:curriculumbaselineid/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -226,6 +231,7 @@ export class CurriculumBaseLineController {
     }
   }
 
+  @OrgPolicy("owned")
   @Put("deactivate/:curriculumbaselineid")
   @ApiResponse({
     status: 200,
@@ -258,6 +264,7 @@ export class CurriculumBaseLineController {
     }
   }
 
+  @OrgPolicy("owned")
   @Get("all")
   @ApiResponse({
     status: 200,
@@ -301,6 +308,7 @@ export class CurriculumBaseLineController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("query")
   @ApiResponse({
     status: 200,
@@ -349,6 +357,7 @@ export class CurriculumBaseLineController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("getcurriculumbaseline/:curriculumbaselineid")
   @ApiResponse({
     status: 200,
@@ -394,6 +403,7 @@ export class CurriculumBaseLineController {
     }
   }
 
+  @OrgPolicy("owned")
   @Get("school/:curriculumbaselineid")
   @ApiResponse({
     status: 200,
@@ -425,6 +435,7 @@ export class CurriculumBaseLineController {
     }
   }
 
+  @OrgPolicy("owned")
   @Get(":curriculumbaselineid/download")
   @ApiResponse({
     status: 200,

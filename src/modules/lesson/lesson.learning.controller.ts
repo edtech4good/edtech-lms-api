@@ -22,6 +22,7 @@ import { LessonLearningsCreate } from './models/LessonLearningsCreate';
 import { LessonLearningBase, LessonLearningResponse, LessonLearningsResponse } from './models/LessonLearningsResponse';
 import { LessonLearningsUpdate } from "./models/LessonLearningsUpdate";
 import { LessonResponse } from './models/LessonResponse';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -31,6 +32,7 @@ import { LessonResponse } from './models/LessonResponse';
 @Controller('lesson/learning')
 @ApiBearerAuth()
 export class LessonLearningController {
+  @OrgPolicy("owned")
   @Get(':lessonid')
   @ApiResponse({
     status: 200,
@@ -58,6 +60,7 @@ export class LessonLearningController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(':lessonid/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -86,6 +89,7 @@ export class LessonLearningController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post(':lessonid')
   @ApiResponse({
     status: 200,
@@ -116,6 +120,7 @@ export class LessonLearningController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put('activate/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -143,6 +148,7 @@ export class LessonLearningController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put('deactivate/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -170,6 +176,7 @@ export class LessonLearningController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put('order/:lessonlearningid/:lessonlearningorder')
   @ApiResponse({
     status: 200,
@@ -201,6 +208,7 @@ export class LessonLearningController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(':lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -231,6 +239,7 @@ export class LessonLearningController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(':lessonlearningid')
   @ApiResponse({
     status: 200,

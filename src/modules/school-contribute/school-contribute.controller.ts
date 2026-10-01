@@ -19,6 +19,7 @@ import { ReportDownload } from 'src/business/report.download';
 import { json2csv } from 'json-2-csv';
 import { RequirePermissions } from 'src/decorators/requirePermissions.decorator';
 import { Permission } from 'src/models/enums/permissions.enum';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(SchoolContributeBase)
 @ApiExtraModels(SchoolContributeCreateResponse)
@@ -27,6 +28,7 @@ import { Permission } from 'src/models/enums/permissions.enum';
 @ApiBearerAuth()
 export class SchoolContributeController {
 
+@OrgPolicy("owned")
 @Post("create")
 @ApiResponse({
     status: 200,
@@ -66,6 +68,7 @@ async createSchoolContribute(
     };
 }
 
+@OrgPolicy("owned")
 @Post("getallschoolcontribute/:schoolid")
 @ApiResponse({
     status: 200,
@@ -108,6 +111,7 @@ async getall(
     };
 }
 
+@OrgPolicy("owned")
 @Put("updateschoolname/:schoolid")
 @ApiResponse({
     status: 200,
@@ -142,6 +146,7 @@ async update(
     };
 }
 
+@OrgPolicy("owned")
 @Put("updateschooldashboard/:schoolcontributeid")
 @ApiResponse({
     status: 200,
@@ -176,6 +181,7 @@ async updateschoolcontribute(
     };
 }
 
+@OrgPolicy("owned")
 @Delete("deleteschoolcontribute/:schoolid")
 @ApiResponse({
   status: 200,
@@ -205,6 +211,7 @@ async delete(
   };
 }
 
+@OrgPolicy("owned")
 @Delete("deleteschoolcontributeid/:schoolcontributeid")
 @ApiResponse({
   status: 200,
@@ -234,6 +241,7 @@ async deleteschoolcontribute(
   };
 }
 
+@OrgPolicy("owned")
 @Get('getschooldashboard/schoolcontributeid/:schoolcontributeid')
 @ApiResponse({
     status: 200,
@@ -264,6 +272,7 @@ async getSchoolsContributeId(@Param('schoolcontributeid') schoolcontributeid: st
     };
 }
 
+@OrgPolicy("owned")
 @Get('getschooldashboardid/:schoolid')
 @ApiResponse({
     status: 200,
@@ -294,6 +303,7 @@ async getSchoolsReport(@Param('schoolid') schoolid: string): Promise<any> {
     };
 }
 
+@OrgPolicy("owned")
 @Get('getallschooldashboard')
 @ApiResponse({
     status: 200,
@@ -320,6 +330,7 @@ async getAllSchoolsReport(): Promise<any> {
     };
 }
 
+@OrgPolicy("owned")
 @Get('getschoolcontribute/:schoolid')
 @ApiResponse({
   status: 200,
@@ -346,6 +357,7 @@ async getSchoolsName(@Param('schoolid') schoolid: string): Promise<any> {
   };
 }
 
+@OrgPolicy("owned")
 @Get("getallschoolcontribute")
 @ApiResponse({
     status: 200,
@@ -364,6 +376,7 @@ async getSchoolContribute(): Promise<any> {
     return new SchoolcontributeBusiness().getAllSchoolContribute('','','');
 }
 
+@OrgPolicy("owned")
 @Get("all")
 @ApiResponse({
     status: 200,
@@ -394,6 +407,7 @@ async getSchool(
       };
 }
 
+@OrgPolicy("owned")
 @Post("report/download")
 @ApiResponse({
   status: 200,

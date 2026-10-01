@@ -56,6 +56,7 @@ import {
 } from "./models/LevelGetAllResponse";
 import { LevelRequest } from "./models/LevelRequest";
 import { LevelResponse } from "./models/LevelResponse";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(LevelBase)
 @ApiExtraModels(LevelCreateResponse)
@@ -66,6 +67,7 @@ import { LevelResponse } from "./models/LevelResponse";
 @ApiBearerAuth()
 export class LevelController {
 
+  @OrgPolicy("owned")
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -94,6 +96,7 @@ export class LevelController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -138,6 +141,7 @@ export class LevelController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":levelid")
   @ApiResponse({
     status: 200,
@@ -171,6 +175,7 @@ export class LevelController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("deactivate/:levelid")
   @ApiResponse({
     status: 200,
@@ -203,6 +208,7 @@ export class LevelController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("activate/:levelid")
   @ApiResponse({
     status: 200,
@@ -233,6 +239,7 @@ export class LevelController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(":levelid")
   @ApiResponse({
     status: 200,
@@ -263,6 +270,7 @@ export class LevelController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(":levelid")
   @ApiResponse({
     status: 200,
@@ -305,6 +313,7 @@ export class LevelController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("")
   @ApiResponse({
     status: 200,
@@ -341,6 +350,7 @@ export class LevelController {
     };
   }
 
+  @OrgPolicy("platform", { note: "Rewrites the quiz points of every level of every organisation." })
   @Post("update_quiz_points")
   @ApiResponse({
     status: 200,

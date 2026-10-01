@@ -17,6 +17,7 @@ import { createcountry, deletecountry, showallcountry, showcountry, updatecountr
 import { CountryBase } from './models/CountryBase';
 import { CountryRequest } from './models/CountryRequest';
 import { CountryAllResponse, CountryCreateResponse, CountryGetAllResponse } from './models/CountryResponse';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(CountryBase)
 @ApiExtraModels(CountryCreateResponse)
@@ -25,6 +26,7 @@ import { CountryAllResponse, CountryCreateResponse, CountryGetAllResponse } from
 @ApiBearerAuth()
 export class CountryController {
 
+    @OrgPolicy("owned", { note: "Global reference data; an organisation sees only its linked countries." })
     @Get('all')
     @ApiResponse({
       status: 200,
@@ -52,6 +54,7 @@ export class CountryController {
       };
     }
 
+    @OrgPolicy("owned", { note: "Global reference data; an organisation sees only its linked countries." })
     @Get(":countryid")
     @ApiResponse({
         status: 200,
@@ -81,6 +84,7 @@ export class CountryController {
         };
     }
 
+    @OrgPolicy("owned", { note: "Global reference data; an organisation sees only its linked countries. Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
     @Get("")
     @ApiResponse({
         status: 200,
@@ -103,6 +107,7 @@ export class CountryController {
         };
     }
 
+    @OrgPolicy("owned", { note: "Global reference data; an organisation sees only its linked countries." })
     @Post("")
     @ApiResponse({
         status: 200,
@@ -139,6 +144,7 @@ export class CountryController {
         };
     }
 
+    @OrgPolicy("platform", { note: "Countries are global reference data." })
     @Post("create")
     @ApiResponse({
         status: 200,
@@ -178,6 +184,7 @@ export class CountryController {
         };
     }
 
+    @OrgPolicy("platform", { note: "Countries are global reference data." })
     @Put(":countryid")
     @ApiResponse({
         status: 200,
@@ -213,6 +220,7 @@ export class CountryController {
         };
     }
 
+    @OrgPolicy("platform", { note: "Countries are global reference data." })
     @Delete(":countryid")
     @ApiResponse({
         status: 200,

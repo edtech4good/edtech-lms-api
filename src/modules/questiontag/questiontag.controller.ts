@@ -19,6 +19,7 @@ import { LmsUserToken } from 'src/models/token.model';
 import { RequirePermissions } from 'src/decorators/requirePermissions.decorator';
 import { CheckPermissionsGuard } from 'src/guards/checkPermission.guard';
 import { Permission } from 'src/models/enums/permissions.enum';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 
 @ApiExtraModels(QuestionTagBase)
@@ -29,6 +30,7 @@ import { Permission } from 'src/models/enums/permissions.enum';
 @Controller('questiontag')
 @ApiBearerAuth()
 export class QuestionTagController {
+  @OrgPolicy("owned")
   @Post('create')
   @ApiResponse({
     status: 200,
@@ -64,6 +66,7 @@ export class QuestionTagController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(':questiontagid')
   @ApiResponse({
     status: 200,
@@ -95,6 +98,7 @@ export class QuestionTagController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(':questiontagid')
   @ApiResponse({
     status: 200,
@@ -122,6 +126,7 @@ export class QuestionTagController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(':questiontagid')
   @ApiResponse({
     status: 200,
@@ -156,6 +161,7 @@ export class QuestionTagController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('')
   @ApiResponse({
     status: 200,

@@ -49,6 +49,7 @@ import {
 } from "./models/LevelQuizQuestionBase";
 import { LevelResponse } from "./models/LevelResponse";
 import { LevelQuizSetLesson } from "./models/LevelRequest";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(LevelBase)
 @ApiExtraModels(LevelCreateResponse)
@@ -58,6 +59,7 @@ import { LevelQuizSetLesson } from "./models/LevelRequest";
 @Controller("level/quiz/question")
 @ApiBearerAuth()
 export class LevelQuizQuestionController {
+  @OrgPolicy("owned")
   @Get(":levelid")
   @ApiResponse({
     status: 200,
@@ -93,6 +95,7 @@ export class LevelQuizQuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post(":levelid/:questionid/:levelquizquestionorder")
   @ApiResponse({
     status: 200,
@@ -143,6 +146,7 @@ export class LevelQuizQuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("activate/:levelquizquestionid")
   @ApiResponse({
     status: 200,
@@ -177,6 +181,7 @@ export class LevelQuizQuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("deactivate/:levelquizquestionid")
   @ApiResponse({
     status: 200,
@@ -211,6 +216,7 @@ export class LevelQuizQuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("order/:levelquizquestionid/:levelquizquestionorder")
   @ApiResponse({
     status: 200,
@@ -252,6 +258,7 @@ export class LevelQuizQuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":levelquizquestionid")
   @ApiResponse({
     status: 200,
@@ -286,6 +293,7 @@ export class LevelQuizQuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("setlesson/:levelquizquestionid")
   @ApiResponse({
     status: 200,

@@ -34,6 +34,7 @@ import { v4 as uuidv4 } from "uuid";
 import { User } from "src/decorators/user.decorator";
 import { LmsUserToken } from "src/models/token.model";
 import { LOG_ZIP_DECOMPRESSED_MAX_BYTES } from "src/constants/zip-limits";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 const logger = new Logger("LogController");
 
@@ -66,6 +67,7 @@ const bufferWithLimit = (
 @Controller("log")
 @ApiBearerAuth()
 export class LogController {
+  @OrgPolicy("owned", { note: "Uploads from a classroom device; progress rows must belong to learners of the uploader's organisation." })
   @Put("import")
   @ApiResponse({
     status: 200,

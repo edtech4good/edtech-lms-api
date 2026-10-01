@@ -57,6 +57,7 @@ import {
   importTeachers,
   showallteachers,
 } from "./teacher.request.validator";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiTags("Teacher")
 @Controller("teacher")
 @ApiBearerAuth()
@@ -65,6 +66,7 @@ import {
   description: "Server error",
 })
 export class TeacherController {
+  @OrgPolicy("owned")
   @Post("")
   @ApiResponse({
     status: 200,
@@ -96,6 +98,7 @@ export class TeacherController {
     };
   }
 
+  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use. The optional cloud push sends the new teachers to the student API." })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -195,6 +198,7 @@ export class TeacherController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":schooluserid")
   @ApiResponse({
     status: 200,

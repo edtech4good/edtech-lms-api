@@ -13,12 +13,14 @@ import { LmsUserToken } from 'src/models/token.model';
 import { showfeedback } from './feedback.request.validator';
 import { FeedbackRequest } from './models/FeedbackRequest';
 import { FeedbackCreateResponse, FeedbackGetAllResponse } from './models/FeedbackResponse';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(FeedbackCreateResponse)
 @ApiTags("Feedback")
 @Controller("feedback")
 @ApiBearerAuth()
 export class FeedbackController {
+    @OrgPolicy("owned")
     @Post("create")
     @ApiResponse({
         status: 200,
@@ -48,6 +50,7 @@ export class FeedbackController {
         };
     }
 
+    @OrgPolicy("owned")
     @Post("")
     @ApiResponse({
         status: 200,
@@ -84,6 +87,7 @@ export class FeedbackController {
         };
     }
 
+    @OrgPolicy("owned")
     @Get(":feedbackid")
     @ApiResponse({
         status: 200,

@@ -48,6 +48,7 @@ import {
   showalluser,
   updateuser,
 } from "./user.request.validator";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(StandardBase)
 @ApiExtraModels(UserCreateResponse)
@@ -57,6 +58,7 @@ import {
 @Controller("user")
 @ApiBearerAuth()
 export class UserController {
+  @OrgPolicy("owned", { note: "Staff accounts belong to an organisation." })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -164,6 +166,7 @@ export class UserController {
   //   };
   // }
 
+  @OrgPolicy("owned")
   @Put(":lmsuserid")
   @ApiResponse({
     status: 200,
@@ -206,6 +209,7 @@ export class UserController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":lmsuserid")
   @ApiResponse({
     status: 200,
@@ -243,6 +247,7 @@ export class UserController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("")
   @ApiResponse({
     status: 200,
@@ -279,6 +284,7 @@ export class UserController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(":lmsuserid")
   @ApiResponse({
     status: 200,

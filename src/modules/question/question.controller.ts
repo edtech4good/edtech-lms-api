@@ -56,6 +56,7 @@ import {
   updatequestion,
   updatequestionIdentifier,
 } from "./question.request.validator";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(ResponseBoolean)
 @ApiExtraModels(QuestionBase)
@@ -66,6 +67,7 @@ import {
 @Controller("question")
 @ApiBearerAuth()
 export class QuestionController {
+  @OrgPolicy("owned")
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -101,6 +103,7 @@ export class QuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":questionid")
   @ApiResponse({
     status: 200,
@@ -134,6 +137,7 @@ export class QuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(":questionid")
   @ApiResponse({
     status: 200,
@@ -184,6 +188,7 @@ export class QuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(":questionid")
   @ApiResponse({
     status: 200,
@@ -232,6 +237,7 @@ export class QuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("")
   @ApiResponse({
     status: 200,
@@ -268,6 +274,7 @@ export class QuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("/search")
   @ApiResponse({
     status: 200,
@@ -304,6 +311,7 @@ export class QuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete("tag/:questionid/:tag")
   @ApiResponse({
     status: 200,
@@ -336,6 +344,7 @@ export class QuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("tag/:questionid/:tag")
   @ApiResponse({
     status: 200,
@@ -368,6 +377,7 @@ export class QuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("activate/:questionid")
   @ApiResponse({
     status: 200,
@@ -400,6 +410,7 @@ export class QuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("/:questionid/questionidentifier/:questionidentifier")
   @ApiResponse({
     status: 200,
@@ -439,6 +450,7 @@ export class QuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("deactivate/:questionid")
   @ApiResponse({
     status: 200,
