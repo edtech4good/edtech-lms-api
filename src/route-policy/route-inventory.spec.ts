@@ -31,7 +31,7 @@ import {
   routesWithUnknownPolicy,
   selfRouteViolations,
   specProvesRoute,
-  specTitles,
+  specTests,
 } from "./route-inventory";
 
 /**
@@ -449,52 +449,103 @@ describe("specProvesRoute (what makes an owned route count as enforced)", () => 
     writeFileSync(join(root, "specs", name), text);
     return `specs/${name}`;
   };
+  const proves = (source: string, routeKey = "PUT /user/:id") => {
+    const file = write(`case-${Math.random().toString(36).slice(2)}.spec.ts`, source);
+    return specProvesRoute(file, routeKey, root);
+  };
 
   beforeAll(() => {
     root = mkdtempSync(join(tmpdir(), "route-proof-"));
   });
   afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-  it("reads the titles of describe, it and test, in every form, and nothing else", () => {
-    const titles = specTitles(`
-      // GET /in-a-comment
-      const text = "GET /in-a-string";
-      describe("GET /a", () => {
-        it("PUT /b works", () => {});
-        test.only("POST /c", () => {});
-        it.each([1])("DELETE /d", () => {});
-        describe.each([[1]])("GET /e %s", () => {});
-        describe.skip(\`GET /f\`, () => {});
-      });
-      expect("GET /in-an-expectation").toBe(true);
-    `);
-    expect(titles).toEqual(["GET /a", "PUT /b works", "POST /c", "DELETE /d", "GET /e %s", "GET /f"]);
+  describe("accepted: a test that runs, names the route in its full title, and calls expect in its body", () => {
+    it("a test whose own title names the route", () => {
+      expect(proves(`it("PUT /user/:id is scoped", () => { expect(1).toBe(1); });`)).toBe(true);
+      expect(proves(`test("PUT /user/:id is scoped", async () => { await expect(Promise.resolve(1)).resolves.toBe(1); });`)).toBe(true);
+    });
+
+    it("a test whose enclosing describe names the route (the full title is describe titles plus the test's own)", () => {
+      expect(proves(`describe("PUT /user/:id", () => { describe("inner", () => { it("is scoped", () => { expect(1).toBe(1); }); }); });`)).toBe(true);
+    });
+
+    it("the .each and .concurrent forms", () => {
+      expect(proves(`describe("PUT /user/:id", () => { it.each([1])("case %s", (n) => { expect(n).toBe(1); }); });`)).toBe(true);
+      expect(proves(`describe.each([[1]])("PUT /user/:id %s", () => { test("t", () => { expect(1).toBe(1); }); });`)).toBe(true);
+    });
+
+    it("an expect nested inside a callback in the test body", () => {
+      expect(proves(`it("PUT /user/:id", () => { [1].forEach((n) => { expect(n).toBe(1); }); });`)).toBe(true);
+    });
   });
 
-  it("is proven when the file exists and a title names the route", () => {
-    const file = write("proves.spec.ts", `describe("PUT /user/:id", () => { it("is scoped", () => {}); });`);
-    expect(specProvesRoute(file, "PUT /user/:id", root)).toBe(true);
+  describe("rejected", () => {
+    it("a describe on its own: an empty one, or one with no test under it", () => {
+      expect(proves(`describe("PUT /user/:id", () => {});`)).toBe(false);
+      // a describe title alone never counts: with no test under it there is nothing to match
+      expect(proves(`describe("PUT /user/:id", () => { const x = 1; });`)).toBe(false);
+    });
+
+    it("a skipped, todo, focused or x/f-prefixed test", () => {
+      for (const form of ["it.skip", "it.todo", "it.only", "test.skip", "test.only", "xit", "xtest", "fit", "ftest", "it.failing"]) {
+        expect(proves(`${form}("PUT /user/:id", () => { expect(1).toBe(1); });`)).toBe(false);
+      }
+      expect(proves(`it.skip.each([1])("PUT /user/:id", () => { expect(1).toBe(1); });`)).toBe(false);
+    });
+
+    it("a test inside a skipped, focused or x/f-prefixed describe", () => {
+      for (const form of ["describe.skip", "describe.only", "xdescribe", "fdescribe", "describe.each([1]).skip"]) {
+        expect(proves(`${form}("PUT /user/:id", () => { it("is scoped", () => { expect(1).toBe(1); }); });`)).toBe(false);
+      }
+      expect(proves(`describe.skip("outer", () => { it("PUT /user/:id", () => { expect(1).toBe(1); }); });`)).toBe(false);
+      // a skipped sibling does not spoil a live test under the same describe
+      expect(proves(`describe("PUT /user/:id", () => { it.skip("a", () => { expect(1).toBe(1); }); it("b", () => { expect(1).toBe(1); }); });`)).toBe(true);
+    });
+
+    it("a test with no expect in its body, or one whose assertion is only reached through a helper", () => {
+      expect(proves(`it("PUT /user/:id", () => {});`)).toBe(false);
+      expect(proves(`it("PUT /user/:id", () => { const x = 1; });`)).toBe(false);
+      expect(proves(`const check = () => { expect(1).toBe(1); }; it("PUT /user/:id", () => { check(); });`)).toBe(false);
+      expect(proves(`it("PUT /user/:id");`)).toBe(false);
+    });
+
+    it("the route only in a comment, a string, or an expect argument, not a title", () => {
+      expect(proves(`// PUT /user/:id\nit("something else", () => { expect("PUT /user/:id").toBe("PUT /user/:id"); });`)).toBe(false);
+    });
+
+    it("a longer route in the title does not prove a shorter one", () => {
+      expect(proves(`it("POST /user/create works", () => { expect(1).toBe(1); });`, "POST /user")).toBe(false);
+      expect(proves(`it("POST /user (list) works", () => { expect(1).toBe(1); });`, "POST /user")).toBe(true);
+    });
+
+    it("a file that does not exist, is not a spec, or leaves the repository", () => {
+      expect(specProvesRoute("specs/missing.spec.ts", "GET /x", root)).toBe(false);
+      write("plain.ts", `it("GET /x", () => { expect(1).toBe(1); });`);
+      expect(specProvesRoute("specs/plain.ts", "GET /x", root)).toBe(false);
+      expect(specProvesRoute("../outside.spec.ts", "GET /x", root)).toBe(false);
+      expect(specProvesRoute("/etc/hosts.spec.ts", "GET /x", root)).toBe(false);
+      expect(specProvesRoute(undefined, "GET /x", root)).toBe(false);
+    });
   });
 
-  it("is not proven when the spec does not mention the route in a title", () => {
-    const file = write("silent.spec.ts", `describe("GET /user/:id", () => {}); const s = "PUT /user/:id"; // PUT /user/:id`);
-    expect(specProvesRoute(file, "PUT /user/:id", root)).toBe(false);
-  });
-
-  it("a shorter route is not proven by a title about a longer one", () => {
-    const file = write("longer.spec.ts", `describe("POST /user/create", () => {});`);
-    expect(specProvesRoute(file, "POST /user", root)).toBe(false);
-    expect(specProvesRoute(file, "POST /user/create", root)).toBe(true);
-    const both = write("both.spec.ts", `describe("POST /user (list)", () => {});`);
-    expect(specProvesRoute(both, "POST /user", root)).toBe(true);
-  });
-
-  it("is not proven when the file does not exist, is not a spec, or leaves the repository", () => {
-    expect(specProvesRoute("specs/missing.spec.ts", "GET /x", root)).toBe(false);
-    write("plain.ts", `describe("GET /x", () => {});`);
-    expect(specProvesRoute("specs/plain.ts", "GET /x", root)).toBe(false);
-    expect(specProvesRoute("../outside.spec.ts", "GET /x", root)).toBe(false);
-    expect(specProvesRoute("/etc/hosts.spec.ts", "GET /x", root)).toBe(false);
-    expect(specProvesRoute(undefined, "GET /x", root)).toBe(false);
+  describe("specTests", () => {
+    it("lists the tests that run, with full titles and whether each asserts", () => {
+      const tests = specTests(`
+        describe("A", () => {
+          describe("B", () => {
+            it("one", () => { expect(1).toBe(1); });
+            test("two", () => {});
+            it.each([1])("three %s", () => { expect(1).toBe(1); });
+          });
+          it.skip("skipped", () => { expect(1).toBe(1); });
+        });
+        xit("excluded", () => { expect(1).toBe(1); });
+      `);
+      expect(tests).toEqual([
+        { title: "A B one", hasExpect: true },
+        { title: "A B two", hasExpect: false },
+        { title: "A B three %s", hasExpect: true },
+      ]);
+    });
   });
 });

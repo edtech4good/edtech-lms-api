@@ -184,43 +184,115 @@ export const modulesWithModulePath = (
 
 const REPO_ROOT = join(__dirname, "..", "..");
 
+/** A test found in a spec: its full title (enclosing describe titles, then its own) and whether its body calls `expect(`. */
+export interface SpecTest {
+  title: string;
+  hasExpect: boolean;
+}
+
+type BlockKind = { block: "describe" | "test"; counts: boolean };
+
 /**
- * The titles of the describe, it and test blocks in a spec's source: the first
- * argument of every call to `describe`, `it` or `test`, including their
- * `.only`, `.skip` and `.each(table)(...)` forms. Read from the syntax tree, so
- * a route string in a comment or a variable does not count.
+ * What a call's callee is, in jest terms. `describe` and `it`/`test` count, with
+ * their `.each(table)(...)` and `.concurrent` forms. Everything that stops a
+ * test from running normally does not: `.skip`, `.todo`, `.only` (a focus
+ * variant: it silences the other tests), `.failing`, and the `x` and `f`
+ * prefixed names (`xit`, `xtest`, `xdescribe`, `fit`, `ftest`, `fdescribe`).
  */
-export const specTitles = (source: string): string[] => {
-  const file = ts.createSourceFile("spec.ts", source, ts.ScriptTarget.ES2020, true);
-  const titles: string[] = [];
-  const isBlockName = (expr: ts.Expression): boolean => {
-    if (ts.isIdentifier(expr)) {
-      return ["describe", "it", "test"].includes(expr.text);
+const blockKind = (expr: ts.Expression): BlockKind | undefined => {
+  if (ts.isIdentifier(expr)) {
+    switch (expr.text) {
+      case "describe":
+        return { block: "describe", counts: true };
+      case "it":
+      case "test":
+        return { block: "test", counts: true };
+      case "xdescribe":
+      case "fdescribe":
+        return { block: "describe", counts: false };
+      case "xit":
+      case "xtest":
+      case "fit":
+      case "ftest":
+        return { block: "test", counts: false };
+      default:
+        return undefined;
     }
-    if (ts.isPropertyAccessExpression(expr)) {
-      return (
-        ["only", "skip", "concurrent", "each"].includes(expr.name.text) && isBlockName(expr.expression)
-      );
-    }
-    if (ts.isCallExpression(expr)) {
-      return isBlockName(expr.expression); // describe.each(table)
-    }
-    return false;
-  };
-  const visit = (node: ts.Node) => {
-    if (ts.isCallExpression(node) && isBlockName(node.expression)) {
-      const first = node.arguments[0];
-      if (first && (ts.isStringLiteral(first) || ts.isNoSubstitutionTemplateLiteral(first))) {
-        titles.push(first.text);
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(file);
-  return titles;
+  }
+  if (ts.isPropertyAccessExpression(expr)) {
+    const base = blockKind(expr.expression);
+    if (!base) return undefined;
+    if (expr.name.text === "each" || expr.name.text === "concurrent") return base;
+    if (["skip", "todo", "only", "failing"].includes(expr.name.text)) return { ...base, counts: false };
+    return undefined;
+  }
+  if (ts.isCallExpression(expr)) {
+    return blockKind(expr.expression); // describe.each(table)
+  }
+  return undefined;
 };
 
-/** Does the spec at `enforcedBy` (path from the repository root) exist and name `routeKey` in a test title? */
+/** Does this function body contain a call to `expect(` written in it (not one reached through a helper)? */
+const callsExpect = (node: ts.Node): boolean => {
+  let found = false;
+  const visit = (n: ts.Node) => {
+    if (found) return;
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "expect") {
+      found = true;
+      return;
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(node);
+  return found;
+};
+
+/**
+ * The tests in a spec's source that run normally, each with its full title and
+ * whether its own body calls `expect(`. Read from the syntax tree, so a route
+ * string in a comment, a variable or a describe title alone is not a test. A
+ * test that is skipped, todo, focused or inside a describe that is, is left out.
+ */
+export const specTests = (source: string): SpecTest[] => {
+  const file = ts.createSourceFile("spec.ts", source, ts.ScriptTarget.ES2020, true);
+  const tests: SpecTest[] = [];
+  const visit = (node: ts.Node, describes: string[], live: boolean) => {
+    if (ts.isCallExpression(node)) {
+      const kind = blockKind(node.expression);
+      if (kind) {
+        const first = node.arguments[0];
+        const title =
+          first && (ts.isStringLiteral(first) || ts.isNoSubstitutionTemplateLiteral(first)) ? first.text : undefined;
+        const fn = node.arguments.find(
+          (a): a is ts.ArrowFunction | ts.FunctionExpression => ts.isArrowFunction(a) || ts.isFunctionExpression(a),
+        );
+        const stillLive = live && kind.counts;
+        if (kind.block === "describe") {
+          if (fn) visit(fn.body, title === undefined ? describes : [...describes, title], stillLive);
+          return;
+        }
+        if (stillLive && title !== undefined) {
+          tests.push({ title: [...describes, title].join(" "), hasExpect: fn ? callsExpect(fn.body) : false });
+        }
+        return;
+      }
+    }
+    ts.forEachChild(node, (child) => visit(child, describes, live));
+  };
+  visit(file, [], true);
+  return tests;
+};
+
+/**
+ * Does the spec at `enforcedBy` (path from the repository root) exist, and does
+ * a test in it that runs normally have `routeKey` in its full title (enclosing
+ * describe titles plus its own) and call `expect(` in its own body?
+ *
+ * This is a signpost, not proof: it shows that a test naming the route exists
+ * and asserts something. Whether those assertions are enough is shown by
+ * mutation (break the scoping and watch the spec fail), which the inventory
+ * cannot check.
+ */
 export const specProvesRoute = (enforcedBy: string | undefined, routeKey: string, root = REPO_ROOT): boolean => {
   if (!enforcedBy || isAbsolute(enforcedBy) || normalize(enforcedBy).startsWith("..") || !enforcedBy.endsWith(".spec.ts")) {
     return false;
@@ -232,7 +304,7 @@ export const specProvesRoute = (enforcedBy: string | undefined, routeKey: string
   // The route string must stand alone in the title: `POST /user` is not
   // mentioned by a title about `POST /user/create`.
   const mention = new RegExp(`(^|[^\\w/:.-])${routeKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w/:.-])`);
-  return specTitles(readFileSync(path, "utf8")).some((title) => mention.test(title));
+  return specTests(readFileSync(path, "utf8")).some((test) => test.hasExpect && mention.test(test.title));
 };
 
 export async function enumerateRoutes(): Promise<RouteRecord[]> {
@@ -507,7 +579,10 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "(`pending`); `public` routes show `n/a`, because nothing backs them. A guard",
     "backs a route; an `owned` route counts as enforced only when it names, with",
     "`@OrgPolicy(\"owned\", { enforcedBy })`, a spec file that exists and has the",
-    "route's `METHOD /path` in a test title (the **Proved by** column). The",
+    "route's `METHOD /path` in the title of a test that runs and calls `expect(`",
+    "(the **Proved by** column). That is a signpost: it shows that a test naming",
+    "the route exists and asserts something; whether its assertions are",
+    "sufficient is shown by mutation, not by the inventory. The",
     "pending routes are pinned in",
     "`src/route-policy/pending-enforcement.snapshot.txt`.",
     "",

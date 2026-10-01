@@ -21,7 +21,10 @@ column says which routes are already backed (`yes`) and which are not yet
 (`pending`); `public` routes show `n/a`, because nothing backs them. A guard
 backs a route; an `owned` route counts as enforced only when it names, with
 `@OrgPolicy("owned", { enforcedBy })`, a spec file that exists and has the
-route's `METHOD /path` in a test title (the **Proved by** column). The
+route's `METHOD /path` in the title of a test that runs and calls `expect(`
+(the **Proved by** column). That is a signpost: it shows that a test naming
+the route exists and asserts something; whether its assertions are
+sufficient is shown by mutation, not by the inventory. The
 pending routes are pinned in
 `src/route-policy/pending-enforcement.snapshot.txt`.
 

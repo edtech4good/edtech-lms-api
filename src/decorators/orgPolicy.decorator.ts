@@ -62,8 +62,10 @@ import { SetMetadata } from "@nestjs/common";
  *
  * An `owned` route counts as enforced in the inventory only when it names, with
  * `enforcedBy`, a spec file (path from the repository root) that exists and has
- * the route's `METHOD /path` (as the inventory prints it, for example
- * `PUT /user/:lmsuserid`) in the title of a `describe`, `it` or `test`. The
+ * a test that runs (not skipped, todo or focused, and not inside a describe that
+ * is) with the route's `METHOD /path` (as the inventory prints it, for example
+ * `PUT /user/:lmsuserid`) in its full title (enclosing describe titles and its
+ * own) and a direct `expect(` call in its body. A signpost, not proof. The
  * spec is what proves the route limits every read and write to the caller's
  * organisation; a route without the option, or naming a spec that does not
  * mention it, stays pending.

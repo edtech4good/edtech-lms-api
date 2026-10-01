@@ -104,6 +104,11 @@ export const findOwned = async <M extends Model>(
  * organisation on a row checks it here; the lock makes the check hold until
  * the transaction ends (deleting an organisation takes an exclusive lock on the
  * same row).
+ *
+ * "Live" means not deleted, and nothing more: a SUSPENDED organisation still
+ * passes. That is intended. A platform caller may create staff in (or move
+ * accounts into) a suspended organisation; those staff cannot sign in while it
+ * is suspended, and can once it is reactivated. Do not add a status check here.
  */
 export const lockLiveOrganisation = (organisationid: string, transaction: Transaction) =>
   organisations.findOne({
