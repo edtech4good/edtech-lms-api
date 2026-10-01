@@ -1,5 +1,9 @@
 import { QueryInterface, DataTypes, Transaction } from "sequelize";
-import { tableNameList, tableOptionsMatchingColumn } from "../migration-helpers";
+import {
+  columnCollation,
+  tableNameList,
+  tableOptionsMatchingColumn,
+} from "../migration-helpers";
 
 /**
  * C1 of the multi-organisation model (docs/admin-organisations-schema.md §3):
@@ -39,9 +43,25 @@ import { tableNameList, tableOptionsMatchingColumn } from "../migration-helpers"
  * failure completes the job instead of failing on "already exists".
  */
 const ORGANISATIONS = "organisations";
+
+/**
+ * `organisationname` alone is NOT in the table's collation (see "Collation"
+ * above); it is accent-sensitive and case-insensitive. Under utf8mb4_unicode_ci
+ * and utf8mb4_0900_ai_ci, several Khmer marks have zero weight - bantoc (U+17CB),
+ * nikahit (U+17C6), musikatoan (U+17C9) - so two different names such as
+ * "សាលាកាត" and "សាលាកាត់" compare EQUAL and could not both exist (a false
+ * 409 from the API, ER_DUP_ENTRY from MySQL). `_as_ci` makes marks significant
+ * while "Acme" and "ACME" still collide. It governs the live-name unique index
+ * (the index key keeps the column's collation), the API's duplicate check and
+ * the name search, which all compare through the column. It is set here, before
+ * the functional index is created, and is for this column only: the foreign-key
+ * id columns keep the collation they must share with `countries.countryid`.
+ */
+const NAME_COLLATION = "utf8mb4_0900_as_ci";
 const LINKS = "organisationcountry";
 
 const NAME_INDEX = "organisations_organisationname_live_unique";
+const NAME_SORT_INDEX = "organisations_organisationname_idx";
 const CODE_INDEX = "organisations_organisationcode_unique";
 const LINK_UNIQUE_INDEX = "organisationcountry_organisation_country_unique";
 const LINK_COUNTRY_INDEX = "organisationcountry_countryid";
@@ -75,7 +95,7 @@ module.exports = {
             },
             organisationname: { type: DataTypes.STRING(250), allowNull: false },
             organisationcode: { type: DataTypes.STRING(16), allowNull: false },
-            organisationshortname: { type: DataTypes.STRING(3), allowNull: false },
+            organisationshortname: { type: DataTypes.STRING(12), allowNull: false },
             organisationpreset: { type: DataTypes.STRING(16), allowNull: false },
             organisationstatus: {
               type: DataTypes.BOOLEAN,
@@ -113,11 +133,30 @@ module.exports = {
         );
       }
 
+      // Sequelize's column definitions cannot carry a per-column collation, so it
+      // is set here, before any index on the column exists. Guarded, so a re-run
+      // does not rebuild the column.
+      if ((await columnCollation(queryInterface, ORGANISATIONS, "organisationname")) !== NAME_COLLATION) {
+        await queryInterface.sequelize.query(
+          `ALTER TABLE \`${ORGANISATIONS}\` MODIFY \`organisationname\` VARCHAR(250) ` +
+            `CHARACTER SET utf8mb4 COLLATE ${NAME_COLLATION} NOT NULL`,
+          { transaction },
+        );
+      }
+
       const orgIndexes = await indexNames(queryInterface, ORGANISATIONS);
       if (!orgIndexes.has(CODE_INDEX)) {
         await queryInterface.addIndex(ORGANISATIONS, ["organisationcode"], {
           name: CODE_INDEX,
           unique: true,
+          transaction,
+        });
+      }
+      // Plain (non-unique) index so the list can ORDER BY the name, and filter
+      // `isdeleted`, without sorting rows that carry JSON columns.
+      if (!orgIndexes.has(NAME_SORT_INDEX)) {
+        await queryInterface.addIndex(ORGANISATIONS, ["organisationname"], {
+          name: NAME_SORT_INDEX,
           transaction,
         });
       }

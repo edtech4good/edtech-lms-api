@@ -1,7 +1,7 @@
 import { ApiProperty } from "@nestjs/swagger";
 
 export class OrganisationBrandingRequest {
-  @ApiProperty({ required: false, description: "http or https URL." })
+  @ApiProperty({ required: false, description: "https URL, no user info, at most 2048 characters. Never fetched by the server." })
   logourl?: string;
   @ApiProperty({ required: false })
   displayname?: string;
@@ -14,7 +14,7 @@ export class OrganisationCreateRequest {
   organisationname: string;
   @ApiProperty({ description: "2-16 lowercase letters and digits. Unique forever, deleted organisations included. Cannot be changed." })
   organisationcode: string;
-  @ApiProperty({ description: "2-3 letters." })
+  @ApiProperty({ description: "1 to 3 visible letters (grapheme clusters), up to 12 code points: letters and combining marks, such as Khmer vowel signs and subscripts. Used as tile initials." })
   organisationshortname: string;
   @ApiProperty({ enum: ["company", "schoolnetwork"], description: "Cannot be changed." })
   organisationpreset: string;
@@ -37,7 +37,7 @@ export class OrganisationCreateRequest {
 export class OrganisationUpdateRequest {
   @ApiProperty()
   organisationname: string;
-  @ApiProperty({ description: "2-3 letters." })
+  @ApiProperty({ description: "1 to 3 visible letters (grapheme clusters), up to 12 code points: letters and combining marks, such as Khmer vowel signs and subscripts. Used as tile initials." })
   organisationshortname: string;
   @ApiProperty({ required: false, enum: ["kids", "corporate"], description: "Left unchanged when omitted." })
   uitheme?: string;

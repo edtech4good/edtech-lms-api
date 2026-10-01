@@ -22,14 +22,59 @@ export const ORGANISATION_PRESETS = ["company", "schoolnetwork"];
 export const ORGANISATION_CODE_PATTERN = /^[a-z0-9]+$/;
 
 /**
- * 2-3 letters of any script. The product is used in Khmer, so tile initials
- * may be Khmer consonants; `\p{L}` is a letter in any language (dependent
- * vowel signs are marks, not letters, and are not accepted).
+ * Characters a name must never contain: every control character (`\p{Cc}`:
+ * NUL, tab, newline, ...) and the bidirectional controls U+202A-U+202E and
+ * U+2066-U+2069, which can make text display in a different order from how it
+ * is stored. Zero-width space, joiner and non-joiner (U+200B, U+200D, U+200C)
+ * are NOT here: Khmer text uses them inside words.
  */
-export const ORGANISATION_SHORTNAME_PATTERN = /^\p{L}{2,3}$/u;
+const FORBIDDEN_IN_NAME = /[\p{Cc}\u202A-\u202E\u2066-\u2069]/u;
+const HAS_LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 
-/** No control characters (NUL, newlines, tabs...) in a display name. */
-const NO_CONTROL_CHARACTERS = /^[^\u0000-\u001F\u007F]*$/;
+/**
+ * Display text (an organisation name, a branding display name): no control or
+ * bidirectional characters, and at least one letter or digit, so a name made
+ * only of invisible characters is refused. Trimming is done by Joi's `.trim()`
+ * before this runs.
+ */
+export const isPlainDisplayText = (value: string): boolean =>
+  !FORBIDDEN_IN_NAME.test(value) && HAS_LETTER_OR_DIGIT.test(value);
+
+const displayText = (value: string, helpers: joi.CustomHelpers) =>
+  isPlainDisplayText(value) ? value : helpers.error("string.pattern.base");
+
+/** One letter, then letters and combining marks (Khmer vowel signs and subscripts are marks). */
+const SHORTNAME_PATTERN = /^\p{L}[\p{L}\p{M}]*$/u;
+export const SHORTNAME_MAX_CODE_POINTS = 12;
+export const SHORTNAME_MAX_GRAPHEMES = 3;
+
+// The TypeScript lib this project compiles against predates Intl.Segmenter
+// (Node 22, which this package requires, has it).
+const Segmenter = (
+  Intl as unknown as {
+    Segmenter: new (
+      locale: string | undefined,
+      options: { granularity: "grapheme" },
+    ) => { segment(input: string): Iterable<unknown> };
+  }
+).Segmenter;
+
+/**
+ * Tile initials: 1 to 3 grapheme clusters, each starting with a letter and
+ * holding only letters and combining marks, at most 12 code points. Counting
+ * graphemes (not code points) is what makes Khmer work: a cluster such as "សុ"
+ * or "ក្ស" is one visible unit but two or three code points.
+ */
+export const isValidShortName = (value: string): boolean => {
+  if (!SHORTNAME_PATTERN.test(value)) {
+    return false;
+  }
+  if ([...value].length > SHORTNAME_MAX_CODE_POINTS) {
+    return false;
+  }
+  const graphemes = [...new Segmenter(undefined, { granularity: "grapheme" }).segment(value)].length;
+  return graphemes >= 1 && graphemes <= SHORTNAME_MAX_GRAPHEMES;
+};
 
 const MAX_COUNTRIES = 250;
 
@@ -38,28 +83,49 @@ const organisationname = joi
   .trim()
   .min(1)
   .max(250)
-  .pattern(NO_CONTROL_CHARACTERS)
+  .custom(displayText)
   .label("Organisation Name");
 
 const organisationshortname = joi
   .string()
-  .pattern(ORGANISATION_SHORTNAME_PATTERN)
+  .custom((value, helpers) =>
+    isValidShortName(value) ? value : helpers.error("string.pattern.base"),
+  )
   .label("Organisation Short Name");
 
 const uitheme = joi.string().valid(...UI_THEMES).label("UI Theme");
 
 /**
+ * The logo must be an https URL with no user info (`user:pass@host`): not
+ * `http:`, `javascript:` or `data:`, and nothing that smuggles credentials or
+ * disguises the host. 2048 characters at most.
+ *
+ * NOTHING FETCHES THIS URL ON THE SERVER TODAY: it is only stored and handed to
+ * clients. If a server-side fetch is ever added (thumbnailing, validation,
+ * proxying), it needs an SSRF guard first - resolve the host and refuse
+ * loopback, link-local, private and metadata addresses, refuse redirects to
+ * them, and cap time and size. This validation does not make a URL safe to
+ * fetch.
+ */
+const logourl = joi
+  .string()
+  .max(2048)
+  .uri({ scheme: ["https"] })
+  .custom((value, helpers) => {
+    const authority = /^https:\/\/([^/?#]*)/i.exec(value)?.[1] ?? "";
+    return authority.includes("@") ? helpers.error("string.uri") : value;
+  });
+
+/**
  * Shape of `brandingconfig` (§3: "logo, display name, tile colour"). Closed on
- * purpose - unknown keys are refused - and the logo must be an http(s) URL so
- * it can never be a `javascript:` or `data:` URI. `null` clears it.
+ * purpose: unknown keys are refused. `null` clears it. What is STORED is built
+ * from these three named keys only (`pickBranding` in organisation.business.ts),
+ * never from the request object itself.
  */
 const brandingconfig = joi
   .object({
-    logourl: joi
-      .string()
-      .uri({ scheme: ["http", "https"] })
-      .max(2048),
-    displayname: joi.string().trim().min(1).max(250).pattern(NO_CONTROL_CHARACTERS),
+    logourl,
+    displayname: joi.string().trim().min(1).max(250).custom(displayText),
     tilecolour: joi.string().pattern(/^#[0-9a-fA-F]{6}$/),
   })
   .allow(null)

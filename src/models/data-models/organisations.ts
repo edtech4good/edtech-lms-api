@@ -58,7 +58,8 @@ export class organisations extends Model<organisationsAttributes, organisationsC
         primaryKey: true
       },
       organisationname: {
-        // Unique among live rows only: see migration 20261001120000.
+        // Unique among live rows only, and compared accent-sensitively
+        // (utf8mb4_0900_as_ci): see migration 20261001120000.
         type: DataTypes.STRING(250),
         allowNull: false
       },
@@ -68,7 +69,7 @@ export class organisations extends Model<organisationsAttributes, organisationsC
         unique: true
       },
       organisationshortname: {
-        type: DataTypes.STRING(3),
+        type: DataTypes.STRING(12),
         allowNull: false
       },
       organisationpreset: {

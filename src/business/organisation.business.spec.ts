@@ -1,5 +1,5 @@
 import { Op, Transaction } from "sequelize";
-import { OrganisationBusiness } from "src/business/organisation.business";
+import { OrganisationBusiness, pickBranding } from "src/business/organisation.business";
 import { countries } from "src/models/data-models/countries";
 import { organisationcountry } from "src/models/data-models/organisationcountry";
 import { organisations } from "src/models/data-models/organisations";
@@ -431,7 +431,8 @@ describe("OrganisationBusiness reads", () => {
   it("getorganisationall pages like the other lists (1-based, default 20) and never lists deleted organisations", async () => {
     const findAndCountAll = jest
       .spyOn(organisations, "findAndCountAll")
-      .mockResolvedValue({ rows: [orgRow()], count: 41 } as never);
+      .mockResolvedValue({ rows: [{ organisationid: "org-1" }], count: 41 } as never);
+    jest.spyOn(organisations, "findAll").mockResolvedValue([orgRow()] as never);
 
     const page = await new OrganisationBusiness().getorganisationall({ pageindex: 3, pagesize: 10 });
     expect(findAndCountAll.mock.calls[0][0]).toMatchObject({ limit: 10, offset: 20, where: { isdeleted: false } });
@@ -444,6 +445,49 @@ describe("OrganisationBusiness reads", () => {
     expect(findAndCountAll.mock.calls[2][0]).toMatchObject({ limit: 5, offset: 0 });
   });
 
+  it("the list sorts and pages IDS only, ordered by indexed scalar columns, then fetches the rows without an ORDER BY", async () => {
+    const findAndCountAll = jest
+      .spyOn(organisations, "findAndCountAll")
+      .mockResolvedValue({ rows: [{ organisationid: "b" }, { organisationid: "a" }], count: 2 } as never);
+    const findAll = jest
+      .spyOn(organisations, "findAll")
+      .mockResolvedValue([orgRow({ organisationid: "a" }), orgRow({ organisationid: "b" })] as never);
+
+    const page = await new OrganisationBusiness().getorganisationall({});
+
+    const first = findAndCountAll.mock.calls[0][0]!;
+    expect(first.attributes).toEqual(["organisationid"]);
+    expect(first.order).toEqual([
+      ["organisationname", "ASC"],
+      ["organisationid", "ASC"],
+    ]);
+    const second = findAll.mock.calls[0][0]!;
+    expect(second.order).toBeUndefined();
+    expect(second.where).toEqual({ organisationid: { [Op.in]: ["b", "a"] } });
+    // The page keeps the order step 1 chose, not the order the rows came back in.
+    expect(page.rows.map((r) => r.organisationid)).toEqual(["b", "a"]);
+  });
+
+  it("the list never selects settingsconfig (nor any other column it does not return)", async () => {
+    jest.spyOn(organisations, "findAndCountAll").mockResolvedValue({ rows: [{ organisationid: "a" }], count: 1 } as never);
+    const findAll = jest.spyOn(organisations, "findAll").mockResolvedValue([orgRow({ organisationid: "a" })] as never);
+    await new OrganisationBusiness().getorganisationall({});
+    const attributes = findAll.mock.calls[0][0]!.attributes as string[];
+    expect(attributes).not.toContain("settingsconfig");
+    expect(attributes).toEqual(
+      expect.arrayContaining(["organisationid", "organisationname", "organisationcode", "brandingconfig", "isdeleted"]),
+    );
+  });
+
+  it("an empty page runs no second query and no country query", async () => {
+    jest.spyOn(organisations, "findAndCountAll").mockResolvedValue({ rows: [], count: 0 } as never);
+    const findAll = jest.spyOn(organisations, "findAll");
+    const page = await new OrganisationBusiness().getorganisationall({});
+    expect(page.rows).toEqual([]);
+    expect(findAll).not.toHaveBeenCalled();
+    expect(organisationcountry.findAll).not.toHaveBeenCalled();
+  });
+
   it("getorganisationall escapes LIKE wildcards in the name filter so '%' and '_' match themselves", async () => {
     const findAndCountAll = jest
       .spyOn(organisations, "findAndCountAll")
@@ -452,5 +496,105 @@ describe("OrganisationBusiness reads", () => {
     const where = findAndCountAll.mock.calls[0][0]!.where as Record<string | symbol, unknown>;
     expect(where.organisationname).toEqual({ [Op.like]: "%50\\%\\_off\\\\%" });
     expect(where.isdeleted).toBe(false);
+  });
+});
+
+/** What `JSON.parse` makes of a hostile body: an OWN key called "__proto__". */
+const hostile = (json: string) => JSON.parse(json);
+
+describe("pickBranding builds the stored branding from three named keys only", () => {
+  it("keeps logourl, displayname (trimmed) and tilecolour", () => {
+    expect(
+      pickBranding({ logourl: "https://example.com/l.png", displayname: "  Sample  ", tilecolour: "#112233" }),
+    ).toEqual({ logourl: "https://example.com/l.png", displayname: "Sample", tilecolour: "#112233" });
+  });
+
+  it("passes undefined (not given) and null (clear) through", () => {
+    expect(pickBranding(undefined)).toBeUndefined();
+    expect(pickBranding(null)).toBeNull();
+  });
+
+  it("drops every other key, including an own __proto__ that JSON.parse created", () => {
+    const raw = hostile(
+      '{"logourl":"https://example.com/l.png","__proto__":{"logourl":"javascript:alert(1)","evil":"' +
+        "x".repeat(100000) +
+        '"},"constructor":{"prototype":{"polluted":true}},"prototype":1,"extra":"y"}',
+    );
+    expect(Object.keys(raw)).toContain("__proto__"); // the attack shape really is there
+    const out = pickBranding(raw)!;
+    expect(Object.keys(out)).toEqual(["logourl"]);
+    expect(JSON.stringify(out)).toBe('{"logourl":"https://example.com/l.png"}');
+    expect(Object.prototype.hasOwnProperty.call(out, "__proto__")).toBe(false);
+  });
+
+  it("does not read through the prototype chain, and ignores non-string values", () => {
+    const inherited = Object.create({ logourl: "https://evil.example/x.png" });
+    expect(pickBranding(inherited)).toEqual({});
+    expect(pickBranding({ logourl: { a: 1 }, displayname: 5, tilecolour: ["#000000"] })).toEqual({});
+  });
+
+  it("is an empty object, not an error, for an empty branding; refuses a non-object", () => {
+    expect(pickBranding({})).toEqual({});
+    for (const bad of ["x", 5, true, ["a"]]) {
+      expect(() => pickBranding(bad)).toThrow(ApiError);
+    }
+  });
+
+  it("never mutates or aliases the incoming object", () => {
+    const raw = { logourl: "https://example.com/l.png", displayname: " A " };
+    const out = pickBranding(raw)!;
+    expect(out).not.toBe(raw);
+    expect(raw.displayname).toBe(" A ");
+  });
+});
+
+describe("what create and update PERSIST for brandingconfig, even if validation upstream were bypassed", () => {
+  const poisoned = () =>
+    hostile(
+      '{"tilecolour":"#112233","__proto__":{"logourl":"javascript:alert(1)","big":"' +
+        "x".repeat(50000) +
+        '"},"settingsconfig":{"a":1},"organisationstatus":false}',
+    );
+
+  it("create stores only the named keys", async () => {
+    await new OrganisationBusiness().createorganisation(
+      { ...newOrg, brandingconfig: poisoned() },
+      [A],
+      user,
+    );
+    const stored = (organisations.create as jest.Mock).mock.calls[0][0].brandingconfig;
+    expect(JSON.stringify(stored)).toBe('{"tilecolour":"#112233"}');
+  });
+
+  it("update stores only the named keys", async () => {
+    const row = orgRow();
+    (organisations.findOne as jest.Mock).mockResolvedValue(row);
+    await new OrganisationBusiness().updateorganisation(
+      "org-1",
+      { organisationname: "N", organisationshortname: "NN", brandingconfig: poisoned() },
+      [A],
+      user,
+    );
+    expect(JSON.stringify(row.brandingconfig)).toBe('{"tilecolour":"#112233"}');
+    expect(row.save.mock.calls[0][0].fields).toContain("brandingconfig");
+  });
+
+  it("an update with no branding leaves the column alone; null clears it", async () => {
+    const row = orgRow({ brandingconfig: { tilecolour: "#000000" } });
+    (organisations.findOne as jest.Mock).mockResolvedValue(row);
+    await new OrganisationBusiness().updateorganisation(
+      "org-1",
+      { organisationname: "N", organisationshortname: "NN" },
+      [A],
+      user,
+    );
+    expect(row.save.mock.calls[0][0].fields).not.toContain("brandingconfig");
+    await new OrganisationBusiness().updateorganisation(
+      "org-1",
+      { organisationname: "N", organisationshortname: "NN", brandingconfig: null },
+      [A],
+      user,
+    );
+    expect(row.brandingconfig).toBeNull();
   });
 });

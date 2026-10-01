@@ -34,13 +34,53 @@ export interface OrganisationPaging {
   organisationname?: string;
 }
 
+/** The only keys `brandingconfig` may hold. */
+export interface OrganisationBranding {
+  logourl?: string;
+  displayname?: string;
+  tilecolour?: string;
+}
+
+const hasOwn = (o: object, key: string) => Object.prototype.hasOwnProperty.call(o, key);
+
+/**
+ * Builds the branding that is STORED from the three named keys, reading each
+ * one explicitly. It never spreads, copies or iterates the incoming object, so
+ * whatever else it carries - an own `__proto__` key from `JSON.parse`, extra
+ * keys, a huge payload - cannot reach the database, even if validation upstream
+ * were bypassed. `undefined` means "not given" (leave unchanged), `null` means
+ * "clear".
+ */
+export const pickBranding = (raw: unknown): OrganisationBranding | null | undefined => {
+  if (raw === undefined || raw === null) {
+    return raw;
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new ApiError(ErrorCode.INVALID_INPUT, "Some of the information isn't valid.", {
+      fields: [{ field: "brandingconfig", message: "Branding isn't valid." }],
+    });
+  }
+  const out: OrganisationBranding = {};
+  const source = raw as Record<string, unknown>;
+  if (hasOwn(source, "logourl") && typeof source.logourl === "string") {
+    out.logourl = source.logourl;
+  }
+  if (hasOwn(source, "displayname") && typeof source.displayname === "string") {
+    out.displayname = source.displayname.trim();
+  }
+  if (hasOwn(source, "tilecolour") && typeof source.tilecolour === "string") {
+    out.tilecolour = source.tilecolour;
+  }
+  return out;
+};
+
 export interface NewOrganisation {
   organisationname: string;
   organisationcode: string;
   organisationshortname: string;
   organisationpreset: string;
   uitheme?: string;
-  brandingconfig?: object | null;
+  brandingconfig?: OrganisationBranding | null;
 }
 
 /**
@@ -53,9 +93,28 @@ export interface OrganisationChanges {
   organisationname: string;
   organisationshortname: string;
   uitheme?: string;
-  brandingconfig?: object | null;
+  brandingconfig?: OrganisationBranding | null;
   organisationstatus?: boolean;
 }
+
+/** What the list returns: every column but `settingsconfig` (the full row is for GET by id). */
+const LIST_COLUMNS: Array<keyof organisationsAttributes> = [
+  "organisationid",
+  "organisationname",
+  "organisationcode",
+  "organisationshortname",
+  "organisationpreset",
+  "organisationstatus",
+  "uitheme",
+  "brandingconfig",
+  "isdeleted",
+  "created_at",
+  "created_by",
+  "updated_at",
+  "updated_by",
+  "deleted_at",
+  "deleted_by",
+];
 
 const notFound = () =>
   new ApiError(ErrorCode.NOT_FOUND, "That organisation doesn't exist.");
@@ -90,9 +149,14 @@ export class OrganisationBusiness {
       where.organisationname = { [Op.like]: `%${escapeLike(search)}%` };
     }
 
-    const result = await organisations.findAndCountAll({
+    // Two steps, so the sort never carries wide columns. Step 1 orders and
+    // pages ids only (name and id are scalars; the name has its own index).
+    // Step 2 fetches those rows with an explicit column list - never
+    // `settingsconfig`, which the list has no use for - and no ORDER BY. A row
+    // with a large JSON value in the sort made MySQL run out of sort memory.
+    const page = await organisations.findAndCountAll({
+      attributes: ["organisationid"],
       where,
-      // organisationid breaks ties so pages never overlap or skip.
       order: [
         ["organisationname", "ASC"],
         ["organisationid", "ASC"],
@@ -100,10 +164,20 @@ export class OrganisationBusiness {
       limit,
       offset,
     });
-    const linked = await this.countriesFor(result.rows.map((r) => r.organisationid));
+    const ids = page.rows.map((r) => r.organisationid);
+    const found =
+      ids.length === 0
+        ? []
+        : await organisations.findAll({
+            attributes: LIST_COLUMNS,
+            where: { organisationid: { [Op.in]: ids } },
+          });
+    const byId = new Map(found.map((r) => [r.organisationid, r]));
+    const rows = ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
+    const linked = await this.countriesFor(ids);
     return {
-      rows: result.rows.map((r) => this.toView(r, linked.get(r.organisationid) ?? [])),
-      count: result.count,
+      rows: rows.map((r) => this.toView(r, linked.get(r.organisationid) ?? [])),
+      count: page.count,
       pageindex,
       pagesize: limit,
     };
@@ -150,7 +224,8 @@ export class OrganisationBusiness {
       };
       // Left to the column defaults when absent: uitheme 'kids', branding null.
       if (input.uitheme !== undefined) attributes.uitheme = input.uitheme;
-      if (input.brandingconfig !== undefined) attributes.brandingconfig = input.brandingconfig;
+      const branding = pickBranding(input.brandingconfig);
+      if (branding !== undefined) attributes.brandingconfig = branding;
       await organisations.create(attributes, { transaction: tnx });
       await organisationcountry.bulkCreate(
         countryids.map((countryid) => ({
@@ -203,8 +278,9 @@ export class OrganisationBusiness {
         row.uitheme = changes.uitheme;
         fields.push("uitheme");
       }
-      if (changes.brandingconfig !== undefined) {
-        row.brandingconfig = changes.brandingconfig;
+      const branding = pickBranding(changes.brandingconfig);
+      if (branding !== undefined) {
+        row.brandingconfig = branding;
         fields.push("brandingconfig");
       }
       if (changes.organisationstatus !== undefined) {
@@ -267,9 +343,11 @@ export class OrganisationBusiness {
   };
 
   /**
-   * Is this name taken by another LIVE organisation? Compared with the column's
-   * collation, so case-insensitively - the same comparison the unique index
-   * makes.
+   * Is this name taken by another LIVE organisation? The comparison is made by
+   * MySQL through the column's collation (utf8mb4_0900_as_ci), which is the very
+   * comparison the live-name unique index makes: case-insensitive, but Khmer
+   * marks (bantoc, nikahit, musikatoan) are significant. Nothing here lowercases
+   * or normalises in JavaScript, so the check and the index cannot disagree.
    */
   isexistsorganisationname = async (organisationname: string, excludeid?: string) => {
     const where: WhereOptions<organisationsAttributes> = {

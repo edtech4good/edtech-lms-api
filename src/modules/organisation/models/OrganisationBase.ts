@@ -19,7 +19,7 @@ export class OrganisationBase {
   organisationname: string;
   @ApiProperty({ description: "Lowercase letters and digits, 2-16. Fixed after creation." })
   organisationcode: string;
-  @ApiProperty({ description: "2-3 letters, used as tile initials." })
+  @ApiProperty({ description: "1 to 3 visible letters (grapheme clusters), up to 12 code points: letters and combining marks, such as Khmer vowel signs and subscripts. Used as tile initials." })
   organisationshortname: string;
   @ApiProperty({ enum: ["company", "schoolnetwork"], description: "What it started from. Fixed after creation." })
   organisationpreset: string;

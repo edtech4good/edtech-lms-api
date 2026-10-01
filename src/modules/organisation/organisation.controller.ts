@@ -32,6 +32,7 @@ import {
   BusinessValidationInterceptor,
   SchemaValidationInterceptor,
 } from "src/interceptors";
+import { RejectPrototypeKeysInterceptor } from "src/interceptors/rejectprototypekeys.interceptor";
 import { TokenType } from "src/models/enums";
 import { Permission } from "src/models/enums/permissions.enum";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
@@ -145,6 +146,7 @@ export class OrganisationController {
   @ApiResponse({ status: 500, description: "Server error" })
   @ApiBody({ type: OrganisationCreateRequest })
   @UseInterceptors(
+    new RejectPrototypeKeysInterceptor(),
     new SchemaValidationInterceptor(createorganisation),
     new BusinessValidationInterceptor([CreateOrganisation]),
   )
@@ -162,7 +164,7 @@ export class OrganisationController {
         organisationshortname: body.organisationshortname,
         organisationpreset: body.organisationpreset,
         uitheme: body.uitheme,
-        brandingconfig: trimBranding(body.brandingconfig),
+        brandingconfig: body.brandingconfig,
       },
       body.countryids,
       user,
@@ -185,6 +187,7 @@ export class OrganisationController {
   @ApiParam({ name: "organisationid", type: "string", required: true })
   @ApiBody({ type: OrganisationUpdateRequest })
   @UseInterceptors(
+    new RejectPrototypeKeysInterceptor(),
     new SchemaValidationInterceptor(updateorganisation),
     new BusinessValidationInterceptor([UpdateOrganisation]),
   )
@@ -202,7 +205,7 @@ export class OrganisationController {
         organisationname: body.organisationname.trim(),
         organisationshortname: body.organisationshortname,
         uitheme: body.uitheme,
-        brandingconfig: trimBranding(body.brandingconfig),
+        brandingconfig: body.brandingconfig,
         organisationstatus: body.organisationstatus,
       },
       body.countryids,
@@ -234,18 +237,3 @@ export class OrganisationController {
     return { error: false, data: true };
   }
 }
-
-/** `brandingconfig` as stored: the display name trimmed (validated trimmed, never rewritten by Joi). */
-const trimBranding = (
-  branding: OrganisationCreateRequest["brandingconfig"],
-): object | null | undefined => {
-  if (branding === undefined || branding === null) {
-    return branding;
-  }
-  return {
-    ...branding,
-    ...(typeof branding.displayname === "string"
-      ? { displayname: branding.displayname.trim() }
-      : {}),
-  };
-};
