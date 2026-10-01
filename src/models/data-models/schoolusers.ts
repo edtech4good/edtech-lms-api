@@ -3,6 +3,7 @@ import * as Sequelize from 'sequelize';
 import { DataTypes, Model, Optional } from 'sequelize';
 import { rpiuseraccess } from './rpiuseraccess';
 import { schools } from './school';
+import { SCHOOL_ID_DEFAULT_SCOPE } from './school-id-scope';
 import { studentappusages } from './studentappusage';
 import type { students, studentsId } from './students';
 
@@ -13,6 +14,8 @@ export interface schoolusersAttributes {
   schooluserrole: number;
   schooluserstatus: number;
   schoolname?: string;
+  /** Added by C4. Written alongside `schoolname`; not read anywhere yet (see SCHOOL_ID_DEFAULT_SCOPE). */
+  schoolid?: string;
   isdisabled: boolean;
   isdeleted?: boolean;
   created_at?: Date;
@@ -29,7 +32,7 @@ export interface schoolusersAttributes {
 
 export type schoolusersPk = "schooluserid";
 export type schoolusersId = schoolusers[schoolusersPk];
-export type schoolusersOptionalAttributes = "schooluserid" | "schooluserstatus" | "schoolname" | "isdisabled" | "isdeleted";
+export type schoolusersOptionalAttributes = "schooluserid" | "schooluserstatus" | "schoolname" | "schoolid" | "isdisabled" | "isdeleted";
 export type schoolusersCreationAttributes = Optional<schoolusersAttributes, schoolusersOptionalAttributes>;
 
 export class schoolusers extends Model<schoolusersAttributes, schoolusersCreationAttributes> implements schoolusersAttributes {
@@ -39,6 +42,7 @@ export class schoolusers extends Model<schoolusersAttributes, schoolusersCreatio
   schooluserrole!: number;
   schooluserstatus!: number;
   schoolname?: string;
+  schoolid?: string;
   isdisabled!: boolean;
   isdeleted!: boolean;
   created_at!: Date;
@@ -94,6 +98,10 @@ export class schoolusers extends Model<schoolusersAttributes, schoolusersCreatio
       type: DataTypes.STRING(250),
       allowNull: true
     },
+    schoolid: {
+      type: DataTypes.STRING(36),
+      allowNull: true
+    },
     isdisabled: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
@@ -134,6 +142,7 @@ export class schoolusers extends Model<schoolusersAttributes, schoolusersCreatio
     sequelize,
     tableName: 'schoolusers',
     timestamps: false,
+    defaultScope: SCHOOL_ID_DEFAULT_SCOPE,
     indexes: [
       {
         name: "PRIMARY",

@@ -8,6 +8,7 @@ import { lockLiveOrganisation, scopeOf } from "./org-scope";
 import { countries } from "src/models/data-models/countries";
 import { curriculums } from "src/models/data-models/curriculums";
 import { schools, schoolsAttributes } from "src/models/data-models/school";
+import { schoolusers } from "src/models/data-models/schoolusers";
 import { students } from "src/models/data-models/students";
 import { IMultiPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
@@ -185,6 +186,17 @@ export class SchoolBusiness {
   };
   getschoolname = (schoolname: string) =>
     schools.findAll({ where: { schoolname, isdeleted: false } });
+  /**
+   * Renames and edits a school. The learners and school logins of a school are
+   * tied to it by `schoolid` AND carry a copy of its name (`students.schoolname`,
+   * `schoolusers.schoolname`), which every reader still joins on. Before C4 a
+   * rename updated only `schools`, which left every learner and login of the
+   * school pointing at a name that no longer exists. The copies now follow the
+   * school in the same transaction, keyed on `schoolid`, so the id stays correct
+   * and the two names never drift apart. (`standards.schoolname` and
+   * `schoolcontributedata.schoolname` are other tables' copies and are not
+   * touched here.)
+   */
   updateschoolName = async (school: schoolsAttributes, user: LmsUserToken, org: OrgContext) => {
     const requested = school.organisationid;
     scopeOf(org);
@@ -210,6 +222,7 @@ export class SchoolBusiness {
         countryid: school.countryid,
         transaction,
       });
+      const previousname = tempdt.schoolname;
       tempdt.schoolname = school.schoolname;
       tempdt.countryid = school.countryid;
       tempdt.curriculums = school.curriculums;
@@ -228,6 +241,16 @@ export class SchoolBusiness {
         fields.push("uitheme");
       }
       await tempdt.save({ fields, transaction });
+      if (previousname !== tempdt.schoolname) {
+        await students.update(
+          { schoolname: tempdt.schoolname },
+          { where: { schoolid: tempdt.schoolid }, transaction },
+        );
+        await schoolusers.update(
+          { schoolname: tempdt.schoolname },
+          { where: { schoolid: tempdt.schoolid }, transaction },
+        );
+      }
       await transaction.commit();
       return tempdt;
     } catch (e) {

@@ -21,6 +21,7 @@ import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
 import { SchoolBusiness } from "./school.business";
+import { requireSchoolIdByName, withSchoolIds } from "./school-identity";
 import { hashPassword } from "src/services/password.service";
 import { LmsUserToken } from "src/models/token.model";
 import { CountryBusiness } from "./country.business";
@@ -36,9 +37,12 @@ export class StudentBusiness {
     students.findOne({
       where: { schooluserid },
     });
-  importstudents = (newstudents: Array<students>) =>
-    students.bulkCreate(newstudents);
-  importstudent = (newstudent: students) => students.create({ ...newstudent });
+  // No caller today; kept writing both school columns so a future one cannot
+  // insert a learner with a name and no id.
+  importstudents = async (newstudents: Array<studentsAttributes>) =>
+    students.bulkCreate(await withSchoolIds(newstudents));
+  importstudent = async (newstudent: studentsAttributes) =>
+    students.create((await withSchoolIds([{ ...newstudent }]))[0]);
   getstudent = (studentid: string) =>
     students.findOne({ where: { studentid } });
 
@@ -125,7 +129,9 @@ export class StudentBusiness {
         {
           model: schoolusers,
           attributes: {
-            exclude: [`schooluserpasswordhash`, "schoolname", "schooluserid"],
+            // `schoolid` too: an include with its own `attributes` bypasses the model's
+            // default scope (SCHOOL_ID_DEFAULT_SCOPE), so it is excluded here by hand.
+            exclude: [`schooluserpasswordhash`, "schoolname", "schooluserid", "schoolid"],
           },
           where: schooluserwhere,
         },
@@ -262,7 +268,9 @@ export class StudentBusiness {
         {
           model: schoolusers,
           attributes: {
-            exclude: [`schooluserpasswordhash`, "schoolname", "schooluserid"],
+            // `schoolid` too: an include with its own `attributes` bypasses the model's
+            // default scope (SCHOOL_ID_DEFAULT_SCOPE), so it is excluded here by hand.
+            exclude: [`schooluserpasswordhash`, "schoolname", "schooluserid", "schoolid"],
           },
         },
         {
@@ -295,10 +303,13 @@ export class StudentBusiness {
     const student = await students.count({ where: { studentid } });
     return student > 0;
   };
-  createStudents = (
+  createStudents = async (
     studentdata: Array<studentsAttributes>,
     transaction: Transaction
-  ) => students.bulkCreate(studentdata, { transaction });
+  ) =>
+    students.bulkCreate(await withSchoolIds(studentdata, transaction), {
+      transaction,
+    });
 
   getstudentcountbyschool = (schoolname: string) =>
     students.count({ where: { schoolname } });
@@ -326,7 +337,16 @@ export class StudentBusiness {
       },
     );
 
-  getstudentstats = (studentid: string) =>
+  // `ss.*` selects every column of `students`, so the C4 `schoolid` would reach the
+  // response. It is stripped (see SCHOOL_ID_DEFAULT_SCOPE) until readers move to it.
+  getstudentstats = async (studentid: string) => {
+    const rows = await this.getstudentstatsrows(studentid);
+    return (rows as Array<Record<string, unknown>>).map(
+      ({ schoolid: _schoolid, ...rest }) => rest,
+    );
+  };
+
+  private getstudentstatsrows = (studentid: string) =>
     dbinstance.getdbinstance().query(
       `SELECT 
       ss.*,
@@ -672,6 +692,10 @@ WHERE
         ]
       });
       if(!standard && parseInt(x.is_teacher_acc ?? '0') !== 1) throw new ApiError(ErrorCode.INVALID_INPUT, "That school or class doesn't exist.", { fields: [{ field: 'standard', message: "That school or class doesn't exist." }] });
+      // The id of the school the row now names, resolved in this transaction. A
+      // learner moved to another school gets that school's id together with its
+      // name; a name that matches no school fails the whole update.
+      const schoolid = await requireSchoolIdByName(x.schoolname, transaction);
       const doj = x.dateofjoin;
       const dob = x.dateofbirth;
       const currs = await curriculums.findAll({
@@ -706,6 +730,7 @@ WHERE
           fathername: x.fathername,
           mothername: x.mothername,
           schoolname: x.schoolname,
+          schoolid,
           schooltype: x.schooltype,
           standard: standard?.standardid,
           studentlastname: x.studentlastname,
@@ -726,9 +751,10 @@ WHERE
       if(!user) {
         throw new ApiError(ErrorCode.NOT_FOUND, "That student's account doesn't exist.");
       } else {
-        // update school name
+        // update school name and id together
         user.schoolname = x.schoolname;
-        await user.save({fields: ['schoolname'], transaction});
+        user.schoolid = schoolid;
+        await user.save({fields: ['schoolname', 'schoolid'], transaction});
       }
       // change user id
       if(
