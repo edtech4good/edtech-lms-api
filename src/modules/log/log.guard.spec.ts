@@ -44,6 +44,8 @@ const signToken = (roles: string[]) =>
       lmsuserid: "user-1",
       lmsuserroles: roles,
       permissions: [],
+      organisationid: null,
+      isplatform: false,
     },
     Config.fortyk.api.applicationsecret,
     { expiresIn: "5m" }

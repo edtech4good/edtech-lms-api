@@ -4,7 +4,7 @@ import { sign, verify } from "jsonwebtoken";
 import { SUPERADMIN_USERNAME } from "src/models/enums/permissions.enum";
 import { LoginTokens } from "src/modules/auth";
 import { v4 as uuidv4 } from "uuid";
-import { Config, isLocalEnv } from "../config";
+import { Config, isLocalEnv, Logger } from "../config";
 import {
   lmsusers,
   lmsusersAttributes,
@@ -12,8 +12,47 @@ import {
   students,
   tokens,
 } from "../models/data-models/init-models";
-import { TokenType } from "../models/enums";
+import { Role, TokenType } from "../models/enums";
+import { ApiError } from "../models/ApiError";
+import { ErrorCode } from "../models/enums/errorcode.enum";
+import { organisations } from "../models/data-models/organisations";
 import { RolePermissionBusiness } from "./role-permission.business";
+
+/** The two organisation claims a staff access token carries. */
+export interface OrganisationClaims {
+  organisationid: string | null;
+  isplatform: boolean;
+}
+
+/**
+ * What a staff user's token says about organisations, from the database row
+ * and the roles the user holds now (never from an earlier token).
+ *
+ *  - Platform: the user has NO organisation AND holds Super Admin. The token
+ *    acts in no organisation (`organisationid: null`) unless a platform user
+ *    asks to act as one (`acting`, only for a platform user; anything else
+ *    throws, because only the switcher passes it and it checks first).
+ *  - A user who HAS an organisation is never platform, whatever roles they
+ *    hold, and acts in that organisation.
+ *  - A user with no organisation and without Super Admin gets
+ *    `{ organisationid: null, isplatform: false }`. That state still signs in
+ *    here. The package that assigns every staff user an organisation must make
+ *    sign-in refuse it: such a token acts in no organisation and is not
+ *    platform, so it must not be allowed to exist once organisations are
+ *    assigned.
+ */
+export const organisationClaims = (
+  userorganisationid: string | null | undefined,
+  roleids: ReadonlyArray<string>,
+  acting?: string | null,
+): OrganisationClaims => {
+  const own = userorganisationid ?? null;
+  const isplatform = own === null && roleids.includes(Role.superadmin);
+  if (acting !== undefined && acting !== null && !isplatform) {
+    throw new Error("Only a platform user can act as an organisation.");
+  }
+  return { organisationid: isplatform ? acting ?? null : own, isplatform };
+};
 
 export class TokenBusiness {
   generateToken = (
@@ -121,9 +160,37 @@ export class TokenBusiness {
   clearAccessToken = (userid: string) =>
     this.deleteToken(userid, TokenType.ACCESS);
 
+  /**
+   * Mints a staff access token (and a new refresh token), replacing the user's
+   * previous ones. Every staff token comes from here: sign-in, refresh and
+   * `POST /auth/organisation` (`options.actingorganisationid`, which the
+   * caller has already validated). `user` must be freshly read from the
+   * database with its roles: the claims are derived from it, never copied from
+   * an earlier token.
+   *
+   * Refuses (the same LOGIN_FAILED answer as a bad password, so the reason is
+   * not revealed; refresh maps any failure to SIGN_IN_REQUIRED) when the user's
+   * organisation is deleted or suspended, before any token is touched.
+   */
   generateAuthToken = async (
-    user: lmsusers
+    user: lmsusers,
+    options: { actingorganisationid?: string | null } = {}
   ): Promise<LoginTokens> => {
+    if (user.organisationid) {
+      const usable = await organisations.count({
+        where: {
+          organisationid: user.organisationid,
+          isdeleted: false,
+          organisationstatus: true,
+        },
+      });
+      if (usable === 0) {
+        Logger.info("Sign-in blocked: organisation suspended or deleted", {
+          username: user.lmsusername,
+        });
+        throw new ApiError(ErrorCode.LOGIN_FAILED);
+      }
+    }
     // Username shortcut: being `superadmin@superadmin.com` grants every
     // permission plus the `superadmin` wildcard by email alone, bypassing RBAC.
     // Honoured only in local/dev/test. In production the seeded superadmin holds
@@ -144,6 +211,11 @@ export class TokenBusiness {
     // everyone, so it says nothing about who the bearer is. It stays in the
     // payload because clients read it, but nothing authorizes on it.
     const lmsuserroles = (user.roles ?? []).map((role) => role.roleid);
+    const { organisationid, isplatform } = organisationClaims(
+      user.organisationid,
+      lmsuserroles,
+      options.actingorganisationid,
+    );
     const userpayload = {
       lmsusername: user.lmsusername,
       lmsuserrole: user.lmsuserrole,
@@ -154,6 +226,8 @@ export class TokenBusiness {
       permissions: permissions,
       countries: user.countries,
       schools: user.schools,
+      organisationid,
+      isplatform,
     };
     const accessid = uuidv4();
     const accessToken = this.generateToken(

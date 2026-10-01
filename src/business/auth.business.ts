@@ -1,4 +1,7 @@
 import { lmsusers, students } from "../models/data-models/init-models";
+import { LmsUserToken } from "src/models/token.model";
+import { OrganisationBusiness } from "./organisation.business";
+import { organisationClaims } from "./token.business";
 import { hashPassword, verifyPassword } from "src/services/password.service";
 import { TokenType } from "src/models/enums";
 import { TokenBusiness, UserBusiness } from ".";
@@ -85,6 +88,54 @@ export class AuthBusiness {
     } catch (error) {
       throw new ApiError(ErrorCode.SIGN_IN_REQUIRED);
     }
+  };
+
+  /**
+   * `POST /auth/organisation`: a platform user starts acting as one
+   * organisation, or (`null`) returns to "all organisations". Issues a fresh
+   * access token, which replaces the old one (one access token per user), and
+   * a new refresh token, exactly as sign-in does.
+   *
+   * PlatformGuard has already checked the caller's token; the database decides
+   * again here, because the user is re-read and the claims are rebuilt from it:
+   * a user who is no longer platform (an organisation assigned, Super Admin
+   * removed) is refused with 403, a disabled one must sign in again. A target
+   * organisation that does not exist, is deleted or is suspended is one 404
+   * for all three, so the answer does not reveal which.
+   *
+   * The token's own organisation ("from") is written to the audit line with
+   * the target ("to"), once, after the new token exists.
+   */
+  switchOrganisation = async (
+    caller: LmsUserToken,
+    fromorganisationid: string | null,
+    organisationid: string | null
+  ) => {
+    const user = await new UserBusiness().getuserbyid(caller.lmsuserid);
+    if (!user || user.isdisabled) {
+      throw new ApiError(ErrorCode.SIGN_IN_REQUIRED);
+    }
+    const roleids = (user.roles ?? []).map((role) => role.roleid);
+    if (!organisationClaims(user.organisationid, roleids).isplatform) {
+      throw new ApiError(ErrorCode.NOT_ALLOWED);
+    }
+    if (
+      organisationid !== null &&
+      !(await new OrganisationBusiness().getactiveorganisation(organisationid))
+    ) {
+      throw new ApiError(ErrorCode.NOT_FOUND, "That organisation doesn't exist.");
+    }
+    const tokens = await new TokenBusiness().generateAuthToken(user, {
+      actingorganisationid: organisationid,
+    });
+    Logger.info("Platform user switched organisation", {
+      audit: "organisation-switch",
+      lmsuserid: user.lmsuserid,
+      username: user.lmsusername,
+      fromorganisationid,
+      toorganisationid: organisationid,
+    });
+    return tokens;
   };
 
   changePassword = async (changePasswordToken: string, newPassword: string) => {

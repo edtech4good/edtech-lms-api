@@ -320,6 +320,16 @@ export function initModels(sequelize: Sequelize) {
     as: "country",
     foreignKey: "countryid",
   });
+  schools.belongsTo(organisations, {
+    as: "organisation",
+    foreignKey: "organisationid",
+  });
+  organisations.hasMany(schools, { as: "schools", foreignKey: "organisationid" });
+  lmsusers.belongsTo(organisations, {
+    as: "organisation",
+    foreignKey: "organisationid",
+  });
+  organisations.hasMany(lmsusers, { as: "lmsusers", foreignKey: "organisationid" });
 
   grades.belongsTo(curriculums, {
     as: "curriculum",

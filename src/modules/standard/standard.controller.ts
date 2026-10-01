@@ -26,6 +26,7 @@ import { StandardBusiness } from "src/business/standard.business";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
 import { AccessGuard } from "src/guards/access.guard";
+import { PlatformGuard } from "src/guards/platform.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { SchemaValidationInterceptor } from "src/interceptors";
 import { standardsAttributes } from "src/models/data-models/standard";
@@ -292,7 +293,7 @@ export class StandardController {
     status: 400,
     description: "Error while migrating",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin), PlatformGuard)
   @HttpCode(HttpStatus.OK)
   async migrateStandards(): Promise<any> {
     await new StandardBusiness().migrateStandards();
@@ -314,7 +315,7 @@ export class StandardController {
     status: 400,
     description: "Error while migrating",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin), PlatformGuard)
   @HttpCode(HttpStatus.OK)
   async removeStandards(): Promise<any> {
     await new StandardBusiness().removeStandards();

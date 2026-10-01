@@ -7,10 +7,10 @@ import { Role } from "src/models/enums";
 import { isPlatformUser, PlatformGuard } from "./platform.guard";
 
 /**
- * PlatformGuard is the one place that says who "the platform" is. For now: a
- * staff (lmsusers) token whose lmsuserroles include Super Admin. It runs after
- * AccessGuard has authenticated, so it is driven here directly with the
- * request AccessGuard would have produced.
+ * PlatformGuard is the one place that says who "the platform" is: a staff
+ * (lmsusers) token whose `isplatform` claim is true. It runs after AccessGuard
+ * has authenticated, so it is driven here directly with the request
+ * AccessGuard would have produced.
  */
 const contextFor = (request: unknown): ExecutionContext =>
   ({ switchToHttp: () => ({ getRequest: () => request }) } as unknown as ExecutionContext);
@@ -18,36 +18,51 @@ const contextFor = (request: unknown): ExecutionContext =>
 const run = (user: unknown) =>
   new PlatformGuard().canActivate(contextFor({ user }));
 
-const staff = (roles: unknown) => ({ lmsuserid: "u1", lmsuserroles: roles });
+const platform = (extra: Record<string, unknown> = {}) => ({
+  lmsuserid: "u1",
+  lmsuserroles: [Role.superadmin],
+  organisationid: null,
+  isplatform: true,
+  ...extra,
+});
 
 describe("PlatformGuard", () => {
-  it("passes a staff user holding the Super Admin role", () => {
-    expect(run(staff([Role.superadmin]))).toBe(true);
+  it("passes a staff token whose isplatform claim is true", () => {
+    expect(run(platform())).toBe(true);
   });
 
-  it("passes when Super Admin is one of several roles", () => {
-    expect(run(staff([Role.teacher, Role.superadmin, Role.admin]))).toBe(true);
+  it("still passes while the platform user is acting as an organisation", () => {
+    expect(run(platform({ organisationid: "11111111-1111-4111-8111-111111111111" }))).toBe(true);
   });
 
-  it("refuses an Admin with 403, not 401", () => {
-    expect(() => run(staff([Role.admin]))).toThrow(ForbiddenException);
-    expect(() => run(staff([Role.admin]))).not.toThrow(UnauthorizedException);
+  it("decides on the claim alone: it does not look at lmsuserroles", () => {
+    expect(run(platform({ lmsuserroles: [] }))).toBe(true);
+    expect(run({ lmsuserid: "u1", isplatform: true })).toBe(true);
   });
 
-  it("refuses a Teacher with 403", () => {
-    expect(() => run(staff([Role.teacher]))).toThrow(ForbiddenException);
+  it("refuses an organisation's staff with 403 even when they hold Super Admin (the claim is false)", () => {
+    const orgSuperAdmin = platform({ isplatform: false, organisationid: "o1" });
+    expect(() => run(orgSuperAdmin)).toThrow(ForbiddenException);
+    expect(() => run(orgSuperAdmin)).not.toThrow(UnauthorizedException);
   });
 
-  it("refuses the User and API Key roles with 403", () => {
-    expect(() => run(staff([Role.user]))).toThrow(ForbiddenException);
-    expect(() => run(staff([Role.apikey]))).toThrow(ForbiddenException);
+  it("refuses a staff user with no organisation and no Super Admin (isplatform false)", () => {
+    expect(() => run(platform({ isplatform: false, lmsuserroles: [Role.admin] }))).toThrow(
+      ForbiddenException
+    );
   });
 
-  it("refuses a user with no roles, an empty list, or a token minted before roles existed", () => {
-    expect(() => run(staff([]))).toThrow(ForbiddenException);
+  it("refuses holding the Super Admin role when the claim is missing: a token minted before the claim existed", () => {
+    expect(() => run({ lmsuserid: "u1", lmsuserroles: [Role.superadmin] })).toThrow(
+      ForbiddenException
+    );
     expect(() => run({ lmsuserid: "u1" })).toThrow(ForbiddenException);
-    expect(() => run(staff(undefined))).toThrow(ForbiddenException);
-    expect(() => run(staff(null))).toThrow(ForbiddenException);
+  });
+
+  it("requires the claim to be the boolean true: strings, numbers, objects and arrays do not count", () => {
+    for (const bad of ["true", 1, "1", {}, [], null, undefined, "yes"]) {
+      expect(() => run(platform({ isplatform: bad }))).toThrow(ForbiddenException);
+    }
   });
 
   it("answers 401 when there is no user on the request at all", () => {
@@ -67,7 +82,7 @@ describe("PlatformGuard", () => {
     expect(() => run("API KEY")).toThrow(ForbiddenException);
   });
 
-  it("refuses a school-user (teacher/learner) token, which never carries lmsuserroles", () => {
+  it("refuses a school-user (teacher/learner) token, which carries no staff id and no claim", () => {
     expect(() =>
       run({ schooluserid: "s1", schooluserrole: 3, schoolusername: "t1" })
     ).toThrow(ForbiddenException);
@@ -75,32 +90,19 @@ describe("PlatformGuard", () => {
 
   it("does not trust the legacy lmsuserrole column, which is stamped superadmin on every account", () => {
     expect(() =>
-      run({ lmsuserid: "u1", lmsuserrole: Role.superadmin, lmsuserroles: [Role.teacher] })
+      run({ lmsuserid: "u1", lmsuserrole: Role.superadmin, lmsuserroles: [Role.superadmin] })
     ).toThrow(ForbiddenException);
-    expect(() =>
-      run({ lmsuserid: "u1", lmsuserrole: Role.superadmin })
-    ).toThrow(ForbiddenException);
-  });
-
-  it("requires lmsuserroles to be a real array: a string containing the roleid does not count", () => {
-    expect(() => run(staff(Role.superadmin))).toThrow(ForbiddenException);
-    expect(() => run(staff(`x${Role.superadmin}x`))).toThrow(ForbiddenException);
-    expect(() => run(staff({ includes: () => true }))).toThrow(ForbiddenException);
   });
 
   it("requires a staff user id: a platform action is recorded against a user", () => {
-    expect(() => run({ lmsuserroles: [Role.superadmin] })).toThrow(ForbiddenException);
-    expect(() => run({ lmsuserid: "", lmsuserroles: [Role.superadmin] })).toThrow(
-      ForbiddenException
-    );
-    expect(() => run({ lmsuserid: 7, lmsuserroles: [Role.superadmin] })).toThrow(
-      ForbiddenException
-    );
+    expect(() => run({ isplatform: true })).toThrow(ForbiddenException);
+    expect(() => run({ lmsuserid: "", isplatform: true })).toThrow(ForbiddenException);
+    expect(() => run({ lmsuserid: 7, isplatform: true })).toThrow(ForbiddenException);
   });
 
   it("exposes the same rule as isPlatformUser, false for anything that is not an object", () => {
-    expect(isPlatformUser(staff([Role.superadmin]))).toBe(true);
-    expect(isPlatformUser(staff([Role.admin]))).toBe(false);
+    expect(isPlatformUser(platform())).toBe(true);
+    expect(isPlatformUser(platform({ isplatform: false }))).toBe(false);
     expect(isPlatformUser(undefined)).toBe(false);
     expect(isPlatformUser(null)).toBe(false);
     expect(isPlatformUser("Mapyr2Pw")).toBe(false);

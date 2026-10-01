@@ -53,25 +53,47 @@ import {
 
 // Pinned on purpose. When you add or remove a route, update these numbers AND
 // run `npm run routes:policy -- --write` to refresh the committed files.
-const EXPECTED_TOTAL = 281;
+const EXPECTED_TOTAL = 282;
 const EXPECTED_BY_POLICY = {
   public: 11,
   self: 4,
   owned: 243,
-  platform: 17,
+  platform: 18,
   server: 1,
   global: 5,
 };
 
 // How the routes divide by enforcement, stated explicitly (they sum to the
 // total):
-//  - enforced by a guard: self 4 + global 5 + platform with PlatformGuard 5 = 14
+//  - enforced by a guard: self 4 + global 5 + platform with PlatformGuard 18 = 27
 //  - not applicable (public): 11
 //  - pending the organisation boundary: owned 243 + platform without
-//    PlatformGuard 12 + server 1 = 256
-const EXPECTED_ENFORCED_BY_GUARD = 14;
+//    PlatformGuard 0 + server 1 = 244
+const EXPECTED_ENFORCED_BY_GUARD = 27;
 const EXPECTED_NOT_APPLICABLE = 11;
-const EXPECTED_PENDING = 256;
+const EXPECTED_PENDING = 244;
+// Every `platform` route has PlatformGuard (18 routes), pinned by name so
+// moving a route out of the platform set is a conscious edit.
+const EXPECTED_PLATFORM = [
+  "DELETE /country/:countryid",
+  "DELETE /organisation/:organisationid",
+  "DELETE /roles/:roleid",
+  "GET /organisation",
+  "GET /organisation/:organisationid",
+  "POST /auth/organisation",
+  "POST /country/create",
+  "POST /lesson/update_reward_points",
+  "POST /level/update_quiz_points",
+  "POST /organisation",
+  "POST /roles/create",
+  "POST /standard/migrate-standardid",
+  "POST /standard/remove-standardid",
+  "POST /student/migrate-standardid",
+  "POST /student/migrate-subject-curriculum",
+  "PUT /country/:countryid",
+  "PUT /organisation/:organisationid",
+  "PUT /roles/:roleid",
+];
 
 // The `self` and `global` sets are pinned by name, so moving a route into
 // either one is a conscious edit.
@@ -134,7 +156,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("pending enforcement", () => {
-    it("divides the routes into 14 enforced by a guard, 11 not applicable (public) and 256 pending", () => {
+    it("divides the routes into 27 enforced by a guard, 11 not applicable (public) and 244 pending", () => {
       const count = (state: string) => routes.filter((r) => enforcementState(r) === state).length;
       expect(count("yes")).toBe(EXPECTED_ENFORCED_BY_GUARD);
       expect(count("n/a")).toBe(EXPECTED_NOT_APPLICABLE);
@@ -169,8 +191,24 @@ describe("route inventory (real application wiring)", () => {
     it("PlatformGuard routes are `platform`", () => {
       const wrong = routes.filter((r) => r.hasPlatformGuard && r.policy !== "platform");
       expect(wrong.map(key)).toEqual([]);
-      // and the guard is actually found on the organisation routes
-      expect(routes.filter((r) => r.hasPlatformGuard)).toHaveLength(5);
+      // and the guard is actually found on every platform route
+      expect(routes.filter((r) => r.hasPlatformGuard)).toHaveLength(18);
+    });
+
+    it("every `platform` route has PlatformGuard, and they are the 18 named routes", () => {
+      expect(routes.filter((r) => r.policy === "platform").map(key).sort()).toEqual([...EXPECTED_PLATFORM].sort());
+      expect(routes.filter((r) => r.policy === "platform" && !r.hasPlatformGuard).map(key)).toEqual([]);
+    });
+
+    it("on a PlatformGuard route the guards run in order: authentication, then PlatformGuard, then permissions", () => {
+      const platform = routes.filter((r) => r.hasPlatformGuard);
+      const misordered = platform.filter((r) => {
+        const at = r.guards.lastIndexOf("PlatformGuard");
+        const lastAuth = Math.max(...r.guards.map((g, i) => (g.startsWith("AccessGuard") ? i : -1)));
+        const permission = r.guards.indexOf("CheckPermissionsGuard");
+        return !(lastAuth >= 0 && lastAuth < at && (permission === -1 || at < permission));
+      });
+      expect(misordered.map(key)).toEqual([]);
     });
 
     it("routes with no authentication guard are `public`, and `public` routes have none", () => {

@@ -36,7 +36,14 @@ jest.mock("src/business", () => ({
 const COUNTRY = "22222222-2222-4222-8222-222222222222";
 const ORG = "11111111-1111-4111-8111-111111111111";
 const TOKEN = `Bearer ${sign(
-  { jti: "j", lmsuserid: "u1", lmsuserroles: [Role.superadmin], permissions: ["superadmin"] },
+  {
+    jti: "j",
+    lmsuserid: "u1",
+    lmsuserroles: [Role.superadmin],
+    permissions: ["superadmin"],
+    organisationid: null,
+    isplatform: true,
+  },
   Config.fortyk.api.applicationsecret,
   { expiresIn: "5m" },
 )}`;

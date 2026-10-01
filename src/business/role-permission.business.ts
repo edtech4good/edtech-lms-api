@@ -10,7 +10,11 @@ import { lmsusers } from "src/models/data-models/lmsusers";
 import { permissionstitle } from "src/models/data-models/permissionstitle";
 import { NodeLeaf, TreeNode } from "src/modules/role-permission/models/RoleBase";
 import _ from "lodash";
-import { dbinstance } from "src/services/dbservice";
+import { dbinstance, rollbackQuietly } from "src/services/dbservice";
+import {
+  holdsSuperAdmin,
+  revokeIfSuperAdminRemoved,
+} from "./session-revocation";
 import { SUPERADMIN } from "src/models/enums/permissions.enum";
 import { LmsUserToken } from "src/models/token.model";
 import { IMultiPaging } from '../models/IPaging';
@@ -257,9 +261,29 @@ export class RolePermissionBusiness {
     }
 
     bindUserRoles = async (rolePerms: BindUserRolesRequest) => {
-        const user = await lmsusers.findOne({ where: { lmsuserid: rolePerms.lmsuserid }});
-        const selectedroles = await roles.findAll({ where: { roleid: { [Op.in]: rolePerms.rolesid} } });
-        return await user?.setRoles(selectedroles);
+        // One transaction: the new role set and, if Super Admin is being
+        // removed, the end of that user's sessions commit together.
+        const transaction = await dbinstance.getdbinstance().transaction();
+        try {
+            const user = await lmsusers.findOne({ where: { lmsuserid: rolePerms.lmsuserid }, transaction });
+            const selectedroles = await roles.findAll({ where: { roleid: { [Op.in]: rolePerms.rolesid} }, transaction });
+            let result;
+            if (user) {
+                const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
+                result = await user.setRoles(selectedroles, { transaction });
+                await revokeIfSuperAdminRemoved(
+                    user.lmsuserid,
+                    hadSuperAdmin,
+                    selectedroles.map((r) => r.roleid),
+                    transaction,
+                );
+            }
+            await transaction.commit();
+            return result;
+        } catch (e) {
+            await rollbackQuietly(transaction);
+            throw e;
+        }
     }
 
     getallPerms = async () => {

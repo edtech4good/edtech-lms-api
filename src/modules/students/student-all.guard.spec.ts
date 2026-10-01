@@ -35,6 +35,9 @@ const buildToken = (roles: Array<string>, permissions: Array<string>) =>
       lmsuserid: "u1",
       lmsuserroles: roles,
       permissions,
+      // The organisation claims every staff token carries: no organisation, not platform.
+      organisationid: null,
+      isplatform: false,
     },
     Config.fortyk.api.applicationsecret,
     { expiresIn: "5m" }

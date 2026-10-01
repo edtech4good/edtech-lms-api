@@ -9,9 +9,9 @@ import { JwtAccessStrategy } from "src/services/auth.strategy";
 import { OrganisationController } from "./organisation.controller";
 
 /**
- * Every organisation route needs: a valid staff access token, AND the Super
- * Admin role (PlatformGuard - the interim meaning of "platform"), AND the
- * route's own permission. Driven over real HTTP through the real JWT strategy
+ * Every organisation route needs: a valid staff access token, AND to be the
+ * platform (PlatformGuard: the token's `isplatform` claim), AND the route's own
+ * permission. Driven over real HTTP through the real JWT strategy
  * and the real guards, in the style of school-reads.guard.spec.ts; only the
  * business class (the database) is replaced.
  */
@@ -56,8 +56,25 @@ const bearer = (claims: Record<string, unknown>) =>
 
 const ALL = ["view_organisation", "create_organisation", "update_organisation", "delete_organisation"];
 
+// A staff token the way generateAuthToken mints it: the user has no
+// organisation, and is platform exactly when they hold Super Admin.
 const staff = (roles: string[], permissions: string[]) =>
-  bearer({ lmsuserid: "u1", lmsuserroles: roles, permissions });
+  bearer({
+    lmsuserid: "u1",
+    lmsuserroles: roles,
+    permissions,
+    organisationid: null,
+    isplatform: roles.includes(Role.superadmin),
+  });
+// An organisation's staff user: has an organisation, never platform.
+const orgStaff = (roles: string[], permissions: string[]) =>
+  bearer({
+    lmsuserid: "u2",
+    lmsuserroles: roles,
+    permissions,
+    organisationid: "33333333-3333-4333-8333-333333333333",
+    isplatform: false,
+  });
 
 const platformWithAll = staff([Role.superadmin], ALL);
 const platformWildcard = staff([Role.superadmin], ["superadmin"]);
@@ -191,9 +208,31 @@ describe("Organisation routes: staff token + Super Admin role + permission", () 
       expect(businessCalls()).toBe(0);
     });
 
-    it("refuses a staff token that predates roles (no lmsuserroles) with 403", async () => {
-      await send(app, route, bearer({ lmsuserid: "u1", permissions: ["superadmin", ...ALL] })).expect(403);
+    it("refuses a staff token minted before the organisation claims existed with 401: it fails closed at the strategy", async () => {
+      await send(
+        app,
+        route,
+        bearer({ lmsuserid: "u1", lmsuserroles: [Role.superadmin], permissions: ["superadmin", ...ALL] }),
+      ).expect(401);
       expect(businessCalls()).toBe(0);
+    });
+
+    it("refuses an organisation's staff holding Super Admin and every permission with 403: isplatform is false", async () => {
+      const res = await send(app, route, orgStaff([Role.superadmin], [...ALL, "superadmin"])).expect(403);
+      expect(res.body.code).toBe("NOT_ALLOWED");
+      expect(businessCalls()).toBe(0);
+    });
+
+    it("passes a platform user who is acting as an organisation: the claim stays true", async () => {
+      const acting = bearer({
+        lmsuserid: "u1",
+        lmsuserroles: [Role.superadmin],
+        permissions: ["superadmin"],
+        organisationid: "33333333-3333-4333-8333-333333333333",
+        isplatform: true,
+      });
+      await send(app, route, acting).expect(200);
+      expect(route.business).toHaveBeenCalled();
     });
 
     it("refuses a school-user teacher token with 403", async () => {

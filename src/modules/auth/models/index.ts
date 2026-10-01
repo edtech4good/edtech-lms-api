@@ -9,3 +9,4 @@ export * from './LogoutResponse';
 export * from './RefreshtokenRequestBody';
 export * from './ChangePasswordBody';
 export * from './VerifyEmailTokenRequestBody';
+export * from './SwitchOrganisationRequestBody';

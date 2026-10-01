@@ -14,6 +14,7 @@ import {
 } from "@nestjs/common";
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiExtraModels,
   ApiQuery,
   ApiResponse,
@@ -22,6 +23,11 @@ import {
 } from "@nestjs/swagger";
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { AccessGuard } from "src/guards/access.guard";
+import { PlatformGuard } from "src/guards/platform.guard";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { User } from "src/decorators/user.decorator";
+import { LmsUserToken } from "src/models/token.model";
+import { RejectPrototypeKeysInterceptor } from "src/interceptors/rejectprototypekeys.interceptor";
 import { Logger } from "src/config";
 import { signInRequiredIfUserGone } from "src/services/session.service";
 import { ApiError } from "src/models/ApiError";
@@ -46,6 +52,7 @@ import {
   changePassword,
   login,
   sendverifyemail,
+  switchorganisation,
   teacherlogin,
 } from "./auth.request.validator";
 import { ChangePasswordBody } from "./models/ChangePasswordBody";
@@ -54,6 +61,7 @@ import { EmailverficationResponse } from "./models/EmailverficationResponse";
 import { EmailVerificationRequestBody } from "./models/EmailVerificationRequestBody";
 import { LoginRequestBody } from "./models/LoginRequestBody";
 import { LoginResponseModel, LoginTokens } from "./models/LoginResponse";
+import { SwitchOrganisationRequestBody } from "./models/SwitchOrganisationRequestBody";
 import { LogoutResponse } from "./models/LogoutResponse";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiExtraModels(LoginTokens)
@@ -103,6 +111,41 @@ export class AuthController {
     );
     return {
       data: await new TokenBusiness().generateAuthToken(userloggedinfo),
+      error: false,
+    };
+  }
+
+  @OrgPolicy("platform", { note: "Platform users only: chooses the organisation the new token acts in." })
+  @Post("organisation")
+  @ApiBearerAuth()
+  @ApiBody({ type: SwitchOrganisationRequestBody })
+  @ApiResponse({
+    status: 200,
+    description: "A new access token and refresh token that act in the chosen organisation (or in none, for null). The previous tokens stop working.",
+    schema: { $ref: getSchemaPath(LoginResponseModel) },
+  })
+  @ApiResponse({ status: 400, description: "Invalid input" })
+  @ApiResponse({ status: 401, description: "Not signed in" })
+  @ApiResponse({ status: 403, description: "Not the platform" })
+  @ApiResponse({ status: 404, description: "No such organisation (also: deleted or suspended)" })
+  @ApiResponse({ status: 500, description: "Server error" })
+  @UseInterceptors(
+    new RejectPrototypeKeysInterceptor(),
+    new SchemaValidationInterceptor(switchorganisation)
+  )
+  @UseGuards(AccessGuard(TokenType.ACCESS), PlatformGuard)
+  @HttpCode(HttpStatus.OK)
+  async switchorganisation(
+    @Body() body: SwitchOrganisationRequestBody,
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
+  ): Promise<LoginResponseModel> {
+    return {
+      data: await new AuthBusiness().switchOrganisation(
+        user,
+        org.organisationid,
+        body.organisationid
+      ),
       error: false,
     };
   }

@@ -50,6 +50,8 @@ const teacher = `Bearer ${sign(
     lmsuserid: "teacher-1",
     lmsuserroles: [Role.teacher],
     permissions: ["view_import"],
+    organisationid: null,
+    isplatform: false,
   },
   Config.fortyk.api.applicationsecret,
   { expiresIn: "5m" }

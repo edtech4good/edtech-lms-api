@@ -13,6 +13,7 @@ import { IPaging } from "src/models/IPaging";
 import { buildWhere } from "src/services/util.service";
 import { LmsUserToken } from "src/models/token.model";
 import { dbinstance } from "src/services/dbservice";
+import { holdsSuperAdmin, revokeIfSuperAdminRemoved } from "./session-revocation";
 import { RolePermissionBusiness } from "./role-permission.business";
 
 export class UserBusiness {
@@ -112,9 +113,11 @@ export class UserBusiness {
     try {
       const lmsuser = await lmsusers.findOne({ where: { lmsuserid } });
       if(lmsuser) {
+        const hadSuperAdmin = await holdsSuperAdmin(lmsuser, transaction);
         lmsuser.isdisabled = true;
         await lmsuser.save({fields: ['isdisabled'], transaction});
         await lmsuser.setRoles([], {transaction});
+        await revokeIfSuperAdminRemoved(lmsuser.lmsuserid, hadSuperAdmin, [], transaction);
       }
       await transaction.commit();
     } catch (e) {
@@ -260,7 +263,9 @@ export class UserBusiness {
           where: { roleid: lmsuserroles }
         });
         if(rls.length === lmsuserroles?.length) {
+          const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
           await user.setRoles(rls, {transaction});
+          await revokeIfSuperAdminRemoved(user.lmsuserid, hadSuperAdmin, rls.map((r) => r.roleid), transaction);
         }
         await transaction.commit();
         // The hash is loaded above (old or newly-set) so it can be preserved

@@ -16,6 +16,8 @@ export interface lmsusersAttributes {
   passwordchangekey?: string;
   countries?: Array<string>;
   schools?: Array<string>;
+  /** The organisation this staff user belongs to. NULL means none: a platform account (with Super Admin), or an account not yet assigned. */
+  organisationid?: string | null;
   created_at?: Date;
   created_by?: string;
   updated_at?: Date;
@@ -35,7 +37,8 @@ export type lmsusersOptionalAttributes =
   | "isverified"
   | "verifykey"
   | "isdisabled"
-  | "passwordchangekey";
+  | "passwordchangekey"
+  | "organisationid";
 export type lmsusersCreationAttributes = Optional<
   lmsusersAttributes,
   lmsusersOptionalAttributes
@@ -57,6 +60,7 @@ export class lmsusers
   passwordchangekey?: string;
   countries?: Array<string>;
   schools?: Array<string>;
+  organisationid?: string | null;
   created_at!: Date;
   created_by!: string;
   updated_at!: Date;
@@ -130,6 +134,14 @@ export class lmsusers
         schools: {
           type: DataTypes.JSON,
           allowNull: true,
+        },
+        organisationid: {
+          type: DataTypes.STRING(36),
+          allowNull: true,
+          references: {
+            model: "organisations",
+            key: "organisationid",
+          },
         },
         created_at: {
           type: "TIMESTAMP",

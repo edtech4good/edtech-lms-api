@@ -13,11 +13,8 @@ GET /baselinequestion/getall/:curriculumbaselineid  owned
 PUT /baselinequestion/order/:baselinequestionid/:baselinequestionorder  owned
 GET /country  owned+apikey
 POST /country  owned
-DELETE /country/:countryid  platform
 GET /country/:countryid  owned
-PUT /country/:countryid  platform
 GET /country/all  owned
-POST /country/create  platform
 POST /curriculum  owned
 DELETE /curriculum/:curriculumid  owned
 GET /curriculum/:curriculumid  owned
@@ -119,7 +116,6 @@ DELETE /lesson/quiz/question/:lessonquizquestionid  owned
 PUT /lesson/quiz/question/activate/:lessonquizquestionid  owned
 PUT /lesson/quiz/question/deactivate/:lessonquizquestionid  owned
 PUT /lesson/quiz/question/order/:lessonquizquestionid/:lessonquizquestionorder  owned
-POST /lesson/update_reward_points  platform
 POST /level  owned
 DELETE /level/:levelid  owned
 GET /level/:levelid  owned
@@ -135,7 +131,6 @@ PUT /level/quiz/question/activate/:levelquizquestionid  owned
 PUT /level/quiz/question/deactivate/:levelquizquestionid  owned
 PUT /level/quiz/question/order/:levelquizquestionid/:levelquizquestionorder  owned
 PUT /level/quiz/question/setlesson/:levelquizquestionid  owned
-POST /level/update_quiz_points  platform
 PUT /log/import  owned
 POST /question  owned
 DELETE /question/:questionid  owned
@@ -192,9 +187,6 @@ POST /report/studentstatus/download  owned
 GET /report/studentusage  owned
 POST /report/syncrecords  owned
 POST /report/techdowntime  owned
-DELETE /roles/:roleid  platform
-PUT /roles/:roleid  platform
-POST /roles/create  platform
 POST /roles/user-bind-role  owned
 GET /school  owned+apikey
 POST /school  owned
@@ -226,8 +218,6 @@ GET /standard/:standardid  owned
 PUT /standard/:standardid  owned
 GET /standard/all  owned+apikey
 POST /standard/create  owned
-POST /standard/migrate-standardid  platform
-POST /standard/remove-standardid  platform
 GET /standard/school/:schoolid  owned
 POST /student  owned
 DELETE /student/:schooluserid  owned
@@ -235,8 +225,6 @@ GET /student/:studentid  owned
 GET /student/all  owned
 POST /student/create  owned+apikey
 GET /student/download-students  owned+apikey
-POST /student/migrate-standardid  platform
-POST /student/migrate-subject-curriculum  platform
 GET /student/stats/:studentid  owned
 GET /student/stats/:studentid/level  owned
 GET /student/stats/:studentid/practice  owned

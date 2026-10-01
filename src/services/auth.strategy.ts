@@ -14,6 +14,19 @@ const validateToken = async (payload: any, expectedType: TokenType) => {
   }
 };
 
+/**
+ * Does this ACCESS-token payload carry the organisation claims every staff
+ * token has? `organisationid` must be present (a string, or null for "no
+ * organisation": absent is not the same as null) and `isplatform` must be a
+ * boolean. A staff token minted before these claims existed has neither, so it
+ * is refused and its owner signs in again.
+ */
+export const hasOrganisationClaims = (payload: any): boolean =>
+  payload !== null &&
+  typeof payload === "object" &&
+  (payload.organisationid === null || typeof payload.organisationid === "string") &&
+  typeof payload.isplatform === "boolean";
+
 @Injectable()
 export class JwtAccessStrategy extends PassportStrategy(
   Strategy,
@@ -32,7 +45,18 @@ export class JwtAccessStrategy extends PassportStrategy(
     // enforcing this (a 60-minute access token otherwise stays valid for
     // its full lifetime). An lmsuser token never carries `schooluserid`, so
     // this never touches that path. (#90.)
-    if (user.schooluserid && !STAFF_SCHOOL_ROLES.includes(user.schooluserrole)) {
+    if (user.schooluserid) {
+      if (!STAFF_SCHOOL_ROLES.includes(user.schooluserrole)) {
+        throw new UnauthorizedException();
+      }
+      // A school-user (teacher) token is a different shape: it has no
+      // organisation claims in this package.
+      return user;
+    }
+    // Everything else is a staff (lmsusers) access token, and fails closed: a
+    // token without the organisation claims predates them (or was not issued
+    // by this server) and is refused, so its owner signs in again.
+    if (!hasOrganisationClaims(user)) {
       throw new UnauthorizedException();
     }
     return user;
