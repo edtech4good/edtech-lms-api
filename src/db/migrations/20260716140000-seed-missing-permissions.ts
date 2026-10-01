@@ -1,6 +1,6 @@
 import { QueryInterface } from "sequelize";
 import { v4 as uuidv4 } from "uuid";
-import { Permission } from "../../models/enums/permissions.enum";
+import { PERMISSIONS_AS_SHIPPED_20260716 } from "../frozen/permissions-20260716";
 
 /**
  * The RBAC seed generates permissions from a {list,create,update,view,delete}
@@ -60,22 +60,11 @@ const TITLE_FOR_PERMISSION: Record<string, string> = {
 const REPORT_TITLE = "Report";
 
 /**
- * Permissions added to the enum AFTER this migration was written. They are
- * seeded by their own later migration (20261001120100-seed-organisation-
- * permissions), which also puts them under their own title and grants them.
- * Without this exclusion a fresh database would create them here, under the
- * "Report" title, before that migration ran. The set is frozen on purpose:
- * on every database that already ran this migration it changes nothing.
+ * The permissions this migration seeds: a frozen literal list, NOT the live
+ * `Permission` enum, so that adding to the enum later cannot change what this
+ * does on a fresh database (see ../frozen/permissions-20260716.ts).
  */
-const ADDED_LATER = new Set<string>([
-  "create_organisation",
-  "view_organisation",
-  "update_organisation",
-  "delete_organisation",
-]);
-const SEEDED_HERE: string[] = Object.values(Permission).filter(
-  (p) => !ADDED_LATER.has(p)
-);
+const SEEDED_HERE: string[] = [...PERMISSIONS_AS_SHIPPED_20260716];
 
 /** `view_plus_reach` -> "View plus reach". */
 const describe = (permissionname: string): string => {

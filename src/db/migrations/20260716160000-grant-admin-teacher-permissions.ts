@@ -1,5 +1,5 @@
 import { QueryInterface } from "sequelize";
-import { Permission } from "../../models/enums/permissions.enum";
+import { PERMISSIONS_AS_SHIPPED_20260716 } from "../frozen/permissions-20260716";
 
 /** Role enum values are roleids; these compare directly. */
 const ADMIN_ROLE_ID = "zr5ER4QD";
@@ -112,24 +112,12 @@ const READ_ONLY = /^(view|download)_/;
 const LEARNER_IDENTITY = /^(view_student|view_download_student)$/;
 
 /**
- * Permissions added to the enum after this migration was written. Admin and
- * Teacher must not receive them from here: the organisation permissions are
- * platform-only and are granted to Super Admin alone, by their own migration
- * (20261001120100-seed-organisation-permissions). Without this exclusion a
- * fresh database would hand Admin create/update/delete_organisation and
- * Teacher view_organisation. Frozen on purpose: on every database that
- * already ran this migration it changes nothing.
+ * Frozen literal list of the permissions that existed when this migration
+ * shipped, NOT the live `Permission` enum: an enum addition must never change
+ * what Admin and Teacher are granted on a fresh database (the organisation
+ * permissions are platform-only). See ../frozen/permissions-20260716.ts.
  */
-const ADDED_LATER = new Set<string>([
-  "create_organisation",
-  "view_organisation",
-  "update_organisation",
-  "delete_organisation",
-]);
-
-const ALL_PERMISSIONS: string[] = Object.values(Permission).filter(
-  (p) => !ADDED_LATER.has(p)
-);
+const ALL_PERMISSIONS: string[] = [...PERMISSIONS_AS_SHIPPED_20260716];
 
 const ADMIN_PERMISSIONS = ALL_PERMISSIONS.filter(
   (p) => !USER_ROLE_ADMINISTRATION.test(p)

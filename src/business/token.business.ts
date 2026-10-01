@@ -128,8 +128,10 @@ export class TokenBusiness {
     // permission plus the `superadmin` wildcard by email alone, bypassing RBAC.
     // Honoured only in local/dev/test. In production the seeded superadmin holds
     // the Super Admin role (migration 20260407120500 binds it, and migrations
-    // 20260407120500 + 20260716140000 together grant that role all 190
-    // permissions — both run in every environment), so it earns the same
+    // 20260407120500 + 20260716140000 grant that role every permission that
+    // existed then, and each later migration that adds permissions, such as
+    // 20261001120100 for the organisation ones, grants its own to Super Admin
+    // in the same migration — all run in every environment), so it earns the same
     // wildcard through the RBAC path — the shortcut is redundant there, and a
     // liability: any production account renamed to this address would get
     // everything.
