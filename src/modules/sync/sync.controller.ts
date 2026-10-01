@@ -128,7 +128,7 @@ export class SyncController {
     status: 500,
     description: "Server error",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.organisationadmin, Role.superadmin))
   @HttpCode(HttpStatus.OK)
   async synconline() {
     const zip = new AdmZip();
@@ -174,7 +174,7 @@ export class SyncController {
     status: 500,
     description: "Server error",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.organisationadmin, Role.superadmin))
   @HttpCode(HttpStatus.OK)
   async synconlineschool(@Param("schoolname") schoolname: string) {
     const studentusers =

@@ -338,7 +338,7 @@ export class UserBusiness {
       }],
       notFound: () => new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist."),
     });
-    const allroles = await new RolePermissionBusiness().getallroles();
+    const allroles = await new RolePermissionBusiness().getallroles(org);
     if(user) {
       const roles = allroles.filter(function (o1) {
         const matched = user.roles.some(function (o2) {

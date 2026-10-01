@@ -98,7 +98,7 @@ export class CountryController {
     })
     @HttpCode(HttpStatus.OK)
     // Role.teacher reads: feeds the country filter on the report screens.
-    @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.teacher))
+    @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher))
     @ApiBearerAuth()
     async getAll(): Promise<CountryAllResponse> {
         const data = await new CountryBusiness().getAllcountries();

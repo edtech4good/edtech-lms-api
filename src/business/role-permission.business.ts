@@ -95,7 +95,16 @@ export class RolePermissionBusiness {
     // from every Super Admin. Permission seeding now lives solely in the
     // idempotent migrations (20260407120500 + 20260716140000).
 
-    getallRoles = async (paging: IMultiPaging) => {
+    /**
+     * The roles a caller may see. A caller acting in an organisation (a user of
+     * one, or a platform user acting as one) is not shown Super Admin: they
+     * cannot give it, and it is the platform's role. A platform caller who is
+     * not acting as an organisation sees every role. The scope comes from the
+     * validated token (`@Org()`), never from the request; with no scope the
+     * call is refused (403).
+     */
+    getallRoles = async (paging: IMultiPaging, org: OrgContext) => {
+        const hideSuperAdmin = scopeOf(org).kind === "organisation";
         let where: WhereOptions<rolesAttributes> = {
             // isdeleted: false,
         };
@@ -107,12 +116,20 @@ export class RolePermissionBusiness {
         offset = limit * ((paging.pageindex || 1) - 1);
         }
         where = { ...constructWhere<rolesAttributes>(paging, where) };
+        if (hideSuperAdmin) {
+            // ANDed, so no filter in the request can bring it back.
+            where = { [Op.and]: [where, { roleid: { [Op.ne]: Role.superadmin } }] };
+        }
 
         return await roles.findAndCountAll({ where, order, limit, offset });
     }
 
-    getallroles = async () => {
-        const rls = await roles.findAll();
+    /** The id/text list the staff forms use. Same visibility rule as `getallRoles`. */
+    getallroles = async (org: OrgContext) => {
+        const hideSuperAdmin = scopeOf(org).kind === "organisation";
+        const all = await roles.findAll();
+        // Exact comparison here: the database compares ids without regard to case.
+        const rls = hideSuperAdmin ? all.filter((rl) => rl.roleid !== Role.superadmin) : all;
         const formatedroles = rls.map(rl => {
             return {
                 id: rl.roleid,
