@@ -22,7 +22,9 @@ const UserEmailExistsValidator = async (request: IRequest): Promise<ValidationEr
   return null;
 };
 const isNotUserEmailExistsValidator = async (request: IRequest): Promise<ValidationError | null | undefined> => {
-  const userexists = await new UserBusiness().isemailtaken(request.body.lmsusername);
+  // Same comparison as the handler: an address that matches no account's stored
+  // address exactly (after trimming, NFC and lower-casing) is "not registered".
+  const userexists = await new UserBusiness().isemailregisteredforrequest(request.body.lmsusername);
   if (!userexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];

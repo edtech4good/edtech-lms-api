@@ -13,6 +13,8 @@ import { IPaging } from "src/models/IPaging";
 import { buildWhere } from "src/services/util.service";
 import { LmsUserToken } from "src/models/token.model";
 import { dbinstance } from "src/services/dbservice";
+import { Logger } from "src/config";
+import { isSameEmailAddress } from "src/services/email-address";
 import { RolePermissionBusiness } from "./role-permission.business";
 
 export class UserBusiness {
@@ -53,6 +55,42 @@ export class UserBusiness {
         throw e;
     }
   };
+  /**
+   * The enabled accounts a password-reset or verification-email request names:
+   * accounts whose stored address IS the given address (isSameEmailAddress),
+   * not merely one the database finds close to it.
+   */
+  private static accountsNamedByAddress = async (address: string, includeDisabled: boolean) => {
+    const candidates = await lmsusers.findAll({
+      where: includeDisabled ? { lmsusername: address } : { lmsusername: address, isdisabled: false },
+    });
+    return candidates.filter((user) => isSameEmailAddress(user.lmsusername, address));
+  };
+
+  /**
+   * The one enabled account whose stored address is the given address, or null.
+   * Null as well when the address matches no account, matches only loosely
+   * (not the same text), or matches more than one account (nothing is acted on
+   * then; the event is logged without the address).
+   */
+  getuserforemailrequest = async (address: string) => {
+    const matches = await UserBusiness.accountsNamedByAddress(address, false);
+    if (matches.length > 1) {
+      Logger.warn("An email request matched more than one account; no action was taken");
+      return null;
+    }
+    return matches[0] ?? null;
+  };
+
+  /** Is exactly one account (enabled or not) stored under the given address? Same comparison as above. */
+  isemailregisteredforrequest = async (address: string) => {
+    const matches = await UserBusiness.accountsNamedByAddress(address, true);
+    if (matches.length > 1) {
+      Logger.warn("An email request matched more than one account; no action was taken");
+    }
+    return matches.length === 1;
+  };
+
   isemailtaken = async (lmsusername: string, excludeuserid?: string) => {
     let where: any = { lmsusername };
     if (excludeuserid) {
