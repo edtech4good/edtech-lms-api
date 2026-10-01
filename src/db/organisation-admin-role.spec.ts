@@ -201,6 +201,7 @@ describe("20261002120000-seed-organisation-admin-role down()", () => {
     const d = deletes(statements);
     expect(d).toHaveLength(2);
     expect(d[0].sql).toMatch(/DELETE rp FROM `roles_permissions`/);
+    expect(d[0].sql).toMatch(/permissionname` IN \(:names\)/);
     expect(d[0].replacements).toMatchObject({ roleid: ROLE_ID });
     expect(sha(d[0].replacements!.names as string[])).toBe(LIST_SHA);
     expect(d[1].sql).toMatch(/DELETE FROM `roles` WHERE `roleid` = :roleid AND `rolename` = :rolename/);
