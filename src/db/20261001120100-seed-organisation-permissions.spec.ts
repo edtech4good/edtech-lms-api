@@ -188,3 +188,7 @@ describe("20261001120100-seed-organisation-permissions down()", () => {
     expect(titleDelete[1].replacements.title).toBe("Organisation");
   });
 });
+
+// Makes this file a module, so its top-level names are not shared with other
+// spec files when ts-jest type-checks them in the same worker.
+export {};
