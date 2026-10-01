@@ -7,7 +7,7 @@
  * copy of the local database, with awkward rows) is in the PR description.
  */
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const migration = require("./migrations/20261001120200-add-schoolid-to-students-and-schoolusers");
+const migration = require("./migrations/20261002090000-add-schoolid-to-students-and-schoolusers");
 
 export {};
 
@@ -85,7 +85,7 @@ const makeQueryInterface = (state: State) => {
 const statements = (query: jest.Mock): string[] => query.mock.calls.map((c) => String(c[0]));
 const alters = (query: jest.Mock): string[] => statements(query).filter((s) => /^ALTER TABLE/.test(s));
 
-describe("20261001120200 up()", () => {
+describe("20261002090000 up()", () => {
   let logSpy: jest.SpyInstance;
   beforeEach(() => {
     logSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
@@ -240,7 +240,7 @@ describe("20261001120200 up()", () => {
   });
 });
 
-describe("20261001120200 down()", () => {
+describe("20261002090000 down()", () => {
   it("drops the foreign key, then its index, then the column, on both tables", async () => {
     const { qi, query } = makeQueryInterface(
       makeState({
