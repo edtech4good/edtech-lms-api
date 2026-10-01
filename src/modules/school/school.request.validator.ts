@@ -19,7 +19,8 @@ export const createschool: RequestValidator = {
       .custom(emptyString("School Name"))
       .label("School Name"),
     countryid: joi.string().required().uuid().label("Country ID"),
-    curriculums: joi.array().items(joi.string()).required().label("Curriculums")
+    curriculums: joi.array().items(joi.string()).required().label("Curriculums"),
+    organisationid: joi.string().uuid().allow(null).label("Organisation ID"),
   }),
 };
 
@@ -35,6 +36,7 @@ export const updateschool: RequestValidator = {
     countryid: joi.string().required().uuid().label("Country ID"),
     curriculums: joi.array().items(joi.string()).required().label("Curriculums"),
     uitheme: joi.string().valid("kids", "corporate").optional().label("UI Theme"),
+    organisationid: joi.string().uuid().allow(null).label("Organisation ID"),
 
   }),
   params: joi.object().keys({

@@ -4,6 +4,7 @@ import { roles } from "src/models/data-models/roles";
 import { tokens } from "src/models/data-models/tokens";
 import { Role } from "src/models/enums";
 import { dbinstance } from "src/services/dbservice";
+import { withPrimaryKey } from "src/test-support/fakewhere";
 import { RolePermissionBusiness } from "./role-permission.business";
 import { revokeIfSuperAdminRemoved } from "./session-revocation";
 import { UserBusiness } from "./user.business";
@@ -29,6 +30,7 @@ const roleRow = (roleid: string) => ({ roleid, rolename: roleid });
 type FakeUser = {
   lmsuserid: string;
   lmsusername?: string;
+  organisationid: string | null;
   isdisabled?: boolean;
   held: string[];
   setRoles: jest.Mock;
@@ -36,14 +38,20 @@ type FakeUser = {
   save: jest.Mock;
   setDataValue: jest.Mock;
 };
-const fakeUser = (held: string[]): FakeUser => ({
+// An account's organisation: most scenarios here are about an account in an
+// organisation (which cannot hold Super Admin); platform accounts say `null`.
+const IN_ORG = "33333333-3333-4333-8333-333333333333";
+const fakeUser = (held: string[], organisationid: string | null = IN_ORG): FakeUser => ({
   lmsuserid: "u-1",
+  organisationid,
   held,
   setRoles: jest.fn().mockResolvedValue([]),
   getRoles: jest.fn().mockResolvedValue(held.map(roleRow)),
   save: jest.fn().mockResolvedValue(undefined),
   setDataValue: jest.fn(),
 });
+
+withPrimaryKey(lmsusers, "lmsuserid");
 
 const order: string[] = [];
 let destroy: jest.SpyInstance;
@@ -83,8 +91,8 @@ describe("revokeIfSuperAdminRemoved", () => {
 });
 
 describe("POST /roles/user-bind-role (RolePermissionBusiness.bindUserRoles)", () => {
-  const bind = (held: string[], newRoleIds: string[]) => {
-    const user = fakeUser(held);
+  const bind = (held: string[], newRoleIds: string[], organisationid: string | null = IN_ORG) => {
+    const user = fakeUser(held, organisationid);
     setRolesCalled(user);
     jest.spyOn(lmsusers, "findOne").mockResolvedValue(user as never);
     jest.spyOn(roles, "findAll").mockResolvedValue(newRoleIds.map(roleRow) as never);
@@ -114,7 +122,7 @@ describe("POST /roles/user-bind-role (RolePermissionBusiness.bindUserRoles)", ()
   });
 
   it("keeping Super Admin revokes nothing", async () => {
-    const { run } = bind([Role.superadmin], [Role.superadmin, Role.admin]);
+    const { run } = bind([Role.superadmin], [Role.superadmin, Role.admin], null);
     await run();
     expect(destroy).not.toHaveBeenCalled();
     expect(order).toEqual(["setRoles", "commit"]);
@@ -127,7 +135,7 @@ describe("POST /roles/user-bind-role (RolePermissionBusiness.bindUserRoles)", ()
   });
 
   it("granting Super Admin revokes nothing", async () => {
-    const { run } = bind([Role.admin], [Role.admin, Role.superadmin]);
+    const { run } = bind([Role.admin], [Role.admin, Role.superadmin], null);
     await run();
     expect(destroy).not.toHaveBeenCalled();
   });
@@ -140,19 +148,21 @@ describe("POST /roles/user-bind-role (RolePermissionBusiness.bindUserRoles)", ()
     expect(order).not.toContain("commit");
   });
 
-  it("an unknown user changes and revokes nothing, and still commits cleanly", async () => {
+  it("an unknown user is a 404: nothing is changed or revoked, and it rolls back", async () => {
     jest.spyOn(lmsusers, "findOne").mockResolvedValue(null as never);
     jest.spyOn(roles, "findAll").mockResolvedValue([] as never);
-    await expect(
-      new RolePermissionBusiness().bindUserRoles({ lmsuserid: "nobody", rolesid: [] }, PLATFORM),
-    ).resolves.toBeUndefined();
+    const error = await new RolePermissionBusiness()
+      .bindUserRoles({ lmsuserid: "nobody", rolesid: [] }, PLATFORM)
+      .catch((e) => e);
+    expect(error.code).toBe("NOT_FOUND");
     expect(destroy).not.toHaveBeenCalled();
+    expect(order).toEqual(["rollback"]);
   });
 });
 
 describe("user update (UserBusiness.updateUser)", () => {
-  const update = (held: string[], newRoleIds: string[]) => {
-    const user = fakeUser(held);
+  const update = (held: string[], newRoleIds: string[], organisationid: string | null = IN_ORG) => {
+    const user = fakeUser(held, organisationid);
     setRolesCalled(user);
     jest.spyOn(lmsusers, "findOne").mockResolvedValue(user as never);
     jest.spyOn(roles, "findAll").mockResolvedValue(newRoleIds.map(roleRow) as never);
@@ -176,7 +186,7 @@ describe("user update (UserBusiness.updateUser)", () => {
   });
 
   it("keeping Super Admin, or never holding it, revokes nothing", async () => {
-    await update([Role.superadmin], [Role.superadmin]).run();
+    await update([Role.superadmin], [Role.superadmin], null).run();
     await update([Role.admin], [Role.teacher]).run();
     expect(destroy).not.toHaveBeenCalled();
   });
@@ -230,9 +240,10 @@ describe("user delete (UserBusiness.disableuserbyid, which clears every role)", 
     expect(order).toEqual(["setRoles", "revoke", "commit"]);
   });
 
-  it("an unknown user revokes nothing", async () => {
+  it("an unknown user is a 404 and revokes nothing", async () => {
     jest.spyOn(lmsusers, "findOne").mockResolvedValue(null as never);
-    await new UserBusiness().disableuserbyid("nobody", PLATFORM);
+    const error = await new UserBusiness().disableuserbyid("nobody", PLATFORM).catch((e) => e);
+    expect(error.code).toBe("NOT_FOUND");
     expect(destroy).not.toHaveBeenCalled();
   });
 });

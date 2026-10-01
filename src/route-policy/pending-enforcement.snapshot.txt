@@ -187,7 +187,6 @@ POST /report/studentstatus/download  owned
 GET /report/studentusage  owned
 POST /report/syncrecords  owned
 POST /report/techdowntime  owned
-POST /roles/user-bind-role  owned
 GET /school  owned+apikey
 POST /school  owned
 GET /school-contribute/all  owned
@@ -243,8 +242,3 @@ GET /sync/report-data  server+apikey
 POST /teacher  owned
 DELETE /teacher/:schooluserid  owned
 POST /teacher/create  owned+apikey
-POST /user  owned
-DELETE /user/:lmsuserid  owned
-GET /user/:lmsuserid  owned
-PUT /user/:lmsuserid  owned
-POST /user/create  owned

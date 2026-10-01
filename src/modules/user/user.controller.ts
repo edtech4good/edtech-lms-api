@@ -60,7 +60,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @Controller("user")
 @ApiBearerAuth()
 export class UserController {
-  @OrgPolicy("owned", { note: "Must create the account in the caller's organisation; only a platform caller may choose one." })
+  @OrgPolicy("owned", { note: "The account is created in the caller's organisation; only a platform caller chooses one.", enforcedBy: "src/modules/user/user.organisation-scope.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -96,7 +96,9 @@ export class UserController {
       lmsuserrole: 'Mapyr2Pw',
       firstname: '',
       countries: body.countryids,
-      schools: body.schoolids
+      schools: body.schoolids,
+      // What the request asked for (undefined when not sent); UserBusiness decides.
+      organisationid: body.organisationid,
     };
 
     const data = await new UserBusiness().createUser(temp, body.lmsuserroles, user, org);
@@ -169,7 +171,7 @@ export class UserController {
   //   };
   // }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/user/user.organisation-scope.spec.ts" })
   @Put(":lmsuserid")
   @ApiResponse({
     status: 200,
@@ -206,6 +208,7 @@ export class UserController {
       lmsuserpasswordhash: body.lmsuserpasswordhash,
       countries: body.countryids,
       schools: body.schoolids,
+      organisationid: body.organisationid,
     }, body.lmsuserroles, user, org);
     return {
       error: false,
@@ -213,7 +216,7 @@ export class UserController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/user/user.organisation-scope.spec.ts" })
   @Delete(":lmsuserid")
   @ApiResponse({
     status: 200,
@@ -252,7 +255,7 @@ export class UserController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/user/user.organisation-scope.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -272,12 +275,12 @@ export class UserController {
   @RequirePermissions(Permission.VIEW_USER)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IPaging): Promise<UserGetAllResponse> {
+  async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<UserGetAllResponse> {
     const tempresult = await new UserBusiness().getusersall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
-    });
+    }, org);
     return <UserGetAllResponse>{
       error: false,
       data: {
@@ -289,7 +292,7 @@ export class UserController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/user/user.organisation-scope.spec.ts" })
   @Get(":lmsuserid")
   @ApiResponse({
     status: 200,
@@ -305,11 +308,12 @@ export class UserController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiBearerAuth()
   async get(
-    @Param("lmsuserid") lmsuserid: string
+    @Param("lmsuserid") lmsuserid: string,
+    @Org() org: OrgContext
   ): Promise<any> {
     return {
       error: false,
-      data: await new UserBusiness().getlmsuserbyid(lmsuserid),
+      data: await new UserBusiness().getlmsuserbyid(lmsuserid, org),
     };
   }
 

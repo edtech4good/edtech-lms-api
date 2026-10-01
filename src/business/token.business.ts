@@ -79,6 +79,8 @@ const yes = (value: unknown) => value === true || value === 1 || value === "1";
  * undefined when the token row is gone. Refuses when:
  *  - the token row is gone;
  *  - the user is disabled;
+ *  - the token is not platform and claims no organisation (an unassigned
+ *    account);
  *  - the organisation the token claims is missing, deleted or suspended (that
  *    includes a platform user who is acting as it);
  *  - the token is not platform and the user's organisation is not the claimed
@@ -91,6 +93,11 @@ export const isStaffSessionCurrent = (
   claims: StaffSessionClaims,
 ): boolean => {
   if (!row || yes(row.isdisabled)) {
+    return false;
+  }
+  // A staff token that acts in no organisation and is not platform is not a
+  // valid staff token: every non-platform staff account has an organisation.
+  if (!claims.isplatform && claims.organisationid === null) {
     return false;
   }
   if (claims.organisationid !== null) {
@@ -291,6 +298,24 @@ export class TokenBusiness {
     user: lmsusers,
     options: { actingorganisationid?: string | null } = {}
   ): Promise<LoginTokens> => {
+    // The roles this user actually holds, and what the token will say about
+    // organisations, from the row as it is now.
+    const lmsuserroles = (user.roles ?? []).map((role) => role.roleid);
+    const { organisationid, isplatform } = organisationClaims(
+      user.organisationid,
+      lmsuserroles,
+      options.actingorganisationid,
+    );
+    // A staff account that is not a platform account belongs to exactly one
+    // organisation. One that has none (and is not platform) is refused here,
+    // with the same answer and at the same point as a suspended organisation,
+    // before any token is touched.
+    if (!isplatform && organisationid === null) {
+      Logger.info("Sign-in blocked: staff account has no organisation", {
+        username: user.lmsusername,
+      });
+      throw new ApiError(ErrorCode.LOGIN_FAILED);
+    }
     if (user.organisationid) {
       const usable = await organisations.count({
         where: {
@@ -320,17 +345,11 @@ export class TokenBusiness {
     const isSuperAdmin =
       isLocalEnv && user.lmsusername === SUPERADMIN_USERNAME;
     const permissions = await new RolePermissionBusiness().convertRolesPermsToArrayOfString(user.roles ?? [], isSuperAdmin) ?? [];
-    // The roles this user actually holds. `roleid` is what the Role enum is
-    // built from, so these are directly comparable to the lists AccessGuard is
-    // given. lmsuserrole below is NOT: createUser stamps it superadmin for
-    // everyone, so it says nothing about who the bearer is. It stays in the
-    // payload because clients read it, but nothing authorizes on it.
-    const lmsuserroles = (user.roles ?? []).map((role) => role.roleid);
-    const { organisationid, isplatform } = organisationClaims(
-      user.organisationid,
-      lmsuserroles,
-      options.actingorganisationid,
-    );
+    // `roleid` is what the Role enum is built from, so `lmsuserroles` is
+    // directly comparable to the lists AccessGuard is given. lmsuserrole below
+    // is NOT: createUser stamps it superadmin for everyone, so it says nothing
+    // about who the bearer is. It stays in the payload because clients read it,
+    // but nothing authorizes on it.
     const userpayload = {
       lmsusername: user.lmsusername,
       lmsuserrole: user.lmsuserrole,

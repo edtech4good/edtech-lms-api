@@ -115,7 +115,6 @@ describe("TokenBusiness.generateAuthToken (organisation claims and the refusal)"
   it("reads the claims from the user row it is given and the roles that row holds", async () => {
     expect(await claims(userRow(ORG, [Role.admin]))).toMatchObject({ organisationid: ORG, isplatform: false });
     expect(await claims(userRow(ORG, [Role.superadmin]))).toMatchObject({ organisationid: ORG, isplatform: false });
-    expect(await claims(userRow(null, [Role.admin]))).toMatchObject({ organisationid: null, isplatform: false });
   });
 
   it("passes the acting organisation through for a platform user, and refuses it for anyone else before touching a token", async () => {
@@ -140,6 +139,25 @@ describe("TokenBusiness.generateAuthToken (organisation claims and the refusal)"
     count.mockClear();
     await claims(userRow(null, [Role.superadmin]));
     expect(count).not.toHaveBeenCalled();
+  });
+
+  it("refuses a staff account with no organisation that is not a platform account, with the LOGIN_FAILED answer, before any token is touched", async () => {
+    for (const roleids of [[Role.admin], [], [Role.teacher, Role.admin]]) {
+      destroy.mockClear();
+      create.mockClear();
+      const error = await new TokenBusiness().generateAuthToken(userRow(null, roleids)).catch((e) => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.code).toBe(ErrorCode.LOGIN_FAILED);
+      expect(error.message).toBe("The username or password is incorrect.");
+      expect(destroy).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+    }
+    // asked nothing of the organisations table: there is no organisation to look up
+    expect(count).not.toHaveBeenCalled();
+  });
+
+  it("an account with no organisation that holds Super Admin (a platform account) still signs in", async () => {
+    expect(await claims(userRow(null, [Role.superadmin]))).toMatchObject({ organisationid: null, isplatform: true });
   });
 
   it("refuses a suspended or deleted organisation with the LOGIN_FAILED answer, before any token is deleted or written", async () => {
@@ -205,8 +223,10 @@ describe("isStaffSessionCurrent (the rule applied to the query's row)", () => {
     ).toBe(true);
   });
 
-  it("an unassigned staff token (null, not platform) is current while the user is still unassigned", () => {
-    expect(isStaffSessionCurrent(row(), { organisationid: null, isplatform: false })).toBe(true);
+  it("refuses a staff token that acts in no organisation and is not platform (an unassigned account), whatever the row says", () => {
+    expect(isStaffSessionCurrent(row(), { organisationid: null, isplatform: false })).toBe(false);
+    expect(isStaffSessionCurrent(row({ issuperadmin: 1 }), { organisationid: null, isplatform: false })).toBe(false);
+    expect(isStaffSessionCurrent(row({ userorganisationid: ORG }), { organisationid: null, isplatform: false })).toBe(false);
   });
 
   it("refuses when the token row is gone", () => {
@@ -240,8 +260,6 @@ describe("isStaffSessionCurrent (the rule applied to the query's row)", () => {
     ).toBe(false);
     // moved out of every organisation
     expect(isStaffSessionCurrent(row({ userorganisationid: null, ...live }), { organisationid: ORG, isplatform: false })).toBe(false);
-    // an unassigned token whose user has since been given an organisation
-    expect(isStaffSessionCurrent(row({ userorganisationid: ORG }), { organisationid: null, isplatform: false })).toBe(false);
   });
 
   it("refuses a platform token when the user now has an organisation, or no longer holds Super Admin", () => {
@@ -290,9 +308,9 @@ describe("TokenBusiness.validateStaffAccessToken", () => {
   });
 
   it("binds null for a token that claims no organisation", async () => {
-    query.mockResolvedValue([{ ...goodRow, userorganisationid: null, claimedorganisationid: null }] as never);
+    query.mockResolvedValue([{ ...goodRow, userorganisationid: null, claimedorganisationid: null, issuperadmin: 1 }] as never);
     await expect(
-      new TokenBusiness().validateStaffAccessToken({ ...payload, organisationid: null }),
+      new TokenBusiness().validateStaffAccessToken({ ...payload, organisationid: null, isplatform: true }),
     ).resolves.toBe(true);
     expect(query.mock.calls[0][1].replacements.claimedorganisationid).toBeNull();
   });

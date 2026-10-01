@@ -5,12 +5,14 @@ import request from "supertest";
 import { Config, Logger } from "src/config";
 import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
 import { lmsusers } from "src/models/data-models/lmsusers";
+import { organisations } from "src/models/data-models/organisations";
 import { roles } from "src/models/data-models/roles";
 import { tokens } from "src/models/data-models/tokens";
 import { Role } from "src/models/enums";
 import { RolePermissionController } from "src/modules/role-permission/role-perm.controller";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
 import { dbinstance } from "src/services/dbservice";
+import { rowMatches, withPrimaryKey } from "src/test-support/fakewhere";
 import { UserController } from "./user.controller";
 
 /**
@@ -59,8 +61,6 @@ const callers = {
   platform: bearer({ lmsuserid: "caller", lmsuserroles: [Role.superadmin], permissions: ["superadmin"], organisationid: null, isplatform: true }),
   // Holds the Super Admin role and the wildcard, but belongs to an organisation.
   orgSuperAdmin: bearer({ lmsuserid: "caller", lmsuserroles: [Role.superadmin], permissions: ["superadmin"], organisationid: ORG, isplatform: false }),
-  // No organisation, no Super Admin, holds the user-administration permissions.
-  unassignedAdmin: bearer({ lmsuserid: "caller", lmsuserroles: [Role.admin], permissions: PERMS, organisationid: null, isplatform: false }),
   // An organisation's Admin holding the same permissions.
   orgAdmin: bearer({ lmsuserid: "caller", lmsuserroles: [Role.admin], permissions: PERMS, organisationid: ORG, isplatform: false }),
 };
@@ -90,6 +90,8 @@ const makeFake = (t: Target) => {
   };
 };
 
+withPrimaryKey(lmsusers, "lmsuserid");
+
 const transaction = { commit: jest.fn(), rollback: jest.fn() };
 let destroy: jest.SpyInstance;
 let create: jest.SpyInstance;
@@ -115,11 +117,16 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
     transaction.commit.mockReset();
     transaction.rollback.mockReset();
     jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(transaction as never);
-    target = { lmsuserid: TARGET, lmsusername: "target@example.com", organisationid: null, isdisabled: false, held: [Role.admin] };
+    target = { lmsuserid: TARGET, lmsusername: "target@example.com", organisationid: ORG, isdisabled: false, held: [Role.admin] };
     fake = makeFake(target);
     // Validators ask whether an email is taken (by name) or load the target (by id).
+    // The lookup applies the caller's scope as the real one does: an account in
+    // another organisation (or a platform account, for an organisation's caller)
+    // is not found.
     jest.spyOn(lmsusers, "findOne").mockImplementation((async (o: { where: Record<string, unknown> }) =>
-      "lmsusername" in o.where ? null : fake) as never);
+      "lmsusername" in o.where ? null : rowMatches({ lmsuserid: target.lmsuserid, organisationid: target.organisationid }, o.where) ? fake : null) as never);
+    // The organisation row an account is written into is read, locked, inside the transaction.
+    jest.spyOn(organisations, "findOne").mockResolvedValue({ organisationid: ORG, isdeleted: false } as never);
     create = jest.spyOn(lmsusers, "create").mockImplementation((async () => fake) as never);
     // Like MySQL on `roles.roleid` (utf8mb4_unicode_ci): ids match ignoring case
     // and trailing spaces, and the row that comes back carries the id as STORED.
@@ -168,7 +175,6 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
 
   describe.each([
     ["an organisation-holding Super Admin", "orgSuperAdmin"],
-    ["an unassigned Admin holding the user permissions", "unassignedAdmin"],
     ["an organisation's Admin holding the user permissions", "orgAdmin"],
   ] as const)("%s", (_name, who) => {
     const token = callers[who];
@@ -226,6 +232,13 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
   describe("a platform caller", () => {
     const token = callers.platform;
 
+    // Platform accounts have no organisation (an organisation's accounts are
+    // reached through the organisation's own callers).
+    beforeEach(() => {
+      target.organisationid = null;
+      fake = makeFake(target);
+    });
+
     it("can create a user with Super Admin", async () => {
       await send.create(token, [Role.superadmin]).expect(200);
       expect(create).toHaveBeenCalledTimes(1);
@@ -238,9 +251,19 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
       expect(fake.setRoles).toHaveBeenCalledTimes(2);
     });
 
-    it("can remove Super Admin from a user, and that user's sessions end in the same transaction", async () => {
+    it("removing Super Admin from a platform account needs an organisation in the same request: bind alone is 400, nothing written", async () => {
       target.held = [Role.superadmin];
-      await send.bind(token, [Role.admin]).expect(200);
+      await send.bind(token, [Role.admin]).expect(400);
+      nothingWritten();
+    });
+
+    it("can remove Super Admin from a user while giving it an organisation, and that user's sessions end in the same transaction", async () => {
+      target.held = [Role.superadmin];
+      await request(app.getHttpServer())
+        .put(`/user/${TARGET}`)
+        .set("Authorization", token)
+        .send({ lmsusername: "target@example.com", lmsuserroles: [Role.admin], organisationid: ORG })
+        .expect(200);
       expect(destroy).toHaveBeenCalledWith({ where: { lmsuserid: TARGET }, transaction });
     });
 
@@ -271,7 +294,6 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
 
     describe.each([
       ["an organisation-holding Super Admin", "orgSuperAdmin"],
-      ["an unassigned Admin holding the user permissions", "unassignedAdmin"],
       ["a platform user", "platform"],
     ] as const)("%s", (_name, who) => {
       const token = callers[who];
@@ -309,7 +331,6 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
   describe("an unknown role id is 400 and nothing is saved (no partial save)", () => {
     it.each([
       ["an organisation-holding Super Admin", "orgSuperAdmin"],
-      ["an unassigned Admin holding the user permissions", "unassignedAdmin"],
       ["a platform user", "platform"],
     ] as const)("%s: create, update and bind", async (_name, who) => {
       const token = callers[who];
@@ -349,7 +370,6 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
 
     describe.each([
       ["an organisation-holding Super Admin", "orgSuperAdmin"],
-      ["an unassigned Admin holding the user permissions", "unassignedAdmin"],
       ["an organisation's Admin holding the user permissions", "orgAdmin"],
     ] as const)("%s", (_name, who) => {
       it.each(edits)("editing %s is refused with 403 and nothing is written", async (_what, body) => {
@@ -370,7 +390,7 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
 
     it("an unknown role id on a Super Admin target is refused as 403 by a caller who is not platform (the target check comes first), and nothing is written", async () => {
       target.held = [Role.superadmin];
-      for (const who of ["orgSuperAdmin", "unassignedAdmin", "orgAdmin"] as const) {
+      for (const who of ["orgSuperAdmin", "orgAdmin"] as const) {
         const res = await edit(callers[who], { lmsusername: "changed@example.com", lmsuserpasswordhash: "ChangedPass12", lmsuserroles: ["zzzzzzzz"] });
         expect(res.status).toBe(403);
         const bound = await send.bind(callers[who], ["zzzzzzzz"]);
@@ -381,13 +401,15 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
 
     it.each(edits.slice(0, 3))("a platform user editing %s is allowed", async (_what, body) => {
       target.held = [Role.superadmin];
+      target.organisationid = null;
+      fake = makeFake(target);
       await edit(callers.platform, body).expect(200);
       expect(fake.save).toHaveBeenCalledTimes(1);
     });
 
     it("a caller who is not platform may still edit a user who is NOT Super Admin: email, password, scope and roles", async () => {
       target.held = [Role.admin];
-      for (const who of ["orgSuperAdmin", "unassignedAdmin", "orgAdmin"] as const) {
+      for (const who of ["orgSuperAdmin", "orgAdmin"] as const) {
         fake.save.mockClear();
         await edit(callers[who], { lmsusername: "changed@example.com", lmsuserpasswordhash: "ChangedPass12", lmsuserroles: [Role.teacher], countryids: [] }).expect(200);
         expect(fake.save).toHaveBeenCalledTimes(1);
@@ -456,9 +478,15 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
     });
   });
 
-  it("acting as an organisation does not change the rule: a platform token (isplatform true) with an organisationid can still hand out Super Admin to an unassigned target", async () => {
+  it("a platform user acting as an organisation is scoped like that organisation: a platform account is not found, and Super Admin cannot be bound to an account in it", async () => {
     const acting = bearer({ lmsuserid: "caller", lmsuserroles: [Role.superadmin], permissions: ["superadmin"], organisationid: ORG, isplatform: true });
-    await send.bind(acting, [Role.superadmin]).expect(200);
+    target.organisationid = null;
+    fake = makeFake(target);
+    await send.bind(acting, [Role.admin]).expect(404);
+    target.organisationid = ORG;
+    fake = makeFake(target);
+    await send.bind(acting, [Role.superadmin]).expect(403);
+    await send.bind(acting, [Role.teacher]).expect(200);
   });
 
   it("refuses a user without the permission before the rule is reached (401/403 unchanged)", async () => {

@@ -1,4 +1,7 @@
 import "reflect-metadata";
+import { existsSync, readFileSync } from "fs";
+import { join, normalize, isAbsolute } from "path";
+import * as ts from "typescript";
 import { Module, RequestMethod } from "@nestjs/common";
 import {
   GUARDS_METADATA,
@@ -96,6 +99,13 @@ export interface RouteRecord {
    * CheckPermissionsGuard (if present) asks for no permission.
    */
   schoolUserAdmitted: boolean;
+  /** The spec file an `owned` route names as proof (`@OrgPolicy("owned", { enforcedBy })`), as declared. */
+  enforcedBy: string | undefined;
+  /**
+   * True when that spec file exists under the repository and has this route's
+   * `METHOD /path` in the title of a describe, it or test (specProvesRoute).
+   */
+  enforcedByProven: boolean;
 }
 
 const ROLE_NAMES = new Map<string, string>(
@@ -171,6 +181,59 @@ export const modulesWithModulePath = (
   modules
     .filter((m) => Reflect.getMetadataKeys(m).some((k) => String(k).startsWith(MODULE_PATH)))
     .map((m) => m.name);
+
+const REPO_ROOT = join(__dirname, "..", "..");
+
+/**
+ * The titles of the describe, it and test blocks in a spec's source: the first
+ * argument of every call to `describe`, `it` or `test`, including their
+ * `.only`, `.skip` and `.each(table)(...)` forms. Read from the syntax tree, so
+ * a route string in a comment or a variable does not count.
+ */
+export const specTitles = (source: string): string[] => {
+  const file = ts.createSourceFile("spec.ts", source, ts.ScriptTarget.ES2020, true);
+  const titles: string[] = [];
+  const isBlockName = (expr: ts.Expression): boolean => {
+    if (ts.isIdentifier(expr)) {
+      return ["describe", "it", "test"].includes(expr.text);
+    }
+    if (ts.isPropertyAccessExpression(expr)) {
+      return (
+        ["only", "skip", "concurrent", "each"].includes(expr.name.text) && isBlockName(expr.expression)
+      );
+    }
+    if (ts.isCallExpression(expr)) {
+      return isBlockName(expr.expression); // describe.each(table)
+    }
+    return false;
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && isBlockName(node.expression)) {
+      const first = node.arguments[0];
+      if (first && (ts.isStringLiteral(first) || ts.isNoSubstitutionTemplateLiteral(first))) {
+        titles.push(first.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return titles;
+};
+
+/** Does the spec at `enforcedBy` (path from the repository root) exist and name `routeKey` in a test title? */
+export const specProvesRoute = (enforcedBy: string | undefined, routeKey: string, root = REPO_ROOT): boolean => {
+  if (!enforcedBy || isAbsolute(enforcedBy) || normalize(enforcedBy).startsWith("..") || !enforcedBy.endsWith(".spec.ts")) {
+    return false;
+  }
+  const path = join(root, enforcedBy);
+  if (!existsSync(path)) {
+    return false;
+  }
+  // The route string must stand alone in the title: `POST /user` is not
+  // mentioned by a title about `POST /user/create`.
+  const mention = new RegExp(`(^|[^\\w/:.-])${routeKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w/:.-])`);
+  return specTitles(readFileSync(path, "utf8")).some((title) => mention.test(title));
+};
 
 export async function enumerateRoutes(): Promise<RouteRecord[]> {
   const app = await NestFactory.createApplicationContext(
@@ -275,8 +338,9 @@ export async function enumerateRoutes(): Promise<RouteRecord[]> {
               requestMethod,
             );
             for (const path of paths) {
+              const method = METHOD_NAMES[requestMethod] ?? String(requestMethod);
               routes.push({
-                method: METHOD_NAMES[requestMethod] ?? String(requestMethod),
+                method,
                 path,
                 controller: metatype.name,
                 handler: name,
@@ -291,6 +355,9 @@ export async function enumerateRoutes(): Promise<RouteRecord[]> {
                 permissions,
                 tokenTypes: access.map((i) => TOKEN_NAMES.get(i.tokentype) ?? i.tokentype),
                 schoolUserAdmitted,
+                enforcedBy: policy?.enforcedBy,
+                enforcedByProven:
+                  policy?.policy === "owned" && specProvesRoute(policy.enforcedBy, `${method} ${path}`),
               });
             }
           }
@@ -339,13 +406,14 @@ export const countByPolicy = (routes: RouteRecord[]): Record<string, number> => 
  */
 export const isPendingEnforcement = (route: RouteRecord): boolean =>
   (route.policy === "platform" && !route.hasPlatformGuard) ||
-  route.policy === "owned" ||
+  (route.policy === "owned" && !route.enforcedByProven) ||
   route.policy === "server";
 
 /**
  * `yes`: a guard backs the policy (self and global routes, and platform routes
- * with PlatformGuard). `n/a`: public routes, which no guard backs and none is
- * needed. `pending`: see isPendingEnforcement.
+ * with PlatformGuard), or an `owned` route names a spec that proves it
+ * (`enforcedBy`, see specProvesRoute). `n/a`: public routes, which no guard
+ * backs and none is needed. `pending`: see isPendingEnforcement.
  */
 export type EnforcementState = "yes" | "n/a" | "pending";
 export const enforcementState = (r: RouteRecord): EnforcementState =>
@@ -435,16 +503,19 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "",
     "A policy is a requirement on the routes that declare it. Declaring one does",
     "not enforce it: enforcement arrives in later packages. The **Enforced**",
-    "column says which routes a guard already backs (`yes`) and which do not yet",
-    "(`pending`); `public` routes show `n/a`, because no guard backs them. The",
+    "column says which routes are already backed (`yes`) and which are not yet",
+    "(`pending`); `public` routes show `n/a`, because nothing backs them. A guard",
+    "backs a route; an `owned` route counts as enforced only when it names, with",
+    "`@OrgPolicy(\"owned\", { enforcedBy })`, a spec file that exists and has the",
+    "route's `METHOD /path` in a test title (the **Proved by** column). The",
     "pending routes are pinned in",
     "`src/route-policy/pending-enforcement.snapshot.txt`.",
     "",
     PENDING_MEANING,
     "",
-    `Of **${routes.length}** routes, **${enforced}** are enforced by a guard (self, global, and platform routes with \`PlatformGuard\`), **${notApplicable}** are not applicable (public) and **${pending}** are pending.`,
+    `Of **${routes.length}** routes, **${enforced}** are enforced (by a guard: self, global, and platform routes with \`PlatformGuard\`; or, for an owned route, by the spec it names), **${notApplicable}** are not applicable (public) and **${pending}** are pending.`,
     "",
-    "| Policy | Routes | Enforced by a guard | Not applicable | Pending |",
+    "| Policy | Routes | Enforced | Not applicable | Pending |",
     "|---|---|---|---|---|",
     ...POLICY_NAMES.map((p) => {
       const n = routes.filter((r) => r.policy === p);
@@ -463,7 +534,8 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "",
     "## Columns",
     "",
-    "- **Enforced**: `yes` when a guard already backs the policy, `n/a` for `public` routes (no guard backs them), `pending` otherwise.",
+    "- **Enforced**: `yes` when a guard already backs the policy, or an `owned` route has a spec that proves it; `n/a` for `public` routes (nothing backs them); `pending` otherwise.",
+    "- **Proved by**: for an `owned` route that is enforced, the spec file named by `enforcedBy`.",
     "- **API key**: `yes` when every `AccessGuard` on the route lists the application API key, so a caller with no user gets through.",
     "- **School-user token**: `yes` when a school-user (teacher or classroom device) access token gets through every guard on the route, derived from the guard metadata: every `AccessGuard` is the access token type with no role list, there is no `PlatformGuard`, and no permission is required. Feature switches such as `LogImportGuard` aside.",
     "",
@@ -471,11 +543,11 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "",
     "## Routes",
     "",
-    "| Method | Path | Handler | Policy | Enforced | API key | School-user token | Guards | Note |",
-    "|---|---|---|---|---|---|---|---|---|",
+    "| Method | Path | Handler | Policy | Enforced | Proved by | API key | School-user token | Guards | Note |",
+    "|---|---|---|---|---|---|---|---|---|---|",
     ...ordered.map(
       (r) =>
-        `| ${r.method} | \`${cell(r.path)}\` | ${r.controller}.${r.handler} | ${r.policy ?? "(none)"} | ${enforcementState(r)} | ${r.admitsApiKey ? "yes" : ""} | ${r.schoolUserAdmitted ? "yes" : ""} | ${cell(guardsCell(r))} | ${cell(
+        `| ${r.method} | \`${cell(r.path)}\` | ${r.controller}.${r.handler} | ${r.policy ?? "(none)"} | ${enforcementState(r)} | ${r.enforcedByProven ? `\`${r.enforcedBy}\`` : ""} | ${r.admitsApiKey ? "yes" : ""} | ${r.schoolUserAdmitted ? "yes" : ""} | ${cell(guardsCell(r))} | ${cell(
           r.note ?? "",
         )} |`,
     ),
