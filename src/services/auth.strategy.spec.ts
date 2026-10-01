@@ -8,7 +8,7 @@ import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
 import { SchoolRole } from "src/models/enums/school.role.enum";
 import { GradeController } from "src/modules/grade/grade.controller";
 import { LogController } from "src/modules/log/log.controller";
-import { JwtAccessStrategy } from "./auth.strategy";
+import { hasOrganisationClaims, JwtAccessStrategy } from "./auth.strategy";
 
 /**
  * `JwtAccessStrategy.validate` used to hand back any ACCESS-token payload
@@ -30,10 +30,14 @@ import { JwtAccessStrategy } from "./auth.strategy";
  * stubbed.
  */
 const tokenExists = jest.fn();
+const validateStaffAccessToken = jest.fn();
 const getGradesWithFilter = jest.fn().mockResolvedValue([]);
 jest.mock("src/business", () => ({
   ...jest.requireActual("src/business"),
-  TokenBusiness: jest.fn().mockImplementation(() => ({ tokenExists })),
+  TokenBusiness: jest.fn().mockImplementation(() => ({
+    tokenExists,
+    validateStaffAccessToken: (...args: unknown[]) => validateStaffAccessToken(...args),
+  })),
   GradeBusiness: jest.fn().mockImplementation(() => ({
     getGradesWithFilter: (...args: any[]) => getGradesWithFilter(...args),
   })),
@@ -79,8 +83,11 @@ const lmsuserToken = sign_({
   lmsuserid: "lmsuser-1",
   lmsusername: "admin@example.com",
   lmsuserroles: [],
+  organisationid: null,
+  isplatform: false,
 });
 
+const ORG = "33333333-3333-4333-8333-333333333333";
 const zip = new AdmZip();
 zip.addFile("junk.txt", Buffer.from("not a real log"));
 const zipBuffer = zip.toBuffer();
@@ -106,6 +113,7 @@ describe("JwtAccessStrategy refuses a non-staff school-user token on every ACCES
 
   beforeEach(() => {
     tokenExists.mockResolvedValue(true);
+    validateStaffAccessToken.mockResolvedValue(true);
     schoolUserFindOne.mockReset();
     schoolUserFindOne.mockResolvedValue({
       schooluserid: "teacher-1",
@@ -164,5 +172,175 @@ describe("JwtAccessStrategy refuses a non-staff school-user token on every ACCES
       .set("Authorization", lmsuserToken)
       .expect(200);
     expect(getGradesWithFilter).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Fail closed on old staff tokens. A staff (lmsusers) access token must carry
+ * the organisation claims: `organisationid` (a string, or null for none - NOT
+ * absent) and `isplatform` (a boolean). A token minted before they existed has
+ * neither, so it is refused with 401 and its owner signs in again. School-user
+ * tokens are a different shape and are not subject to this.
+ */
+describe("JwtAccessStrategy requires the organisation claims on a staff token", () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [GradeController],
+      providers: [JwtAccessStrategy],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    app.useGlobalFilters(new GlobalExceptionFilter());
+    await app.init();
+  });
+
+  beforeEach(() => {
+    tokenExists.mockReset();
+    validateStaffAccessToken.mockReset();
+    tokenExists.mockResolvedValue(true);
+    validateStaffAccessToken.mockResolvedValue(true);
+    getGradesWithFilter.mockClear();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  const staff = (extra: Record<string, unknown>) =>
+    sign_({ lmsuserid: "lmsuser-1", lmsusername: "admin@example.com", lmsuserroles: [], ...extra });
+
+  const get = (token: string) =>
+    request(app.getHttpServer()).get("/grade/all").set("Authorization", token);
+
+  it("refuses a staff token with neither claim (minted before this change) with 401, and the route does not run", async () => {
+    await get(staff({})).expect(401);
+    expect(getGradesWithFilter).not.toHaveBeenCalled();
+  });
+
+  it("refuses a staff token that has isplatform but no organisationid at all (absent is not null)", async () => {
+    await get(staff({ isplatform: false })).expect(401);
+    expect(getGradesWithFilter).not.toHaveBeenCalled();
+  });
+
+  it("refuses a staff token that has organisationid but no isplatform", async () => {
+    await get(staff({ organisationid: null })).expect(401);
+    await get(staff({ organisationid: "33333333-3333-4333-8333-333333333333" })).expect(401);
+    expect(getGradesWithFilter).not.toHaveBeenCalled();
+  });
+
+  it("refuses claims of the wrong type: isplatform as a string or number, organisationid as a number or object", async () => {
+    await get(staff({ organisationid: null, isplatform: "false" })).expect(401);
+    await get(staff({ organisationid: null, isplatform: 0 })).expect(401);
+    await get(staff({ organisationid: 5, isplatform: false })).expect(401);
+    await get(staff({ organisationid: {}, isplatform: false })).expect(401);
+    expect(getGradesWithFilter).not.toHaveBeenCalled();
+  });
+
+  it("accepts organisationid: null with isplatform: false (a staff user with no organisation yet)", async () => {
+    await get(staff({ organisationid: null, isplatform: false })).expect(200);
+    expect(getGradesWithFilter).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a platform token (null organisation, isplatform true) and one acting as an organisation", async () => {
+    await get(staff({ organisationid: null, isplatform: true })).expect(200);
+    await get(staff({ organisationid: "33333333-3333-4333-8333-333333333333", isplatform: true })).expect(200);
+    expect(getGradesWithFilter).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts an organisation's staff token", async () => {
+    await get(staff({ organisationid: "33333333-3333-4333-8333-333333333333", isplatform: false })).expect(200);
+  });
+
+  it("still refuses a revoked token (the per-request check says no) with the claims present", async () => {
+    validateStaffAccessToken.mockResolvedValue(false);
+    await get(staff({ organisationid: null, isplatform: false })).expect(401);
+    expect(getGradesWithFilter).not.toHaveBeenCalled();
+  });
+
+  it("asks the per-request check about a staff token, with the verified payload, and never the plain token lookup", async () => {
+    await get(staff({ organisationid: ORG, isplatform: false })).expect(200);
+    expect(validateStaffAccessToken).toHaveBeenCalledTimes(1);
+    expect(validateStaffAccessToken.mock.calls[0][0]).toMatchObject({
+      lmsuserid: "lmsuser-1",
+      organisationid: ORG,
+      isplatform: false,
+      jti: "test-jti",
+    });
+    expect(tokenExists).not.toHaveBeenCalled();
+  });
+
+  it("does not run the per-request staff check for a malformed staff token: the claims are checked first", async () => {
+    await get(staff({})).expect(401);
+    expect(validateStaffAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("a school-user token keeps the plain token lookup and never reaches the staff check", async () => {
+    const teacher = sign_({ schooluserid: "teacher-1", schooluserrole: SchoolRole.TEACHER });
+    await get(teacher).expect(200);
+    expect(tokenExists).toHaveBeenCalledTimes(1);
+    expect(validateStaffAccessToken).not.toHaveBeenCalled();
+    tokenExists.mockResolvedValue(false);
+    await get(teacher).expect(401);
+  });
+
+  it("refuses organisationid that is the empty string, or not UUID-shaped", async () => {
+    await get(staff({ organisationid: "", isplatform: false })).expect(401);
+    await get(staff({ organisationid: "o1", isplatform: false })).expect(401);
+    await get(staff({ organisationid: "33333333-3333-4333-8333-33333333333", isplatform: false })).expect(401);
+    expect(validateStaffAccessToken).not.toHaveBeenCalled();
+  });
+
+  describe("mixed-shape tokens are refused", () => {
+    const teacher = { schooluserid: "teacher-1", schooluserrole: SchoolRole.TEACHER };
+
+    it("a school-user id together with a staff id", async () => {
+      await get(sign_({ ...teacher, lmsuserid: "lmsuser-1" })).expect(401);
+      await get(sign_({ ...teacher, lmsuserid: "lmsuser-1", organisationid: null, isplatform: true })).expect(401);
+    });
+
+    it("a school-user id together with either organisation claim", async () => {
+      await get(sign_({ ...teacher, organisationid: null })).expect(401);
+      await get(sign_({ ...teacher, isplatform: true })).expect(401);
+      await get(sign_({ ...teacher, organisationid: ORG, isplatform: false })).expect(401);
+      expect(getGradesWithFilter).not.toHaveBeenCalled();
+    });
+
+    it("the plain teacher token is still fine", async () => {
+      await get(sign_(teacher)).expect(200);
+    });
+  });
+
+  it("does not ask for the claims on a school-user (teacher) token: it keeps working unchanged", async () => {
+    const teacher = sign_({
+      schooluserid: "teacher-1",
+      schoolusername: "teacher1",
+      schooluserrole: SchoolRole.TEACHER,
+    });
+    await get(teacher).expect(200);
+    expect(getGradesWithFilter).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a token with neither a staff id nor a school-user id and no claims", async () => {
+    await get(sign_({ sub: "someone" })).expect(401);
+  });
+});
+
+describe("hasOrganisationClaims", () => {
+  it("is true only for organisationid string|null AND isplatform boolean", () => {
+    expect(hasOrganisationClaims({ organisationid: null, isplatform: false })).toBe(true);
+    expect(hasOrganisationClaims({ isplatform: false })).toBe(false);
+    expect(hasOrganisationClaims({ organisationid: null })).toBe(false);
+    expect(hasOrganisationClaims({ organisationid: undefined, isplatform: false })).toBe(false);
+    expect(hasOrganisationClaims({ organisationid: null, isplatform: undefined })).toBe(false);
+    expect(hasOrganisationClaims({ organisationid: 1, isplatform: false })).toBe(false);
+    // null or a UUID-shaped string only: the empty string and other text are not organisations
+    expect(hasOrganisationClaims({ organisationid: "", isplatform: false })).toBe(false);
+    expect(hasOrganisationClaims({ organisationid: "x", isplatform: false })).toBe(false);
+    expect(hasOrganisationClaims({ organisationid: "33333333-3333-4333-8333-333333333333", isplatform: true })).toBe(true);
+    expect(hasOrganisationClaims({})).toBe(false);
+    expect(hasOrganisationClaims(null)).toBe(false);
+    expect(hasOrganisationClaims(undefined)).toBe(false);
+    expect(hasOrganisationClaims("token")).toBe(false);
   });
 });

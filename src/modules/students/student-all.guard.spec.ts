@@ -18,7 +18,11 @@ import { StudentController } from "./student.controller";
 const tokenExists = jest.fn();
 jest.mock("src/business", () => ({
   ...jest.requireActual("src/business"),
-  TokenBusiness: jest.fn().mockImplementation(() => ({ tokenExists })),
+  TokenBusiness: jest.fn().mockImplementation(() => ({
+    tokenExists,
+    // The staff-token check is one database query in production; here it answers like the token lookup.
+    validateStaffAccessToken: (...args: unknown[]) => tokenExists(...args),
+  })),
 }));
 
 const getStudentsWithFilter = jest.fn().mockResolvedValue([]);
@@ -35,6 +39,9 @@ const buildToken = (roles: Array<string>, permissions: Array<string>) =>
       lmsuserid: "u1",
       lmsuserroles: roles,
       permissions,
+      // The organisation claims every staff token carries: no organisation, not platform.
+      organisationid: null,
+      isplatform: false,
     },
     Config.fortyk.api.applicationsecret,
     { expiresIn: "5m" }

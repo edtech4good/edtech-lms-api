@@ -3,6 +3,9 @@ import { OrganisationBusiness, pickBranding } from "src/business/organisation.bu
 import { countries } from "src/models/data-models/countries";
 import { organisationcountry } from "src/models/data-models/organisationcountry";
 import { organisations } from "src/models/data-models/organisations";
+import { lmsusers } from "src/models/data-models/lmsusers";
+import { schools } from "src/models/data-models/school";
+import { tokens } from "src/models/data-models/tokens";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { Logger } from "src/config";
@@ -92,6 +95,14 @@ beforeEach(() => {
   jest.spyOn(organisationcountry, "destroy").mockResolvedValue(1 as never);
   jest.spyOn(organisationcountry, "findAll").mockResolvedValue([] as never);
   jest.spyOn(organisations, "findOne").mockResolvedValue(orgRow() as never);
+  // Nothing references the organisation unless a test says so.
+  jest.spyOn(schools, "count").mockResolvedValue(0 as never);
+  jest.spyOn(lmsusers, "count").mockResolvedValue(0 as never);
+  jest.spyOn(lmsusers, "findAll").mockResolvedValue([] as never);
+  jest.spyOn(tokens, "destroy").mockImplementation((async () => {
+    order.push("revoke");
+    return 0;
+  }) as never);
 });
 
 afterEach(() => {
@@ -349,11 +360,22 @@ describe("OrganisationBusiness.deleteorganisation", () => {
 
     await expect(new OrganisationBusiness().deleteorganisation("org-1", user)).resolves.toBe(true);
 
-    const [values, opts] = update.mock.calls[0] as [Record<string, unknown>, { where: object }];
+    const [values, opts] = update.mock.calls[0] as [Record<string, unknown>, { where: object; transaction: unknown }];
     expect(values).toMatchObject({ isdeleted: true, deleted_by: "staff-1" });
     expect(values.deleted_at).toBeInstanceOf(Date);
     expect(opts.where).toEqual({ organisationid: "org-1", isdeleted: false });
+    expect(opts.transaction).toBe(tnx);
     expect(destroy).not.toHaveBeenCalled();
+    expect(tnx.committed).toBe(true);
+  });
+
+  it("locks the live row first, in a transaction", async () => {
+    jest.spyOn(organisations, "update").mockResolvedValue([1] as never);
+    await new OrganisationBusiness().deleteorganisation("org-1", user);
+    const opts = (organisations.findOne as jest.Mock).mock.calls[0][0];
+    expect(opts.where).toEqual({ organisationid: "org-1", isdeleted: false });
+    expect(opts.lock).toBe(Transaction.LOCK.UPDATE);
+    expect(opts.transaction).toBe(tnx);
   });
 
   it("answers NOT_FOUND when nothing was deleted: missing, or already deleted", async () => {
@@ -363,6 +385,208 @@ describe("OrganisationBusiness.deleteorganisation", () => {
       .catch((e) => e);
     expect(error).toBeInstanceOf(ApiError);
     expect(error.code).toBe(ErrorCode.NOT_FOUND);
+    expect(tnx.rolledBack).toBe(true);
+  });
+
+  it("answers NOT_FOUND for a missing or already deleted organisation before looking at schools or staff", async () => {
+    (organisations.findOne as jest.Mock).mockResolvedValue(null);
+    const update = jest.spyOn(organisations, "update");
+    const error = await new OrganisationBusiness().deleteorganisation("org-1", user).catch((e) => e);
+    expect(error.code).toBe(ErrorCode.NOT_FOUND);
+    expect(schools.count).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  describe("refuses with 409 while the organisation is in use", () => {
+    it("a school that is not deleted references it: nothing is deleted, nothing revoked, rolled back", async () => {
+      (schools.count as jest.Mock).mockResolvedValue(1);
+      const update = jest.spyOn(organisations, "update");
+      const error = await new OrganisationBusiness().deleteorganisation("org-1", user).catch((e) => e);
+
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.code).toBe(ErrorCode.ALREADY_EXISTS);
+      expect(error.getStatus()).toBe(409);
+      expect(update).not.toHaveBeenCalled();
+      expect(tokens.destroy).not.toHaveBeenCalled();
+      expect(tnx.rolledBack).toBe(true);
+      expect(tnx.commit).not.toHaveBeenCalled();
+    });
+
+    it("counts only schools that are not deleted, inside the transaction", async () => {
+      jest.spyOn(organisations, "update").mockResolvedValue([1] as never);
+      await new OrganisationBusiness().deleteorganisation("org-1", user);
+      expect((schools.count as jest.Mock).mock.calls[0][0]).toEqual({
+        where: { organisationid: "org-1", isdeleted: false },
+        transaction: tnx,
+      });
+    });
+
+    it("a staff user references it (any lmsusers row of that organisation, disabled or not)", async () => {
+      (lmsusers.count as jest.Mock).mockResolvedValue(1);
+      const update = jest.spyOn(organisations, "update");
+      const error = await new OrganisationBusiness().deleteorganisation("org-1", user).catch((e) => e);
+
+      expect(error.code).toBe(ErrorCode.ALREADY_EXISTS);
+      expect(error.getStatus()).toBe(409);
+      expect(update).not.toHaveBeenCalled();
+      expect(tnx.rolledBack).toBe(true);
+      // No isdisabled / isdeleted filter: every user row counts.
+      expect((lmsusers.count as jest.Mock).mock.calls[0][0]).toEqual({
+        where: { organisationid: "org-1" },
+        transaction: tnx,
+      });
+    });
+
+    it("the answer names neither ids nor people", async () => {
+      (schools.count as jest.Mock).mockResolvedValue(3);
+      const error = await new OrganisationBusiness().deleteorganisation("org-1", user).catch((e) => e);
+      expect(JSON.stringify(error.getResponse())).not.toMatch(/org-1|staff-1/);
+    });
+  });
+
+  it("revokes the organisation's staff tokens in the same transaction, before it commits", async () => {
+    // The staff guard means there are none to find through the public path;
+    // the revocation is exercised by returning some from the lookup.
+    jest.spyOn(organisations, "update").mockResolvedValue([1] as never);
+    (lmsusers.findAll as jest.Mock).mockResolvedValue([{ lmsuserid: "u-1" }, { lmsuserid: "u-2" }]);
+
+    await new OrganisationBusiness().deleteorganisation("org-1", user);
+
+    expect(tokens.destroy).toHaveBeenCalledWith({
+      where: { lmsuserid: { [Op.in]: ["u-1", "u-2"] } },
+      transaction: tnx,
+    });
+    expect(order).toEqual(["revoke", "commit"]);
+  });
+});
+
+describe("OrganisationBusiness revokes staff sessions when an organisation is suspended", () => {
+  const changes = { organisationname: "Name", organisationshortname: "NN" };
+
+  it("deletes the tokens of every staff user of the organisation in the same transaction, before the commit", async () => {
+    (lmsusers.findAll as jest.Mock).mockResolvedValue([{ lmsuserid: "u-1" }, { lmsuserid: "u-2" }]);
+
+    await new OrganisationBusiness().updateorganisation(
+      "org-1",
+      { ...changes, organisationstatus: false },
+      [A],
+      user,
+    );
+
+    // Staff are found by their organisation, inside the transaction.
+    expect(lmsusers.findAll).toHaveBeenCalledWith({
+      attributes: ["lmsuserid"],
+      where: { organisationid: "org-1" },
+      transaction: tnx,
+    });
+    expect(tokens.destroy).toHaveBeenCalledWith({
+      where: { lmsuserid: { [Op.in]: ["u-1", "u-2"] } },
+      transaction: tnx,
+    });
+    expect(order.indexOf("revoke")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("revoke")).toBeLessThan(order.indexOf("commit"));
+  });
+
+  it("revokes nothing when the status is not being set to false: omitted, or true", async () => {
+    (lmsusers.findAll as jest.Mock).mockResolvedValue([{ lmsuserid: "u-1" }]);
+    await new OrganisationBusiness().updateorganisation("org-1", changes, [A], user);
+    await new OrganisationBusiness().updateorganisation(
+      "org-1",
+      { ...changes, organisationstatus: true },
+      [A],
+      user,
+    );
+    expect(tokens.destroy).not.toHaveBeenCalled();
+    expect(lmsusers.findAll).not.toHaveBeenCalled();
+  });
+
+  it("an organisation with no staff runs no DELETE on tokens", async () => {
+    await new OrganisationBusiness().updateorganisation(
+      "org-1",
+      { ...changes, organisationstatus: false },
+      [A],
+      user,
+    );
+    expect(lmsusers.findAll).toHaveBeenCalledTimes(1);
+    expect(tokens.destroy).not.toHaveBeenCalled();
+  });
+
+  it("rolls the suspension back with the revocation: if deleting tokens fails nothing commits", async () => {
+    const row = orgRow();
+    (organisations.findOne as jest.Mock).mockResolvedValue(row);
+    (lmsusers.findAll as jest.Mock).mockResolvedValue([{ lmsuserid: "u-1" }]);
+    (tokens.destroy as jest.Mock).mockRejectedValue(new Error("tokens failed"));
+
+    await expect(
+      new OrganisationBusiness().updateorganisation(
+        "org-1",
+        { ...changes, organisationstatus: false },
+        [A],
+        user,
+      ),
+    ).rejects.toThrow("tokens failed");
+
+    expect(tnx.rolledBack).toBe(true);
+    expect(tnx.commit).not.toHaveBeenCalled();
+  });
+});
+
+describe("OrganisationBusiness refuses to unlink a country a live school is in", () => {
+  const changes = { organisationname: "Name", organisationshortname: "NN" };
+
+  it("409 when a live school of the organisation is in a country being removed; nothing is written", async () => {
+    const row = orgRow();
+    (organisations.findOne as jest.Mock).mockResolvedValue(row);
+    (organisationcountry.findAll as jest.Mock).mockResolvedValue([link("l-a", A), link("l-b", B)]);
+    (schools.count as jest.Mock).mockResolvedValue(1);
+
+    const error = await new OrganisationBusiness()
+      .updateorganisation("org-1", changes, [B], user)
+      .catch((e) => e);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.code).toBe(ErrorCode.ALREADY_EXISTS);
+    expect(error.getStatus()).toBe(409);
+    // Only the REMOVED country is asked about, for live schools of THIS organisation.
+    expect((schools.count as jest.Mock).mock.calls[0][0]).toEqual({
+      where: { organisationid: "org-1", isdeleted: false, countryid: { [Op.in]: [A] } },
+      transaction: tnx,
+    });
+    expect(row.save).not.toHaveBeenCalled();
+    expect(organisationcountry.destroy).not.toHaveBeenCalled();
+    expect(tokens.destroy).not.toHaveBeenCalled();
+    expect(tnx.rolledBack).toBe(true);
+    expect(tnx.commit).not.toHaveBeenCalled();
+  });
+
+  it("the refusal comes before a suspension is applied: the status change and its revocation do not happen", async () => {
+    const row = orgRow();
+    (organisations.findOne as jest.Mock).mockResolvedValue(row);
+    (organisationcountry.findAll as jest.Mock).mockResolvedValue([link("l-a", A)]);
+    (schools.count as jest.Mock).mockResolvedValue(2);
+    await expect(
+      new OrganisationBusiness().updateorganisation(
+        "org-1",
+        { ...changes, organisationstatus: false },
+        [B],
+        user,
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.ALREADY_EXISTS });
+    expect(lmsusers.findAll).not.toHaveBeenCalled();
+    expect(row.save).not.toHaveBeenCalled();
+  });
+
+  it("allows removing a country no live school is in, and asks nothing when no country is removed", async () => {
+    (organisationcountry.findAll as jest.Mock).mockResolvedValue([link("l-a", A), link("l-b", B)]);
+    (schools.count as jest.Mock).mockResolvedValue(0);
+    await new OrganisationBusiness().updateorganisation("org-1", changes, [B], user);
+    expect(schools.count).toHaveBeenCalledTimes(1);
+    expect(organisationcountry.destroy).toHaveBeenCalledTimes(1);
+    expect(tnx.committed).toBe(true);
+
+    (schools.count as jest.Mock).mockClear();
+    await new OrganisationBusiness().updateorganisation("org-1", changes, [A, B], user);
+    expect(schools.count).not.toHaveBeenCalled();
   });
 });
 

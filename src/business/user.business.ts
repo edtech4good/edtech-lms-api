@@ -7,21 +7,44 @@ import { hashPassword } from 'src/services/password.service';
 import { v4 as uuidv4 } from 'uuid';
 import { TokenBusiness } from './token.business';
 import { WhereOptions } from "sequelize/types";
+import { Transaction } from "sequelize";
 import { roles } from "src/models/data-models/roles";
 import { permissions } from "src/models/data-models/permissions";
 import { IPaging } from "src/models/IPaging";
 import { buildWhere } from "src/services/util.service";
 import { LmsUserToken } from "src/models/token.model";
 import { dbinstance } from "src/services/dbservice";
+import { OrgContext } from "src/decorators/org.decorator";
+import {
+  assertMayModifyUser,
+  assertMayModifyUserId,
+  assertMaySetRoles,
+  holdsSuperAdmin,
+  resolveRequestedRoles,
+  revokeIfSuperAdminRemoved,
+  revokeStaffSessions,
+} from "./session-revocation";
 import { Logger } from "src/config";
 import { isSameEmailAddress } from "src/services/email-address";
 import { RolePermissionBusiness } from "./role-permission.business";
 
 export class UserBusiness {
 
-  createUser = async (user: lmsusersAttributes, lmsuserroles?: string[], currentuser?: LmsUserToken) => {
+  createUser = async (user: lmsusersAttributes, lmsuserroles: string[] | undefined, currentuser: LmsUserToken | undefined, org: OrgContext) => {
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
+      // The roles are resolved to database rows first (400 unless every
+      // requested id is exactly an existing role), and the Super Admin rule is
+      // applied to those rows. A new account has no organisation, so it is a
+      // platform account if it is given Super Admin: only a platform caller may
+      // do that. Nothing has been written when either refuses.
+      const rls = await resolveRequestedRoles(lmsuserroles, "lmsuserroles", transaction);
+      assertMaySetRoles({
+        caller: org,
+        hadSuperAdmin: false,
+        newRoles: rls,
+        targetOrganisationid: user.organisationid ?? null,
+      });
       user.lmsuserid = uuidv4();
       user.lmsuserpasswordhash = hashPassword(user.lmsuserpasswordhash);
       // LEGACY, and not a claim about this user. The column is NOT NULL so it
@@ -39,12 +62,7 @@ export class UserBusiness {
         user.created_by = currentuser.lmsuserid;
       }
       const createduser = await lmsusers.create(user, { transaction });
-      const rls = await roles.findAll({
-        where: { roleid: lmsuserroles }
-      });
-      if(rls.length === lmsuserroles?.length) {
-        await createduser.setRoles(rls, {transaction});
-      }
+      await createduser.setRoles(rls, {transaction});
       await transaction.commit();
       // Freshly hashed above so it can be written; must not ride along in
       // the response.
@@ -145,14 +163,20 @@ export class UserBusiness {
     });
   };
 
-  disableuserbyid = async (lmsuserid: string) => {
+  disableuserbyid = async (lmsuserid: string, org: OrgContext) => {
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
-      const lmsuser = await lmsusers.findOne({ where: { lmsuserid } });
+      const lmsuser = await lmsusers.findOne({ where: { lmsuserid }, transaction, lock: Transaction.LOCK.UPDATE });
       if(lmsuser) {
+        const hadSuperAdmin = await holdsSuperAdmin(lmsuser, transaction);
+        assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
+        // Deleting a user clears every role, Super Admin included.
+        assertMaySetRoles({ caller: org, hadSuperAdmin, newRoles: [], targetOrganisationid: lmsuser.organisationid });
         lmsuser.isdisabled = true;
         await lmsuser.save({fields: ['isdisabled'], transaction});
         await lmsuser.setRoles([], {transaction});
+        // A disabled user's sessions end whatever roles they held.
+        await revokeStaffSessions(lmsuser.lmsuserid, transaction);
       }
       await transaction.commit();
     } catch (e) {
@@ -168,7 +192,11 @@ export class UserBusiness {
     });
   };
 
-  updateuserbasic = async (user: lmsusers) => {
+  // updateuserbasic, activateuser and deactivateuser change another user's row.
+  // No route calls them today; they take the caller so that one that does is
+  // held to the same rule as the user routes.
+  updateuserbasic = async (user: lmsusers, org: OrgContext) => {
+    await assertMayModifyUserId(user.lmsuserid, org);
     const _user = await this.getuser(user.lmsuserid);
     _user.firstname = user.firstname;
     _user.lastname = user.lastname;
@@ -182,6 +210,8 @@ export class UserBusiness {
     // }
   }
 
+  // Called with the account named by a change-password token that was emailed
+  // to that account: the token is the proof, there is no other caller.
   updatepassword = async (lmsuserid: string, password: string) => {
     const _user = await this.getuser(lmsuserid);
     _user.lmsuserpasswordhash = hashPassword(password);
@@ -193,16 +223,20 @@ export class UserBusiness {
   private updateuser = async (_user: lmsusersAttributes, where: WhereOptions<lmsusersAttributes>) => {
     return lmsusers.update(_user, { where });
   }
-  activateuser = async (lmsuserid: string) => {
+  activateuser = async (lmsuserid: string, org: OrgContext) => {
+    await assertMayModifyUserId(lmsuserid, org);
     const _user = await this.getuser(lmsuserid);
     _user.isdisabled = false;
     return lmsusers.update(_user, { where: { lmsuserid } });
   };
-  deactivateuser = async (lmsuserid: string) => {
+  deactivateuser = async (lmsuserid: string, org: OrgContext) => {
+    await assertMayModifyUserId(lmsuserid, org);
     const _user = await this.getuser(lmsuserid);
     _user.isdisabled = true;
     return lmsusers.update(_user, { where: { lmsuserid } });
   };
+  // Called with the account named by an email-verification token: the token is
+  // the proof, there is no other caller.
   userverifyemail = async (userid: string) => {
     const _user = await this.getuser(userid);
     _user.isverified = true;
@@ -278,34 +312,49 @@ export class UserBusiness {
     }
   };
 
-  updateUser = async (usr: lmsusersAttributes, lmsuserroles?: string[], currentuser?: LmsUserToken) => {
+  updateUser = async (usr: lmsusersAttributes, lmsuserroles: string[], currentuser: LmsUserToken | undefined, org: OrgContext) => {
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
       const user = await lmsusers.findOne({
-        where: { lmsuserid: usr.lmsuserid }
+        where: { lmsuserid: usr.lmsuserid },
+        transaction,
+        lock: Transaction.LOCK.UPDATE,
       });
-      if(user) {
-        user.lmsusername = usr.lmsusername;
-        user.lmsuserpasswordhash = usr.lmsuserpasswordhash ? hashPassword(usr.lmsuserpasswordhash) : user.lmsuserpasswordhash;
-        user.countries = usr.countries;
-        user.schools = usr.schools;
-        if(currentuser){
-          user.updated_at = new Date();
-          user.updated_by = currentuser.lmsuserid;
-        }
-        await user.save({ fields: ['lmsusername', 'lmsuserpasswordhash', 'countries', 'schools', 'updated_at', 'updated_by'], transaction});
-        const rls = await roles.findAll({
-          where: { roleid: lmsuserroles }
-        });
-        if(rls.length === lmsuserroles?.length) {
-          await user.setRoles(rls, {transaction});
-        }
-        await transaction.commit();
-        // The hash is loaded above (old or newly-set) so it can be preserved
-        // or written on save; it must not ride along in the response.
-        (user as any).setDataValue('lmsuserpasswordhash', undefined);
-        return user
+      if(!user) {
+        await transaction.rollback();
+        return undefined;
       }
+      // Every refusal below happens before the first write, so a refused
+      // request leaves the user exactly as it was.
+      //  1. a caller who is not platform may not touch a Super Admin account at
+      //     all, whatever fields the request changes;
+      //  2. the requested roles must all exist (400, no partial save);
+      //  3. the Super Admin rule is applied to the resolved role rows.
+      const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
+      assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
+      const rls = await resolveRequestedRoles(lmsuserroles, "lmsuserroles", transaction);
+      assertMaySetRoles({
+        caller: org,
+        hadSuperAdmin,
+        newRoles: rls,
+        targetOrganisationid: user.organisationid,
+      });
+      user.lmsusername = usr.lmsusername;
+      user.lmsuserpasswordhash = usr.lmsuserpasswordhash ? hashPassword(usr.lmsuserpasswordhash) : user.lmsuserpasswordhash;
+      user.countries = usr.countries;
+      user.schools = usr.schools;
+      if(currentuser){
+        user.updated_at = new Date();
+        user.updated_by = currentuser.lmsuserid;
+      }
+      await user.save({ fields: ['lmsusername', 'lmsuserpasswordhash', 'countries', 'schools', 'updated_at', 'updated_by'], transaction});
+      await user.setRoles(rls, {transaction});
+      await revokeIfSuperAdminRemoved(user.lmsuserid, hadSuperAdmin, rls.map((r) => r.roleid), transaction);
+      await transaction.commit();
+      // The hash is loaded above (old or newly-set) so it can be preserved
+      // or written on save; it must not ride along in the response.
+      (user as any).setDataValue('lmsuserpasswordhash', undefined);
+      return user
     } catch (e) {
         await transaction.rollback();
         throw e;

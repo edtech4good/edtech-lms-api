@@ -26,6 +26,7 @@ import {
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
 import { AccessGuard } from "src/guards/access.guard";
+import { PlatformGuard } from "src/guards/platform.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { SchemaValidationInterceptor } from "src/interceptors";
 import { IRequest } from "src/models";
@@ -365,7 +366,7 @@ export class LevelController {
     description: "Server error",
   })
   @RequirePermissions(Permission.UPDATE_LEVEL)
-  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @UseGuards(AccessGuard(TokenType.ACCESS), PlatformGuard, CheckPermissionsGuard)
   async autoupdatelessonprogresspoints(
     @Request() payload: IRequest
   ): Promise<any> {

@@ -27,7 +27,11 @@ import { ImportController } from "./import.controller";
 const tokenExists = jest.fn();
 jest.mock("src/business", () => ({
   ...jest.requireActual("src/business"),
-  TokenBusiness: jest.fn().mockImplementation(() => ({ tokenExists })),
+  TokenBusiness: jest.fn().mockImplementation(() => ({
+    tokenExists,
+    // The staff-token check is one database query in production; here it answers like the token lookup.
+    validateStaffAccessToken: (...args: unknown[]) => tokenExists(...args),
+  })),
 }));
 jest.mock("src/business/sync.business", () => ({
   SyncBusiness: jest.fn().mockImplementation(() => ({
@@ -50,6 +54,8 @@ const teacher = `Bearer ${sign(
     lmsuserid: "teacher-1",
     lmsuserroles: [Role.teacher],
     permissions: ["view_import"],
+    organisationid: null,
+    isplatform: false,
   },
   Config.fortyk.api.applicationsecret,
   { expiresIn: "5m" }

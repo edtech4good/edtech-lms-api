@@ -10,6 +10,9 @@ import {
   organisationsAttributes,
 } from "../models/data-models/organisations";
 import { organisationcountry } from "../models/data-models/organisationcountry";
+import { lmsusers } from "../models/data-models/lmsusers";
+import { schools } from "../models/data-models/school";
+import { tokens } from "../models/data-models/tokens";
 
 export interface OrganisationCountryView {
   countryid: string;
@@ -129,6 +132,39 @@ const countriesInvalid = () =>
     ],
   });
 
+/**
+ * Ends the sign-in of every staff user of the organisation: deletes their rows
+ * in `tokens` (access, refresh and the single-use tokens), which every request
+ * checks, so their existing tokens stop working at once. Runs inside the
+ * caller's transaction, so the organisation change and the revocation commit
+ * or roll back together.
+ *
+ * It finds staff by `lmsusers.organisationid`. A platform user who is only
+ * ACTING as the organisation is not one of its staff and has no row to delete
+ * here; their token stops working on the next request because
+ * JwtAccessStrategy refuses a token whose organisation is no longer live and
+ * active.
+ */
+const revokeStaffTokens = async (organisationid: string, transaction: Transaction) => {
+  const staff = await lmsusers.findAll({
+    attributes: ["lmsuserid"],
+    where: { organisationid },
+    transaction,
+  });
+  if (staff.length === 0) {
+    return;
+  }
+  await tokens.destroy({
+    where: { lmsuserid: { [Op.in]: staff.map((u) => u.lmsuserid) } },
+    transaction,
+  });
+};
+
+const inUse = (message: string) =>
+  new ApiError(ErrorCode.ALREADY_EXISTS, message, {
+    hint: "Move or remove them first, then try again.",
+  });
+
 /** Escapes the LIKE wildcards so a typed `%` or `_` matches itself. */
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, "\\$&");
 
@@ -200,6 +236,17 @@ export class OrganisationBusiness {
   };
 
   /**
+   * The organisation if it exists, is not deleted and is active (not
+   * suspended); null otherwise. Callers that must not say WHY an organisation
+   * is unusable (the organisation switcher) use this and answer the same for
+   * all three cases.
+   */
+  getactiveorganisation = async (organisationid: string) =>
+    organisations.findOne({
+      where: { organisationid, isdeleted: false, organisationstatus: true },
+    });
+
+  /**
    * The organisation and its country links are written in ONE transaction: if
    * the links fail, no organisation row is left behind.
    */
@@ -266,6 +313,31 @@ export class OrganisationBusiness {
       }
 
       await this.assertCountriesUsable(countryids, tnx);
+
+      // A country link cannot be removed while a live school of this
+      // organisation is in that country: the school's country must stay one of
+      // the organisation's. The row lock above keeps this check and the write
+      // below in step.
+      const current = await organisationcountry.findAll({
+        where: { organisationid },
+        transaction: tnx,
+      });
+      const wanted = new Set(countryids);
+      const unlinked = current.filter((c) => !wanted.has(c.countryid));
+      if (unlinked.length > 0) {
+        const schoolsInCountry = await schools.count({
+          where: {
+            organisationid,
+            isdeleted: false,
+            countryid: { [Op.in]: unlinked.map((c) => c.countryid) },
+          },
+          transaction: tnx,
+        });
+        if (schoolsInCountry > 0) {
+          throw inUse("A school of this organisation is in a country you are removing.");
+        }
+      }
+
       const fields: Array<keyof organisationsAttributes> = [
         "organisationname",
         "organisationshortname",
@@ -290,16 +362,15 @@ export class OrganisationBusiness {
       row.updated_at = new Date();
       row.updated_by = user.lmsuserid;
       await row.save({ fields, transaction: tnx });
+      // Suspending ends the organisation's staff sessions in the same
+      // transaction. (Only an explicit `false` suspends; an update that leaves
+      // the status out, or sets it true, revokes nothing.)
+      if (changes.organisationstatus === false) {
+        await revokeStaffTokens(organisationid, tnx);
+      }
 
-      const current = await organisationcountry.findAll({
-        where: { organisationid },
-        transaction: tnx,
-      });
-      const wanted = new Set(countryids);
       const have = new Set(current.map((c) => c.countryid));
-      const removeids = current
-        .filter((c) => !wanted.has(c.countryid))
-        .map((c) => c.organisationcountryid);
+      const removeids = unlinked.map((c) => c.organisationcountryid);
       if (removeids.length > 0) {
         await organisationcountry.destroy({
           where: { organisationcountryid: { [Op.in]: removeids } },
@@ -326,18 +397,54 @@ export class OrganisationBusiness {
   };
 
   /**
-   * Soft delete. One conditional UPDATE, so it is atomic and a second delete of
-   * the same organisation is a NOT_FOUND rather than a silent success. The row
-   * keeps its code (never reissued) and its country links; only the name is
-   * released, by the live-only unique index.
+   * Soft delete, in one transaction. The row is locked first, so the checks
+   * and the delete run one after the other with any other write to the same
+   * organisation. It refuses (409) while the organisation is still in use: a
+   * school that is not deleted, or any staff user, references it. Then one
+   * conditional UPDATE, so a second delete of the same organisation is a
+   * NOT_FOUND rather than a silent success. The row keeps its code (never
+   * reissued) and its country links; only the name is released, by the
+   * live-only unique index.
+   *
+   * Staff tokens are revoked in the same transaction. The staff check above
+   * means there are none to find today; the revocation stays so that a future
+   * relaxing of that rule cannot leave a deleted organisation's staff signed
+   * in.
    */
   deleteorganisation = async (organisationid: string, user: LmsUserToken) => {
-    const [affected] = await organisations.update(
-      { isdeleted: true, deleted_at: new Date(), deleted_by: user.lmsuserid },
-      { where: { organisationid, isdeleted: false } },
-    );
-    if (affected === 0) {
-      throw notFound();
+    const tnx = await dbinstance.getdbinstance().transaction();
+    try {
+      const row = await organisations.findOne({
+        where: { organisationid, isdeleted: false },
+        transaction: tnx,
+        lock: Transaction.LOCK.UPDATE,
+      });
+      if (!row) {
+        throw notFound();
+      }
+      const liveSchools = await schools.count({
+        where: { organisationid, isdeleted: false },
+        transaction: tnx,
+      });
+      if (liveSchools > 0) {
+        throw inUse("This organisation still has schools.");
+      }
+      const staff = await lmsusers.count({ where: { organisationid }, transaction: tnx });
+      if (staff > 0) {
+        throw inUse("This organisation still has staff users.");
+      }
+      const [affected] = await organisations.update(
+        { isdeleted: true, deleted_at: new Date(), deleted_by: user.lmsuserid },
+        { where: { organisationid, isdeleted: false }, transaction: tnx },
+      );
+      if (affected === 0) {
+        throw notFound();
+      }
+      await revokeStaffTokens(organisationid, tnx);
+      await tnx.commit();
+    } catch (error) {
+      await rollbackQuietly(tnx);
+      throw error;
     }
     return true;
   };

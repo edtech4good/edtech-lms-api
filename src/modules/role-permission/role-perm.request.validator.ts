@@ -51,6 +51,8 @@ export const bindUserRoles: RequestValidator = {
       .label("Permission Name"),
     rolesid: joi
       .array()
+      .max(50)
+      .items(joi.string().max(36))
       .required(),
   }),
 };

@@ -24,17 +24,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **281** routes, **14** are enforced by a guard (self, global, and platform routes with `PlatformGuard`), **11** are not applicable (public) and **256** are pending.
+Of **282** routes, **27** are enforced by a guard (self, global, and platform routes with `PlatformGuard`), **11** are not applicable (public) and **244** are pending.
 
 | Policy | Routes | Enforced by a guard | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 4 | 4 | 0 | 0 |
 | owned | 243 | 0 | 0 | 243 |
-| platform | 17 | 5 | 0 | 12 |
+| platform | 18 | 18 | 0 | 0 |
 | server | 1 | 0 | 0 | 1 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **281** | **14** | **11** | **256** |
+| **all** | **282** | **27** | **11** | **244** |
 
 ## Policies
 
@@ -69,6 +69,7 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | POST | `/auth/forgotpassword` | AuthController.forgotpassword | public | n/a |  |  | ThrottlerGuard |  |
 | POST | `/auth/login` | AuthController.login | public | n/a |  |  | ThrottlerGuard | Staff sign-in. |
 | POST | `/auth/logout` | AuthController.logout | self | yes |  |  | none | Named exception: the bearer token is checked in the handler, not by a guard. |
+| POST | `/auth/organisation` | AuthController.switchorganisation | platform | yes |  |  | AccessGuard(ACCESS), PlatformGuard, ThrottlerGuard | Platform users only: chooses the organisation the new token acts in. |
 | POST | `/auth/refreshtoken` | AuthController.createrefreshtoken | self | yes |  |  | AccessGuard(REFRESH) | Must act only on the session named by the refresh token. |
 | POST | `/auth/school/login` | AuthController.teacherlogin | public | n/a |  |  | ThrottlerGuard | School-user (teacher and classroom device) sign-in. |
 | PUT | `/auth/sendverificationemail` | AuthController.verifyemail | public | n/a |  |  | none |  |
@@ -84,11 +85,11 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | GET | `/dropdown/templatetype` | CommonController.getTemplateType | public | n/a |  |  | none | Returns a static list of template types. |
 | GET | `/country` | CountryController.getAll | owned | pending | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.teacher) | Must list only countries linked to the caller's organisation. |
 | POST | `/country` | CountryController.getall | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_country] | Must list only countries linked to the caller's organisation. |
-| DELETE | `/country/:countryid` | CountryController.delete | platform | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_country] | Writes to global reference data (countries) must be restricted to platform users. |
+| DELETE | `/country/:countryid` | CountryController.delete | platform | yes |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[delete_country] | Writes to global reference data (countries) must be restricted to platform users. |
 | GET | `/country/:countryid` | CountryController.get | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_country] | Must find only a country linked to the caller's organisation. |
-| PUT | `/country/:countryid` | CountryController.update | platform | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_country] | Writes to global reference data (countries) must be restricted to platform users. |
+| PUT | `/country/:countryid` | CountryController.update | platform | yes |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_country] | Writes to global reference data (countries) must be restricted to platform users. |
 | GET | `/country/all` | CountryController.getAllCountries | owned | pending |  | yes | AccessGuard(ACCESS) | Must list only countries linked to the caller's organisation. |
-| POST | `/country/create` | CountryController.create | platform | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_country] | Writes to global reference data (countries) must be restricted to platform users. |
+| POST | `/country/create` | CountryController.create | platform | yes |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[create_country] | Writes to global reference data (countries) must be restricted to platform users. |
 | DELETE | `/curriculumbaseline/:curriculumbaselineid` | CurriculumBaseLineController.delete | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_baseline-endline] |  |
 | GET | `/curriculumbaseline/:curriculumbaselineid/download` | CurriculumBaseLineController.getStudentBaselineEndlineResults | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_download_student] |  |
 | PUT | `/curriculumbaseline/activate/:curriculumbaselineid/:curriculumid` | CurriculumBaseLineController.activate | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
@@ -146,7 +147,7 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | GET | `/lesson/all` | LessonController.getAllLessons | owned | pending |  | yes | AccessGuard(ACCESS) |  |
 | POST | `/lesson/create` | LessonController.create | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lesson] |  |
 | PUT | `/lesson/deactivate/:lessonid` | LessonController.deactivate | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lesson] |  |
-| POST | `/lesson/update_reward_points` | LessonController.autoupdatelessonprogresspoints | platform | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lesson] | Bulk recompute across all organisations; platform only. |
+| POST | `/lesson/update_reward_points` | LessonController.autoupdatelessonprogresspoints | platform | yes |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_lesson] | Bulk recompute across all organisations; platform only. |
 | GET | `/lesson/learning/:lessonid` | LessonLearningController.getlearning | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
 | POST | `/lesson/learning/:lessonid` | LessonLearningController.addlearning | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lessonlearning] |  |
 | GET | `/lesson/learning/:lessonid/:lessonlearningid` | LessonLearningController.getlearningbyid | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
@@ -199,7 +200,7 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | GET | `/level/all` | LevelController.getAllLevels | owned | pending |  | yes | AccessGuard(ACCESS) |  |
 | POST | `/level/create` | LevelController.create | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_level] |  |
 | PUT | `/level/deactivate/:levelid` | LevelController.deactivate | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_level] |  |
-| POST | `/level/update_quiz_points` | LevelController.autoupdatelessonprogresspoints | platform | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_level] | Bulk recompute across all organisations; platform only. |
+| POST | `/level/update_quiz_points` | LevelController.autoupdatelessonprogresspoints | platform | yes |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_level] | Bulk recompute across all organisations; platform only. |
 | GET | `/level/quiz/question/:levelid` | LevelQuizQuestionController.getquizquestion | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_level_quiz] |  |
 | POST | `/level/quiz/question/:levelid/:questionid/:levelquizquestionorder` | LevelQuizQuestionController.addquizquestion | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_level_quiz_question] |  |
 | DELETE | `/level/quiz/question/:levelquizquestionid` | LevelQuizQuestionController.deletequizquestion | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_level_quiz_question] |  |
@@ -270,10 +271,10 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | POST | `/report/techdowntime` | ReportController.getFeedbackTechDowntime | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_tech_downtime] |  |
 | GET | `/roles` | RolePermissionController.getAllRoles | global | yes |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_role] |  |
 | POST | `/roles` | RolePermissionController.getall | global | yes |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_role] |  |
-| DELETE | `/roles/:roleid` | RolePermissionController.delete | platform | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_role] | Must be restricted to platform users: roles and permissions are global. |
+| DELETE | `/roles/:roleid` | RolePermissionController.delete | platform | yes |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[delete_role] | Must be restricted to platform users: roles and permissions are global. |
 | GET | `/roles/:roleid` | RolePermissionController.get | global | yes |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_role] |  |
-| PUT | `/roles/:roleid` | RolePermissionController.update | platform | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_role] | Must be restricted to platform users: roles and permissions are global. |
-| POST | `/roles/create` | RolePermissionController.create | platform | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_role] | Must be restricted to platform users: roles and permissions are global. |
+| PUT | `/roles/:roleid` | RolePermissionController.update | platform | yes |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_role] | Must be restricted to platform users: roles and permissions are global. |
+| POST | `/roles/create` | RolePermissionController.create | platform | yes |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[create_role] | Must be restricted to platform users: roles and permissions are global. |
 | GET | `/roles/node/permissions` | RolePermissionController.getPermsNode | global | yes |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_role] |  |
 | GET | `/roles/permissions` | RolePermissionController.getPerms | global | yes |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_role] |  |
 | POST | `/roles/user-bind-role` | RolePermissionController.binduserrole | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_user] | Staff-account administration within the caller's organisation. Super Admin may not be bound to a user who has an organisation. |
@@ -308,8 +309,8 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | PUT | `/standard/:standardid` | StandardController.update | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_standard] |  |
 | GET | `/standard/all` | StandardController.getAllSchoolsWithFilter | owned | pending | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.teacher) |  |
 | POST | `/standard/create` | StandardController.create | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_standard] |  |
-| POST | `/standard/migrate-standardid` | StandardController.migrateStandards | platform | pending |  |  | AccessGuard(ACCESS, Role.superadmin) | One-off migration across all organisations; platform only. |
-| POST | `/standard/remove-standardid` | StandardController.removeStandards | platform | pending |  |  | AccessGuard(ACCESS, Role.superadmin) | One-off migration across all organisations; platform only. |
+| POST | `/standard/migrate-standardid` | StandardController.migrateStandards | platform | yes |  |  | AccessGuard(ACCESS, Role.superadmin), PlatformGuard | One-off migration across all organisations; platform only. |
+| POST | `/standard/remove-standardid` | StandardController.removeStandards | platform | yes |  |  | AccessGuard(ACCESS, Role.superadmin), PlatformGuard | One-off migration across all organisations; platform only. |
 | GET | `/standard/school/:schoolid` | StandardController.getSchoolid | owned | pending |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_standard] |  |
 | POST | `/student` | StudentController.getall | owned | pending |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | DELETE | `/student/:schooluserid` | StudentController.deleteuser | owned | pending |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin), AccessGuard(ACCESS), CheckPermissionsGuard[delete_student] |  |
@@ -317,8 +318,8 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | GET | `/student/all` | StudentController.getAllStudents | owned | pending |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | POST | `/student/create` | StudentController.createall | owned | pending | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin), AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin) | The optional cloud push must send only the learners created by this call. |
 | GET | `/student/download-students` | StudentController.sync | owned | pending | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin) |  |
-| POST | `/student/migrate-standardid` | StudentController.migrateStandards | platform | pending |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin), AccessGuard(ACCESS, Role.superadmin) | One-off migration across all organisations; platform only. |
-| POST | `/student/migrate-subject-curriculum` | StudentController.migrateSubjectCurriculum | platform | pending |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin), AccessGuard(ACCESS, Role.superadmin) | One-off migration across all organisations; platform only. |
+| POST | `/student/migrate-standardid` | StudentController.migrateStandards | platform | yes |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin), AccessGuard(ACCESS, Role.superadmin), PlatformGuard | One-off migration across all organisations; platform only. |
+| POST | `/student/migrate-subject-curriculum` | StudentController.migrateSubjectCurriculum | platform | yes |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin), AccessGuard(ACCESS, Role.superadmin), PlatformGuard | One-off migration across all organisations; platform only. |
 | GET | `/student/stats/:studentid` | StudentController.getstudentstats | owned | pending |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | GET | `/student/stats/:studentid/level` | StudentController.getstudentlevelstats | owned | pending |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | GET | `/student/stats/:studentid/practice` | StudentController.getstudentpracticestats | owned | pending |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |

@@ -66,7 +66,8 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
  *  1. AccessGuard(TokenType.ACCESS) - a valid, current staff access token (no
  *     role list, so the application API key is not accepted: 401);
  *  2. PlatformGuard - the one place that says who the platform is (403 for
- *     anyone else, including a staff user without Super Admin);
+ *     anyone else: an organisation's staff, even one holding Super Admin, and
+ *     a staff user with no organisation and no Super Admin);
  *  3. CheckPermissionsGuard with the route's permission.
  */
 @ApiExtraModels(OrganisationBase)
@@ -187,7 +188,7 @@ export class OrganisationController {
   @ApiResponse({ status: 401, description: "Not signed in" })
   @ApiResponse({ status: 403, description: "Not the platform, or no update_organisation" })
   @ApiResponse({ status: 404, description: "No such organisation" })
-  @ApiResponse({ status: 409, description: "That name is already in use" })
+  @ApiResponse({ status: 409, description: "That name is already in use, or a school of this organisation is in a country being removed" })
   @ApiResponse({ status: 500, description: "Server error" })
   @ApiParam({ name: "organisationid", type: "string", required: true })
   @ApiBody({ type: OrganisationUpdateRequest })
@@ -229,6 +230,7 @@ export class OrganisationController {
   @ApiResponse({ status: 401, description: "Not signed in" })
   @ApiResponse({ status: 403, description: "Not the platform, or no delete_organisation" })
   @ApiResponse({ status: 404, description: "No such organisation" })
+  @ApiResponse({ status: 409, description: "The organisation still has schools that are not deleted, or staff users" })
   @ApiResponse({ status: 500, description: "Server error" })
   @ApiParam({ name: "organisationid", type: "string", required: true })
   @UseInterceptors(new SchemaValidationInterceptor(deleteorganisation))

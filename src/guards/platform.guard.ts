@@ -5,16 +5,21 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
-import { Role } from "src/models/enums";
+import { hasSchoolUserId } from "src/services/organisation-claims";
 
 /**
  * "Platform only": the route may be used by the people who run the whole
- * platform, never by anyone acting inside one organisation.
+ * platform, never by anyone acting inside one organisation as that
+ * organisation's staff.
  *
- * This is the ONE place that decides what "platform" means, so the next
- * packages (docs/admin-organisations-schema.md §8) change it here and nowhere
- * else. For now it means: a staff (`lmsusers`) access token whose roles include
- * Super Admin. Later it becomes the `isplatform` token claim.
+ * This is the ONE place that decides what "platform" means. It means: a staff
+ * (`lmsusers`) access token whose `isplatform` claim is true. The claim is set
+ * when the token is minted (src/business/token.business.ts): the user has no
+ * organisation AND holds Super Admin, read from the database at that moment.
+ * It stays true while a platform user is acting as an organisation
+ * (`POST /auth/organisation`), so the platform keeps its platform routes while
+ * it looks at one organisation. A user who belongs to an organisation is never
+ * platform, whatever roles they hold.
  *
  * Use it AFTER `AccessGuard(TokenType.ACCESS)` - that guard authenticates and
  * sets `request.user`; this one only authorises - and before
@@ -26,14 +31,15 @@ import { Role } from "src/models/enums";
  * Fails closed, and says which kind of failure it is (docs/api-errors.md):
  *  - no user on the request (guard ordering mistake, or no authentication):
  *    401 SIGN_IN_REQUIRED;
- *  - anyone else who is not platform: 403 NOT_ALLOWED. That covers a staff user
- *    without Super Admin, a school-user (learner/teacher) token, the
- *    application API key (`{ user: "API KEY" }`), and a token minted before
- *    roles were carried (`lmsuserroles` missing).
+ *  - anyone else who is not platform: 403 NOT_ALLOWED. That covers an
+ *    organisation's staff (with or without Super Admin), a staff user with no
+ *    organisation and no Super Admin, a school-user (learner/teacher) token,
+ *    and the application API key (`{ user: "API KEY" }`).
  *
- * It reads `lmsuserroles` - the roleids the bearer holds, from `lmsusers_roles`
- * at login. It must never read `lmsuserrole`: that legacy column is stamped
- * `superadmin` on every account, so a check on it would pass for everyone
+ * It reads `isplatform`, strictly `true`. It must never read `lmsuserrole`
+ * (the legacy column, stamped `superadmin` on every account), and it does not
+ * read `lmsuserroles` either: holding Super Admin is necessary for the claim
+ * but not sufficient, and the claim is the single answer
  * (docs/authorization-model.md, "The gap").
  */
 @Injectable()
@@ -51,23 +57,20 @@ export class PlatformGuard implements CanActivate {
 }
 
 /**
- * Exported so the rule can be asserted directly. Strict about shape: the roles
- * must be a real array (a string would satisfy `.includes` by substring), and
- * the bearer must be a staff user (`lmsuserid`), since a platform action is
- * recorded against one.
+ * Exported so the rule can be asserted directly. Strict about shape: the claim
+ * must be the boolean `true` (a string or a number does not count), and the
+ * bearer must be a staff user (`lmsuserid`), since a platform action is
+ * recorded against one, and must not also carry a school-user id.
  */
 export const isPlatformUser = (user: unknown): boolean => {
-  if (typeof user !== "object" || user === null) {
+  if (typeof user !== "object" || user === null || hasSchoolUserId(user)) {
     return false;
   }
-  const { lmsuserid, lmsuserroles } = user as {
+  const { lmsuserid, isplatform } = user as {
     lmsuserid?: unknown;
-    lmsuserroles?: unknown;
+    isplatform?: unknown;
   };
   return (
-    typeof lmsuserid === "string" &&
-    lmsuserid.length > 0 &&
-    Array.isArray(lmsuserroles) &&
-    lmsuserroles.includes(Role.superadmin)
+    typeof lmsuserid === "string" && lmsuserid.length > 0 && isplatform === true
   );
 };

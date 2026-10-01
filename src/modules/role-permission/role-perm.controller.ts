@@ -23,7 +23,9 @@ import {
 import { RolePermissionBusiness } from "src/business/role-permission.business";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 import { AccessGuard } from "src/guards/access.guard";
+import { PlatformGuard } from "src/guards/platform.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { BusinessValidationInterceptor, SchemaValidationInterceptor } from "src/interceptors";
 // import { permissionsAttributes } from "src/models/data-models/permissions";
@@ -170,7 +172,7 @@ export class RolePermissionController {
     // new BusinessValidationInterceptor([CreateFeedback])
   )
   @RequirePermissions(Permission.CREATE_ROLE)
-  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @UseGuards(AccessGuard(TokenType.ACCESS), PlatformGuard, CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   async create(
     @Body() body: RoleRequest,
@@ -251,13 +253,14 @@ export class RolePermissionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   async binduserrole(
-    @Body() body: BindUserRolesRequest
+    @Body() body: BindUserRolesRequest,
+    @Org() org: OrgContext
   ) {
     // const temp: permissionsAttributes = {
     //   permissionid: "",
     //   permissionname: body.permissionname
     // };
-    const data = await new RolePermissionBusiness().bindUserRoles(body);
+    const data = await new RolePermissionBusiness().bindUserRoles(body, org);
     return {
       error: false,
       data: data,
@@ -280,7 +283,7 @@ export class RolePermissionController {
       new BusinessValidationInterceptor([EditRole])
   )
   @RequirePermissions(Permission.UPDATE_ROLE)
-  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @UseGuards(AccessGuard(TokenType.ACCESS), PlatformGuard, CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `roleid`, type: "string", required: true })
   async update(
@@ -339,7 +342,7 @@ export class RolePermissionController {
       new BusinessValidationInterceptor([DeleteRole])
   )
   @RequirePermissions(Permission.DELETE_ROLE)
-  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @UseGuards(AccessGuard(TokenType.ACCESS), PlatformGuard, CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `roleid`, type: "string", required: true })
   async delete(

@@ -3,6 +3,10 @@ import { IPaging } from "src/models/IPaging";
 import { emptyString, passwordvalidator } from "src/validators/custom.validator";
 import { RequestValidator } from "../../models/RequestValidator";
 
+/** Role ids are 8-character strings today; the bounds only keep a request from sending oversized values. */
+const ROLE_ID_MAX_LENGTH = 36;
+const ROLE_IDS_MAX = 50;
+
 const createuser: RequestValidator = {
   body: joi.object().keys({
     lmsusername: joi
@@ -17,7 +21,8 @@ const createuser: RequestValidator = {
     lmsuserroles: joi
       .array()
       .min(1)
-      .items(joi.string())
+      .max(ROLE_IDS_MAX)
+      .items(joi.string().max(ROLE_ID_MAX_LENGTH))
       .required()
       .messages({
         // 'array.min': `"lmsuserroles" should have a minimum length of {#limit}`,
@@ -34,7 +39,33 @@ const createuser: RequestValidator = {
   }),
 };
 
+/**
+ * The body of `PUT /user/:id`, as the admin form sends it: the roles are always
+ * an array (empty when none is ticked), so they are required here; a request
+ * without them is a 400 rather than a half-applied edit. The id repeats the
+ * path's and is not used. The password is optional (empty or null leaves it
+ * unchanged).
+ */
 const updateuser: RequestValidator = {
+  body: joi.object().keys({
+    lmsuserid: joi.string().uuid().label("User ID"),
+    lmsusername: joi.string().required().min(1).max(300).label("User Email Address"),
+    lmsuserpasswordhash: joi.string().max(300).allow(null, ""),
+    lmsuserroles: joi
+      .array()
+      .max(ROLE_IDS_MAX)
+      .items(joi.string().max(ROLE_ID_MAX_LENGTH))
+      .required()
+      .label("Roles"),
+    countryids: joi.array().items(joi.string().max(ROLE_ID_MAX_LENGTH)).max(1000).allow(null),
+    schoolids: joi.array().items(joi.string().max(ROLE_ID_MAX_LENGTH)).max(1000).allow(null),
+  }),
+  params: joi.object().keys({
+    lmsuserid: joi.string().required().uuid().label("User ID"),
+  }),
+};
+
+const deleteuser: RequestValidator = {
   params: joi.object().keys({
     lmsuserid: joi.string().required().uuid().label("User ID"),
   }),
@@ -70,6 +101,7 @@ const showalluser: RequestValidator = {
 export {
   createuser,
   updateuser,
+  deleteuser,
   deletestandard,
   showstandard,
   showalluser,

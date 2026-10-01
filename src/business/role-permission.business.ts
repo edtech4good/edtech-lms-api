@@ -10,7 +10,15 @@ import { lmsusers } from "src/models/data-models/lmsusers";
 import { permissionstitle } from "src/models/data-models/permissionstitle";
 import { NodeLeaf, TreeNode } from "src/modules/role-permission/models/RoleBase";
 import _ from "lodash";
-import { dbinstance } from "src/services/dbservice";
+import { dbinstance, rollbackQuietly } from "src/services/dbservice";
+import {
+  assertMayModifyUser,
+  assertMaySetRoles,
+  holdsSuperAdmin,
+  resolveRequestedRoles,
+  revokeIfSuperAdminRemoved,
+} from "./session-revocation";
+import { OrgContext } from "src/decorators/org.decorator";
 import { SUPERADMIN } from "src/models/enums/permissions.enum";
 import { LmsUserToken } from "src/models/token.model";
 import { IMultiPaging } from '../models/IPaging';
@@ -256,10 +264,40 @@ export class RolePermissionBusiness {
         return perms;
     }
 
-    bindUserRoles = async (rolePerms: BindUserRolesRequest) => {
-        const user = await lmsusers.findOne({ where: { lmsuserid: rolePerms.lmsuserid }});
-        const selectedroles = await roles.findAll({ where: { roleid: { [Op.in]: rolePerms.rolesid} } });
-        return await user?.setRoles(selectedroles);
+    bindUserRoles = async (rolePerms: BindUserRolesRequest, org: OrgContext) => {
+        // One transaction: the new role set and, if Super Admin is being
+        // removed, the end of that user's sessions commit together. Every
+        // refusal happens before the roles are touched.
+        const transaction = await dbinstance.getdbinstance().transaction();
+        try {
+            const user = await lmsusers.findOne({ where: { lmsuserid: rolePerms.lmsuserid }, transaction, lock: Transaction.LOCK.UPDATE });
+            let result;
+            if (user) {
+                const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
+                // A caller who is not platform may not touch a Super Admin account.
+                assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
+                // 400 unless every requested role exists exactly as given.
+                const selectedroles = await resolveRequestedRoles(rolePerms.rolesid, "rolesid", transaction);
+                assertMaySetRoles({
+                    caller: org,
+                    hadSuperAdmin,
+                    newRoles: selectedroles,
+                    targetOrganisationid: user.organisationid,
+                });
+                result = await user.setRoles(selectedroles, { transaction });
+                await revokeIfSuperAdminRemoved(
+                    user.lmsuserid,
+                    hadSuperAdmin,
+                    selectedroles.map((r) => r.roleid),
+                    transaction,
+                );
+            }
+            await transaction.commit();
+            return result;
+        } catch (e) {
+            await rollbackQuietly(transaction);
+            throw e;
+        }
     }
 
     getallPerms = async () => {

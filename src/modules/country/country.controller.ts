@@ -4,6 +4,7 @@ import { CountryBusiness } from 'src/business/country.business';
 import { RequirePermissions } from 'src/decorators/requirePermissions.decorator';
 import { User } from 'src/decorators/user.decorator';
 import { AccessGuard } from 'src/guards/access.guard';
+import { PlatformGuard } from "src/guards/platform.guard";
 import { CheckPermissionsGuard } from 'src/guards/checkPermission.guard';
 import { BusinessValidationInterceptor, SchemaValidationInterceptor } from 'src/interceptors';
 import { countriesAttributes } from 'src/models/data-models/countries';
@@ -164,7 +165,7 @@ export class CountryController {
         // new BusinessValidationInterceptor([CreateStandard])
     )
     @RequirePermissions(Permission.CREATE_COUNTRY)
-    @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+    @UseGuards(AccessGuard(TokenType.ACCESS), PlatformGuard, CheckPermissionsGuard)
     @HttpCode(HttpStatus.OK)
     async create(
         @Body() body: CountryRequest,
@@ -200,7 +201,7 @@ export class CountryController {
         new BusinessValidationInterceptor([EditCountry])
     )
     @RequirePermissions(Permission.UPDATE_COUNTRY)
-    @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+    @UseGuards(AccessGuard(TokenType.ACCESS), PlatformGuard, CheckPermissionsGuard)
     @HttpCode(HttpStatus.OK)
     @ApiParam({ name: `countryid`, type: "string", required: true })
     @ApiBearerAuth()
@@ -240,7 +241,7 @@ export class CountryController {
         new BusinessValidationInterceptor([DeleteCountry])
     )
     @RequirePermissions(Permission.DELETE_COUNTRY)
-    @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+    @UseGuards(AccessGuard(TokenType.ACCESS), PlatformGuard, CheckPermissionsGuard)
     @HttpCode(HttpStatus.OK)
     @ApiParam({ name: `countryid`, type: "string", required: true })
     async delete(

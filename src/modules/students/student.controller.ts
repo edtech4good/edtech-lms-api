@@ -38,6 +38,7 @@ import { Config } from "src/config";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
 import { AccessGuard } from "src/guards/access.guard";
+import { PlatformGuard } from "src/guards/platform.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import {
   BusinessValidationInterceptor,
@@ -530,7 +531,7 @@ export class StudentController {
     status: 400,
     description: "Error while migrating student standard",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin), PlatformGuard)
   @HttpCode(HttpStatus.OK)
   async migrateStandards(): Promise<any> {
     await new StudentBusiness().migrateStandards();
@@ -592,7 +593,7 @@ export class StudentController {
     status: 400,
     description: "Error while migrating",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin), PlatformGuard)
   @HttpCode(HttpStatus.OK)
   async migrateSubjectCurriculum(): Promise<any> {
     await new StudentBusiness().migrateSubjectCurriculum();

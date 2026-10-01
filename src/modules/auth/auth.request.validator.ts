@@ -26,6 +26,13 @@ export const teacherlogin: RequestValidator = ({
   }),
 });
 
+/** `organisationid` must be present: null is a real answer ("all organisations"), a missing key is not. */
+const switchorganisation: RequestValidator = ({
+  body: joi.object().keys({
+    organisationid: joi.string().uuid().allow(null).required().label('Organisation ID'),
+  }),
+});
+
 const refreshTokens: RequestValidator = ({
   query: joi.object().keys({
     refreshtoken: joi.string().required(),
@@ -60,5 +67,5 @@ const verifyEmail: RequestValidator = ({
   }),
 });
 
-export { login, refreshTokens, forgotPassword, changePassword, verifyEmail, sendverifyemail };
+export { login, switchorganisation, refreshTokens, forgotPassword, changePassword, verifyEmail, sendverifyemail };
 

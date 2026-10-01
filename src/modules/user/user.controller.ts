@@ -25,6 +25,7 @@ import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { SchemaValidationInterceptor } from "src/interceptors";
@@ -45,6 +46,7 @@ import {
 } from "./user.business.validator";
 import {
   createuser,
+  deleteuser,
   showalluser,
   updateuser,
 } from "./user.request.validator";
@@ -82,7 +84,8 @@ export class UserController {
   @HttpCode(HttpStatus.OK)
   async create(
     @Body() body: UserRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<UserCreateResponse> {
     const temp: lmsusersAttributes = {
       lmsuserid: '',
@@ -96,7 +99,7 @@ export class UserController {
       schools: body.schoolids
     };
 
-    const data = await new UserBusiness().createUser(temp, body.lmsuserroles, user);
+    const data = await new UserBusiness().createUser(temp, body.lmsuserroles, user, org);
     return {
       error: false,
       data: data,
@@ -192,7 +195,8 @@ export class UserController {
   async update(
     @Param("lmsuserid") lmsuserid: string,
     @Body() body: UserRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<UserCreateResponse> {
     const data = await new UserBusiness().updateUser(<
       lmsusersAttributes
@@ -202,7 +206,7 @@ export class UserController {
       lmsuserpasswordhash: body.lmsuserpasswordhash,
       countries: body.countryids,
       schools: body.schoolids,
-    }, body.lmsuserroles, user);
+    }, body.lmsuserroles, user, org);
     return {
       error: false,
       data: data ? data : undefined,
@@ -225,7 +229,7 @@ export class UserController {
     description: "Server error",
   })
   @UseInterceptors(
-    new SchemaValidationInterceptor(updateuser),
+    new SchemaValidationInterceptor(deleteuser),
     new BusinessValidationInterceptor([EditUser, DeleteUser])
   )
   @RequirePermissions(Permission.DELETE_USER)
@@ -234,13 +238,14 @@ export class UserController {
   @ApiParam({ name: `lmsuserid`, type: "string", required: true })
   async deleteuser(
     @Param("lmsuserid") lmsuserid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<any> {
     if(user.lmsuserid === lmsuserid) {
       // Was a 200 with error:true - the status must not contradict the body.
       throw new ApiError(ErrorCode.INVALID_INPUT, "You can't delete your own account.");
     }
-    await new UserBusiness().disableuserbyid(lmsuserid);
+    await new UserBusiness().disableuserbyid(lmsuserid, org);
     return {
       error: false,
       data: "User is deleted successfully!",
