@@ -24,6 +24,11 @@ import { UserController } from "./user.controller";
  *  - removing Super Admin from anyone needs a platform caller;
  *  - nothing is written when it is refused.
  *
+ * The rule is applied to role ROWS read from the database, never to the ids in
+ * the request, and a request that names a role that does not exist exactly as
+ * stored is refused with 400 before anything is written. A caller who is not a
+ * platform user may not modify an account that holds Super Admin in any way.
+ *
  * Driven over real HTTP through the real strategy, guards, controllers and
  * business classes; only the models and the transaction are replaced.
  */
@@ -88,7 +93,6 @@ const makeFake = (t: Target) => {
 const transaction = { commit: jest.fn(), rollback: jest.fn() };
 let destroy: jest.SpyInstance;
 let create: jest.SpyInstance;
-let txOpened: jest.SpyInstance;
 
 describe("Super Admin role: who may set it (create, update, bind, delete)", () => {
   let app: INestApplication;
@@ -110,16 +114,22 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
     tokenExists.mockResolvedValue(true);
     transaction.commit.mockReset();
     transaction.rollback.mockReset();
-    txOpened = jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(transaction as never);
+    jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(transaction as never);
     target = { lmsuserid: TARGET, lmsusername: "target@example.com", organisationid: null, isdisabled: false, held: [Role.admin] };
     fake = makeFake(target);
     // Validators ask whether an email is taken (by name) or load the target (by id).
     jest.spyOn(lmsusers, "findOne").mockImplementation((async (o: { where: Record<string, unknown> }) =>
       "lmsusername" in o.where ? null : fake) as never);
     create = jest.spyOn(lmsusers, "create").mockImplementation((async () => fake) as never);
+    // Like MySQL on `roles.roleid` (utf8mb4_unicode_ci): ids match ignoring case
+    // and trailing spaces, and the row that comes back carries the id as STORED.
+    // Ids that name no role return nothing.
     jest.spyOn(roles, "findAll").mockImplementation((async (o: { where: { roleid: unknown } }) => {
-      const ids = (Array.isArray(o.where.roleid) ? o.where.roleid : (o.where.roleid as { [k: symbol]: string[] })[Object.getOwnPropertySymbols(o.where.roleid as object)[0]]) as string[];
-      return ids.map(roleRow);
+      const ids = Object.getOwnPropertySymbols(o.where.roleid as object).map((k) => (o.where.roleid as Record<symbol, string[]>)[k])[0];
+      const stored = Object.keys(ROLE_NAMES);
+      return stored
+        .filter((canonical) => ids.some((id) => id.replace(/ +$/, "").toLowerCase() === canonical.toLowerCase()))
+        .map(roleRow);
     }) as never);
     destroy = jest.spyOn(tokens, "destroy").mockResolvedValue(1 as never);
   });
@@ -170,7 +180,7 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
         expect(res.body.code).toBe("NOT_ALLOWED");
       }
       nothingWritten();
-      expect(txOpened).not.toHaveBeenCalled();
+      expect(transaction.rollback).toHaveBeenCalled();
     });
 
     it("is refused with 403 updating a user to include Super Admin (a user with no organisation); nothing is written", async () => {
@@ -253,6 +263,185 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
       target.organisationid = ORG;
       fake = makeFake(target);
       await send.bind(token, [Role.admin]).expect(200);
+    });
+  });
+
+  describe("role ids are resolved to rows; the rule never sees request strings", () => {
+    const variants = ["mapyr2pw", "MAPYR2PW", "Mapyr2Pw ", "mApYr2PW"];
+
+    describe.each([
+      ["an organisation-holding Super Admin", "orgSuperAdmin"],
+      ["an unassigned Admin holding the user permissions", "unassignedAdmin"],
+      ["a platform user", "platform"],
+    ] as const)("%s", (_name, who) => {
+      const token = callers[who];
+
+      it.each(variants)("create with the Super Admin id spelled %j is 400, and nothing is written", async (variant) => {
+        for (const set of [[variant], [Role.admin, variant]]) {
+          const res = await send.create(token, set);
+          expect(res.status).toBe(400);
+          expect(res.body.code).toBe("INVALID_INPUT");
+        }
+        nothingWritten();
+      });
+
+      it.each(variants)("update with the Super Admin id spelled %j is 400, and nothing is written", async (variant) => {
+        const res = await send.update(token, [variant]);
+        expect(res.status).toBe(400);
+        nothingWritten();
+      });
+
+      it.each(variants)("bind with the Super Admin id spelled %j is 400, and nothing is written", async (variant) => {
+        const res = await send.bind(token, [variant]);
+        expect(res.status).toBe(400);
+        nothingWritten();
+      });
+
+      it("a role id given twice, or twice differing only in case, is 400", async () => {
+        await send.create(token, [Role.admin, Role.admin]).expect(400);
+        await send.create(token, [Role.superadmin, "mapyr2pw"]).expect(400);
+        await send.bind(token, [Role.admin, "ZR5ER4QD"]).expect(400);
+        nothingWritten();
+      });
+    });
+  });
+
+  describe("an unknown role id is 400 and nothing is saved (no partial save)", () => {
+    it.each([
+      ["an organisation-holding Super Admin", "orgSuperAdmin"],
+      ["an unassigned Admin holding the user permissions", "unassignedAdmin"],
+      ["a platform user", "platform"],
+    ] as const)("%s: create, update and bind", async (_name, who) => {
+      const token = callers[who];
+      for (const res of [
+        await send.create(token, [Role.admin, "zzzzzzzz"]),
+        await send.update(token, [Role.admin, "zzzzzzzz"]),
+        await send.update(token, ["zzzzzzzz"]),
+        await send.bind(token, [Role.admin, "zzzzzzzz"]),
+      ]) {
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe("INVALID_INPUT");
+      }
+      nothingWritten();
+    });
+
+    it("update with an unknown role id does not change the email or the password", async () => {
+      const res = await request(app.getHttpServer())
+        .put(`/user/${TARGET}`)
+        .set("Authorization", callers.orgSuperAdmin)
+        .send({ lmsusername: "changed@example.com", lmsuserpasswordhash: "ChangedPass12", lmsuserroles: [Role.admin, "zzzzzzzz"] });
+      expect(res.status).toBe(400);
+      expect(fake.save).not.toHaveBeenCalled();
+      expect(fake.lmsusername).toBe("target@example.com");
+    });
+  });
+
+  describe("a caller who is not platform may not modify an account that holds Super Admin, whatever fields change", () => {
+    const edit = (token: string, body: Record<string, unknown>) =>
+      request(app.getHttpServer()).put(`/user/${TARGET}`).set("Authorization", token).send(body);
+    const edits: Array<[string, Record<string, unknown>]> = [
+      ["only the email", { lmsusername: "changed@example.com", lmsuserroles: [Role.superadmin] }],
+      ["only the password", { lmsusername: "target@example.com", lmsuserpasswordhash: "ChangedPass12", lmsuserroles: [Role.superadmin] }],
+      ["only a harmless field (country scope)", { lmsusername: "target@example.com", lmsuserroles: [Role.superadmin], countryids: ["b0000000-0000-4000-8000-000000000001"] }],
+      ["the roles to something else", { lmsusername: "target@example.com", lmsuserroles: [Role.admin] }],
+      ["with an empty role list", { lmsusername: "target@example.com", lmsuserroles: [] }],
+    ];
+
+    describe.each([
+      ["an organisation-holding Super Admin", "orgSuperAdmin"],
+      ["an unassigned Admin holding the user permissions", "unassignedAdmin"],
+      ["an organisation's Admin holding the user permissions", "orgAdmin"],
+    ] as const)("%s", (_name, who) => {
+      it.each(edits)("editing %s is refused with 403 and nothing is written", async (_what, body) => {
+        target.held = [Role.superadmin];
+        const res = await edit(callers[who], body);
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe("NOT_ALLOWED");
+        nothingWritten();
+        expect(transaction.rollback).toHaveBeenCalled();
+      });
+
+      it("the same holds when the target also holds other roles", async () => {
+        target.held = [Role.superadmin, Role.admin];
+        await edit(callers[who], edits[0][1]).expect(403);
+        nothingWritten();
+      });
+    });
+
+    it.each(edits.slice(0, 3))("a platform user editing %s is allowed", async (_what, body) => {
+      target.held = [Role.superadmin];
+      await edit(callers.platform, body).expect(200);
+      expect(fake.save).toHaveBeenCalledTimes(1);
+    });
+
+    it("a caller who is not platform may still edit a user who is NOT Super Admin: email, password, scope and roles", async () => {
+      target.held = [Role.admin];
+      for (const who of ["orgSuperAdmin", "unassignedAdmin", "orgAdmin"] as const) {
+        fake.save.mockClear();
+        await edit(callers[who], { lmsusername: "changed@example.com", lmsuserpasswordhash: "ChangedPass12", lmsuserroles: [Role.teacher], countryids: [] }).expect(200);
+        expect(fake.save).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it("a platform edit of a non-Super-Admin user with the roles left as they were is allowed", async () => {
+      target.held = [Role.admin];
+      await edit(callers.platform, { lmsusername: "target@example.com", lmsuserroles: [Role.admin] }).expect(200);
+    });
+  });
+
+  describe("the request shape: roles are always an array of ids", () => {
+    it("PUT /user/:id without lmsuserroles is 400 (the admin form always sends the array), and nothing is saved", async () => {
+      for (const who of ["platform", "orgSuperAdmin"] as const) {
+        const res = await request(app.getHttpServer())
+          .put(`/user/${TARGET}`)
+          .set("Authorization", callers[who])
+          .send({ lmsusername: "changed@example.com", lmsuserpasswordhash: "ChangedPass12" });
+        expect(res.status).toBe(400);
+      }
+      nothingWritten();
+    });
+
+    it("PUT /user/:id with an empty array is accepted: it clears the roles, as the admin form's untick-all does", async () => {
+      target.held = [Role.admin];
+      await request(app.getHttpServer())
+        .put(`/user/${TARGET}`)
+        .set("Authorization", callers.platform)
+        .send({ lmsusername: "target@example.com", lmsuserpasswordhash: null, lmsuserroles: [] })
+        .expect(200);
+      expect(fake.setRoles).toHaveBeenCalledWith([], expect.anything());
+    });
+
+    it("the whole body the admin form sends is accepted (id repeated in the body, null password, scope arrays)", async () => {
+      target.held = [Role.admin];
+      await request(app.getHttpServer())
+        .put(`/user/${TARGET}`)
+        .set("Authorization", callers.platform)
+        .send({ lmsuserid: TARGET, lmsusername: "target@example.com", lmsuserpasswordhash: null, lmsuserroles: [Role.admin], countryids: [], schoolids: [] })
+        .expect(200);
+    });
+
+    it.each([
+      ["an object item", [{ $ne: "x" }]],
+      ["a number item", [7]],
+      ["a null item", [null]],
+      ["a nested array", [[Role.admin]]],
+      ["an oversized id", ["x".repeat(500)]],
+      ["too many ids", Array.from({ length: 60 }, (_v, i) => `r${i}`)],
+      ["a string instead of an array", Role.admin],
+    ])("a roles list with %s is 400 on create, update and bind (never a 500), and nothing is written", async (_name, list) => {
+      const token = callers.platform;
+      const r1 = await request(app.getHttpServer()).post("/user/create").set("Authorization", token)
+        .send({ lmsusername: "new.person@example.com", lmsuserpasswordhash: "SamplePass12", lmsuserroles: list });
+      const r2 = await request(app.getHttpServer()).put(`/user/${TARGET}`).set("Authorization", token)
+        .send({ lmsusername: "target@example.com", lmsuserroles: list });
+      const r3 = await request(app.getHttpServer()).post("/roles/user-bind-role").set("Authorization", token)
+        .send({ lmsuserid: TARGET, rolesid: list });
+      expect([r1.status, r2.status, r3.status]).toEqual([400, 400, 400]);
+      nothingWritten();
+    });
+
+    it("DELETE /user/:id has no body and is not affected by the update body rules", async () => {
+      await send.remove(callers.platform).expect(200);
     });
   });
 

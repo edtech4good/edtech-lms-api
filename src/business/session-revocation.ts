@@ -1,8 +1,9 @@
-import { Transaction } from "sequelize";
+import { Op, Transaction } from "sequelize";
 import { OrgContext } from "../decorators/org.decorator";
 import { ApiError } from "../models/ApiError";
 import { ErrorCode } from "../models/enums/errorcode.enum";
 import { lmsusers } from "../models/data-models/lmsusers";
+import { roles } from "../models/data-models/roles";
 import { tokens } from "../models/data-models/tokens";
 import { Role } from "../models/enums";
 
@@ -37,10 +38,89 @@ export const revokeIfSuperAdminRemoved = async (
 };
 
 /**
+ * Turns the role ids a request asked for into the role ROWS they name, read
+ * from the database inside the caller's transaction. The Super Admin rule is
+ * applied to these rows and to nothing else, so a request string can never reach
+ * it: `roles.roleid` is compared case-insensitively (and ignoring trailing
+ * spaces) by MySQL, so a lookup can match a row for an id that is not spelled
+ * the way the row spells it.
+ *
+ * Refuses with 400 (and the caller writes nothing) unless the request is an
+ * array of strings, each given once, and EVERY one is exactly the id of an
+ * existing role. An id that only matches by collation is not accepted.
+ */
+export const resolveRequestedRoles = async (
+  requested: unknown,
+  field: string,
+  transaction?: Transaction,
+): Promise<roles[]> => {
+  const invalid = () =>
+    new ApiError(ErrorCode.INVALID_INPUT, "Some of the information isn't valid.", {
+      fields: [{ field, message: "Choose roles that exist, each only once." }],
+    });
+  if (!Array.isArray(requested) || requested.some((id) => typeof id !== "string")) {
+    throw invalid();
+  }
+  const ids = requested as string[];
+  if (new Set(ids).size !== ids.length) {
+    throw invalid();
+  }
+  if (ids.length === 0) {
+    return [];
+  }
+  const found = await roles.findAll({ where: { roleid: { [Op.in]: ids } }, transaction });
+  const byId = new Map(found.map((row) => [row.roleid, row]));
+  const resolved = ids.map((id) => byId.get(id));
+  if (resolved.some((row) => row === undefined)) {
+    throw invalid();
+  }
+  return resolved as roles[];
+};
+
+/**
+ * Who may change an account that holds Super Admin. A caller who is not a
+ * platform user may not modify one in any way (its email, password, scope,
+ * roles, enabled state), whatever fields the request changes: such an account
+ * can sign in as the platform. Refused with 403 before anything is written.
+ * Apply it to every route that writes another user's `lmsusers` row, roles or
+ * sessions.
+ */
+export const assertMayModifyUser = (opts: {
+  caller: OrgContext | undefined;
+  targetHoldsSuperAdmin: boolean;
+}) => {
+  if (opts.targetHoldsSuperAdmin && opts.caller?.isplatform !== true) {
+    throw new ApiError(
+      ErrorCode.NOT_ALLOWED,
+      "Only a platform user can change a Super Admin account.",
+    );
+  }
+};
+
+/** `assertMayModifyUser` for a caller that has only the target's id: loads the user and its roles. */
+export const assertMayModifyUserId = async (
+  lmsuserid: string,
+  caller: OrgContext | undefined,
+  transaction?: Transaction,
+) => {
+  const user = await lmsusers.findOne({ where: { lmsuserid }, transaction });
+  if (user) {
+    assertMayModifyUser({
+      caller,
+      targetHoldsSuperAdmin: await holdsSuperAdmin(user, transaction),
+    });
+  }
+};
+
+/**
  * The rule for who may change the Super Admin role, applied wherever a user's
  * roles are set (create, update, bind, delete). It is what keeps the platform
  * a closed group: `isplatform` is "no organisation AND Super Admin", so
  * whoever can hand out Super Admin can mint platform accounts.
+ *
+ * It takes role ROWS (from `resolveRequestedRoles`), never request strings, and
+ * compares the canonical ids stored in the database with the canonical Super
+ * Admin id.
  *
  *  - The new role set includes Super Admin (granting it, or keeping it while
  *    editing): the caller must be a platform user, and the target must have no
@@ -55,11 +135,11 @@ export const revokeIfSuperAdminRemoved = async (
 export const assertMaySetRoles = (opts: {
   caller: OrgContext | undefined;
   hadSuperAdmin: boolean;
-  newRoleIds: ReadonlyArray<string>;
+  newRoles: ReadonlyArray<roles>;
   targetOrganisationid: string | null | undefined;
 }) => {
   const callerIsPlatform = opts.caller?.isplatform === true;
-  const willHold = opts.newRoleIds.includes(Role.superadmin);
+  const willHold = opts.newRoles.some((role) => role.roleid === Role.superadmin);
   if (willHold) {
     if (!callerIsPlatform || (opts.targetOrganisationid ?? null) !== null) {
       throw new ApiError(

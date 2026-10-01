@@ -37,8 +37,8 @@ import {
  * organisation". The unique index makes that a database fact. If duplicate
  * usernames already exist the index cannot be built and the right answer is
  * for a person to decide which account survives, so `up()` looks for
- * duplicates FIRST and, if there are any, throws with the list before running
- * any DDL, so a refused run changes nothing. The duplicate check groups by the
+ * duplicates FIRST and, if there are any, throws (with the number of duplicate
+ * groups, not the addresses) before running any DDL, so a refused run changes nothing. The duplicate check groups by the
  * column itself, so it uses the same collation (case-insensitive) as the index
  * it guards.
  *
@@ -115,33 +115,37 @@ async function constraintExists(
   return (rows as unknown[]).length > 0;
 }
 
-/** Usernames that occur more than once, with how many times. */
-async function duplicateUsernames(
+/** How many usernames occur more than once (groups, not accounts; no address is read out). */
+async function duplicateUsernameGroups(
   queryInterface: QueryInterface,
   transaction: Transaction,
-): Promise<Array<{ lmsusername: string; n: number | string }>> {
+): Promise<number> {
   const [rows] = await queryInterface.sequelize.query(
-    `SELECT \`${USERNAME_COLUMN}\` AS lmsusername, COUNT(*) AS n
-     FROM \`${USERNAME_TABLE}\`
-     GROUP BY \`${USERNAME_COLUMN}\`
-     HAVING COUNT(*) > 1
-     ORDER BY \`${USERNAME_COLUMN}\``,
+    `SELECT COUNT(*) AS n FROM (
+       SELECT 1 FROM \`${USERNAME_TABLE}\`
+       GROUP BY \`${USERNAME_COLUMN}\`
+       HAVING COUNT(*) > 1
+     ) AS duplicate_groups`,
     { transaction },
   );
-  return rows as Array<{ lmsusername: string; n: number | string }>;
+  return Number((rows as Array<{ n: number | string }>)[0]?.n ?? 0);
 }
 
 module.exports = {
   up: (queryInterface: QueryInterface): Promise<void> =>
     queryInterface.sequelize.transaction(async (transaction: Transaction) => {
       // Guard first, before any DDL: a refused run must change nothing.
-      const duplicates = await duplicateUsernames(queryInterface, transaction);
-      if (duplicates.length > 0) {
+      const duplicates = await duplicateUsernameGroups(queryInterface, transaction);
+      if (duplicates > 0) {
+        // Usernames are email addresses, so the message gives the number of
+        // duplicate groups, not the addresses; the operator lists them with
+        // the same GROUP BY.
         throw new Error(
           `Cannot add a unique index on ${USERNAME_TABLE}.${USERNAME_COLUMN}: ` +
-            `${duplicates.length} username(s) occur more than once. ` +
-            "Resolve them (disable or rename the extra accounts), then run this migration again. Duplicates: " +
-            duplicates.map((d) => `${d.lmsusername} (${d.n} accounts)`).join("; "),
+            `${duplicates} username(s) occur more than once. ` +
+            "The index counts every row, disabled accounts included, so each extra account must be " +
+            "renamed or deleted. Find them with: SELECT lmsusername, COUNT(*) FROM lmsusers " +
+            "GROUP BY lmsusername HAVING COUNT(*) > 1. Then run this migration again.",
         );
       }
 

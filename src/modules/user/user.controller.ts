@@ -46,6 +46,7 @@ import {
 } from "./user.business.validator";
 import {
   createuser,
+  deleteuser,
   showalluser,
   updateuser,
 } from "./user.request.validator";
@@ -228,7 +229,7 @@ export class UserController {
     description: "Server error",
   })
   @UseInterceptors(
-    new SchemaValidationInterceptor(updateuser),
+    new SchemaValidationInterceptor(deleteuser),
     new BusinessValidationInterceptor([EditUser, DeleteUser])
   )
   @RequirePermissions(Permission.DELETE_USER)

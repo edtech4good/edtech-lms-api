@@ -181,19 +181,24 @@ describe("user update (UserBusiness.updateUser)", () => {
     expect(destroy).not.toHaveBeenCalled();
   });
 
-  it("revokes nothing when the role set is not applied (a role id that does not exist)", async () => {
+  it("an unknown role id is 400: nothing is saved, no roles are set, nothing is revoked, and it rolls back", async () => {
     const user = fakeUser([Role.superadmin]);
     jest.spyOn(lmsusers, "findOne").mockResolvedValue(user as never);
-    // one of the two requested roles is missing, so setRoles is skipped
+    // one of the two requested roles does not exist
     jest.spyOn(roles, "findAll").mockResolvedValue([roleRow(Role.admin)] as never);
-    await new UserBusiness().updateUser(
-      { lmsuserid: "u-1", lmsusername: "someone@example.com" } as never,
-      [Role.admin, "no-such-role"],
-      { lmsuserid: "admin-1" } as never,
-      PLATFORM,
-    );
+    const error = await new UserBusiness()
+      .updateUser(
+        { lmsuserid: "u-1", lmsusername: "someone@example.com" } as never,
+        [Role.admin, "no-such-role"],
+        { lmsuserid: "admin-1" } as never,
+        PLATFORM,
+      )
+      .catch((e) => e);
+    expect(error.code).toBe("INVALID_INPUT");
+    expect(user.save).not.toHaveBeenCalled();
     expect(user.setRoles).not.toHaveBeenCalled();
     expect(destroy).not.toHaveBeenCalled();
+    expect(order).toEqual(["rollback"]);
   });
 
   it("rolls back when the revocation fails", async () => {
@@ -229,5 +234,42 @@ describe("user delete (UserBusiness.disableuserbyid, which clears every role)", 
     jest.spyOn(lmsusers, "findOne").mockResolvedValue(null as never);
     await new UserBusiness().disableuserbyid("nobody", PLATFORM);
     expect(destroy).not.toHaveBeenCalled();
+  });
+});
+
+describe("business methods that change another user's row but have no route today (activate, deactivate, basic update)", () => {
+  const NOT_PLATFORM = { organisationid: "33333333-3333-4333-8333-333333333333", isplatform: false };
+  const plain = { lmsuserid: "u-1", firstname: "A", lastname: "B", isdisabled: false };
+  let update: jest.SpyInstance;
+
+  const arrange = (held: string[]) => {
+    const user = fakeUser(held);
+    jest.spyOn(lmsusers, "findOne").mockResolvedValue({ ...user, get: () => ({ ...plain }) } as never);
+    update = jest.spyOn(lmsusers, "update").mockResolvedValue([1] as never);
+  };
+
+  const methods: Array<[string, (org: { organisationid: string | null; isplatform: boolean }) => Promise<unknown>]> = [
+    ["activateuser", (org) => new UserBusiness().activateuser("u-1", org)],
+    ["deactivateuser", (org) => new UserBusiness().deactivateuser("u-1", org)],
+    ["updateuserbasic", (org) => new UserBusiness().updateuserbasic({ lmsuserid: "u-1", firstname: "X", lastname: "Y" } as never, org)],
+  ];
+
+  it.each(methods)("%s refuses a caller who is not platform when the target holds Super Admin, and writes nothing", async (_name, run) => {
+    arrange([Role.superadmin]);
+    const error = await run(NOT_PLATFORM).catch((e: { code?: string }) => e);
+    expect((error as { code?: string }).code).toBe("NOT_ALLOWED");
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it.each(methods)("%s lets a platform caller change a Super Admin account", async (_name, run) => {
+    arrange([Role.superadmin]);
+    await run(PLATFORM);
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(methods)("%s lets a caller who is not platform change a user who is not Super Admin", async (_name, run) => {
+    arrange([Role.admin]);
+    await run(NOT_PLATFORM);
+    expect(update).toHaveBeenCalledTimes(1);
   });
 });

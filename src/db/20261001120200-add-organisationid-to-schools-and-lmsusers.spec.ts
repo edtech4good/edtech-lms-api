@@ -35,8 +35,8 @@ type MockQI = {
 const TX = { id: "the-transaction" };
 
 type State = {
-  /** Usernames that occur more than once. */
-  duplicates?: Array<{ lmsusername: string; n: number }>;
+  /** How many usernames occur more than once. */
+  duplicates?: number;
   /** `organisationid` collation reported for organisations.organisationid. */
   charset?: string;
   collate?: string;
@@ -67,7 +67,7 @@ const makeQueryInterface = (state: State = {}): MockQI => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       query: jest.fn((sql: string, opts?: any) => {
         if (/GROUP BY/.test(sql)) {
-          return Promise.resolve([state.duplicates ?? [], undefined]);
+          return Promise.resolve([[{ n: state.duplicates ?? 0 }], undefined]);
         }
         if (/TABLE_CONSTRAINTS/.test(sql)) {
           const [table, constraint] = opts.replacements;
@@ -90,24 +90,29 @@ const statements = (qi: MockQI) => qi.sequelize.query.mock.calls.map((c) => c[0]
 const ddl = (qi: MockQI) => statements(qi).filter((s) => /^\s*ALTER TABLE/.test(s));
 
 describe("20261001120200 up(): the duplicate-username guard", () => {
-  it("throws, listing the duplicates, and runs NO DDL at all", async () => {
-    const qi = makeQueryInterface({
-      duplicates: [
-        { lmsusername: "first@example.com", n: 2 },
-        { lmsusername: "second@example.com", n: 3 },
-      ],
-    });
+  it("throws, giving the number of duplicate groups (and no email address), and runs NO DDL at all", async () => {
+    const qi = makeQueryInterface({ duplicates: 2 });
     const error = await migration.up(qi).catch((e: Error) => e);
 
     expect(error).toBeInstanceOf(Error);
-    expect(error.message).toContain("first@example.com (2 accounts)");
-    expect(error.message).toContain("second@example.com (3 accounts)");
-    expect(error.message).toContain("2 username(s)");
+    expect(error.message).toContain("2 username(s) occur more than once");
+    // Disabling does not help: the index counts every row.
+    expect(error.message).toMatch(/renamed or deleted/);
+    expect(error.message).not.toMatch(/disable or rename/);
+    expect(error.message).not.toMatch(/@/);
     expect(ddl(qi)).toEqual([]);
     expect(qi.addIndex).not.toHaveBeenCalled();
     expect(qi.addColumn).not.toHaveBeenCalled();
     // It did not even look at the tables: the guard is the first thing it does.
     expect(qi.describeTable).not.toHaveBeenCalled();
+  });
+
+  it("reads no username out of the table to do it: it counts groups", async () => {
+    const qi = makeQueryInterface({ duplicates: 1 });
+    await migration.up(qi).catch(() => undefined);
+    const sql = qi.sequelize.query.mock.calls[0][0] as string;
+    expect(sql).toMatch(/SELECT COUNT\(\*\) AS n FROM/);
+    expect(sql).not.toMatch(/SELECT `lmsusername`/);
   });
 
   it("looks for duplicates by grouping lmsusername inside the transaction (the same collation as the index)", async () => {

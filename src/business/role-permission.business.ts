@@ -12,8 +12,10 @@ import { NodeLeaf, TreeNode } from "src/modules/role-permission/models/RoleBase"
 import _ from "lodash";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import {
+  assertMayModifyUser,
   assertMaySetRoles,
   holdsSuperAdmin,
+  resolveRequestedRoles,
   revokeIfSuperAdminRemoved,
 } from "./session-revocation";
 import { OrgContext } from "src/decorators/org.decorator";
@@ -264,19 +266,22 @@ export class RolePermissionBusiness {
 
     bindUserRoles = async (rolePerms: BindUserRolesRequest, org: OrgContext) => {
         // One transaction: the new role set and, if Super Admin is being
-        // removed, the end of that user's sessions commit together.
+        // removed, the end of that user's sessions commit together. Every
+        // refusal happens before the roles are touched.
         const transaction = await dbinstance.getdbinstance().transaction();
         try {
             const user = await lmsusers.findOne({ where: { lmsuserid: rolePerms.lmsuserid }, transaction, lock: Transaction.LOCK.UPDATE });
-            const selectedroles = await roles.findAll({ where: { roleid: { [Op.in]: rolePerms.rolesid} }, transaction });
             let result;
             if (user) {
                 const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
-                // Refused (403) before the roles are touched.
+                // A caller who is not platform may not touch a Super Admin account.
+                assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
+                // 400 unless every requested role exists exactly as given.
+                const selectedroles = await resolveRequestedRoles(rolePerms.rolesid, "rolesid", transaction);
                 assertMaySetRoles({
                     caller: org,
                     hadSuperAdmin,
-                    newRoleIds: selectedroles.map((r) => r.roleid),
+                    newRoles: selectedroles,
                     targetOrganisationid: user.organisationid,
                 });
                 result = await user.setRoles(selectedroles, { transaction });
