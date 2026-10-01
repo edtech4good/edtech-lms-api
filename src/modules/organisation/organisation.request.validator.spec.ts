@@ -143,7 +143,7 @@ describe("createorganisation", () => {
   });
 
   describe("organisationshortname: 1-3 grapheme clusters of letters and combining marks, at most 12 code points", () => {
-    it.each(["MIV", "M", "SN", "sn", "ABC", "សក", "កា", "ក្ស", "សុខា", "កខគ"])("accepts %s", (name) => {
+    it.each(["XYZ", "M", "SN", "sn", "ABC", "សក", "កា", "ក្ស", "សុខា", "កខគ"])("accepts %s", (name) => {
       expect(run(createorganisation, create({ organisationshortname: name }))).toEqual([]);
     });
     it.each([
