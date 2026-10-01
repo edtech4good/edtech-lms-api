@@ -244,6 +244,8 @@ describe("StudentBusiness.updateStudents (PUT /student/update: a learner move be
     expect(user.schoolname).toBe(KHMER.schoolname);
     expect(user.schoolid).toBe(KHMER.schoolid);
     expect(user.save).toHaveBeenCalledWith({ fields: ["schoolname", "schoolid"], transaction: tnx });
+    // The school was resolved inside the same transaction as the writes.
+    expect(schools.findAll).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
   });
 
   it("writes nothing for a name that matches no school, or only under the collation", async () => {
@@ -292,6 +294,15 @@ describe("SchoolBusiness.updateschoolName (PUT /school/update/:schoolid: a renam
     await rename("សាលាគរូ");
     expect(learners).toHaveBeenCalledTimes(1);
     expect(logins).toHaveBeenCalledTimes(1);
+  });
+
+  it("also cascades a rename that only changes case or adds a trailing space", async () => {
+    await rename("Sample School ");
+    expect(learners).toHaveBeenCalledTimes(1);
+    learners.mockClear();
+    await rename("sample school");
+    expect(learners).toHaveBeenCalledTimes(1);
+    expect(learners).toHaveBeenCalledWith({ schoolname: "sample school" }, expect.anything());
   });
 
   it("does not touch learners or logins when the name is unchanged", async () => {
