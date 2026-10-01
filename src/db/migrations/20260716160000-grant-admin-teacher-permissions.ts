@@ -111,7 +111,25 @@ const READ_ONLY = /^(view|download)_/;
  */
 const LEARNER_IDENTITY = /^(view_student|view_download_student)$/;
 
-const ALL_PERMISSIONS: string[] = Object.values(Permission);
+/**
+ * Permissions added to the enum after this migration was written. Admin and
+ * Teacher must not receive them from here: the organisation permissions are
+ * platform-only and are granted to Super Admin alone, by their own migration
+ * (20261001120100-seed-organisation-permissions). Without this exclusion a
+ * fresh database would hand Admin create/update/delete_organisation and
+ * Teacher view_organisation. Frozen on purpose: on every database that
+ * already ran this migration it changes nothing.
+ */
+const ADDED_LATER = new Set<string>([
+  "create_organisation",
+  "view_organisation",
+  "update_organisation",
+  "delete_organisation",
+]);
+
+const ALL_PERMISSIONS: string[] = Object.values(Permission).filter(
+  (p) => !ADDED_LATER.has(p)
+);
 
 const ADMIN_PERMISSIONS = ALL_PERMISSIONS.filter(
   (p) => !USER_ROLE_ADMINISTRATION.test(p)

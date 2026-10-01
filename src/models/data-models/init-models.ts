@@ -1,6 +1,10 @@
 import type { Sequelize } from "sequelize";
 import { curriculumbaseline } from "./curriculumbaseline";
 import { curriculumcountry } from "./curriculumcountry";
+import { organisations } from "./organisations";
+import { organisationcountry } from "./organisationcountry";
+import type { organisationsAttributes, organisationsCreationAttributes, organisationsOptionalAttributes } from "./organisations";
+import type { organisationcountryAttributes, organisationcountryCreationAttributes } from "./organisationcountry";
 import type { curriculumbaselineAttributes, curriculumbaselineCreationAttributes } from "./curriculumbaseline";
 import type { curriculumcountryAttributes, curriculumcountryCreationAttributes } from "./curriculumcountry";
 import type {
@@ -172,6 +176,8 @@ export {
   standards,
   countries,
   curriculumcountry,
+  organisations,
+  organisationcountry,
   studentlearningprogress,
   studentgradesprogress,
   studentlevelsprogress,
@@ -239,6 +245,11 @@ export type {
   countriesOptionalAttributes,
   curriculumcountryAttributes,
   curriculumcountryCreationAttributes,
+  organisationsAttributes,
+  organisationsCreationAttributes,
+  organisationsOptionalAttributes,
+  organisationcountryAttributes,
+  organisationcountryCreationAttributes,
 };
 
 export function initModels(sequelize: Sequelize) {
@@ -273,6 +284,8 @@ export function initModels(sequelize: Sequelize) {
   permissionstitle.initModel(sequelize);
   countries.initModel(sequelize);
   curriculumcountry.initModel(sequelize);
+  organisations.initModel(sequelize);
+  organisationcountry.initModel(sequelize);
   studentlearningprogress.initModel(sequelize);
   studentgradesprogress.initModel(sequelize);
   studentlevelsprogress.initModel(sequelize);
@@ -294,6 +307,19 @@ export function initModels(sequelize: Sequelize) {
   });
   
   countries.hasMany(schools, { as: "schools", foreignKey: "countryid" });
+
+  organisations.hasMany(organisationcountry, {
+    as: "organisationcountries",
+    foreignKey: "organisationid",
+  });
+  organisationcountry.belongsTo(organisations, {
+    as: "organisation",
+    foreignKey: "organisationid",
+  });
+  organisationcountry.belongsTo(countries, {
+    as: "country",
+    foreignKey: "countryid",
+  });
 
   grades.belongsTo(curriculums, {
     as: "curriculum",
@@ -609,6 +635,8 @@ export function initModels(sequelize: Sequelize) {
     permissionstitle,
     countries,
     curriculumcountry,
+    organisations,
+    organisationcountry,
     studentlearningprogress,
     studentgradesprogress,
     studentlevelsprogress,

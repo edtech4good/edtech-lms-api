@@ -59,6 +59,24 @@ const TITLE_FOR_PERMISSION: Record<string, string> = {
 
 const REPORT_TITLE = "Report";
 
+/**
+ * Permissions added to the enum AFTER this migration was written. They are
+ * seeded by their own later migration (20261001120100-seed-organisation-
+ * permissions), which also puts them under their own title and grants them.
+ * Without this exclusion a fresh database would create them here, under the
+ * "Report" title, before that migration ran. The set is frozen on purpose:
+ * on every database that already ran this migration it changes nothing.
+ */
+const ADDED_LATER = new Set<string>([
+  "create_organisation",
+  "view_organisation",
+  "update_organisation",
+  "delete_organisation",
+]);
+const SEEDED_HERE: string[] = Object.values(Permission).filter(
+  (p) => !ADDED_LATER.has(p)
+);
+
 /** `view_plus_reach` -> "View plus reach". */
 const describe = (permissionname: string): string => {
   const words = permissionname.replace(/_/g, " ");
@@ -114,7 +132,7 @@ module.exports = {
       // convertRolesPermsToArrayOfString derives it by comparing a role's grant
       // count against COUNT(*) of permissions, so inserting it would raise the
       // total it is measured against and no role could ever earn it again.
-      const missing = Object.values(Permission).filter((p) => !existing.has(p));
+      const missing = SEEDED_HERE.filter((p) => !existing.has(p));
 
       if (missing.length > 0) {
         await queryInterface.bulkInsert(
@@ -155,7 +173,7 @@ module.exports = {
     await sequelize.transaction(async (transaction) => {
       // Only the rows this migration could have added. Permissions from the
       // {list,create,update,view,delete} grid are 20260407120500's to remove.
-      const names = Object.values(Permission);
+      const names = SEEDED_HERE;
       await sequelize.query(
         `DELETE rp FROM \`roles_permissions\` rp
          JOIN \`permissions\` p ON p.\`permissionid\` = rp.\`permissionid\`
