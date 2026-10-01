@@ -21,7 +21,7 @@ import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
 import { SchoolBusiness } from "./school.business";
-import { requireSchoolIdByName, withSchoolIds } from "./school-identity";
+import { requireSchoolByName, withSchoolIds } from "./school-identity";
 import { hashPassword } from "src/services/password.service";
 import { LmsUserToken } from "src/models/token.model";
 import { CountryBusiness } from "./country.business";
@@ -679,6 +679,11 @@ WHERE
         ]
       });
       if(!student) throw new ApiError(ErrorCode.NOT_FOUND, "That student doesn't exist.");
+      // The school the row now names, resolved in this transaction. A learner
+      // moved to another school gets that school's id together with its OWN
+      // stored name (not the text in the file); a name that matches no school
+      // fails the whole update.
+      const school = await requireSchoolByName(x.schoolname, transaction);
       const standard = await standards.findOne({
         where: { standardname: x.standard },
         attributes: ['standardid','standardname'],
@@ -687,15 +692,11 @@ WHERE
             model: schools,
             attributes: [],
             required: true,
-            where: { schoolname: x.schoolname }
+            where: { schoolname: school.schoolname }
           }
         ]
       });
       if(!standard && parseInt(x.is_teacher_acc ?? '0') !== 1) throw new ApiError(ErrorCode.INVALID_INPUT, "That school or class doesn't exist.", { fields: [{ field: 'standard', message: "That school or class doesn't exist." }] });
-      // The id of the school the row now names, resolved in this transaction. A
-      // learner moved to another school gets that school's id together with its
-      // name; a name that matches no school fails the whole update.
-      const schoolid = await requireSchoolIdByName(x.schoolname, transaction);
       const doj = x.dateofjoin;
       const dob = x.dateofbirth;
       const currs = await curriculums.findAll({
@@ -729,8 +730,8 @@ WHERE
           familyname: x.familyname,
           fathername: x.fathername,
           mothername: x.mothername,
-          schoolname: x.schoolname,
-          schoolid,
+          schoolname: school.schoolname,
+          schoolid: school.schoolid,
           schooltype: x.schooltype,
           standard: standard?.standardid,
           studentlastname: x.studentlastname,
@@ -752,8 +753,8 @@ WHERE
         throw new ApiError(ErrorCode.NOT_FOUND, "That student's account doesn't exist.");
       } else {
         // update school name and id together
-        user.schoolname = x.schoolname;
-        user.schoolid = schoolid;
+        user.schoolname = school.schoolname;
+        user.schoolid = school.schoolid;
         await user.save({fields: ['schoolname', 'schoolid'], transaction});
       }
       // change user id

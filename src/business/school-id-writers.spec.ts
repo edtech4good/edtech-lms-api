@@ -27,15 +27,21 @@ const KHMER = { schoolid: "school-khmer-id", schoolname: "សាលាគំរ�
 const collate = (s: string) => s.replace(/ំ/g, "").replace(/ +$/, "").toLowerCase();
 
 let tnx: { commit: jest.Mock; rollback: jest.Mock; LOCK: { SHARE: string } };
+let known = [SAMPLE, KHMER];
 
 beforeEach(() => {
+  known = [SAMPLE, KHMER];
   tnx = { commit: jest.fn().mockResolvedValue(undefined), rollback: jest.fn().mockResolvedValue(undefined), LOCK: { SHARE: "SHARE" } };
   jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(tnx as never);
   jest.spyOn(schools, "findAll").mockImplementation((async (opts: { where: { schoolname: string } }) =>
-    [SAMPLE, KHMER].filter((s) => collate(s.schoolname) === collate(opts.where.schoolname))) as never);
+    known.filter((s) => collate(s.schoolname) === collate(opts.where.schoolname))) as never);
+  jest.spyOn(schools, "findOne").mockImplementation((async (opts: { where: { schoolid: string } }) =>
+    known.find((s) => s.schoolid === opts.where.schoolid) ?? null) as never);
 });
 
 afterEach(() => jest.restoreAllMocks());
+
+const rowsOf = (spy: jest.SpyInstance) => spy.mock.calls[0][0] as Array<Record<string, unknown>>;
 
 describe("SchoolUserBusiness.createSchoolUser", () => {
   const row = (over: object) => ({
@@ -53,25 +59,34 @@ describe("SchoolUserBusiness.createSchoolUser", () => {
     await new SchoolUserBusiness().createSchoolUser([row({ schoolname: KHMER.schoolname })] as never, tnx as never);
 
     const [rows, opts] = bulk.mock.calls[0] as unknown as [Array<Record<string, unknown>>, { transaction: unknown }];
-    expect(rows[0]).toMatchObject({ schoolname: KHMER.schoolname, schoolid: KHMER.schoolid });
+    expect(rows[0]).toMatchObject(KHMER);
     expect(rows[0].schooluserpasswordhash).not.toBe("pw"); // still hashed
     expect(opts.transaction).toBe(tnx);
     expect(schools.findAll).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
   });
 
-  it("stores both when the caller already resolved the school (learner create)", async () => {
+  it("stores the school's OWN stored name for a trailing space or different capitals", async () => {
     const bulk = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
     await new SchoolUserBusiness().createSchoolUser(
-      [row({ schoolname: SAMPLE.schoolname, schoolid: SAMPLE.schoolid })] as never,
+      [row({ schoolname: "Sample School " }), row({ schoolname: "SAMPLE SCHOOL", schoolusername: "b" })] as never,
       tnx as never,
     );
-    expect((bulk.mock.calls[0][0] as Array<Record<string, unknown>>)[0]).toMatchObject(SAMPLE);
-    expect(schools.findAll).not.toHaveBeenCalled();
+    for (const r of rowsOf(bulk)) expect(r).toMatchObject(SAMPLE);
   });
 
-  it("stores nothing when the name matches no school, or matches one only under the collation", async () => {
+  it("stores both when the caller already has the school (learner create), re-reading the school in the transaction", async () => {
     const bulk = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
-    for (const name of ["No Such School", "Sample School ", "សាលាគរូ"]) {
+    await new SchoolUserBusiness().createSchoolUser(
+      [row({ schoolname: "an older name", schoolid: SAMPLE.schoolid })] as never,
+      tnx as never,
+    );
+    expect(rowsOf(bulk)[0]).toMatchObject(SAMPLE);
+    expect(schools.findOne).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
+  });
+
+  it("stores nothing when the name matches no school, or matches one only under the collation (a Khmer mark)", async () => {
+    const bulk = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
+    for (const name of ["No Such School", "សាលាគរូ"]) {
       await expect(
         new SchoolUserBusiness().createSchoolUser([row({ schoolname: name })] as never, tnx as never),
       ).rejects.toBeInstanceOf(ApiError);
@@ -94,6 +109,12 @@ describe("StudentBusiness.createStudents", () => {
     expect(rows[0]).toMatchObject(SAMPLE);
     expect(rows[1]).toMatchObject(KHMER);
     expect(opts.transaction).toBe(tnx);
+  });
+
+  it("stores the school's own name, not the given text, for a trailing space or capitals", async () => {
+    const bulk = jest.spyOn(students, "bulkCreate").mockResolvedValue([] as never);
+    await new StudentBusiness().createStudents([{ studentid: "s1", schoolname: " sample SCHOOL " }] as never, tnx as never);
+    expect(rowsOf(bulk)[0]).toMatchObject(SAMPLE);
   });
 
   it("stores nothing when a name matches no school", async () => {
@@ -125,28 +146,44 @@ describe("StudentController.createall (POST /student/create)", () => {
       },
     ],
   };
-
-  it("writes the school's id AND name on both the login and the learner, from the one school row", async () => {
-    jest.spyOn(schools, "findOne").mockResolvedValue(KHMER as never);
-    const users = jest
+  const echoUsers = () =>
+    jest
       .spyOn(schoolusers, "bulkCreate")
       .mockImplementation((async (rows: Array<{ schoolusername: string; schooluserid: string }>) => rows) as never);
+
+  it("writes the school's id AND name on both the login and the learner, from the one school row", async () => {
+    const users = echoUsers();
     const learners = jest.spyOn(students, "bulkCreate").mockResolvedValue([] as never);
 
     await new StudentController().createall(body as never, false, "true");
 
-    expect((users.mock.calls[0][0] as Array<Record<string, unknown>>)[0]).toMatchObject(KHMER);
-    expect((learners.mock.calls[0][0] as Array<Record<string, unknown>>)[0]).toMatchObject({
-      ...KHMER,
-      studentfirstname: "សុខា",
-    });
+    expect(rowsOf(users)[0]).toMatchObject(KHMER);
+    expect(rowsOf(learners)[0]).toMatchObject({ ...KHMER, studentfirstname: "សុខា" });
     expect(tnx.commit).toHaveBeenCalled();
-    // The school was already resolved, so nothing is looked up by name.
+    // The school was already known by id, so nothing is looked up by name; it is re-read by id in the transaction.
     expect(schools.findAll).not.toHaveBeenCalled();
+    expect(schools.findOne).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
+  });
+
+  it("stores the school's CURRENT name when a rename committed between reading the school and inserting the learner", async () => {
+    // The controller's own existence check (outside the transaction) sees the old name;
+    // the read inside the transaction sees what the rename committed.
+    (schools.findOne as jest.Mock).mockReset();
+    (schools.findOne as jest.Mock)
+      .mockResolvedValueOnce({ schoolid: KHMER.schoolid, schoolname: "សាលាចាស់" })
+      .mockResolvedValue({ schoolid: KHMER.schoolid, schoolname: KHMER.schoolname });
+    const users = echoUsers();
+    const learners = jest.spyOn(students, "bulkCreate").mockResolvedValue([] as never);
+
+    await new StudentController().createall(body as never, false, "true");
+
+    expect(rowsOf(users)[0]).toMatchObject(KHMER);
+    expect(rowsOf(learners)[0]).toMatchObject(KHMER);
   });
 
   it("stores nothing, and rolls back, when the school no longer exists", async () => {
-    jest.spyOn(schools, "findOne").mockResolvedValue(null as never);
+    (schools.findOne as jest.Mock).mockReset();
+    (schools.findOne as jest.Mock).mockResolvedValue(null);
     const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
     const learners = jest.spyOn(students, "bulkCreate").mockResolvedValue([] as never);
 
@@ -157,6 +194,18 @@ describe("StudentController.createall (POST /student/create)", () => {
     expect(tnx.rollback).toHaveBeenCalled();
     expect(tnx.commit).not.toHaveBeenCalled();
   });
+
+  it("stores nothing, and rolls back, when the school is renamed away or deleted between the check and the insert", async () => {
+    (schools.findOne as jest.Mock).mockReset();
+    (schools.findOne as jest.Mock)
+      .mockResolvedValueOnce({ schoolid: KHMER.schoolid, schoolname: KHMER.schoolname })
+      .mockResolvedValue(null);
+    const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
+
+    await expect(new StudentController().createall(body as never, false, "true")).rejects.toBeInstanceOf(ApiError);
+    expect(users).not.toHaveBeenCalled();
+    expect(tnx.rollback).toHaveBeenCalled();
+  });
 });
 
 describe("TeacherController.createall (POST /teacher/create)", () => {
@@ -166,39 +215,50 @@ describe("TeacherController.createall (POST /teacher/create)", () => {
       { schoolname: KHMER.schoolname, teachers: [{ schoolusername: "khm.teacher", schooluserpasswordhash: "pw" }] } as never,
       false,
     );
-    expect((users.mock.calls[0][0] as Array<Record<string, unknown>>)[0]).toMatchObject(KHMER);
+    expect(rowsOf(users)[0]).toMatchObject(KHMER);
   });
 
-  it("creates nothing for a school name that matches no school", async () => {
+  it("stores the school's own name for capitals and a trailing space", async () => {
+    const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([{ schooluserid: "t1" }] as never);
+    await new TeacherController().createall(
+      { schoolname: "SAMPLE school  ", teachers: [{ schoolusername: "t", schooluserpasswordhash: "pw" }] } as never,
+      false,
+    );
+    expect(rowsOf(users)[0]).toMatchObject(SAMPLE);
+  });
+
+  it("creates nothing for a school name that matches no school, or only under the collation", async () => {
     const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
-    await expect(
-      new TeacherController().createall(
-        { schoolname: "Nowhere", teachers: [{ schoolusername: "x", schooluserpasswordhash: "pw" }] } as never,
-        false,
-      ),
-    ).rejects.toBeInstanceOf(ApiError);
+    for (const schoolname of ["Nowhere", "សាលាគរូ"]) {
+      await expect(
+        new TeacherController().createall(
+          { schoolname, teachers: [{ schoolusername: "x", schooluserpasswordhash: "pw" }] } as never,
+          false,
+        ),
+      ).rejects.toBeInstanceOf(ApiError);
+    }
     expect(users).not.toHaveBeenCalled();
-    expect(tnx.rollback).toHaveBeenCalled();
+    expect(tnx.rollback).toHaveBeenCalledTimes(2);
   });
 });
 
 describe("TeacherBusiness.addteacheruserbyschoolname (PUT /import/:schoolname/teachers)", () => {
   const teachers = [{ teacherusername: "t9", teacheruserpassword: "pw" }];
 
-  it("writes the id resolved from the school name, in the same transaction", async () => {
+  it("writes the id and the school's own name, resolved in the same transaction", async () => {
     const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
-    await new TeacherBusiness().addteacheruserbyschoolname(teachers, SAMPLE.schoolname);
-    expect((users.mock.calls[0][0] as Array<Record<string, unknown>>)[0]).toMatchObject(SAMPLE);
+    await new TeacherBusiness().addteacheruserbyschoolname(teachers, "sample school");
+    expect(rowsOf(users)[0]).toMatchObject(SAMPLE);
     expect(schools.findAll).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
   });
 
   it("imports nothing for a name that matches no school or only matches under the collation", async () => {
     const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
-    for (const name of ["Nowhere", "Sample School ", "សាលាគរូ"]) {
+    for (const name of ["Nowhere", "សាលាគរូ"]) {
       await expect(new TeacherBusiness().addteacheruserbyschoolname(teachers, name)).rejects.toBeInstanceOf(ApiError);
     }
     expect(users).not.toHaveBeenCalled();
-    expect(tnx.rollback).toHaveBeenCalledTimes(3);
+    expect(tnx.rollback).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -223,6 +283,7 @@ describe("StudentBusiness.updateStudents (PUT /student/update: a learner move be
 
   let user: { schoolname?: string; schoolid?: string; schoolusername: string; save: jest.Mock };
   let update: jest.SpyInstance;
+  let standard: jest.SpyInstance;
 
   beforeEach(() => {
     user = { schoolusername: "khm.learner", save: jest.fn().mockResolvedValue(undefined) };
@@ -230,14 +291,17 @@ describe("StudentBusiness.updateStudents (PUT /student/update: a learner move be
       studentid: "s1",
       schooluser: { schooluserid: "u1", schoolusername: "khm.learner" },
     } as never);
-    jest.spyOn(standards, "findOne").mockResolvedValue({ standardid: "std-1" } as never);
+    standard = jest.spyOn(standards, "findOne").mockResolvedValue({ standardid: "std-1" } as never);
     jest.spyOn(curriculums, "findAll").mockResolvedValue([{ curriculumid: "c1" }] as never);
     jest.spyOn(schoolusers, "findOne").mockResolvedValue(user as never);
     update = jest.spyOn(students, "update").mockResolvedValue([1] as never);
   });
 
+  const run = (schoolname: string) =>
+    new StudentBusiness().updateStudents([edit(schoolname)] as never, { lmsuserid: "staff" } as never, tnx as never);
+
   it("writes the new school's id with its name on the learner AND on the login", async () => {
-    await new StudentBusiness().updateStudents([edit(KHMER.schoolname)] as never, { lmsuserid: "staff" } as never, tnx as never);
+    await run(KHMER.schoolname);
 
     expect(update.mock.calls[0][0]).toMatchObject(KHMER);
     expect(update.mock.calls[0][1]).toMatchObject({ transaction: tnx });
@@ -248,11 +312,18 @@ describe("StudentBusiness.updateStudents (PUT /student/update: a learner move be
     expect(schools.findAll).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
   });
 
-  it("writes nothing for a name that matches no school, or only under the collation", async () => {
-    for (const name of ["Nowhere", "Sample School ", "សាលាគរូ"]) {
-      await expect(
-        new StudentBusiness().updateStudents([edit(name)] as never, { lmsuserid: "staff" } as never, tnx as never),
-      ).rejects.toBeInstanceOf(ApiError);
+  it("writes the school's own stored name, not the file's text, for a trailing space or capitals; the class is looked up in that school", async () => {
+    await run(" SAMPLE school ");
+
+    expect(update.mock.calls[0][0]).toMatchObject(SAMPLE);
+    expect(user.schoolname).toBe(SAMPLE.schoolname);
+    expect(user.schoolid).toBe(SAMPLE.schoolid);
+    expect(JSON.stringify((standard.mock.calls[0][0] as { include: unknown }).include)).toContain(SAMPLE.schoolname);
+  });
+
+  it("writes nothing for a name that matches no school, or only under the collation (a Khmer mark)", async () => {
+    for (const name of ["Nowhere", "សាលាគរូ"]) {
+      await expect(run(name)).rejects.toBeInstanceOf(ApiError);
     }
     expect(update).not.toHaveBeenCalled();
     expect(user.save).not.toHaveBeenCalled();
@@ -267,7 +338,8 @@ describe("SchoolBusiness.updateschoolName (PUT /school/update/:schoolid: a renam
 
   beforeEach(() => {
     school = { schoolid: SAMPLE.schoolid, schoolname: SAMPLE.schoolname, save: jest.fn().mockResolvedValue(undefined) };
-    jest.spyOn(schools, "findOne").mockResolvedValue(school as never);
+    (schools.findOne as jest.Mock).mockReset();
+    (schools.findOne as jest.Mock).mockResolvedValue(school);
     learners = jest.spyOn(students, "update").mockResolvedValue([3] as never);
     logins = jest.spyOn(schoolusers, "update").mockResolvedValue([3] as never);
   });
@@ -280,10 +352,7 @@ describe("SchoolBusiness.updateschoolName (PUT /school/update/:schoolid: a renam
 
     expect(school.save).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
     for (const spy of [learners, logins]) {
-      expect(spy).toHaveBeenCalledWith(
-        { schoolname: "សាលាថ្មី" },
-        { where: { schoolid: SAMPLE.schoolid }, transaction: tnx },
-      );
+      expect(spy).toHaveBeenCalledWith({ schoolname: "សាលាថ្មី" }, { where: { schoolid: SAMPLE.schoolid }, transaction: tnx });
     }
     expect(tnx.commit).toHaveBeenCalledTimes(1);
     expect(tnx.rollback).not.toHaveBeenCalled();
@@ -320,8 +389,64 @@ describe("SchoolBusiness.updateschoolName (PUT /school/update/:schoolid: a renam
   });
 
   it("returns null for a school that does not exist, writing nothing", async () => {
-    jest.spyOn(schools, "findOne").mockResolvedValue(null as never);
+    (schools.findOne as jest.Mock).mockResolvedValue(null);
     await expect(rename("x")).resolves.toBeNull();
     expect(learners).not.toHaveBeenCalled();
+  });
+});
+
+describe("a rename racing a learner create in that school", () => {
+  /**
+   * A tiny in-memory school/learner store with the one property that matters:
+   * a transaction that has READ the school (shared lock) holds off a rename's
+   * UPDATE of it, and a committed rename is visible to later reads. Whichever
+   * of the two commits second must leave the learner's name equal to the
+   * school's: either the create reads the new name, or the rename's cascade
+   * renames the new learner. (The same two orders run against real MySQL
+   * locks in the PR description.)
+   */
+  it("create first, rename second: the rename's cascade, keyed on the id, renames the new learner too", async () => {
+    const school = { schoolid: KHMER.schoolid, schoolname: KHMER.schoolname };
+    const learnersTable: Array<{ schoolid: string; schoolname: string }> = [];
+    (schools.findOne as jest.Mock).mockReset();
+    (schools.findOne as jest.Mock).mockImplementation(async () => ({ ...school, save: async () => undefined }));
+    jest.spyOn(schoolusers, "bulkCreate").mockImplementation((async (rows: never[]) => rows) as never);
+    jest.spyOn(students, "bulkCreate").mockImplementation((async (rows: Array<{ schoolid: string; schoolname: string }>) => {
+      learnersTable.push(...rows);
+      return rows;
+    }) as never);
+    jest.spyOn(students, "update").mockImplementation((async (values: { schoolname: string }, opts: { where: { schoolid: string } }) => {
+      learnersTable.filter((l) => l.schoolid === opts.where.schoolid).forEach((l) => (l.schoolname = values.schoolname));
+      return [1];
+    }) as never);
+    jest.spyOn(schoolusers, "update").mockResolvedValue([0] as never);
+
+    await new StudentBusiness().createStudents([{ studentid: "s1", schoolid: school.schoolid, schoolname: school.schoolname }] as never, tnx as never);
+    // the rename commits afterwards
+    (schools.findOne as jest.Mock).mockResolvedValue({
+      schoolid: school.schoolid,
+      schoolname: school.schoolname,
+      save: async function (this: { schoolname: string }) {
+        school.schoolname = this.schoolname;
+      },
+    });
+    await new SchoolBusiness().updateschoolName({ schoolid: school.schoolid, schoolname: "សាលាថ្មី", countryid: "c", curriculums: [] } as never, { lmsuserid: "u" } as never);
+
+    expect(learnersTable.map((l) => l.schoolname)).toEqual([school.schoolname]);
+    expect(school.schoolname).toBe("សាលាថ្មី");
+  });
+
+  it("rename first, create second (the create had read the school before the rename): the learner is stored under the school's committed name", async () => {
+    // The create's caller read the school as "សាលាគំរូ"; the rename committed "សាលាថ្មី" before the insert.
+    (schools.findOne as jest.Mock).mockReset();
+    (schools.findOne as jest.Mock).mockResolvedValue({ schoolid: KHMER.schoolid, schoolname: "សាលាថ្មី" });
+    const learnersSpy = jest.spyOn(students, "bulkCreate").mockResolvedValue([] as never);
+
+    await new StudentBusiness().createStudents(
+      [{ studentid: "s1", schoolid: KHMER.schoolid, schoolname: KHMER.schoolname }] as never,
+      tnx as never,
+    );
+
+    expect(rowsOf(learnersSpy)[0]).toMatchObject({ schoolid: KHMER.schoolid, schoolname: "សាលាថ្មី" });
   });
 });

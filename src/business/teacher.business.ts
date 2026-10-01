@@ -9,7 +9,7 @@ import { IPaging } from "src/models/IPaging";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import { buildWhere } from "src/services/util.service";
 import { v4 } from "uuid";
-import { requireSchoolIdByName } from "./school-identity";
+import { requireSchoolByName } from "./school-identity";
 
 export class TeacherBusiness {
   getteacheruserbyschoolname = (schoolname: string) =>
@@ -38,8 +38,8 @@ export class TeacherBusiness {
   ) => {
     const tnx = await dbinstance.getdbinstance().transaction();
     try {
-      // Resolved inside the transaction; a name that matches no school fails the import.
-      const schoolid = await requireSchoolIdByName(schoolname, tnx);
+      // Resolved inside the transaction; the school's own stored name is what is written.
+      const school = await requireSchoolByName(schoolname, tnx);
       const su = await schoolusers.bulkCreate(
         teachers.map((x) => ({
           schooluserpasswordhash: hashPassword(x.teacheruserpassword),
@@ -47,8 +47,8 @@ export class TeacherBusiness {
           schooluserrole: SchoolRole.TEACHER,
           isdisabled: false,
           schooluserid: v4(),
-          schoolname,
-          schoolid,
+          schoolname: school.schoolname,
+          schoolid: school.schoolid,
         })),
         { transaction: tnx }
       );
