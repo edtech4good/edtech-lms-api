@@ -368,6 +368,17 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
       });
     });
 
+    it("an unknown role id on a Super Admin target is refused as 403 by a caller who is not platform (the target check comes first), and nothing is written", async () => {
+      target.held = [Role.superadmin];
+      for (const who of ["orgSuperAdmin", "unassignedAdmin", "orgAdmin"] as const) {
+        const res = await edit(callers[who], { lmsusername: "changed@example.com", lmsuserpasswordhash: "ChangedPass12", lmsuserroles: ["zzzzzzzz"] });
+        expect(res.status).toBe(403);
+        const bound = await send.bind(callers[who], ["zzzzzzzz"]);
+        expect(bound.status).toBe(403);
+      }
+      nothingWritten();
+    });
+
     it.each(edits.slice(0, 3))("a platform user editing %s is allowed", async (_what, body) => {
       target.held = [Role.superadmin];
       await edit(callers.platform, body).expect(200);
