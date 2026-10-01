@@ -299,7 +299,9 @@ export class AuthController {
   async verifyemail(
     @Body() body: EmailVerificationRequestBody
   ): Promise<EmailResponse> {
-    const user = await new UserBusiness().getuserbyemail(body.lmsusername);
+    // The mail goes to the address stored on the account, and the request acts
+    // only when the address given is that account's address.
+    const user = await new UserBusiness().getuserforemailrequest(body.lmsusername);
     if (!user) {
       return {
         data: "User info not found",
@@ -307,7 +309,7 @@ export class AuthController {
       };
     }
     await sendverificationemail(
-      body.lmsusername,
+      user.lmsusername,
       await new TokenBusiness().generateVerifyEmailToken(user)
     );
     return {
@@ -347,14 +349,18 @@ export class AuthController {
     // awaiting them, so the response time does not itself distinguish a
     // known email (which used to await a ~2.5s SMTP round trip) from an
     // unknown one (review finding B2); failures are logged, not thrown.
-    const user = await new UserBusiness().getuserbyemail(body.lmsusername);
+    //
+    // The reset link goes only to the address stored on the account, and a
+    // request acts only when the address given is that account's address; any
+    // other address is treated as unknown (no token, no mail).
+    const user = await new UserBusiness().getuserforemailrequest(body.lmsusername);
     if (user) {
       new TokenBusiness()
         .generateChangePasswordToken(user)
-        .then((token) => sendchangepasswordemail(body.lmsusername, token))
+        .then((token) => sendchangepasswordemail(user.lmsusername, token))
         .catch((error) => {
           Logger.error("Forgot-password email failed to send", {
-            username: body.lmsusername,
+            username: user.lmsusername,
             error,
           });
         });
