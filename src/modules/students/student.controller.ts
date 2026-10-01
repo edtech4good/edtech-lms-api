@@ -85,7 +85,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 )
 export class StudentController {
 
-  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
+  @OrgPolicy("owned")
   @Get("download-students")
   @ApiResponse({
     status: 200,
@@ -188,7 +188,7 @@ export class StudentController {
     };
   }
 
-  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use. The optional cloud push sends the new learners to the student API." })
+  @OrgPolicy("owned", { note: "The optional cloud push must send only the learners created by this call." })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -520,7 +520,7 @@ export class StudentController {
   // matching ADD_PERMISSIONS_KEY (committed to this public repo) with its
   // AccessGuard commented out, so it leaned on the class guard alone. See
   // docs/authorization-model.md.
-  @OrgPolicy("platform", { note: "One-off migration over every organisation's data." })
+  @OrgPolicy("platform", { note: "One-off migration across all organisations; platform only." })
   @Post("migrate-standardid")
   @ApiResponse({
     status: 200,
@@ -540,7 +540,7 @@ export class StudentController {
     };
   }
 
-  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
+  @OrgPolicy("owned")
   @Put("update")
   @ApiResponse({
     status: 200,
@@ -582,7 +582,7 @@ export class StudentController {
   }
 
   // Super Admin only (same public-key history as migrate-standardid above).
-  @OrgPolicy("platform", { note: "One-off migration over every organisation's data." })
+  @OrgPolicy("platform", { note: "One-off migration across all organisations; platform only." })
   @Post("migrate-subject-curriculum")
   @ApiResponse({
     status: 200,

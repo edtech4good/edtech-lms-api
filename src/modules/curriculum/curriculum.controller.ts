@@ -78,7 +78,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiBearerAuth()
 export class CurriculumController {
 
-  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
+  @OrgPolicy("owned")
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -579,7 +579,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
+  @OrgPolicy("owned")
   @Get("country/:countryid")
   @ApiResponse({
     status: 200,

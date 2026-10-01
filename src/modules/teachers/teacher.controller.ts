@@ -98,7 +98,7 @@ export class TeacherController {
     };
   }
 
-  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use. The optional cloud push sends the new teachers to the student API." })
+  @OrgPolicy("owned", { note: "The optional cloud push must send only the teachers created by this call." })
   @Post("create")
   @ApiResponse({
     status: 200,

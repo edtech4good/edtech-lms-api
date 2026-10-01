@@ -358,7 +358,7 @@ export class LessonController {
     };
   }
 
-  @OrgPolicy("platform", { note: "Rewrites the points of every lesson of every organisation." })
+  @OrgPolicy("platform", { note: "Bulk recompute across all organisations; platform only." })
   @Post("update_reward_points")
   @ApiResponse({
     status: 200,

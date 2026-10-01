@@ -12,7 +12,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiExtraModels(TemplateTypeDropDownResponse)
 export class CommonController {
 
-  @OrgPolicy("public", { note: "Static list of template types; no data." })
+  @OrgPolicy("public", { note: "Returns a static list of template types." })
   @Get('templatetype')
   @ApiResponse({
     status: 200,

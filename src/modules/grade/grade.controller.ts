@@ -226,7 +226,7 @@ export class GradeController {
     };
   }
 
-  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
+  @OrgPolicy("owned")
   @Get('curriculum/:curriculumid')
   @ApiResponse({
     status: 200,

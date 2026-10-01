@@ -27,7 +27,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiBearerAuth()
 export class SyncController {
 
-  @OrgPolicy("server", { note: "Authenticated by the application API key only; carries no user." })
+  @OrgPolicy("server", { note: "Authenticated only by the application API key; must be served as platform until the key is retired or scoped." })
   @Get("report-data")
   @ApiResponse({
     status: 200,
@@ -56,7 +56,7 @@ export class SyncController {
     return new StreamableFile(zip.toBuffer());
   }
 
-  @OrgPolicy("owned", { note: "Exports content; limited to one organisation's content. A platform caller must name the organisation." })
+  @OrgPolicy("owned", { note: "Must export only one organisation's content; a platform caller must name the organisation." })
   @Get("")
   @ApiResponse({
     status: 200,
@@ -85,7 +85,7 @@ export class SyncController {
     return new StreamableFile(zip.toBuffer());
   }
 
-  @OrgPolicy("owned", { note: "Exports content; limited to one organisation's content. A platform caller must name the organisation." })
+  @OrgPolicy("owned", { note: "Must export only one organisation's content; a platform caller must name the organisation." })
   @Get("content")
   @ApiResponse({
     status: 200,
@@ -114,7 +114,7 @@ export class SyncController {
     return new StreamableFile(zip.toBuffer());
   }
 
-  @OrgPolicy("owned", { note: "Pushes the caller's organisation's content to the student API with the sync key." })
+  @OrgPolicy("owned", { note: "Must push only the caller's organisation's content; a platform caller must name the organisation." })
   @Post("cloud")
   @ApiResponse({
     status: 200,
@@ -160,7 +160,7 @@ export class SyncController {
     }
   }
 
-  @OrgPolicy("owned", { note: "Pushes one school's learners to the student API with the sync key; the school must belong to the caller's organisation." })
+  @OrgPolicy("owned", { note: "Must push only learners of a school of the caller's organisation; a platform caller must name the organisation." })
   @Post("cloud/:schoolname/students")
   @ApiResponse({
     status: 200,

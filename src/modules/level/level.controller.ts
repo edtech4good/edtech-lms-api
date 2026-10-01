@@ -350,7 +350,7 @@ export class LevelController {
     };
   }
 
-  @OrgPolicy("platform", { note: "Rewrites the quiz points of every level of every organisation." })
+  @OrgPolicy("platform", { note: "Bulk recompute across all organisations; platform only." })
   @Post("update_quiz_points")
   @ApiResponse({
     status: 200,

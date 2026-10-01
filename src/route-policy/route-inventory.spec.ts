@@ -1,16 +1,29 @@
 import { readFileSync } from "fs";
 import { join } from "path";
+import { mixin } from "@nestjs/common";
+import * as ts from "typescript";
+import {
+  ORG_POLICIES,
+  ORG_POLICY_DEFINITIONS,
+  ORG_POLICY_TIE_BREAK,
+} from "src/decorators/orgPolicy.decorator";
+import { AccessGuard } from "src/guards/access.guard";
+import { TokenType } from "src/models/enums";
 import {
   countByPolicy,
+  describeGuard,
   duplicateRoutes,
   enumerateRoutes,
+  globalRouteViolations,
   INVENTORY_DOC_PATH,
   parsePendingSnapshot,
   pendingEnforcementLines,
+  policyLabel,
   RouteRecord,
   renderInventoryMarkdown,
   routesWithoutPolicy,
   routesWithUnknownPolicy,
+  selfRouteViolations,
 } from "./route-inventory";
 
 /**
@@ -39,18 +52,37 @@ const EXPECTED_TOTAL = 281;
 const EXPECTED_BY_POLICY = {
   public: 11,
   self: 4,
-  owned: 248,
+  owned: 243,
   platform: 17,
   server: 1,
+  global: 5,
 };
 
-// Routes that have no AccessGuard yet are not `public`, because the handler
-// itself authenticates the bearer token. Listed by name so it cannot grow
-// silently.
+// The `self` and `global` sets are pinned by name, so moving a route into
+// either one is a conscious edit.
+const EXPECTED_SELF = [
+  "POST /auth/logout",
+  "PUT /auth/changepassword",
+  "POST /auth/refreshtoken",
+  "POST /auth/verify",
+];
+const EXPECTED_GLOBAL = [
+  "GET /roles",
+  "GET /roles/:roleid",
+  "GET /roles/node/permissions",
+  "GET /roles/permissions",
+  "POST /roles",
+];
+
+// Routes with no AccessGuard that are not `public`, because the handler itself
+// authenticates the bearer token (a `self` route). Listed by name so it cannot
+// grow silently.
 const AUTHENTICATED_IN_HANDLER = ["POST /auth/logout"];
 
 const SNAPSHOT_FILE = join(__dirname, "pending-enforcement.snapshot.txt");
 const DOC_FILE = join(__dirname, "..", "..", INVENTORY_DOC_PATH);
+const DECORATOR_FILE = join(__dirname, "..", "decorators", "orgPolicy.decorator.ts");
+const SERVER_FILE = join(__dirname, "..", "server.ts");
 
 const key = (r: RouteRecord) => `${r.method} ${r.path}`;
 
@@ -92,10 +124,10 @@ describe("route inventory (real application wiring)", () => {
       expect(pendingEnforcementLines(routes)).toEqual(snapshot);
     });
 
-    it("leaves out routes that a guard already enforces, public and self", () => {
+    it("leaves out routes that a guard already enforces, public, self and global", () => {
       const listed = new Set(pendingEnforcementLines(routes).map((l) => l.split("  ")[0]));
       for (const r of routes) {
-        if (r.policy === "public" || r.policy === "self" || r.hasPlatformGuard) {
+        if (r.policy === "public" || r.policy === "self" || r.policy === "global" || r.hasPlatformGuard) {
           expect(listed.has(key(r))).toBe(false);
         }
       }
@@ -116,11 +148,13 @@ describe("route inventory (real application wiring)", () => {
       );
       expect(unguarded.filter((r) => r.policy !== "public").map(key)).toEqual([]);
       expect(routes.filter((r) => r.policy === "public" && r.auth !== "none").map(key)).toEqual([]);
-      // the named exceptions really have no guard and really are not public
+    });
+
+    it("the handler-authenticated exceptions really have no guard and are exactly `self`", () => {
       for (const name of AUTHENTICATED_IN_HANDLER) {
         const r = routes.find((x) => key(x) === name);
         expect(r?.auth).toBe("none");
-        expect(r?.policy).not.toBe("public");
+        expect(r?.policy).toBe("self");
       }
     });
 
@@ -129,11 +163,56 @@ describe("route inventory (real application wiring)", () => {
       expect(routes.filter((r) => r.policy === "server" && !r.admitsApiKey).map(key)).toEqual([]);
     });
 
-    it("routes that also admit the API key are `server` or say so in their note", () => {
-      const unexplained = routes.filter(
-        (r) => r.admitsApiKey && r.policy !== "server" && !/API key/.test(r.note ?? ""),
+    it("only `owned`, `platform` and `server` routes admit the API key (a route that does is marked in the snapshot)", () => {
+      const wrong = routes.filter(
+        (r) => r.admitsApiKey && !["owned", "platform", "server"].includes(r.policy ?? ""),
       );
-      expect(unexplained.map(key)).toEqual([]);
+      expect(wrong.map(key)).toEqual([]);
+      const marked = pendingEnforcementLines(routes).filter((l) => l.endsWith("+apikey"));
+      expect(marked).toHaveLength(routes.filter((r) => r.admitsApiKey && r.policy !== "global").length);
+    });
+
+    it("`self` is the four named routes, each using a non-ACCESS token guard or a named exception", () => {
+      expect(routes.filter((r) => r.policy === "self").map(key).sort()).toEqual([...EXPECTED_SELF].sort());
+      expect(selfRouteViolations(routes, AUTHENTICATED_IN_HANDLER)).toEqual([]);
+    });
+
+    it("`global` is the five named role and permission reads, staff access token only", () => {
+      expect(routes.filter((r) => r.policy === "global").map(key).sort()).toEqual([...EXPECTED_GLOBAL].sort());
+      expect(globalRouteViolations(routes)).toEqual([]);
+    });
+
+    it("`global` routes are not pending enforcement", () => {
+      const pending = new Set(pendingEnforcementLines(routes).map((l) => l.split("  ")[0]));
+      for (const r of routes.filter((x) => x.policy === "global")) {
+        expect(pending.has(key(r))).toBe(false);
+      }
+    });
+  });
+
+  describe("what the inventory cannot see", () => {
+    it("the bootstrap (src/server.ts) sets no global prefix and enables no versioning", () => {
+      const source = ts.createSourceFile(SERVER_FILE, readFileSync(SERVER_FILE, "utf8"), ts.ScriptTarget.ES2020, true);
+      const calls: string[] = [];
+      const visit = (node: ts.Node) => {
+        if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+          const name = node.expression.name.text;
+          if (name === "setGlobalPrefix" || name === "enableVersioning") calls.push(name);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+      expect(calls).toEqual([]);
+    });
+
+    it("the policy definitions in the decorator's doc comment match the data the document uses", () => {
+      const comment = readFileSync(DECORATOR_FILE, "utf8")
+        .replace(/\s*\n\s*\*\s*/g, " ")
+        .replace(/\s+/g, " ");
+      for (const policy of ORG_POLICIES) {
+        expect(comment).toContain(ORG_POLICY_DEFINITIONS[policy]);
+      }
+      expect(comment).toContain(ORG_POLICY_TIE_BREAK);
     });
   });
 
@@ -157,6 +236,8 @@ describe("route inventory checks (synthetic routes, to prove they can fail)", ()
     admitsApiKey: false,
     hasPlatformGuard: false,
     permissions: [],
+    tokenTypes: ["ACCESS"],
+    schoolUserAdmitted: false,
     ...over,
   });
 
@@ -175,6 +256,38 @@ describe("route inventory checks (synthetic routes, to prove they can fail)", ()
     expect(duplicateRoutes([route({}), route({ method: "POST" })])).toHaveLength(0);
   });
 
+  it("marks an API-key route in the snapshot line", () => {
+    expect(pendingEnforcementLines([route({ path: "/k", admitsApiKey: true })])).toEqual(["GET /k  owned+apikey"]);
+    expect(policyLabel(route({}))).toBe("owned");
+  });
+
+  it("flags a `global` route that admits a school-user token, the API key, PlatformGuard, a non-ACCESS token, or no guard", () => {
+    const ok = route({ policy: "global" });
+    expect(globalRouteViolations([ok])).toEqual([]);
+    for (const bad of [
+      { schoolUserAdmitted: true },
+      { admitsApiKey: true },
+      { hasPlatformGuard: true },
+      { tokenTypes: ["REFRESH"] },
+      { tokenTypes: [] },
+    ]) {
+      expect(globalRouteViolations([route({ policy: "global", ...bad })])).toHaveLength(1);
+    }
+  });
+
+  it("flags a `self` route that uses an ACCESS guard or no guard, unless it is a named exception", () => {
+    expect(selfRouteViolations([route({ policy: "self", tokenTypes: ["REFRESH"] })], [])).toEqual([]);
+    expect(selfRouteViolations([route({ policy: "self", tokenTypes: ["ACCESS"] })], [])).toHaveLength(1);
+    expect(selfRouteViolations([route({ policy: "self", tokenTypes: [] })], [])).toHaveLength(1);
+    expect(selfRouteViolations([route({ policy: "self", tokenTypes: [] })], ["GET /x"])).toEqual([]);
+  });
+
+  it("refuses to describe a mixin guard that has no ACCESS_GUARD_INFO, and describes an AccessGuard", () => {
+    const stranger = mixin(class SomeOtherGuard {});
+    expect(() => describeGuard(stranger)).toThrow(/ACCESS_GUARD_INFO/);
+    expect(describeGuard(AccessGuard(TokenType.ACCESS))).toBe("AccessGuard(ACCESS)");
+  });
+
   it("lists pending routes sorted, and leaves enforced ones out", () => {
     const lines = pendingEnforcementLines([
       route({ path: "/b", policy: "owned" }),
@@ -183,6 +296,7 @@ describe("route inventory checks (synthetic routes, to prove they can fail)", ()
       route({ path: "/d", policy: "platform" }),
       route({ path: "/e", policy: "public" }),
       route({ path: "/f", policy: "self" }),
+      route({ path: "/g", policy: "global" }),
     ]);
     expect(lines).toEqual(["GET /a  server", "GET /b  owned", "GET /d  platform"]);
   });

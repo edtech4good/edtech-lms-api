@@ -285,7 +285,7 @@ export class DocumentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { note: "The signed key must be scoped to the caller's organisation." })
   @Get("presign/:filename")
   @ApiResponse({
     status: 200,

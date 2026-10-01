@@ -77,7 +77,7 @@ export class SchoolController {
   // 'corporate' vs 'kids' response already distinguishes real schools from
   // unknown ones — it exists so the app never has to special-case a 404 and
   // so any lookup failure fails open to the safe 'kids' default.
-  @OrgPolicy("public", { note: "Pre-sign-in branding for the login screen; returns only theme and branding of the named school." })
+  @OrgPolicy("public", { note: "Deliberately published before sign-in: returns only the theme and branding of the named school." })
   @Get("branding")
   @ApiResponse({
     status: 200,
@@ -141,7 +141,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
+  @OrgPolicy("owned")
   @Get("")
   @ApiResponse({
     status: 200,
@@ -162,7 +162,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
+  @OrgPolicy("owned")
   @Get("country/:countryid")
   @ApiResponse({
     status: 200,
@@ -186,7 +186,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned", { note: "Also admits the application API key: that caller needs an explicit organisation scope or platform-only use." })
+  @OrgPolicy("owned")
   @Get("country/:countryid/curriculum/:curriculumid")
   @ApiResponse({
     status: 200,

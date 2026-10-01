@@ -4,6 +4,7 @@ import {
   GUARDS_METADATA,
   METHOD_METADATA,
   PATH_METADATA,
+  VERSION_METADATA,
 } from "@nestjs/common/constants";
 import { addLeadingSlash } from "@nestjs/common/utils/shared.utils";
 import {
@@ -12,6 +13,7 @@ import {
   DiscoveryService,
   MetadataScanner,
   NestFactory,
+  Reflector,
 } from "@nestjs/core";
 import { RoutePathFactory } from "@nestjs/core/router/route-path-factory";
 import { AppModule } from "src/app.module";
@@ -22,9 +24,12 @@ import {
 import {
   getOrgPolicy,
   ORG_POLICIES,
+  ORG_POLICY_DEFINITIONS,
+  ORG_POLICY_TIE_BREAK,
   OrgPolicyName,
 } from "src/decorators/orgPolicy.decorator";
 import { PERMISSIONS_KEY } from "src/decorators/requirePermissions.decorator";
+import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { PlatformGuard } from "src/guards/platform.guard";
 import { Role, TokenType } from "src/models/enums";
 
@@ -72,7 +77,23 @@ export interface RouteRecord {
    */
   admitsApiKey: boolean;
   hasPlatformGuard: boolean;
+  /**
+   * Permissions CheckPermissionsGuard asks for: what its own
+   * `getAllAndOverride` returns for this handler and class, so handler
+   * metadata wins over class metadata (it is not a union).
+   */
   permissions: string[];
+  /** Token types of the AccessGuards on the route (ACCESS, REFRESH, ...). */
+  tokenTypes: string[];
+  /**
+   * True when a school-user (teacher or classroom device) access token gets
+   * through every guard on the route. Derived from guard metadata alone: a
+   * school-user token is an ACCESS token that carries no `lmsuserroles`, no
+   * `permissions` and no `lmsuserid`, so it passes when every AccessGuard is
+   * the ACCESS type with an empty role list, there is no PlatformGuard, and
+   * CheckPermissionsGuard (if present) asks for no permission.
+   */
+  schoolUserAdmitted: boolean;
 }
 
 const ROLE_NAMES = new Map<string, string>(
@@ -99,7 +120,7 @@ type GuardRef = Function | object;
 const accessInfoOf = (guard: GuardRef): AccessGuardInfo | undefined =>
   (guard as { [ACCESS_GUARD_INFO]?: AccessGuardInfo })[ACCESS_GUARD_INFO];
 
-const describeGuard = (guard: GuardRef): string => {
+export const describeGuard = (guard: GuardRef): string => {
   const info = accessInfoOf(guard);
   if (info) {
     const args = [
@@ -108,11 +129,23 @@ const describeGuard = (guard: GuardRef): string => {
     ];
     return `AccessGuard(${args.join(", ")})`;
   }
-  if (typeof guard === "function") {
-    return guard.name;
+  const name =
+    typeof guard === "function" ? guard.name : (guard as object).constructor.name;
+  // Nest's mixin() renames a class to a random UUID. A guard like that with no
+  // ACCESS_GUARD_INFO is some other factory the inventory cannot read; say so
+  // rather than print a name that changes on every run.
+  if (UUID_NAME.test(name)) {
+    throw new Error(
+      "A mixin guard on a route has no ACCESS_GUARD_INFO, so the route inventory cannot read " +
+        "its token type or roles. Expose the same descriptor from the guard factory " +
+        "(see src/guards/access.guard.ts).",
+    );
   }
-  return (guard as object).constructor.name;
+  return name;
 };
+
+const UUID_NAME =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const asArray = <T>(value: T | T[] | undefined): T[] =>
   value === undefined ? [] : Array.isArray(value) ? value : [value];
@@ -130,7 +163,13 @@ export async function enumerateRoutes(): Promise<RouteRecord[]> {
     { logger: false },
   );
   try {
+    // The inventory rebuilds each path from the metadata alone, which is only
+    // right with no global prefix and no versioning. A context built here has
+    // no HTTP application config to ask, so versioning metadata is refused
+    // below and src/server.ts (where a prefix would be set) is checked by the
+    // spec.
     const discovery = app.get(DiscoveryService);
+    const reflector = new Reflector();
     const scanner = new MetadataScanner();
     const pathFactory = new RoutePathFactory(new ApplicationConfig());
     const routes: RouteRecord[] = [];
@@ -138,7 +177,14 @@ export async function enumerateRoutes(): Promise<RouteRecord[]> {
     for (const wrapper of discovery.getControllers()) {
       const metatype = wrapper.metatype as { name: string; prototype: object };
       if (!metatype || !wrapper.instance) {
-        continue;
+        throw new Error(
+          `Controller ${wrapper.name ?? "(unnamed)"} has no ${
+            metatype ? "instance (request-scoped or transient?)" : "class"
+          }; the route inventory would skip its routes.`,
+        );
+      }
+      if (Reflect.getMetadata(VERSION_METADATA, metatype) !== undefined) {
+        throw new Error(`${metatype.name} uses versioning; the route inventory does not model it.`);
       }
       const controllerPaths = pathsOf(
         Reflect.getMetadata(PATH_METADATA, metatype),
@@ -154,6 +200,11 @@ export async function enumerateRoutes(): Promise<RouteRecord[]> {
         if (methodPath === undefined) {
           return null; // a plain method, not a route
         }
+        if (Reflect.getMetadata(VERSION_METADATA, handlerFn) !== undefined) {
+          throw new Error(
+            `${metatype.name}.${name} uses versioning; the route inventory does not model it.`,
+          );
+        }
         const requestMethod = Reflect.getMetadata(METHOD_METADATA, handlerFn);
         const handlerGuards: GuardRef[] =
           Reflect.getMetadata(GUARDS_METADATA, handlerFn) ?? [];
@@ -162,12 +213,21 @@ export async function enumerateRoutes(): Promise<RouteRecord[]> {
           .map(accessInfoOf)
           .filter((i): i is AccessGuardInfo => i !== undefined);
         const policy = getOrgPolicy(handlerFn);
-        const permissions: string[] = [];
-        for (const target of [handlerFn, metatype]) {
-          permissions.push(
-            ...asArray<string>(Reflect.getMetadata(PERMISSIONS_KEY, target)),
-          );
-        }
+        // Exactly what CheckPermissionsGuard asks for.
+        const permissions = asArray<string>(
+          reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
+            handlerFn,
+            metatype as never,
+          ]),
+        );
+        const hasPlatformGuard = guards.some((g) => g === PlatformGuard);
+        const schoolUserAdmitted =
+          access.length > 0 &&
+          access.every(
+            (i) => i.tokentype === TokenType.ACCESS && i.roles.length === 0,
+          ) &&
+          !hasPlatformGuard &&
+          !(guards.some((g) => g === CheckPermissionsGuard) && permissions.length > 0);
 
         const auth: AuthKind =
           access.length === 0
@@ -202,8 +262,10 @@ export async function enumerateRoutes(): Promise<RouteRecord[]> {
                 admitsApiKey:
                   access.length > 0 &&
                   access.every((i) => i.roles.includes(Role.apikey)),
-                hasPlatformGuard: guards.some((g) => g === PlatformGuard),
-                permissions: [...new Set(permissions)],
+                hasPlatformGuard,
+                permissions,
+                tokenTypes: access.map((i) => TOKEN_NAMES.get(i.tokentype) ?? i.tokentype),
+                schoolUserAdmitted,
               });
             }
           }
@@ -244,10 +306,11 @@ export const countByPolicy = (routes: RouteRecord[]): Record<string, number> => 
 /**
  * Declaring a policy does not enforce it. A route is "pending enforcement"
  * while its policy is declared but no guard backs it: every `platform` route
- * without PlatformGuard, every `owned` route, every `server` route. `public`
- * and `self` have nothing further to enforce. As later work packages add the
- * guards and query filters, routes leave this list (and the snapshot that
- * pins it, pending-enforcement.snapshot.txt).
+ * without PlatformGuard, every `owned` route, every `server` route. `public`,
+ * `self` and `global` have nothing further to enforce here (their guards are
+ * the access guard they already have). As later work packages add the guards
+ * and query filters, routes leave this list (and the snapshot that pins it,
+ * pending-enforcement.snapshot.txt).
  */
 export const isPendingEnforcement = (route: RouteRecord): boolean =>
   (route.policy === "platform" && !route.hasPlatformGuard) ||
@@ -256,10 +319,15 @@ export const isPendingEnforcement = (route: RouteRecord): boolean =>
 
 const byCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
+/** The policy as written in the snapshot: `owned`, or `owned+apikey`. */
+export const policyLabel = (r: RouteRecord): string =>
+  `${r.policy ?? "(none)"}${r.admitsApiKey ? "+apikey" : ""}`;
+
 export const PENDING_SNAPSHOT_HEADER = [
   "# Routes whose organisation policy is declared but not yet enforced by a guard.",
   "# Enforcement arrives in a later package; entries are removed as it does.",
   "# One route per line, sorted by path then method: METHOD /path  policy",
+  "# `+apikey` marks a route whose guards also admit the application API key.",
   "# Generated: `npm run routes:policy -- --write`. Checked by route-inventory.spec.ts.",
 ];
 
@@ -267,7 +335,7 @@ export const PENDING_SNAPSHOT_HEADER = [
 export const pendingEnforcementLines = (routes: RouteRecord[]): string[] =>
   routes
     .filter(isPendingEnforcement)
-    .map((r) => ({ key: `${r.path}\u0000${r.method}`, line: `${r.method} ${r.path}  ${r.policy}` }))
+    .map((r) => ({ key: `${r.path}\u0000${r.method}`, line: `${r.method} ${r.path}  ${policyLabel(r)}` }))
     .sort((a, b) => byCodeUnits(a.key, b.key))
     .map((x) => x.line);
 
@@ -297,7 +365,9 @@ export const INVENTORY_DOC_PATH = "docs/route-policy-inventory.md";
  * byte for byte with what is committed.
  */
 export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
-  const counts = countByPolicy(routes);
+  const pending = routes.filter(isPendingEnforcement).length;
+  const apiKey = routes.filter((r) => r.admitsApiKey);
+  const schoolUser = routes.filter((r) => r.schoolUserAdmitted);
   const ordered = [...routes].sort(
     (a, b) =>
       byCodeUnits(a.controller, b.controller) ||
@@ -318,29 +388,54 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "```",
     "",
     "`src/route-policy/route-inventory.spec.ts` fails when this file is out of",
-    "date, and when a route has no policy. A policy states what a route REQUIRES;",
-    "enforcement of each policy arrives in later packages, tracked by",
+    "date, and when a route has no policy.",
+    "",
+    "## Enforced and pending",
+    "",
+    "A policy is a requirement on the routes that declare it. Declaring one does",
+    "not enforce it: enforcement arrives in later packages. The **Enforced**",
+    "column says which routes a guard already backs (`yes`) and which do not yet",
+    "(`pending`); the pending routes are pinned in",
     "`src/route-policy/pending-enforcement.snapshot.txt`.",
     "",
-    "Policies:",
+    `Of **${routes.length}** routes, **${routes.length - pending}** are enforced and **${pending}** are pending.`,
     "",
-    "- `public`: reachable without authentication.",
-    "- `self`: requires authentication; acts only on the caller's own account or session.",
-    "- `owned`: operates on organisation-owned data; limited to the caller's organisation.",
-    "- `platform`: platform staff only.",
-    "- `server`: server-to-server (application API key or sync key), no user; needs an explicit organisation scope or platform-only use.",
+    "| Policy | Routes | Enforced | Pending |",
+    "|---|---|---|---|",
+    ...POLICY_NAMES.map((p) => {
+      const n = routes.filter((r) => r.policy === p);
+      const pend = n.filter(isPendingEnforcement).length;
+      return `| ${p} | ${n.length} | ${n.length - pend} | ${pend} |`;
+    }),
+    `| **all** | **${routes.length}** | **${routes.length - pending}** | **${pending}** |`,
     "",
-    `Total: **${routes.length}** routes. ` +
-      POLICY_NAMES.map((p) => `${p} ${counts[p]}`).join(", ") +
-      ".",
+    "## Policies",
     "",
-    "| Method | Path | Handler | Policy | Guards | Note |",
-    "|---|---|---|---|---|---|",
+    "Each policy states what a route that declares it must satisfy.",
+    "",
+    ...POLICY_NAMES.map((p) => `- \`${p}\`: ${ORG_POLICY_DEFINITIONS[p as OrgPolicyName]}`),
+    "",
+    ORG_POLICY_TIE_BREAK,
+    "",
+    "## Columns",
+    "",
+    "- **Enforced**: `yes` when a guard already backs the policy, `pending` otherwise.",
+    "- **API key**: `yes` when every `AccessGuard` on the route lists the application API key, so a caller with no user gets through.",
+    "- **School-user token**: `yes` when a school-user (teacher or classroom device) access token gets through every guard on the route, derived from the guard metadata: every `AccessGuard` is the access token type with no role list, there is no `PlatformGuard`, and no permission is required.",
+    "",
+    `Routes admitting the API key: ${apiKey.length}. Routes admitting a school-user token: ${schoolUser.length}.`,
+    "",
+    "## Routes",
+    "",
+    "| Method | Path | Handler | Policy | Enforced | API key | School-user token | Guards | Note |",
+    "|---|---|---|---|---|---|---|---|---|",
     ...ordered.map(
       (r) =>
-        `| ${r.method} | \`${cell(r.path)}\` | ${r.controller}.${r.handler} | ${r.policy ?? "(none)"} | ${cell(
-          guardsCell(r),
-        )} | ${cell(r.note ?? "")} |`,
+        `| ${r.method} | \`${cell(r.path)}\` | ${r.controller}.${r.handler} | ${r.policy ?? "(none)"} | ${
+          isPendingEnforcement(r) ? "pending" : "yes"
+        } | ${r.admitsApiKey ? "yes" : ""} | ${r.schoolUserAdmitted ? "yes" : ""} | ${cell(guardsCell(r))} | ${cell(
+          r.note ?? "",
+        )} |`,
     ),
     "",
   ];
@@ -371,3 +466,45 @@ export const duplicateRoutes = (routes: RouteRecord[]): string[] => {
     .filter(([, list]) => list.length > 1)
     .map(([key, list]) => `${key}: ${list.map((r) => `${r.controller}.${r.handler}`).join(", ")}`);
 };
+
+const key = (r: RouteRecord): string => `${r.method} ${r.path}`;
+
+/**
+ * `global` routes read data no organisation owns, for staff. They must admit
+ * only staff access tokens: every AccessGuard is the ACCESS type, no school-user
+ * token and no API key gets through, and they are not PlatformGuard routes
+ * (that would make them `platform`).
+ */
+export const globalRouteViolations = (routes: RouteRecord[]): string[] =>
+  routes
+    .filter((r) => r.policy === "global")
+    .flatMap((r) => {
+      const why: string[] = [];
+      if (r.tokenTypes.length === 0) why.push("has no AccessGuard");
+      if (r.tokenTypes.some((t) => t !== "ACCESS")) why.push("accepts a non-ACCESS token type");
+      if (r.hasPlatformGuard) why.push("has PlatformGuard (should be `platform`)");
+      if (r.admitsApiKey) why.push("admits the API key");
+      if (r.schoolUserAdmitted) why.push("admits a school-user token");
+      return why.map((w) => `${key(r)}: ${w}`);
+    });
+
+/**
+ * `self` must not become a place to park routes that need no real check: every
+ * `self` route authenticates with a refresh, change-password or email-
+ * verification token through its guard, or is a named exception that checks the
+ * token in the handler.
+ */
+export const selfRouteViolations = (
+  routes: RouteRecord[],
+  authenticatedInHandler: readonly string[],
+): string[] =>
+  routes
+    .filter((r) => r.policy === "self")
+    .filter(
+      (r) =>
+        !(
+          (r.tokenTypes.length > 0 && r.tokenTypes.every((t) => t !== "ACCESS")) ||
+          authenticatedInHandler.includes(key(r))
+        ),
+    )
+    .map((r) => `${key(r)}: neither a non-ACCESS token guard nor a named handler-authenticated exception`);

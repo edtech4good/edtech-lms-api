@@ -52,7 +52,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 })
 @ApiBearerAuth()
 export class RolePermissionController {
-  @OrgPolicy("owned", { note: "Global reference data read by staff forms; what an organisation may see or assign differs per organisation." })
+  @OrgPolicy("global")
   @Get(":roleid")
   @ApiResponse({
     status: 200,
@@ -75,7 +75,7 @@ export class RolePermissionController {
     };
   }
 
-  @OrgPolicy("owned", { note: "Global reference data read by staff forms; what an organisation may see or assign differs per organisation." })
+  @OrgPolicy("global")
   @Get("permissions")
   @ApiResponse({
     status: 200,
@@ -96,7 +96,7 @@ export class RolePermissionController {
     };
   }
 
-  @OrgPolicy("owned", { note: "Global reference data read by staff forms; what an organisation may see or assign differs per organisation." })
+  @OrgPolicy("global")
   @Get("node/permissions")
   @ApiResponse({
     status: 200,
@@ -117,7 +117,7 @@ export class RolePermissionController {
     };
   }
 
-  @OrgPolicy("owned", { note: "Global reference data read by staff forms; what an organisation may see or assign differs per organisation." })
+  @OrgPolicy("global")
   @Post("")
   @ApiResponse({
       status: 200,
@@ -154,7 +154,7 @@ export class RolePermissionController {
       };
   }
 
-  @OrgPolicy("platform", { note: "Roles and permissions are global; administration is platform-only." })
+  @OrgPolicy("platform", { note: "Must be restricted to platform users: roles and permissions are global." })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -232,7 +232,7 @@ export class RolePermissionController {
   //   };
   // }
 
-  @OrgPolicy("owned", { note: "Staff-account administration: binds roles to a user of the caller's organisation." })
+  @OrgPolicy("owned", { note: "Staff-account administration within the caller's organisation. Super Admin may not be bound to a user who has an organisation." })
   @Post("user-bind-role")
   @ApiResponse({
     status: 200,
@@ -264,7 +264,7 @@ export class RolePermissionController {
     };
   }
 
-  @OrgPolicy("platform", { note: "Roles and permissions are global; administration is platform-only." })
+  @OrgPolicy("platform", { note: "Must be restricted to platform users: roles and permissions are global." })
   @Put(":roleid")
   @ApiResponse({
       status: 200,
@@ -299,7 +299,7 @@ export class RolePermissionController {
       };
   }
 
-  @OrgPolicy("owned", { note: "Global reference data read by staff forms; what an organisation may see or assign differs per organisation." })
+  @OrgPolicy("global")
   @Get("")
   @ApiResponse({
     status: 200,
@@ -319,7 +319,7 @@ export class RolePermissionController {
     };
   }
 
-  @OrgPolicy("platform", { note: "Roles and permissions are global; administration is platform-only." })
+  @OrgPolicy("platform", { note: "Must be restricted to platform users: roles and permissions are global." })
   @Delete(":roleid")
   @ApiResponse({
       status: 200,

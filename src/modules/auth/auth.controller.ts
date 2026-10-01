@@ -155,7 +155,7 @@ export class AuthController {
     };
   }
 
-  @OrgPolicy("self", { note: "Authenticates the bearer token inside the handler, not with a guard." })
+  @OrgPolicy("self", { note: "Named exception: the bearer token is checked in the handler, not by a guard." })
   @Post("logout")
   @ApiResponse({
     status: 200,
@@ -197,7 +197,7 @@ export class AuthController {
     throw new UnauthorizedException();
   }
 
-  @OrgPolicy("self", { note: "Acts on the account named by the email-verification token." })
+  @OrgPolicy("self", { note: "Must act only on the account named by the email-verification token." })
   @Post("verify")
   @ApiResponse({
     status: 200,
@@ -240,7 +240,7 @@ export class AuthController {
     };
   }
 
-  @OrgPolicy("self")
+  @OrgPolicy("self", { note: "Must act only on the session named by the refresh token." })
   @Post(`refreshtoken`)
   @ApiResponse({
     status: 200,
@@ -369,7 +369,7 @@ export class AuthController {
     };
   }
 
-  @OrgPolicy("self", { note: "Acts on the account named by the change-password token." })
+  @OrgPolicy("self", { note: "Must act only on the account named by the change-password token." })
   @Put("changepassword")
   @ApiQuery({ name: "changepasswordtoken", type: "string", required: true })
   @ApiResponse({

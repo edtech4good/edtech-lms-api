@@ -1,6 +1,7 @@
 # Routes whose organisation policy is declared but not yet enforced by a guard.
 # Enforcement arrives in a later package; entries are removed as it does.
 # One route per line, sorted by path then method: METHOD /path  policy
+# `+apikey` marks a route whose guards also admit the application API key.
 # Generated: `npm run routes:policy -- --write`. Checked by route-inventory.spec.ts.
 DELETE /baselinequestion/:baselinequestionid  owned
 PUT /baselinequestion/activate/:baselinequestionid  owned
@@ -9,7 +10,7 @@ POST /baselinequestion/create  owned
 PUT /baselinequestion/deactivate/:baselinequestionid  owned
 GET /baselinequestion/getall/:curriculumbaselineid  owned
 PUT /baselinequestion/order/:baselinequestionid/:baselinequestionorder  owned
-GET /country  owned
+GET /country  owned+apikey
 POST /country  owned
 DELETE /country/:countryid  platform
 GET /country/:countryid  owned
@@ -21,8 +22,8 @@ DELETE /curriculum/:curriculumid  owned
 GET /curriculum/:curriculumid  owned
 PUT /curriculum/:curriculumid  owned
 PUT /curriculum/activate/:curriculumid  owned
-GET /curriculum/all  owned
-GET /curriculum/country/:countryid  owned
+GET /curriculum/all  owned+apikey
+GET /curriculum/country/:countryid  owned+apikey
 POST /curriculum/create  owned
 PUT /curriculum/deactivate/:curriculumid  owned
 GET /curriculum/map  owned
@@ -62,7 +63,7 @@ PUT /grade/:gradeid  owned
 PUT /grade/activate/:gradeid  owned
 GET /grade/all  owned
 POST /grade/create  owned
-GET /grade/curriculum/:curriculumid  owned
+GET /grade/curriculum/:curriculumid  owned+apikey
 PUT /grade/deactivate/:gradeid  owned
 PUT /import/:schoolname/teachers  owned
 POST /lesson  owned
@@ -190,16 +191,11 @@ POST /report/studentstatus/download  owned
 GET /report/studentusage  owned
 POST /report/syncrecords  owned
 POST /report/techdowntime  owned
-GET /roles  owned
-POST /roles  owned
 DELETE /roles/:roleid  platform
-GET /roles/:roleid  owned
 PUT /roles/:roleid  platform
 POST /roles/create  platform
-GET /roles/node/permissions  owned
-GET /roles/permissions  owned
 POST /roles/user-bind-role  owned
-GET /school  owned
+GET /school  owned+apikey
 POST /school  owned
 GET /school-contribute/all  owned
 POST /school-contribute/create  owned
@@ -218,8 +214,8 @@ DELETE /school/:schoolid  owned
 GET /school/:schoolid  owned
 GET /school/:schoolid/curriculums  owned
 GET /school/all  owned
-GET /school/country/:countryid  owned
-GET /school/country/:countryid/curriculum/:curriculumid  owned
+GET /school/country/:countryid  owned+apikey
+GET /school/country/:countryid/curriculum/:curriculumid  owned+apikey
 POST /school/create  owned
 GET /school/curriculumid  owned
 PUT /school/update/:schoolid  owned
@@ -227,7 +223,7 @@ POST /standard  owned
 DELETE /standard/:standardid  owned
 GET /standard/:standardid  owned
 PUT /standard/:standardid  owned
-GET /standard/all  owned
+GET /standard/all  owned+apikey
 POST /standard/create  owned
 POST /standard/migrate-standardid  platform
 POST /standard/remove-standardid  platform
@@ -236,15 +232,15 @@ POST /student  owned
 DELETE /student/:schooluserid  owned
 GET /student/:studentid  owned
 GET /student/all  owned
-POST /student/create  owned
-GET /student/download-students  owned
+POST /student/create  owned+apikey
+GET /student/download-students  owned+apikey
 POST /student/migrate-standardid  platform
 POST /student/migrate-subject-curriculum  platform
 GET /student/stats/:studentid  owned
 GET /student/stats/:studentid/level  owned
 GET /student/stats/:studentid/practice  owned
 GET /student/stats/:studentid/quiz  owned
-PUT /student/update  owned
+PUT /student/update  owned+apikey
 POST /subject  owned
 DELETE /subject/:subjectid  owned
 GET /subject/:subjectid  owned
@@ -254,10 +250,10 @@ GET /sync  owned
 POST /sync/cloud  owned
 POST /sync/cloud/:schoolname/students  owned
 GET /sync/content  owned
-GET /sync/report-data  server
+GET /sync/report-data  server+apikey
 POST /teacher  owned
 DELETE /teacher/:schooluserid  owned
-POST /teacher/create  owned
+POST /teacher/create  owned+apikey
 POST /user  owned
 DELETE /user/:lmsuserid  owned
 GET /user/:lmsuserid  owned

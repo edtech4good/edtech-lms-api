@@ -67,7 +67,7 @@ const bufferWithLimit = (
 @Controller("log")
 @ApiBearerAuth()
 export class LogController {
-  @OrgPolicy("owned", { note: "Uploads from a classroom device; progress rows must belong to learners of the uploader's organisation." })
+  @OrgPolicy("owned", { note: "Rows must belong to learners of the uploading teacher's school." })
   @Put("import")
   @ApiResponse({
     status: 200,

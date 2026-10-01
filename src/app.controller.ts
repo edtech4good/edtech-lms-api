@@ -43,7 +43,7 @@ export class AppController {
     return "1.0.0";
   }
 
-  @OrgPolicy("public", { note: "Static CSV template; no data." })
+  @OrgPolicy("public", { note: "Serves a static CSV template." })
   @Get("assets/user-upload.csv")
   getstudentuploadFile(
     @Response({ passthrough: true }) res: eresp
@@ -58,7 +58,7 @@ export class AppController {
     return new StreamableFile(file);
   }
 
-  @OrgPolicy("public", { note: "Static CSV template; no data." })
+  @OrgPolicy("public", { note: "Serves a static CSV template." })
   @Get("assets/teacher-upload.csv")
   getteacheruploadFile(
     @Response({ passthrough: true }) res: eresp
