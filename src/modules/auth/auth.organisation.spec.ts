@@ -467,6 +467,19 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
         await switchTo(old, ORG_A).expect(401);
       });
 
+      it("the guard decides on the token's claim: a token with isplatform false is refused even if the user holds Super Admin in the database now", async () => {
+        users["u-unassigned"].roles = [role(Role.admin)];
+        const { accessToken } = await signIn("unassigned@example.com");
+        expect(claimsOf(accessToken).isplatform).toBe(false);
+        // Super Admin granted since sign-in: the database would now say platform...
+        users["u-unassigned"].roles = [role(Role.admin), role(Role.superadmin)];
+        const before = JSON.stringify(tokenTable);
+        // ...but this token was minted as non-platform, so PlatformGuard refuses it.
+        const res = await switchTo(accessToken, ORG_A).expect(403);
+        expect(res.body.code).toBe("NOT_ALLOWED");
+        expect(JSON.stringify(tokenTable)).toBe(before);
+      });
+
       it("the database decides too: a token still claiming platform for a user who is no longer one is refused", async () => {
         const { accessToken } = await signIn("platform@example.com");
         // Super Admin removed WITHOUT the tokens being revoked (e.g. by hand in SQL).
