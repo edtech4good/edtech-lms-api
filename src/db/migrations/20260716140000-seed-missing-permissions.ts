@@ -1,6 +1,6 @@
 import { QueryInterface } from "sequelize";
 import { v4 as uuidv4 } from "uuid";
-import { Permission } from "../../models/enums/permissions.enum";
+import { PERMISSIONS_AS_SHIPPED_20260716 } from "../frozen/permissions-20260716";
 
 /**
  * The RBAC seed generates permissions from a {list,create,update,view,delete}
@@ -59,6 +59,13 @@ const TITLE_FOR_PERMISSION: Record<string, string> = {
 
 const REPORT_TITLE = "Report";
 
+/**
+ * The permissions this migration seeds: a frozen literal list, NOT the live
+ * `Permission` enum, so that adding to the enum later cannot change what this
+ * does on a fresh database (see ../frozen/permissions-20260716.ts).
+ */
+const SEEDED_HERE: string[] = [...PERMISSIONS_AS_SHIPPED_20260716];
+
 /** `view_plus_reach` -> "View plus reach". */
 const describe = (permissionname: string): string => {
   const words = permissionname.replace(/_/g, " ");
@@ -114,7 +121,7 @@ module.exports = {
       // convertRolesPermsToArrayOfString derives it by comparing a role's grant
       // count against COUNT(*) of permissions, so inserting it would raise the
       // total it is measured against and no role could ever earn it again.
-      const missing = Object.values(Permission).filter((p) => !existing.has(p));
+      const missing = SEEDED_HERE.filter((p) => !existing.has(p));
 
       if (missing.length > 0) {
         await queryInterface.bulkInsert(
@@ -155,7 +162,7 @@ module.exports = {
     await sequelize.transaction(async (transaction) => {
       // Only the rows this migration could have added. Permissions from the
       // {list,create,update,view,delete} grid are 20260407120500's to remove.
-      const names = Object.values(Permission);
+      const names = SEEDED_HERE;
       await sequelize.query(
         `DELETE rp FROM \`roles_permissions\` rp
          JOIN \`permissions\` p ON p.\`permissionid\` = rp.\`permissionid\`

@@ -140,6 +140,11 @@ export enum Permission {
     UPDATE_COUNTRY = "update_country",
     DELETE_COUNTRY = "delete_country",
 
+    CREATE_ORGANISATION = "create_organisation",
+    VIEW_ORGANISATION = "view_organisation",
+    UPDATE_ORGANISATION = "update_organisation",
+    DELETE_ORGANISATION = "delete_organisation",
+
     CREATE_USER = "create_user",
     VIEW_USER = "view_user",
     UPDATE_USER = "update_user",
