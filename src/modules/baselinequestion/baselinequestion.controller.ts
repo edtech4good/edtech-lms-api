@@ -18,6 +18,7 @@ import { DeleteCurriculumBaseLine } from '../curriculumbaseline/curriculumbaseli
 import { RequirePermissions } from 'src/decorators/requirePermissions.decorator';
 import { Permission } from 'src/models/enums/permissions.enum';
 import { CheckPermissionsGuard } from 'src/guards/checkPermission.guard';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(ResponseBoolean)
 @ApiExtraModels(BaselineQuestionBase)
@@ -29,6 +30,7 @@ import { CheckPermissionsGuard } from 'src/guards/checkPermission.guard';
 @ApiBearerAuth()
 export class BaselinequestionController {
   
+  @OrgPolicy("owned")
   @Post("create")
   @ApiResponse({
       status: 200,
@@ -69,6 +71,7 @@ export class BaselinequestionController {
       };
   }
 
+  @OrgPolicy("owned")
   @Post("clone")
   @ApiResponse({
       status: 200,
@@ -107,6 +110,7 @@ export class BaselinequestionController {
       };
   }
 
+  @OrgPolicy("owned")
   @Put("activate/:baselinequestionid")
   @ApiResponse({
     status: 200,
@@ -139,6 +143,7 @@ export class BaselinequestionController {
     }
   }
 
+  @OrgPolicy("owned")
   @Put("deactivate/:baselinequestionid")
   @ApiResponse({
     status: 200,
@@ -171,6 +176,7 @@ export class BaselinequestionController {
     }
   }
 
+  @OrgPolicy("owned")
   @Put("order/:baselinequestionid/:baselinequestionorder")
   @ApiResponse({
     status: 200,
@@ -212,6 +218,7 @@ export class BaselinequestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":baselinequestionid")
   @ApiResponse({
     status: 200,
@@ -248,6 +255,7 @@ export class BaselinequestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("getall/:curriculumbaselineid")
   @ApiResponse({
     status: 200,

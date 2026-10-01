@@ -46,12 +46,14 @@ import { LmsUserToken } from "src/models/token.model";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { Permission } from "src/models/enums/permissions.enum";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(DocumentBase)
 @ApiTags("Document")
 @Controller("document")
 @ApiBearerAuth()
 export class DocumentController {
+  @OrgPolicy("owned")
   @Post("/upload")
   @ApiResponse({
     status: 200,
@@ -141,6 +143,7 @@ export class DocumentController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":documentid")
   @ApiResponse({
     status: 200,
@@ -170,6 +173,7 @@ export class DocumentController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("")
   @ApiResponse({
     status: 200,
@@ -215,6 +219,7 @@ export class DocumentController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete("tag/:documentid/:tag")
   @ApiResponse({
     status: 200,
@@ -247,6 +252,7 @@ export class DocumentController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("tag/:documentid/:tag")
   @ApiResponse({
     status: 200,
@@ -279,6 +285,7 @@ export class DocumentController {
     };
   }
 
+  @OrgPolicy("owned", { note: "The signed key must be scoped to the caller's organisation." })
   @Get("presign/:filename")
   @ApiResponse({
     status: 200,

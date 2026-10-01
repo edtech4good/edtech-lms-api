@@ -2,6 +2,7 @@ import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiExtraModels, ApiResponse, ApiTags, getSchemaPath } from '@nestjs/swagger';
 import { TemplateType } from 'src/models/enums/templatetypes.enum';
 import { TemplateTypeDropDown, TemplateTypeDropDownResponse } from './models/TemplateTypeDropDown';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 
 @ApiTags('Common')
@@ -11,6 +12,7 @@ import { TemplateTypeDropDown, TemplateTypeDropDownResponse } from './models/Tem
 @ApiExtraModels(TemplateTypeDropDownResponse)
 export class CommonController {
 
+  @OrgPolicy("public", { note: "Returns a static list of template types." })
   @Get('templatetype')
   @ApiResponse({
     status: 200,

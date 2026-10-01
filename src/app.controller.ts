@@ -9,6 +9,7 @@ import { IFilter, IPaging } from "./models/IPaging";
 import { IPagingResult } from "./models/IPagingResult";
 import { IResponse } from "./models/IResponse";
 import { ResponseBoolean } from "./models/ResponseBoolean";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 //import { RegisterResponse } from './modules/auth';
 // import { RegisterResponse } from './modules/auth';
@@ -30,16 +31,19 @@ export class AppController {
   // @ApiBearerAuth()
   // @UseGuards(AccessGuard(TokenType.ACCESS))
   // @Claim(claimenum.access, claimenum.activateuser)
+  @OrgPolicy("public")
   @Get()
   getbase(): string {
     return "FORTYK API ***";
   }
 
+  @OrgPolicy("public")
   @Get("version")
   getversion(): string {
     return "1.0.0";
   }
 
+  @OrgPolicy("public", { note: "Serves a static CSV template." })
   @Get("assets/user-upload.csv")
   getstudentuploadFile(
     @Response({ passthrough: true }) res: eresp
@@ -54,6 +58,7 @@ export class AppController {
     return new StreamableFile(file);
   }
 
+  @OrgPolicy("public", { note: "Serves a static CSV template." })
   @Get("assets/teacher-upload.csv")
   getteacheruploadFile(
     @Response({ passthrough: true }) res: eresp

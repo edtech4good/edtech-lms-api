@@ -196,3 +196,7 @@ describe("LogBusiness.importprogressquestionlog stores clientiscorrect/servergra
     ]);
   });
 });
+
+// Makes this file a module, so its top-level names are not shared with other
+// spec files when ts-jest type-checks them in the same worker.
+export {};

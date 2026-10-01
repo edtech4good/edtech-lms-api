@@ -53,6 +53,7 @@ import {
   updatestandard,
   showschoolid
 } from "./standard.request.validator";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(StandardBase)
 @ApiExtraModels(StandardCreateResponse)
@@ -63,6 +64,7 @@ import {
 @ApiBearerAuth()
 export class StandardController {
 
+  @OrgPolicy("owned")
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -92,6 +94,7 @@ export class StandardController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -132,6 +135,7 @@ export class StandardController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":standardid")
   @ApiResponse({
     status: 200,
@@ -165,6 +169,7 @@ export class StandardController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(":standardid")
   @ApiResponse({
     status: 200,
@@ -196,6 +201,7 @@ export class StandardController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(":standardid")
   @ApiResponse({
     status: 200,
@@ -235,6 +241,7 @@ export class StandardController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("")
   @ApiResponse({
     status: 200,
@@ -275,6 +282,7 @@ export class StandardController {
   // `:key` matching ADD_PERMISSIONS_KEY, a constant committed to this public
   // repo, so any authenticated staff account could run it. See
   // docs/authorization-model.md.
+  @OrgPolicy("platform", { note: "One-off migration across all organisations; platform only." })
   @Post("migrate-standardid")
   @ApiResponse({
     status: 200,
@@ -296,6 +304,7 @@ export class StandardController {
 
   // Super Admin only: hard-deletes standards with no students (same public-key
   // history as migrate-standardid above).
+  @OrgPolicy("platform", { note: "One-off migration across all organisations; platform only." })
   @Post("remove-standardid")
   @ApiResponse({
     status: 200,
@@ -315,6 +324,7 @@ export class StandardController {
     }
   }
   
+  @OrgPolicy("owned")
   @Get("school/:schoolid")
   @ApiResponse({
     status: 200,

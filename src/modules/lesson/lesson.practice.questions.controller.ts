@@ -17,6 +17,7 @@ import { LessonBase, LessonCreateResponse } from './models/LessonBase';
 import { LessonGetAllResponse } from './models/LessonGetAllResponse';
 import { LessonPracticeQuestionBase, LessonPracticeQuestionsResponse } from './models/LessonPracticeQuestionBase';
 import { LessonResponse } from './models/LessonResponse';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -26,6 +27,7 @@ import { LessonResponse } from './models/LessonResponse';
 @Controller('lesson/practice/question')
 @ApiBearerAuth()
 export class LessonPracticeQuestionController {
+  @OrgPolicy("owned")
   @Get(':lessonpracticeid')
   @ApiResponse({
     status: 200,
@@ -53,6 +55,7 @@ export class LessonPracticeQuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post(':lessonpracticeid/:questionid/:lessonpracticequestionorder')
   @ApiResponse({
     status: 200,
@@ -91,6 +94,7 @@ export class LessonPracticeQuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put('activate/:lessonpracticequestionid')
   @ApiResponse({
     status: 200,
@@ -118,6 +122,7 @@ export class LessonPracticeQuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put('deactivate/:lessonpracticequestionid')
   @ApiResponse({
     status: 200,
@@ -145,6 +150,7 @@ export class LessonPracticeQuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put('order/:lessonpracticequestionid/:lessonpracticequestionorder')
   @ApiResponse({
     status: 200,
@@ -177,6 +183,7 @@ export class LessonPracticeQuestionController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(':lessonpracticequestionid')
   @ApiResponse({
     status: 200,

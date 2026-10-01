@@ -17,6 +17,7 @@ import { createcountry, deletecountry, showallcountry, showcountry, updatecountr
 import { CountryBase } from './models/CountryBase';
 import { CountryRequest } from './models/CountryRequest';
 import { CountryAllResponse, CountryCreateResponse, CountryGetAllResponse } from './models/CountryResponse';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(CountryBase)
 @ApiExtraModels(CountryCreateResponse)
@@ -25,6 +26,7 @@ import { CountryAllResponse, CountryCreateResponse, CountryGetAllResponse } from
 @ApiBearerAuth()
 export class CountryController {
 
+    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation." })
     @Get('all')
     @ApiResponse({
       status: 200,
@@ -52,6 +54,7 @@ export class CountryController {
       };
     }
 
+    @OrgPolicy("owned", { note: "Must find only a country linked to the caller's organisation." })
     @Get(":countryid")
     @ApiResponse({
         status: 200,
@@ -81,6 +84,7 @@ export class CountryController {
         };
     }
 
+    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation." })
     @Get("")
     @ApiResponse({
         status: 200,
@@ -103,6 +107,7 @@ export class CountryController {
         };
     }
 
+    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation." })
     @Post("")
     @ApiResponse({
         status: 200,
@@ -139,6 +144,7 @@ export class CountryController {
         };
     }
 
+    @OrgPolicy("platform", { note: "Writes to global reference data (countries) must be restricted to platform users." })
     @Post("create")
     @ApiResponse({
         status: 200,
@@ -178,6 +184,7 @@ export class CountryController {
         };
     }
 
+    @OrgPolicy("platform", { note: "Writes to global reference data (countries) must be restricted to platform users." })
     @Put(":countryid")
     @ApiResponse({
         status: 200,
@@ -213,6 +220,7 @@ export class CountryController {
         };
     }
 
+    @OrgPolicy("platform", { note: "Writes to global reference data (countries) must be restricted to platform users." })
     @Delete(":countryid")
     @ApiResponse({
         status: 200,

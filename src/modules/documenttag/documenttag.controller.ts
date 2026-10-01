@@ -19,6 +19,7 @@ import { DocumentTagBase, DocumentTagCreateResponse } from './models/DocumentTag
 import { DocumentTagGetAllResponse } from './models/DocumentTagGetAllResponse';
 import { DocumentTagRequest } from './models/DocumentTagRequest';
 import { DocumentTagResponse } from './models/DocumentTagResponse';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 
 @ApiExtraModels(DocumentTagBase)
@@ -29,6 +30,7 @@ import { DocumentTagResponse } from './models/DocumentTagResponse';
 @Controller('documenttag')
 @ApiBearerAuth()
 export class DocumentTagController {
+  @OrgPolicy("owned")
   @Post('create')
   @ApiResponse({
     status: 200,
@@ -64,6 +66,7 @@ export class DocumentTagController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(':documenttagid')
   @ApiResponse({
     status: 200,
@@ -95,6 +98,7 @@ export class DocumentTagController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(':documenttagid')
   @ApiResponse({
     status: 200,
@@ -122,6 +126,7 @@ export class DocumentTagController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(':documenttagid')
   @ApiResponse({
     status: 200,
@@ -156,6 +161,7 @@ export class DocumentTagController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('')
   @ApiResponse({
     status: 200,

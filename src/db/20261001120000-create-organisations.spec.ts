@@ -327,3 +327,7 @@ describe("20261001120000-create-organisations down()", () => {
     expect(qi.dropTable).toHaveBeenCalledTimes(2);
   });
 });
+
+// Makes this file a module, so its top-level names are not shared with other
+// spec files when ts-jest type-checks them in the same worker.
+export {};

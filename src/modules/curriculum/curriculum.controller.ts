@@ -65,6 +65,7 @@ import {
 import { CurriculumGetAllResponse } from "./models/CurriculumGetAllResponse";
 import { CurriculumRequest } from "./models/CurriculumRequest";
 import { CurriculumResponse } from "./models/CurriculumResponse";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(
   CurriculumBase,
@@ -77,6 +78,7 @@ import { CurriculumResponse } from "./models/CurriculumResponse";
 @ApiBearerAuth()
 export class CurriculumController {
 
+  @OrgPolicy("owned")
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -110,6 +112,7 @@ export class CurriculumController {
     };
   }
   
+  @OrgPolicy("owned")
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -152,6 +155,7 @@ export class CurriculumController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":curriculumid")
   @ApiResponse({
     status: 200,
@@ -185,6 +189,7 @@ export class CurriculumController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("deactivate/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -217,6 +222,7 @@ export class CurriculumController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("activate/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -248,6 +254,7 @@ export class CurriculumController {
       data: true,
     };
   }
+  @OrgPolicy("owned")
   @Get("map")
   @ApiResponse({
     status: 200,
@@ -306,6 +313,7 @@ export class CurriculumController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("tree")
   @ApiResponse({
     status: 200,
@@ -376,6 +384,7 @@ export class CurriculumController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("tree/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -455,6 +464,7 @@ export class CurriculumController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(":curriculumid")
   @ApiResponse({
     status: 200,
@@ -487,6 +497,7 @@ export class CurriculumController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(":curriculumid")
   @ApiResponse({
     status: 200,
@@ -531,6 +542,7 @@ export class CurriculumController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("")
   @ApiResponse({
     status: 200,
@@ -567,6 +579,7 @@ export class CurriculumController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("country/:countryid")
   @ApiResponse({
     status: 200,

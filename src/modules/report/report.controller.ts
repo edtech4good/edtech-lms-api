@@ -29,12 +29,14 @@ import { TechDownTime } from "./models/ReportRequest";
 import { LmsUserToken } from "src/models/token.model";
 import { User } from "src/decorators/user.decorator";
 import { showallsyncrecords } from "./report.request.validator";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiTags("Report")
 @Controller("report")
 @ApiBearerAuth()
 // @UseGuards(AccessGuard(TokenType.ACCESS))
 export class ReportController {
+  @OrgPolicy("owned")
   @Get('dashboard')
   @ApiResponse({
     status: 200,
@@ -64,6 +66,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get('gender')
   @ApiResponse({
     status: 200,
@@ -93,6 +96,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get('disability')
   @ApiResponse({
     status: 200,
@@ -122,6 +126,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get('offlineonline')
   @ApiResponse({
     status: 200,
@@ -161,6 +166,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('studentprogress')
   @ApiResponse({
     status: 200,
@@ -191,6 +197,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('studentprogress/class')
   @ApiResponse({
     status: 200,
@@ -221,6 +228,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('studentlastcompletedquiz')
   @ApiResponse({
     status: 200,
@@ -251,6 +259,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('studentlevelquiz')
   @ApiResponse({
     status: 200,
@@ -281,6 +290,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('studentlevelquiz/class')
   @ApiResponse({
     status: 200,
@@ -311,6 +321,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('studentstatus')
   @ApiResponse({
     status: 200,
@@ -354,6 +365,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('syncrecords')
   @ApiResponse({
     status: 200,
@@ -392,6 +404,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get('dashboard/country/:countryid')
   @ApiResponse({
     status: 200,
@@ -419,6 +432,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get('dashboard/school/:schoolname')
   @ApiResponse({
     status: 200,
@@ -447,6 +461,7 @@ export class ReportController {
   }
 
 
+  @OrgPolicy("owned")
   @Get('studentusage')
   @ApiResponse({
     status: 200,
@@ -471,6 +486,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('student-grade-progress')
   @ApiResponse({
     status: 200,
@@ -506,6 +522,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('student-level-progress')
   @ApiResponse({
     status: 200,
@@ -541,6 +558,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('student-lesson-progress')
   @ApiResponse({
     status: 200,
@@ -576,6 +594,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('online/studentprogress')
   @ApiResponse({
     status: 200,
@@ -614,6 +633,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('online/studentprogress/class')
   @ApiResponse({
     status: 200,
@@ -652,6 +672,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('online/studentlastcompletedquiz')
   @ApiResponse({
     status: 200,
@@ -690,6 +711,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('studentlevelquiz/online')
   @ApiResponse({
     status: 200,
@@ -728,6 +750,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('online/studentlevelquiz/class')
   @ApiResponse({
     status: 200,
@@ -766,6 +789,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('online/studentstatus')
   @ApiResponse({
     status: 200,
@@ -813,6 +837,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('online/student-grade-progress')
   @ApiResponse({
     status: 200,
@@ -852,6 +877,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('online/student-level-progress')
   @ApiResponse({
     status: 200,
@@ -891,6 +917,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('online/student-lesson-progress')
   @ApiResponse({
     status: 200,
@@ -930,6 +957,7 @@ export class ReportController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("studentprogress/download")
   @ApiResponse({
     status: 200,
@@ -960,6 +988,7 @@ export class ReportController {
     });
     return new StreamableFile(Buffer.from(csvString));
   }
+  @OrgPolicy("owned")
   @Post("studentprogress/class/download")
   @ApiResponse({
     status: 200,
@@ -991,6 +1020,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
+  @OrgPolicy("owned")
   @Post("online/studentprogress/download")
   @ApiResponse({
     status: 200,
@@ -1030,6 +1060,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
+  @OrgPolicy("owned")
   @Post("online/studentprogress/class/download")
   @ApiResponse({
     status: 200,
@@ -1069,6 +1100,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
+  @OrgPolicy("owned")
   @Post("studentlastcompletedquiz/download")
   @ApiResponse({
     status: 200,
@@ -1099,6 +1131,7 @@ export class ReportController {
     });
     return new StreamableFile(Buffer.from(csvString));
   }
+  @OrgPolicy("owned")
   @Post("online/studentlastcompletedquiz/download")
   @ApiResponse({
     status: 200,
@@ -1138,6 +1171,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
+  @OrgPolicy("owned")
   @Post("studentlevelquiz/download")
   @ApiResponse({
     status: 200,
@@ -1169,6 +1203,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
   
+  @OrgPolicy("owned")
   @Post("studentlevelquiz/class/download")
   @ApiResponse({
     status: 200,
@@ -1200,6 +1235,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
+  @OrgPolicy("owned")
   @Post("online/studentlevelquiz/download")
   @ApiResponse({
     status: 200,
@@ -1239,6 +1275,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
+  @OrgPolicy("owned")
   @Post("online/studentlevelquiz/class/download")
   @ApiResponse({
     status: 200,
@@ -1278,6 +1315,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
+  @OrgPolicy("owned")
   @Post("studentstatus/download")
   @ApiResponse({
     status: 200,
@@ -1316,6 +1354,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
+  @OrgPolicy("owned")
   @Post("online/studentstatus/download")
   @ApiResponse({
     status: 200,
@@ -1362,6 +1401,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
+  @OrgPolicy("owned")
   @Post('techdowntime')
   @ApiResponse({
     status: 200,

@@ -20,12 +20,14 @@ import { SyncBusiness } from "src/business/sync.business";
 import { Config } from "src/config";
 import { AccessGuard } from "src/guards/access.guard";
 import { Role, TokenType } from "src/models/enums";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiTags("Sync")
 @Controller("sync")
 @ApiBearerAuth()
 export class SyncController {
 
+  @OrgPolicy("server", { note: "Authenticated only by the application API key; must be served as platform until the key is retired or scoped." })
   @Get("report-data")
   @ApiResponse({
     status: 200,
@@ -54,6 +56,7 @@ export class SyncController {
     return new StreamableFile(zip.toBuffer());
   }
 
+  @OrgPolicy("owned", { note: "Must export only one organisation's content; a platform caller must name the organisation." })
   @Get("")
   @ApiResponse({
     status: 200,
@@ -82,6 +85,7 @@ export class SyncController {
     return new StreamableFile(zip.toBuffer());
   }
 
+  @OrgPolicy("owned", { note: "Must export only one organisation's content; a platform caller must name the organisation." })
   @Get("content")
   @ApiResponse({
     status: 200,
@@ -110,6 +114,7 @@ export class SyncController {
     return new StreamableFile(zip.toBuffer());
   }
 
+  @OrgPolicy("owned", { note: "Must push only the caller's organisation's content; a platform caller must name the organisation." })
   @Post("cloud")
   @ApiResponse({
     status: 200,
@@ -155,6 +160,7 @@ export class SyncController {
     }
   }
 
+  @OrgPolicy("owned", { note: "Must push only learners of a school of the caller's organisation; a platform caller must name the organisation." })
   @Post("cloud/:schoolname/students")
   @ApiResponse({
     status: 200,

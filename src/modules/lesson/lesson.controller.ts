@@ -56,6 +56,7 @@ import {
 } from "./models/LessonGetAllResponse";
 import { LessonRequest } from "./models/LessonRequest";
 import { LessonResponse } from "./models/LessonResponse";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -66,6 +67,7 @@ import { LessonResponse } from "./models/LessonResponse";
 @ApiBearerAuth()
 export class LessonController {
 
+  @OrgPolicy("owned")
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -94,6 +96,7 @@ export class LessonController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -141,6 +144,7 @@ export class LessonController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":lessonid")
   @ApiResponse({
     status: 200,
@@ -174,6 +178,7 @@ export class LessonController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("deactivate/:lessonid")
   @ApiResponse({
     status: 200,
@@ -206,6 +211,7 @@ export class LessonController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("activate/:lessonid")
   @ApiResponse({
     status: 200,
@@ -238,6 +244,7 @@ export class LessonController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(":lessonid")
   @ApiResponse({
     status: 200,
@@ -268,6 +275,7 @@ export class LessonController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(":lessonid")
   @ApiResponse({
     status: 200,
@@ -313,6 +321,7 @@ export class LessonController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("")
   @ApiResponse({
     status: 200,
@@ -349,6 +358,7 @@ export class LessonController {
     };
   }
 
+  @OrgPolicy("platform", { note: "Bulk recompute across all organisations; platform only." })
   @Post("update_reward_points")
   @ApiResponse({
     status: 200,

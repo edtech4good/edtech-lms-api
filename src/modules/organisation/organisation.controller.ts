@@ -57,6 +57,7 @@ import {
   OrganisationCreateResponse,
   OrganisationGetAllResponse,
 } from "./models/OrganisationResponse";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 /**
  * Organisations (docs/admin-organisations-schema.md): platform-only for now.
@@ -74,6 +75,7 @@ import {
 @Controller("organisation")
 @ApiBearerAuth()
 export class OrganisationController {
+  @OrgPolicy("platform")
   @Get("")
   @ApiResponse({
     status: 200,
@@ -112,6 +114,7 @@ export class OrganisationController {
     };
   }
 
+  @OrgPolicy("platform")
   @Get(":organisationid")
   @ApiResponse({
     status: 200,
@@ -133,6 +136,7 @@ export class OrganisationController {
     return { error: false, data };
   }
 
+  @OrgPolicy("platform")
   @Post("")
   @ApiResponse({
     status: 200,
@@ -172,6 +176,7 @@ export class OrganisationController {
     return { error: false, data };
   }
 
+  @OrgPolicy("platform")
   @Put(":organisationid")
   @ApiResponse({
     status: 200,
@@ -214,6 +219,7 @@ export class OrganisationController {
     return { error: false, data };
   }
 
+  @OrgPolicy("platform")
   @Delete(":organisationid")
   @ApiResponse({
     status: 200,

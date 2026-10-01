@@ -55,6 +55,7 @@ import { EmailVerificationRequestBody } from "./models/EmailVerificationRequestB
 import { LoginRequestBody } from "./models/LoginRequestBody";
 import { LoginResponseModel, LoginTokens } from "./models/LoginResponse";
 import { LogoutResponse } from "./models/LogoutResponse";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiExtraModels(LoginTokens)
 @ApiExtraModels(LoginResponseModel)
 @ApiTags("Authentication")
@@ -71,6 +72,7 @@ export class AuthController {
   // Learner self-registration is wanted, but it needs designing rather than
   // reviving: see docs/authorization-model.md.
 
+  @OrgPolicy("public", { note: "Staff sign-in." })
   @Post("login")
   @ApiExtraModels(LoginTokens)
   @ApiExtraModels(LoginResponseModel)
@@ -105,6 +107,7 @@ export class AuthController {
     };
   }
 
+  @OrgPolicy("public", { note: "School-user (teacher and classroom device) sign-in." })
   @Post("school/login")
   @ApiExtraModels(LoginTokens)
   @ApiExtraModels(LoginResponseModel)
@@ -152,6 +155,7 @@ export class AuthController {
     };
   }
 
+  @OrgPolicy("self", { note: "Named exception: the bearer token is checked in the handler, not by a guard." })
   @Post("logout")
   @ApiResponse({
     status: 200,
@@ -193,6 +197,7 @@ export class AuthController {
     throw new UnauthorizedException();
   }
 
+  @OrgPolicy("self", { note: "Must act only on the account named by the email-verification token." })
   @Post("verify")
   @ApiResponse({
     status: 200,
@@ -235,6 +240,7 @@ export class AuthController {
     };
   }
 
+  @OrgPolicy("self", { note: "Must act only on the session named by the refresh token." })
   @Post(`refreshtoken`)
   @ApiResponse({
     status: 200,
@@ -265,6 +271,7 @@ export class AuthController {
     };
   }
 
+  @OrgPolicy("public")
   @Put("sendverificationemail")
   @ApiResponse({
     status: 200,
@@ -309,6 +316,7 @@ export class AuthController {
     };
   }
 
+  @OrgPolicy("public")
   @Post("forgotpassword")
   @ApiResponse({
     status: 200,
@@ -361,6 +369,7 @@ export class AuthController {
     };
   }
 
+  @OrgPolicy("self", { note: "Must act only on the account named by the change-password token." })
   @Put("changepassword")
   @ApiQuery({ name: "changepasswordtoken", type: "string", required: true })
   @ApiResponse({
@@ -407,6 +416,7 @@ export class AuthController {
     };
   }
 
+  @OrgPolicy("public", { note: "The reset token in the query proves the request." })
   @Post("token/validate/changepassword")
   @ApiQuery({ name: "changepasswordtoken", type: "string", required: true })
   @ApiResponse({

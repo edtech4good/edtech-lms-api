@@ -25,6 +25,7 @@ import { LessonPlansCreate } from './models/LessonPlan.model';
 import { createlessonplan, getlessonplan, updatelessonplan, updatestatuslessonplan } from './lesson.plan.request.validator';
 import { LessonPlanBase, LessonPlanResponse, LessonPlansResponse } from './models/LessonPlansResponse';
 import { LessonPlansUpdate } from './models/LessonPlansUpdate';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -34,6 +35,7 @@ import { LessonPlansUpdate } from './models/LessonPlansUpdate';
 @Controller('lesson/plan')
 @ApiBearerAuth()
 export class LessonPlanController {
+  @OrgPolicy("owned")
   @Get(':lessonid')
   @ApiResponse({
     status: 200,
@@ -61,6 +63,7 @@ export class LessonPlanController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(':lessonid/:lessonplanid')
   @ApiResponse({
     status: 200,
@@ -89,6 +92,7 @@ export class LessonPlanController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post(':lessonid')
   @ApiResponse({
     status: 200,
@@ -119,6 +123,7 @@ export class LessonPlanController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put('activate/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -146,6 +151,7 @@ export class LessonPlanController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put('deactivate/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -173,6 +179,7 @@ export class LessonPlanController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put('order/:lessonlearningid/:lessonlearningorder')
   @ApiResponse({
     status: 200,
@@ -204,6 +211,7 @@ export class LessonPlanController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(':lessonplanid')
   @ApiResponse({
     status: 200,
@@ -234,6 +242,7 @@ export class LessonPlanController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(':lessonplanid')
   @ApiResponse({
     status: 200,

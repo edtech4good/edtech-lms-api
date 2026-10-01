@@ -53,6 +53,7 @@ import {
 } from "./models/LessonQuizResponse";
 import { LessonQuizsUpdate } from "./models/LessonQuizUpdate";
 import { LessonResponse } from "./models/LessonResponse";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -62,6 +63,7 @@ import { LessonResponse } from "./models/LessonResponse";
 @Controller("lesson/quiz")
 @ApiBearerAuth()
 export class LessonQuizController {
+  @OrgPolicy("owned")
   @Get(":lessonid")
   @ApiResponse({
     status: 200,
@@ -96,6 +98,7 @@ export class LessonQuizController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post(":lessonid")
   @ApiResponse({
     status: 200,
@@ -138,6 +141,7 @@ export class LessonQuizController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(":lessonid/:lessonquizid")
   @ApiResponse({
     status: 200,
@@ -171,6 +175,7 @@ export class LessonQuizController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("activate/:lessonquizid")
   @ApiResponse({
     status: 200,
@@ -203,6 +208,7 @@ export class LessonQuizController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("deactivate/:lessonquizid")
   @ApiResponse({
     status: 200,
@@ -235,6 +241,7 @@ export class LessonQuizController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("order/:lessonquizid/:lessonquizorder")
   @ApiResponse({
     status: 200,
@@ -272,6 +279,7 @@ export class LessonQuizController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(":lessonquizid")
   @ApiResponse({
     status: 200,
@@ -315,6 +323,7 @@ export class LessonQuizController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":lessonquizid")
   @ApiResponse({
     status: 200,

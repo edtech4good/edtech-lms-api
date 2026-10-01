@@ -71,6 +71,7 @@ import {
   showallstudents,
   studentstats,
 } from "./student.request.validator";
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiExtraModels(StudentImportBody)
 @ApiTags("Student")
 @Controller("student")
@@ -84,6 +85,7 @@ import {
 )
 export class StudentController {
 
+  @OrgPolicy("owned")
   @Get("download-students")
   @ApiResponse({
     status: 200,
@@ -117,6 +119,7 @@ export class StudentController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
+  @OrgPolicy("owned")
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -153,6 +156,7 @@ export class StudentController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post("")
   @ApiResponse({
     status: 200,
@@ -184,6 +188,7 @@ export class StudentController {
     };
   }
 
+  @OrgPolicy("owned", { note: "The optional cloud push must send only the learners created by this call." })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -334,6 +339,7 @@ export class StudentController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(":schooluserid")
   @ApiResponse({
     status: 200,
@@ -388,6 +394,7 @@ export class StudentController {
     }
   }
 
+  @OrgPolicy("owned")
   @Get(":studentid")
   @ApiResponse({
     status: 200,
@@ -415,6 +422,7 @@ export class StudentController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("stats/:studentid")
   @ApiResponse({
     status: 200,
@@ -436,6 +444,7 @@ export class StudentController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("stats/:studentid/practice")
   @ApiResponse({
     status: 200,
@@ -459,6 +468,7 @@ export class StudentController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("stats/:studentid/quiz")
   @ApiResponse({
     status: 200,
@@ -482,6 +492,7 @@ export class StudentController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get("stats/:studentid/level")
   @ApiResponse({
     status: 200,
@@ -509,6 +520,7 @@ export class StudentController {
   // matching ADD_PERMISSIONS_KEY (committed to this public repo) with its
   // AccessGuard commented out, so it leaned on the class guard alone. See
   // docs/authorization-model.md.
+  @OrgPolicy("platform", { note: "One-off migration across all organisations; platform only." })
   @Post("migrate-standardid")
   @ApiResponse({
     status: 200,
@@ -528,6 +540,7 @@ export class StudentController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put("update")
   @ApiResponse({
     status: 200,
@@ -569,6 +582,7 @@ export class StudentController {
   }
 
   // Super Admin only (same public-key history as migrate-standardid above).
+  @OrgPolicy("platform", { note: "One-off migration across all organisations; platform only." })
   @Post("migrate-subject-curriculum")
   @ApiResponse({
     status: 200,

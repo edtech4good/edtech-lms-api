@@ -19,6 +19,7 @@ import { GradeBase, GradeCreateResponse } from './models/GradeBase';
 import { GradeGetAllByCurriculumResponse, GradeGetAllResponse, GradeGetResponse } from './models/GradeGetAllResponse';
 import { GradeRequest } from './models/GradeRequest';
 import { GradeResponse } from './models/GradeResponse';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 
 @ApiExtraModels(GradeBase)
@@ -30,6 +31,7 @@ import { GradeResponse } from './models/GradeResponse';
 @ApiBearerAuth()
 export class GradeController {
 
+  @OrgPolicy("owned")
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -64,6 +66,7 @@ export class GradeController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('create')
   @ApiResponse({
     status: 200,
@@ -104,6 +107,7 @@ export class GradeController {
     };
   }
 
+  @OrgPolicy("owned")
   @Delete(':gradeid')
   @ApiResponse({
     status: 200,
@@ -135,6 +139,7 @@ export class GradeController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put('deactivate/:gradeid')
   @ApiResponse({
     status: 200,
@@ -164,6 +169,7 @@ export class GradeController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put('activate/:gradeid')
   @ApiResponse({
     status: 200,
@@ -192,6 +198,7 @@ export class GradeController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get(':gradeid')
   @ApiResponse({
     status: 200,
@@ -219,6 +226,7 @@ export class GradeController {
     };
   }
 
+  @OrgPolicy("owned")
   @Get('curriculum/:curriculumid')
   @ApiResponse({
     status: 200,
@@ -246,6 +254,7 @@ export class GradeController {
     };
   }
 
+  @OrgPolicy("owned")
   @Put(':gradeid')
   @ApiResponse({
     status: 200,
@@ -284,6 +293,7 @@ export class GradeController {
     };
   }
 
+  @OrgPolicy("owned")
   @Post('')
   @ApiResponse({
     status: 200,

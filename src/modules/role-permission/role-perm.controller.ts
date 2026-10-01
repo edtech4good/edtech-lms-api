@@ -39,6 +39,7 @@ import { PermissionGetAllResponse, PermissionNodeGetAllResponse, RoleCreateRespo
 import { DeleteRole, EditRole } from "./role-perm.business.validator";
 import { bindUserRoles, createsRole, deleterole, showallroles, updaterole } from "./role-perm.request.validator";
 import { IMultiPaging } from '../../models/IPaging';
+import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiTags("Role-Permission")
 @Controller("roles")
@@ -51,6 +52,7 @@ import { IMultiPaging } from '../../models/IPaging';
 })
 @ApiBearerAuth()
 export class RolePermissionController {
+  @OrgPolicy("global")
   @Get(":roleid")
   @ApiResponse({
     status: 200,
@@ -73,6 +75,7 @@ export class RolePermissionController {
     };
   }
 
+  @OrgPolicy("global")
   @Get("permissions")
   @ApiResponse({
     status: 200,
@@ -93,6 +96,7 @@ export class RolePermissionController {
     };
   }
 
+  @OrgPolicy("global")
   @Get("node/permissions")
   @ApiResponse({
     status: 200,
@@ -113,6 +117,7 @@ export class RolePermissionController {
     };
   }
 
+  @OrgPolicy("global")
   @Post("")
   @ApiResponse({
       status: 200,
@@ -149,6 +154,7 @@ export class RolePermissionController {
       };
   }
 
+  @OrgPolicy("platform", { note: "Must be restricted to platform users: roles and permissions are global." })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -226,6 +232,7 @@ export class RolePermissionController {
   //   };
   // }
 
+  @OrgPolicy("owned", { note: "Staff-account administration within the caller's organisation. Super Admin may not be bound to a user who has an organisation." })
   @Post("user-bind-role")
   @ApiResponse({
     status: 200,
@@ -257,6 +264,7 @@ export class RolePermissionController {
     };
   }
 
+  @OrgPolicy("platform", { note: "Must be restricted to platform users: roles and permissions are global." })
   @Put(":roleid")
   @ApiResponse({
       status: 200,
@@ -291,6 +299,7 @@ export class RolePermissionController {
       };
   }
 
+  @OrgPolicy("global")
   @Get("")
   @ApiResponse({
     status: 200,
@@ -310,6 +319,7 @@ export class RolePermissionController {
     };
   }
 
+  @OrgPolicy("platform", { note: "Must be restricted to platform users: roles and permissions are global." })
   @Delete(":roleid")
   @ApiResponse({
       status: 200,
