@@ -34,6 +34,7 @@ import {
 } from "./services/auth.strategy";
 import { RolePermModule } from "./modules/role-permission";
 import { CountryModule } from './modules/country/country.module';
+import { OrganisationModule } from './modules/organisation/organisation.module';
 import { UserModule } from "./modules/user";
 import { FeedbackModule } from "./modules/feedback/feedback.module";
 import { ReportModule } from "./modules/report/report.module";
@@ -90,6 +91,7 @@ const providers = () => {
     CurriculumBaseLineModule,
     RolePermModule,
     CountryModule,
+    OrganisationModule,
     UserModule,
     FeedbackModule,
     ReportModule,
