@@ -206,7 +206,11 @@ describe("route inventory (real application wiring)", () => {
     });
 
     it("the policy definitions in the decorator's doc comment match the data the document uses", () => {
-      const comment = readFileSync(DECORATOR_FILE, "utf8")
+      const source = readFileSync(DECORATOR_FILE, "utf8");
+      // Only the doc comment: the same text also sits in ORG_POLICY_DEFINITIONS
+      // further down, which would satisfy the check by itself.
+      const comment = source
+        .slice(source.indexOf("The policies."), source.indexOf("Put it on the handler method"))
         .replace(/\s*\n\s*\*\s*/g, " ")
         .replace(/\s+/g, " ");
       for (const policy of ORG_POLICIES) {
