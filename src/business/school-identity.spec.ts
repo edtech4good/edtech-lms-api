@@ -88,7 +88,7 @@ describe("resolveSchoolByName", () => {
   it("does NOT resolve a Khmer name that differs from the school's only by a mark the collation ignores", async () => {
     fakeMysql();
     const withoutNikahit = "សាលាគរូ";
-    expect(await schools.findAll({ where: { logic: withoutNikahit } } as never)).toHaveLength(1); // MySQL would offer it
+    expect(await schools.findAll({ where: { attribute: { fn: "TRIM" }, logic: withoutNikahit } } as never)).toHaveLength(1); // MySQL would offer it
     await expect(resolveSchoolByName(withoutNikahit)).resolves.toBeNull();
   });
 
