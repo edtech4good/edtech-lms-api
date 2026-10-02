@@ -148,11 +148,64 @@ describe("resolveSchoolByName", () => {
     await expect(resolveSchoolByName(" padded school ")).resolves.toEqual({ schoolid: "id-padded", schoolname: "  Padded School  " });
   });
 
-  it("looks up inside the writer's transaction, under a shared lock on the school row", async () => {
-    const { findAll } = fakeMysql();
+  describe("lock order: choose unlocked, then lock ONE row by primary key, then decide again on the locked row", () => {
     const tx = { LOCK: { SHARE: "SHARE-LOCK" } };
-    await resolveSchoolByName("Sample School", tx as never);
-    expect(findAll).toHaveBeenCalledWith(expect.objectContaining({ transaction: tx, lock: "SHARE-LOCK" }));
+
+    it("the narrowing read takes NO lock (a locked scan of the name index blocks unrelated schools and deadlocks with a rename)", async () => {
+      const { findAll } = fakeMysql();
+      await resolveSchoolByName("Sample School", tx as never);
+      const options = findAll.mock.calls[0][0] as Record<string, unknown>;
+      expect(options.transaction).toBe(tx);
+      expect(options.lock).toBeUndefined();
+    });
+
+    it("then locks the chosen school BY PRIMARY KEY, shared, in the writer's transaction", async () => {
+      const { findOne } = fakeMysql();
+      await expect(resolveSchoolByName("Sample School", tx as never)).resolves.toEqual(SAMPLE);
+      expect(findOne).toHaveBeenCalledTimes(1);
+      expect(findOne.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ where: { schoolid: SAMPLE.schoolid }, transaction: tx, lock: "SHARE-LOCK" }),
+      );
+    });
+
+    it("applies the name comparison again on the LOCKED row: a school renamed after the narrowing read is not found", async () => {
+      const { findOne } = fakeMysql();
+      findOne.mockResolvedValue({ schoolid: SAMPLE.schoolid, schoolname: "Renamed Meanwhile" } as never);
+      await expect(resolveSchoolByName("Sample School", tx as never)).resolves.toBeNull();
+    });
+
+    it("returns the name the locked row has now (it may differ in case or spacing from the narrowing read)", async () => {
+      const { findOne } = fakeMysql();
+      findOne.mockResolvedValue({ schoolid: SAMPLE.schoolid, schoolname: " SAMPLE school" } as never);
+      await expect(resolveSchoolByName("Sample School", tx as never)).resolves.toEqual({ schoolid: SAMPLE.schoolid, schoolname: " SAMPLE school" });
+    });
+
+    it("a school that disappeared between the read and the lock is not found", async () => {
+      const { findOne } = fakeMysql();
+      findOne.mockResolvedValue(null as never);
+      await expect(resolveSchoolByName("Sample School", tx as never)).resolves.toBeNull();
+    });
+
+    it("more than one candidate fails before any lock is taken", async () => {
+      const { findOne } = fakeMysql([
+        { schoolid: "id-1", schoolname: "Sample School" },
+        { schoolid: "id-2", schoolname: "sample school" },
+      ]);
+      await expect(resolveSchoolByName("Sample School", tx as never)).rejects.toBeInstanceOf(ApiError);
+      expect(findOne).not.toHaveBeenCalled();
+    });
+
+    it("no name match locks nothing", async () => {
+      const { findOne } = fakeMysql();
+      await expect(resolveSchoolByName("Nowhere", tx as never)).resolves.toBeNull();
+      expect(findOne).not.toHaveBeenCalled();
+    });
+
+    it("without a transaction there is nothing to lock", async () => {
+      const { findOne } = fakeMysql();
+      await expect(resolveSchoolByName("Sample School")).resolves.toEqual(SAMPLE);
+      expect(findOne).not.toHaveBeenCalled();
+    });
   });
 });
 

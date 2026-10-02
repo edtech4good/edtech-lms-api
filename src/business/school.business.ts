@@ -89,7 +89,13 @@ export class SchoolBusiness {
       resulting = opts.requested === undefined ? opts.current : opts.requested;
     }
     if (resulting !== null) {
-      if (resulting !== opts.current && !(await lockLiveOrganisation(resulting, opts.transaction))) {
+      // The organisation row is locked (shared) whenever the school has or is being
+      // given one, NOT only when it changes: the country check below and an
+      // organisation's own edit of its country links must not interleave. An
+      // organisation update takes the same row for update before it touches its
+      // links, so either this check sees the links after that edit committed, or
+      // the edit waits until this transaction has written the school.
+      if (!(await lockLiveOrganisation(resulting, opts.transaction))) {
         throw new ApiError(ErrorCode.INVALID_INPUT, "Some of the information isn't valid.", {
           fields: [{ field: "organisationid", message: "Choose an organisation that exists." }],
         });

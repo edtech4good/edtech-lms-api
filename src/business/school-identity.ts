@@ -33,7 +33,7 @@ import { ErrorCode } from "src/models/enums/errorcode.enum";
  *
  * ## Inside the writer's transaction, under a shared lock
  *
- * Every lookup takes a shared lock on the school row. A rename (which updates
+ * Every lookup ends in a shared lock on ONE school row, taken by primary key. A rename (which updates
  * the school and then every learner and login carrying its name) cannot
  * commit between "read the school" and "insert the learner": either the
  * insert waits for the rename and then reads the new name, or the rename waits
@@ -55,8 +55,14 @@ export interface ResolvedSchool {
   schoolname: string;
 }
 
-const readOptions = (transaction?: Transaction) => ({
-  attributes: ["schoolid", "schoolname"],
+const columns = ["schoolid", "schoolname"];
+
+/** A read with no lock (the by-name narrowing). */
+const plainRead = (transaction?: Transaction) => ({ attributes: columns, transaction });
+
+/** A read by primary key under a shared lock when there is a transaction. */
+const lockedRead = (transaction?: Transaction) => ({
+  attributes: columns,
   transaction,
   lock: transaction ? transaction.LOCK.SHARE : undefined,
 });
@@ -79,9 +85,17 @@ export async function resolveSchoolByName(
   // given name once surrounding spaces are ignored on BOTH sides, so a school
   // whose stored name has stray spaces around it is still found. (MySQL's TRIM
   // removes spaces only; the comparison below is what decides.)
+  //
+  // The narrowing takes NO LOCK. A locking read on this predicate scans the
+  // `schoolname` index and locks every entry it passes for the whole
+  // transaction: that blocks the rename or create of an UNRELATED school until
+  // this transaction ends, and it deadlocks with a rename of the chosen school
+  // (the rename needs the index entry, the insert's foreign-key check needs the
+  // school row). So the school is chosen unlocked and then locked BY PRIMARY
+  // KEY, which locks one row.
   const candidates = await schools.findAll({
     where: sqlWhere(fn("TRIM", col("schoolname")), schoolname.trim().normalize("NFC")),
-    ...readOptions(transaction),
+    ...plainRead(transaction),
   });
   const same = candidates.filter((s) => isSameSchoolName(s.schoolname, schoolname));
   if (same.length > 1) {
@@ -89,7 +103,24 @@ export async function resolveSchoolByName(
       fields: [{ field, message: "That school name matches more than one school." }],
     });
   }
-  return same.length === 1 ? { schoolid: same[0].schoolid, schoolname: same[0].schoolname } : null;
+  if (same.length === 0) {
+    return null;
+  }
+  if (!transaction) {
+    return { schoolid: same[0].schoolid, schoolname: same[0].schoolname };
+  }
+  // Lock the chosen school by primary key (shared) and decide again on the
+  // LOCKED row, which is the committed current one: if the school was renamed
+  // after the narrowing read, the given name no longer names it, and the answer
+  // is "not found".
+  const locked = await schools.findOne({
+    where: { schoolid: same[0].schoolid },
+    ...lockedRead(transaction),
+  });
+  if (!locked || !isSameSchoolName(locked.schoolname, schoolname)) {
+    return null;
+  }
+  return { schoolid: locked.schoolid, schoolname: locked.schoolname };
 }
 
 /** The school with this id (live or soft-deleted), or null. */
@@ -100,7 +131,7 @@ export async function resolveSchoolById(
   if (typeof schoolid !== "string" || schoolid.length === 0) {
     return null;
   }
-  const school = await schools.findOne({ where: { schoolid }, ...readOptions(transaction) });
+  const school = await schools.findOne({ where: { schoolid }, ...lockedRead(transaction) });
   return school ? { schoolid: school.schoolid, schoolname: school.schoolname } : null;
 }
 

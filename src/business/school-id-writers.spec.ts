@@ -702,6 +702,42 @@ describe("package 2b's organisation rules and the rename cascade run in ONE tran
     expect(school).toMatchObject({ schoolname: "Renamed School", organisationid: ORG });
   });
 
+  describe("the organisation row is locked (shared) whenever the school has one, even when the organisation does not change", () => {
+    // a move to another country WITHIN the school's own organisation: no organisationid in the request
+    const moveCountry = () =>
+      new SchoolBusiness().updateschoolName(
+        { schoolid: SAMPLE.schoolid, schoolname: SAMPLE.schoolname, countryid: COUNTRY, curriculums: [] } as never,
+        { lmsuserid: "u" } as never,
+        platform,
+      );
+
+    it("takes the lock BEFORE the country-link check, and holds it in the writer's transaction", async () => {
+      school.organisationid = ORG;
+      await moveCountry();
+      expect(orgRead).toHaveBeenCalledTimes(1);
+      expect(orgRead.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ where: { organisationid: ORG, isdeleted: false }, transaction: tnx, lock: "SHARE" }),
+      );
+      expect(orgRead.mock.invocationCallOrder[0]).toBeLessThan(linked.mock.invocationCallOrder[0]);
+      expect(linked).toHaveBeenCalledWith(expect.objectContaining({ where: { organisationid: ORG, countryid: COUNTRY }, transaction: tnx }));
+    });
+
+    it("a school with no organisation takes no organisation lock", async () => {
+      school.organisationid = null;
+      await moveCountry();
+      expect(orgRead).not.toHaveBeenCalled();
+      expect(linked).not.toHaveBeenCalled();
+    });
+
+    it("an organisation that is no longer live refuses the edit even though it is unchanged", async () => {
+      school.organisationid = ORG;
+      orgRead.mockResolvedValue(null as never);
+      await expect(moveCountry()).rejects.toBeInstanceOf(ApiError);
+      expect(school.save).not.toHaveBeenCalled();
+      expect(tnx.rollback).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("a country the organisation is not linked to refuses the whole edit: nothing is saved or cascaded, and the transaction rolls back", async () => {
     linked.mockResolvedValue(0 as never);
     await expect(edit()).rejects.toBeInstanceOf(ApiError);
