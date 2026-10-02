@@ -12,6 +12,7 @@ import { tokens } from "src/models/data-models/tokens";
 import { Role } from "src/models/enums";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
 import { dbinstance } from "src/services/dbservice";
+import { RolePermissionBusiness } from "src/business/role-permission.business";
 import { RolePermissionController } from "./role-perm.controller";
 
 /**
@@ -178,6 +179,19 @@ describe("changing a role's permissions", () => {
     it("create: a set short of the full one is allowed", async () => {
       await create({ rolename: "Some", permissionsid: ["p1", "p2"] }).expect(200);
       expect(created).toBe(1);
+    });
+  });
+
+  describe("assertNotEveryPermission counts distinct permissions, not rows", () => {
+    const rows = (ids: string[]) => ids.map((permissionid) => ({ permissionid })) as never[];
+    it("the same permission reached twice (an individual id and a group) does not make a full set, and a full set is refused", async () => {
+      const business = new RolePermissionBusiness();
+      await business.assertNotEveryPermission(ROLE, rows(["p1", "p1", "p2"]), transaction as never);
+      await expect(business.assertNotEveryPermission(ROLE, rows(["p1", "p2", "p3"]), transaction as never)).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    });
+
+    it("Super Admin is exempt", async () => {
+      await new RolePermissionBusiness().assertNotEveryPermission(Role.superadmin, rows(["p1", "p2", "p3"]), transaction as never);
     });
   });
 });
