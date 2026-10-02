@@ -223,6 +223,9 @@ export class StudentController {
     let result: Array<schoolusers>;
     try {
       const school = await new SchoolBusiness().getschoolbyid(_body.schoolid)
+      if (!school) {
+        throw new ApiError(ErrorCode.INVALID_INPUT, "That school doesn't exist.", { fields: [{ field: 'schoolid', message: "That school doesn't exist." }] });
+      }
       result = await new SchoolUserBusiness().createSchoolUser(
         _body.students.map(
           (x) =>
@@ -233,7 +236,8 @@ export class StudentController {
               schooluserrole: SchoolRole.STUDENT,
               schooluserstatus: 1,
               schooluserid: uuidv4(),
-              schoolname: school?.schoolname,
+              schoolname: school.schoolname,
+              schoolid: school.schoolid,
             }
         ),
         tnx
@@ -273,7 +277,8 @@ export class StudentController {
               fathername: x.fathername,
               gradeid: undefined,
               mothername: x.mothername,
-              schoolname: school?.schoolname,
+              schoolname: school.schoolname,
+              schoolid: school.schoolid,
               schooltype: x.schooltype,
               standard: _body.standard,
               startinglevelid: undefined,

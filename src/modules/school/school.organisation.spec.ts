@@ -7,6 +7,10 @@ import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
 import { organisationcountry } from "src/models/data-models/organisationcountry";
 import { organisations } from "src/models/data-models/organisations";
 import { schools } from "src/models/data-models/school";
+import { schoolcontributedata } from "src/models/data-models/schoolcontributedata";
+import { schoolusers } from "src/models/data-models/schoolusers";
+import { standards } from "src/models/data-models/standard";
+import { students } from "src/models/data-models/students";
 import { Role } from "src/models/enums";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
 import { dbinstance } from "src/services/dbservice";
@@ -106,6 +110,11 @@ describe("schools write their organisation", () => {
       { schoolid: SCHOOL_IN_Y, schoolname: SAME_NAME, countryid: C1, organisationid: Y, isdeleted: false, curriculums: [] },
     ];
     jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(transaction as never);
+    // A rename also carries the new name to the four tables that hold a copy of it
+    // (learners, logins, classes, Fees Collection rows); they are not under test here.
+    for (const copy of [students, schoolusers, standards, schoolcontributedata]) {
+      jest.spyOn(copy, "update").mockResolvedValue([0] as never);
+    }
     // The name-already-used rule is the database's unique index today; the
     // fake table allows the same name in two organisations, as it will.
     jest.spyOn(schools, "count").mockImplementation((async (o: { where: Record<string, unknown> }) =>

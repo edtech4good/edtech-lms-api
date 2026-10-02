@@ -356,21 +356,21 @@ async function main() {
 
     // Facilitator and student. schooluserrole: 3 = teacher, 4 = student
     // (matches edtech-lms-rpi-api/scripts/seed-demo-users.sql and useAuth.ts).
-    await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, isdisabled)
-             VALUES (?,?,?,4,1,?,0)`,
-      [ID.studentUser, "miv.demo", PASSWORD_HASH, "Mekong Inclusive Ventures"]);
-    // students.schoolname is a plain column, not a join: students has no schoolid.
-    // The Students list reads it directly, so leaving it out blanks the School column.
-    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schooltype, is_teacher_acc)
-             VALUES (?,?,?,2,?,?,?,?,1,?,?,?,?,?,?,?,?,0)`,
-      [ID.student, "Sreymom", "Prak", "Battambang", "Cambodia", "Battambang", ID.curriculum, ID.studentUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Mekong Inclusive Ventures", "Public"]);
+    await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, schoolid, isdisabled)
+             VALUES (?,?,?,4,1,?,?,0)`,
+      [ID.studentUser, "miv.demo", PASSWORD_HASH, "Mekong Inclusive Ventures", ID.school]);
+    // students.schoolname is still read directly (the Students list shows it), so it
+    // must stay filled; schoolid is written alongside it (C4) and is not read yet.
+    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
+             VALUES (?,?,?,2,?,?,?,?,1,?,?,?,?,?,?,?,?,?,0)`,
+      [ID.student, "Sreymom", "Prak", "Battambang", "Cambodia", "Battambang", ID.curriculum, ID.studentUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Mekong Inclusive Ventures", ID.school, "Public"]);
 
-    await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, isdisabled)
-             VALUES (?,?,?,3,1,?,0)`,
-      [ID.facilitatorUser, "miv.facilitator", PASSWORD_HASH, "Mekong Inclusive Ventures"]);
-    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schooltype, is_teacher_acc)
-             VALUES (?,?,?,1,?,?,?,?,1,?,?,?,?,?,?,?,?,1)`,
-      [ID.facilitator, "MIV", "Facilitator", "Battambang", "Cambodia", "Battambang", ID.curriculum, ID.facilitatorUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Mekong Inclusive Ventures", "Public"]);
+    await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, schoolid, isdisabled)
+             VALUES (?,?,?,3,1,?,?,0)`,
+      [ID.facilitatorUser, "miv.facilitator", PASSWORD_HASH, "Mekong Inclusive Ventures", ID.school]);
+    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
+             VALUES (?,?,?,1,?,?,?,?,1,?,?,?,?,?,?,?,?,?,1)`,
+      [ID.facilitator, "MIV", "Facilitator", "Battambang", "Cambodia", "Battambang", ID.curriculum, ID.facilitatorUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Mekong Inclusive Ventures", ID.school, "Public"]);
 
     const [[counts]] = await conn.query(`
       SELECT (SELECT COUNT(*) FROM students WHERE schoolname = 'Mekong Inclusive Ventures') AS students,

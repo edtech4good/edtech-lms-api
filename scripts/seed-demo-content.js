@@ -275,22 +275,22 @@ async function main() {
 
     // Teacher and students. schooluserrole: 3 = teacher, 4 = student
     // (matches edtech-lms-rpi-api/scripts/seed-demo-users.sql and useAuth.ts).
-    await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, isdisabled)
-             VALUES (?,?,?,3,1,?,0)`,
-      [ID.teacherUser, "demo.teacher", PASSWORD_HASH, "Demo Primary School"]);
-    // students.schoolname is a plain column, not a join: students has no schoolid.
-    // The Students list reads it directly, so leaving it out blanks the School column.
-    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schooltype, is_teacher_acc)
-             VALUES (?,?,?,1,?,?,?,?,1,?,?,?,?,?,?,?,?,1)`,
-      [ID.teacher, "Demo", "Teacher", "Phnom Penh", "Cambodia", "Phnom Penh", ID.curriculum, ID.teacherUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Demo Primary School", "Public"]);
+    await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, schoolid, isdisabled)
+             VALUES (?,?,?,3,1,?,?,0)`,
+      [ID.teacherUser, "demo.teacher", PASSWORD_HASH, "Demo Primary School", ID.school]);
+    // students.schoolname is still read directly (the Students list shows it), so it
+    // must stay filled; schoolid is written alongside it (C4) and is not read yet.
+    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
+             VALUES (?,?,?,1,?,?,?,?,1,?,?,?,?,?,?,?,?,?,1)`,
+      [ID.teacher, "Demo", "Teacher", "Phnom Penh", "Cambodia", "Phnom Penh", ID.curriculum, ID.teacherUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Demo Primary School", ID.school, "Public"]);
 
     for (const s of STUDENTS) {
-      await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, isdisabled)
-               VALUES (?,?,?,4,1,?,0)`,
-        [s.su, s.username, PASSWORD_HASH, "Demo Primary School"]);
-      await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schooltype, is_teacher_acc)
-               VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,0)`,
-        [s.id, s.first, s.last, s.gender, "Phnom Penh", "Cambodia", "Phnom Penh", ID.curriculum, s.su, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Demo Primary School", "Public"]);
+      await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, schoolid, isdisabled)
+               VALUES (?,?,?,4,1,?,?,0)`,
+        [s.su, s.username, PASSWORD_HASH, "Demo Primary School", ID.school]);
+      await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
+               VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,0)`,
+        [s.id, s.first, s.last, s.gender, "Phnom Penh", "Cambodia", "Phnom Penh", ID.curriculum, s.su, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Demo Primary School", ID.school, "Public"]);
     }
 
     // Progress. progresstype: 1 = LESSONPRACTICE, 2 = LESSONQUIZ

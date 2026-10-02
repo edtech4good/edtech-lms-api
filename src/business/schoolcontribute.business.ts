@@ -8,6 +8,8 @@ import { schools, schoolsAttributes } from "src/models/data-models/school";
 import { IPaging } from "src/models/IPaging";
 import { buildWhere } from "src/services/util.service";
 import { format } from "date-fns";
+import { dbinstance, rollbackQuietly } from "src/services/dbservice";
+import { resolveSchoolById } from "./school-identity";
 
 export interface ChartItemFormat {
     name: Date | string;
@@ -177,23 +179,38 @@ export class SchoolcontributeBusiness {
         return getDashboard;
     }
 
+    /**
+     * `PUT /school-contribute/updateschoolname/:schoolid`. It exists to refresh the
+     * school columns of a school's Fees Collection rows (name and country). The
+     * NAME is the school's own stored name, read inside the transaction under a
+     * shared lock: the name the client sent is not stored (it used to be, which
+     * let this copy drift from the school). Only the country still comes from
+     * the request. Rows are saved one after another and awaited; the old code
+     * started the saves without waiting for them.
+     */
     updatedSchoolContribute = async (school: schoolcontributedataAttributes, user: LmsUserToken) => {
-        const tempdata = await this.getschoolById(school.schoolid ?? '');
-        tempdata.map(async (temp:any) => {
-            if(temp) {
-                temp.schoolname = school.schoolname;
-                temp.schoolid = school.schoolid;
+        const transaction = await dbinstance.getdbinstance().transaction();
+        try {
+            const current = await resolveSchoolById(school.schoolid, transaction);
+            if (!current) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
+            const tempdata = await schoolcontributedata.findAll({
+                where: { schoolid: school.schoolid, isdeleted: false },
+                transaction,
+            });
+            for (const temp of tempdata) {
+                temp.schoolname = current.schoolname;
+                temp.schoolid = current.schoolid;
                 temp.countryid = school.countryid;
                 temp.updated_at = new Date();
                 temp.updated_by = user.lmsuserid;
-                const findschool = await schoolcontributedata.findAll({ where: { schoolid: school.schoolid }});
-                if(!findschool) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
-                await temp.save({ fields: ["schoolname", "schoolid", "countryid", "updated_at", "updated_by"]});
-            }else{
-                return null;
+                await temp.save({ fields: ["schoolname", "schoolid", "countryid", "updated_at", "updated_by"], transaction });
             }
-        })
-        return tempdata;
+            await transaction.commit();
+            return tempdata;
+        } catch (e) {
+            await rollbackQuietly(transaction);
+            throw e;
+        }
     };
 
     updatedSchoolContributeDashboard = async (school: schoolcontributedataAttributes, user: LmsUserToken) => {

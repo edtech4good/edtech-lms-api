@@ -1,4 +1,5 @@
 import { TeacherBusiness } from "src/business/teacher.business";
+import { schools } from "src/models/data-models/school";
 import { schoolusers } from "src/models/data-models/schoolusers";
 import { TeacherController } from "src/modules/teachers/teacher.controller";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
@@ -32,6 +33,7 @@ describe("teacher creation waits for its write and commit", () => {
   let tnx: {
     commit: jest.Mock;
     rollback: jest.Mock;
+    LOCK: { SHARE: string };
     committed: boolean;
     rolledBack: boolean;
   };
@@ -60,9 +62,16 @@ describe("teacher creation waits for its write and commit", () => {
       ),
       committed: false,
       rolledBack: false,
+      LOCK: { SHARE: "SHARE" },
     };
     jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(tnx as never);
     jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([{ schooluserid: "t1" }] as never);
+    // Both routes now resolve the school's id from its name, inside the transaction.
+    jest
+      .spyOn(schools, "findAll")
+      .mockResolvedValue([{ schoolid: "school-a-id", schoolname: "School A" }] as never);
+    // ...then locks the chosen school by primary key.
+    jest.spyOn(schools, "findOne").mockResolvedValue({ schoolid: "school-a-id", schoolname: "School A" } as never);
   });
 
   afterEach(() => {

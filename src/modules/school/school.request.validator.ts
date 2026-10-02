@@ -13,6 +13,7 @@ export const createschool: RequestValidator = {
   body: joi.object().keys({
     schoolname: joi
       .string()
+      .trim()
       .required()
       .max(300)
       .min(1)
@@ -28,6 +29,7 @@ export const updateschool: RequestValidator = {
   body: joi.object().keys({
     schoolname: joi
       .string()
+      .trim()
       .required()
       .max(300)
       .min(1)

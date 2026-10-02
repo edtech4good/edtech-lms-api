@@ -52,7 +52,7 @@ export const CreateSchool = async (
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
   const tagexists = await new SchoolBusiness().isexistsschoolName({
-    schoolname: data.schoolname,
+    schoolname: (data.schoolname ?? "").trim(),
     countryid: data.countryid,
     curriculums: data.curriculums,
     schoolid: "",
@@ -91,7 +91,7 @@ export const EditSchool = async (
     return [error];
   }
   const schoolexists = await new SchoolBusiness().getschoolbyname(
-    data.schoolname
+    (data.schoolname ?? "").trim()
   );
   // if school exist and not bind with country yet or not bind with curriculums yet
   if (schoolexists && (!schoolexists.countryid || !schoolexists.curriculums)) {

@@ -7,10 +7,13 @@ import {
   schoolusersAttributes,
 } from "src/models/data-models/schoolusers";
 import { students, studentsAttributes } from "src/models/data-models/students";
+import { withSchoolIds } from "./school-identity";
 
 export class SchoolUserBusiness {
-  importschooluser = async (newschooluser: schoolusers) => {
-    const newschoolusersresult = await schoolusers.create({ ...newschooluser });
+  // No caller today; kept writing both school columns (see school-identity.ts).
+  importschooluser = async (newschooluser: schoolusersAttributes) => {
+    const [withId] = await withSchoolIds([{ ...newschooluser }]);
+    const newschoolusersresult = await schoolusers.create(withId);
     return {
       ...newschooluser,
       schooluser: newschoolusersresult.get({ plain: true }),
@@ -116,12 +119,15 @@ export class SchoolUserBusiness {
     passwordhash: null,
   });
 
-  createSchoolUser = (
+  // Rows that carry only a `schoolname` get their `schoolid` resolved here,
+  // inside the caller's transaction (see school-identity.ts); rows that already
+  // carry both are stored as given.
+  createSchoolUser = async (
     schoolusersdata: Array<schoolusersAttributes>,
     transaction: Transaction
   ) =>
     schoolusers.bulkCreate(
-      schoolusersdata.map((x) => ({
+      (await withSchoolIds(schoolusersdata, transaction)).map((x) => ({
         ...x,
         schooluserpasswordhash: hashPassword(x.schooluserpasswordhash),
       })),

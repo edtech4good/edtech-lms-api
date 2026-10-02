@@ -6,6 +6,7 @@ import type { grades, gradesId } from "./grades";
 import type { lessons, lessonsId } from "./lessons";
 import type { levels, levelsId } from "./levels";
 import { schools } from "./school";
+import { SCHOOL_ID_DEFAULT_SCOPE } from "./school-id-scope";
 import type { schoolusers, schoolusersId } from "./schoolusers";
 import { standards } from "./standard";
 import { studentprogress } from "./studentprogress";
@@ -32,6 +33,8 @@ export interface studentsAttributes {
   standard?: string;
   schooltype?: string;
   schoolname?: string;
+  /** Added by C4. Written alongside `schoolname`; not read anywhere yet (see SCHOOL_ID_DEFAULT_SCOPE). */
+  schoolid?: string;
   city: string;
   country: string;
   state: string;
@@ -95,6 +98,7 @@ export type studentsOptionalAttributes =
   | "standard"
   | "schooltype"
   | "schoolname"
+  | "schoolid"
   | "dateofjoin"
   | "gradeid"
   | "startinglevelid"
@@ -131,6 +135,7 @@ export class students
   standard?: string;
   schooltype?: string;
   schoolname?: string;
+  schoolid?: string;
   city!: string;
   country!: string;
   state!: string;
@@ -284,6 +289,10 @@ export class students
           type: DataTypes.STRING(250),
           allowNull: true,
         },
+        schoolid: {
+          type: DataTypes.STRING(36),
+          allowNull: true,
+        },
         city: {
           type: DataTypes.STRING(250),
           allowNull: false,
@@ -407,6 +416,7 @@ export class students
         sequelize,
         tableName: "students",
         timestamps: false,
+        defaultScope: SCHOOL_ID_DEFAULT_SCOPE,
         indexes: [
           {
             name: "PRIMARY",

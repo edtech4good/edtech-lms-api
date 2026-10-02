@@ -13,17 +13,30 @@ import {
 import { StudentBusiness } from "./student.business";
 import { schools } from '../models/data-models/school';
 import { IMultiPaging } from '../models/IPaging';
-import { dbinstance } from "src/services/dbservice";
+import { dbinstance, rollbackQuietly } from "src/services/dbservice";
+import { resolveSchoolById } from "./school-identity";
 
 export class StandardBusiness {
+  // A class carries a copy of its school's name. The school is read inside the
+  // transaction under a shared lock (see school-identity.ts), so a rename of the
+  // school cannot commit between this read and the insert, and the class stores
+  // the school's own current name.
   createstandard = async (standard: standardsAttributes, user: LmsUserToken) => {
     standard.standardid = uuidv4();
     standard.isdeleted = false;
     standard.created_by = user.lmsuserid;
-    const school = await schools.findOne({ where: { schoolid: standard.schoolid }});
-    if(!school) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
-    standard.schoolname = school.schoolname;
-    return await standards.create(standard);
+    const transaction = await dbinstance.getdbinstance().transaction();
+    try {
+      const school = await resolveSchoolById(standard.schoolid, transaction);
+      if(!school) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
+      standard.schoolname = school.schoolname;
+      const created = await standards.create(standard, { transaction });
+      await transaction.commit();
+      return created;
+    } catch (e) {
+      await rollbackQuietly(transaction);
+      throw e;
+    }
   };
   getstandardbyid = (standardid: string) =>
     standards.findOne({ where: { standardid, isdeleted: false },
@@ -66,10 +79,17 @@ export class StandardBusiness {
       tempdt.schoolid = standard.schoolid;
       tempdt.updated_at = new Date();
       tempdt.updated_by = user.lmsuserid;
-      const school = await schools.findOne({ where: { schoolid: standard.schoolid }});
-      if(!school) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
-      tempdt.schoolname = school.schoolname;
-      await tempdt.save({ fields: ["standardname", "updated_at", "updated_by", "schoolid", "schoolname"]});
+      const transaction = await dbinstance.getdbinstance().transaction();
+      try {
+        const school = await resolveSchoolById(standard.schoolid, transaction);
+        if(!school) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
+        tempdt.schoolname = school.schoolname;
+        await tempdt.save({ fields: ["standardname", "updated_at", "updated_by", "schoolid", "schoolname"], transaction });
+        await transaction.commit();
+      } catch (e) {
+        await rollbackQuietly(transaction);
+        throw e;
+      }
       //await tempdt.reload();
       return tempdt;
     } else {

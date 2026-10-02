@@ -9,6 +9,7 @@ import { IPaging } from "src/models/IPaging";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import { buildWhere } from "src/services/util.service";
 import { v4 } from "uuid";
+import { requireSchoolByName } from "./school-identity";
 
 export class TeacherBusiness {
   getteacheruserbyschoolname = (schoolname: string) =>
@@ -37,6 +38,8 @@ export class TeacherBusiness {
   ) => {
     const tnx = await dbinstance.getdbinstance().transaction();
     try {
+      // Resolved inside the transaction; the school's own stored name is what is written.
+      const school = await requireSchoolByName(schoolname, tnx);
       const su = await schoolusers.bulkCreate(
         teachers.map((x) => ({
           schooluserpasswordhash: hashPassword(x.teacheruserpassword),
@@ -44,7 +47,8 @@ export class TeacherBusiness {
           schooluserrole: SchoolRole.TEACHER,
           isdisabled: false,
           schooluserid: v4(),
-          schoolname,
+          schoolname: school.schoolname,
+          schoolid: school.schoolid,
         })),
         { transaction: tnx }
       );
