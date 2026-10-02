@@ -1,4 +1,6 @@
 import { curriculums } from "src/models/data-models/curriculums";
+import { organisationcountry } from "src/models/data-models/organisationcountry";
+import { organisations } from "src/models/data-models/organisations";
 import { schools } from "src/models/data-models/school";
 import { schoolcontributedata } from "src/models/data-models/schoolcontributedata";
 import { schoolusers } from "src/models/data-models/schoolusers";
@@ -30,6 +32,9 @@ const KHMER = { schoolid: "school-khmer-id", schoolname: "សាលាគំរ�
 
 // Case folded, trailing spaces ignored, nikahit (U+17C6) weighs nothing: what MySQL's `=` does here.
 const collate = (s: string) => s.replace(/ំ/g, "").replace(/ +$/, "").toLowerCase();
+
+// A platform caller (the scope the local superadmin has): package 2b's organisation rules need a caller context.
+const PLATFORM = { organisationid: null, isplatform: true } as never;
 
 let tnx: { commit: jest.Mock; rollback: jest.Mock; LOCK: { SHARE: string; UPDATE: string } };
 let known = [SAMPLE, KHMER];
@@ -371,7 +376,7 @@ describe("SchoolBusiness.updateschoolName (PUT /school/update/:schoolid: a renam
   });
 
   const rename = (schoolname: string) =>
-    new SchoolBusiness().updateschoolName({ schoolid: SAMPLE.schoolid, schoolname, countryid: "c", curriculums: [] } as never, staff);
+    new SchoolBusiness().updateschoolName({ schoolid: SAMPLE.schoolid, schoolname, countryid: "c", curriculums: [] } as never, staff, PLATFORM);
 
   it("renames the learners' and logins' copies of the name too, keyed on the school id, in one transaction", async () => {
     await rename("សាលាថ្មី");
@@ -510,7 +515,7 @@ describe("a rename racing a learner create in that school", () => {
         school.schoolname = this.schoolname;
       },
     });
-    await new SchoolBusiness().updateschoolName({ schoolid: school.schoolid, schoolname: "សាលាថ្មី", countryid: "c", curriculums: [] } as never, { lmsuserid: "u" } as never);
+    await new SchoolBusiness().updateschoolName({ schoolid: school.schoolid, schoolname: "សាលាថ្មី", countryid: "c", curriculums: [] } as never, { lmsuserid: "u" } as never, PLATFORM);
 
     expect(learnersTable.map((l) => l.schoolname)).toEqual([school.schoolname]);
     expect(school.schoolname).toBe("សាលាថ្មី");
@@ -619,7 +624,7 @@ describe("school names are trimmed on create and update", () => {
 
   it("createschool stores the trimmed name", async () => {
     const create = jest.spyOn(schools, "create").mockResolvedValue({} as never);
-    await new SchoolBusiness().createschool({ ...input } as never, { lmsuserid: "u" } as never);
+    await new SchoolBusiness().createschool({ ...input } as never, { lmsuserid: "u" } as never, PLATFORM);
     expect(create.mock.calls[0][0]).toMatchObject({ schoolname: "Sample School" });
   });
 
@@ -644,5 +649,85 @@ describe("school names are trimmed on create and update", () => {
       const blank = (v.body as import("joi").ObjectSchema).validate({ ...input, schoolname: "   ", countryid: "11111111-1111-4111-8111-111111111111" });
       expect(blank.error).toBeDefined();
     }
+  });
+});
+
+describe("package 2b's organisation rules and the rename cascade run in ONE transaction, in one lock order", () => {
+  const ORG = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const COUNTRY = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1";
+  const platform = { organisationid: null, isplatform: true } as never;
+  let school: { schoolid: string; schoolname: string; organisationid: string | null; save: jest.Mock; [k: string]: unknown };
+  let orgRead: jest.SpyInstance;
+  let linked: jest.SpyInstance;
+
+  beforeEach(() => {
+    school = { schoolid: SAMPLE.schoolid, schoolname: SAMPLE.schoolname, organisationid: null, save: jest.fn().mockResolvedValue(undefined) };
+    (schools.findOne as jest.Mock).mockReset();
+    (schools.findOne as jest.Mock).mockResolvedValue(school);
+    orgRead = jest.spyOn(organisations, "findOne").mockResolvedValue({ organisationid: ORG, isdeleted: false } as never);
+    linked = jest.spyOn(organisationcountry, "count").mockResolvedValue(1 as never);
+    for (const copy of [students, schoolusers, standards, schoolcontributedata]) {
+      jest.spyOn(copy, "update").mockResolvedValue([1] as never);
+    }
+  });
+
+  const edit = () =>
+    new SchoolBusiness().updateschoolName(
+      { schoolid: SAMPLE.schoolid, schoolname: " Renamed School ", countryid: COUNTRY, curriculums: [], organisationid: ORG } as never,
+      { lmsuserid: "u" } as never,
+      platform,
+    );
+  const order = (m: jest.SpyInstance | jest.Mock) => m.mock.invocationCallOrder[0];
+
+  it("opens one transaction; reads the school under an UPDATE lock, THEN the organisation under a SHARE lock, then the country link, then saves, cascades, and commits once", async () => {
+    await edit();
+
+    expect(dbinstance.getdbinstance().transaction).toHaveBeenCalledTimes(1);
+    expect(schools.findOne).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx, lock: "UPDATE" }));
+    expect(orgRead).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx, lock: "SHARE" }));
+    expect(linked).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
+    const copies = [students, schoolusers, standards, schoolcontributedata].map((m) => (m.update as unknown as jest.Mock));
+    const sequence = [
+      order(schools.findOne as jest.Mock),
+      order(orgRead),
+      order(linked),
+      order(school.save),
+      ...copies.map(order),
+      order(tnx.commit),
+    ];
+    expect(sequence).toEqual([...sequence].sort((a, b) => a - b));
+    expect(new Set(sequence).size).toBe(sequence.length);
+    expect(school.save).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
+    expect(tnx.commit).toHaveBeenCalledTimes(1);
+    expect(school).toMatchObject({ schoolname: "Renamed School", organisationid: ORG });
+  });
+
+  it("a country the organisation is not linked to refuses the whole edit: nothing is saved or cascaded, and the transaction rolls back", async () => {
+    linked.mockResolvedValue(0 as never);
+    await expect(edit()).rejects.toBeInstanceOf(ApiError);
+    expect(school.save).not.toHaveBeenCalled();
+    for (const m of [students, schoolusers, standards, schoolcontributedata]) expect(m.update).not.toHaveBeenCalled();
+    expect(tnx.rollback).toHaveBeenCalledTimes(1);
+    expect(tnx.commit).not.toHaveBeenCalled();
+  });
+
+  it("an organisation that is deleted or unknown refuses the whole edit", async () => {
+    orgRead.mockResolvedValue(null as never);
+    await expect(edit()).rejects.toBeInstanceOf(ApiError);
+    expect(school.save).not.toHaveBeenCalled();
+    expect(tnx.rollback).toHaveBeenCalledTimes(1);
+  });
+
+  it("a school create trims the name and checks the organisation inside the one transaction", async () => {
+    const create = jest.spyOn(schools, "create").mockResolvedValue({} as never);
+    await new SchoolBusiness().createschool(
+      { schoolname: "  New School ", countryid: COUNTRY, curriculums: [], organisationid: ORG } as never,
+      { lmsuserid: "u" } as never,
+      platform,
+    );
+    expect(dbinstance.getdbinstance().transaction).toHaveBeenCalledTimes(1);
+    expect(orgRead).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx, lock: "SHARE" }));
+    expect(create.mock.calls[0][0]).toMatchObject({ schoolname: "New School", organisationid: ORG });
+    expect(create.mock.calls[0][1]).toEqual({ transaction: tnx });
   });
 });

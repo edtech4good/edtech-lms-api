@@ -200,6 +200,17 @@ export class SchoolBusiness {
    * school in the same transaction, keyed on `schoolid`, so the id stays correct
    * and the two names never drift apart. The same goes for the copies in
    * `standards` and `schoolcontributedata` (both keyed on their own `schoolid`).
+   *
+   * ONE transaction, one lock order: (1) the school row, UPDATE lock; (2) the
+   * organisation row, SHARE lock, only when an organisation is being written
+   * (`lockLiveOrganisation`); (3) the organisation/country link, a plain read;
+   * (4) the school save; (5) the copies: learners, logins, classes, Fees
+   * Collection rows. The school is always taken before the organisation and the
+   * copies last. A learner create takes only the school (SHARE) and then inserts,
+   * so it queues behind or ahead of step 1 and never holds anything this
+   * transaction waits for. Deleting an organisation takes the organisation row
+   * (UPDATE) and then only COUNTS schools without a lock, so it never waits for a
+   * school row; the other order (organisation then school) exists nowhere.
    */
   updateschoolName = async (school: schoolsAttributes, user: LmsUserToken, org: OrgContext) => {
     const requested = school.organisationid;
