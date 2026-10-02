@@ -69,11 +69,12 @@ export class RolePermissionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiParam({ name: `roleid`, type: "string", required: true })
   async get(
-    @Param("roleid") roleid: string
+    @Param("roleid") roleid: string,
+    @Org() org: OrgContext
   ): Promise<any> {
     return {
       error: false,
-      data: await new RolePermissionBusiness().getRolebyid(roleid),
+      data: await new RolePermissionBusiness().getRolebyid(roleid, org),
     };
   }
 
@@ -139,12 +140,12 @@ export class RolePermissionController {
   @RequirePermissions(Permission.VIEW_ROLE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IMultiPaging): Promise<RoleGetAllResponse> {
+  async getall(@Body() body: IMultiPaging, @Org() org: OrgContext): Promise<RoleGetAllResponse> {
       const tempresult = await new RolePermissionBusiness().getallRoles({
           pageindex: body?.pageindex || 0,
           pagesize: body?.pagesize || 0,
           filter: body?.filter || []
-      });
+      }, org);
       return <RoleGetAllResponse>{
           error: false,
           data: {
@@ -315,10 +316,10 @@ export class RolePermissionController {
   @RequirePermissions(Permission.VIEW_ROLE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getAllRoles(): Promise<any> {
+  async getAllRoles(@Org() org: OrgContext): Promise<any> {
     return {
       error: false,
-      data: await new RolePermissionBusiness().getallroles(),
+      data: await new RolePermissionBusiness().getallroles(org),
     };
   }
 

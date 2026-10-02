@@ -82,7 +82,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
   description: "Server error",
 })
 @UseGuards(
-  AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin)
+  AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin)
 )
 export class StudentController {
 
@@ -211,7 +211,7 @@ export class StudentController {
   @ApiQuery({ name: "cloud", required: false, type: Boolean })
   @ApiQuery({ name: "online", required: false, type: String })
   @UseGuards(
-    AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin)
+    AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin)
   )
   @HttpCode(HttpStatus.OK)
   async createall(
@@ -557,7 +557,7 @@ export class StudentController {
   )
   @ApiBody({ required: false, type: StudentEditedImportBody })
   @UseGuards(
-    AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin)
+    AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin)
   )
   @HttpCode(HttpStatus.OK)
   async updateStudents(

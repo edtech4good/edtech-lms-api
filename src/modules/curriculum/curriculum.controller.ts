@@ -93,7 +93,7 @@ export class CurriculumController {
     description: "Server error",
   })
   // Role.teacher reads: feeds the curriculum filter on the report screens.
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.teacher))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher))
   @ApiQuery({ name: "cur", required: false, type: 'string' })
   @ApiQuery({ name: "studentid", required: false, type: 'string' })
   @ApiQuery({ name: "standardid", required: false, type: 'string' })
@@ -599,7 +599,7 @@ export class CurriculumController {
     new BusinessValidationInterceptor([ShowCountry])
   )
   // Role.teacher reads: feeds the curriculum filter on the report screens.
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.teacher))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher))
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `countryid`, type: "string", required: true })
   async getCurriculumByCountry(

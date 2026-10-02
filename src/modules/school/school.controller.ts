@@ -154,7 +154,7 @@ export class SchoolController {
     description: "Error while exporting school",
   })
   // Role.teacher reads: feeds the school filter on the report screens.
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.teacher))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher))
   @HttpCode(HttpStatus.OK)
   async getAllSchools(): Promise<any> {
     return {
@@ -175,7 +175,7 @@ export class SchoolController {
     description: "Error while fetching school",
   })
   @ApiParam({ name: `countryid`, type: "string", required: true })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin))
   @HttpCode(HttpStatus.OK)
   async getSchool(
     @Param("countryid") countryid: string
@@ -204,7 +204,7 @@ export class SchoolController {
   )
   @ApiParam({ name: `countryid`, type: "string", required: true })
   @ApiParam({ name: `curriculumid`, type: "string", required: true })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin))
   @HttpCode(HttpStatus.OK)
   async getSchoolCurriculum(
     @Param("countryid") countryid: string,

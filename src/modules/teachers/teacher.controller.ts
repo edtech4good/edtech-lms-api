@@ -119,7 +119,7 @@ export class TeacherController {
   @ApiBody({ required: false, type: TeacherImportBody })
   @ApiQuery({ name: "cloud", required: false, type: Boolean })
   @UseGuards(
-    AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin)
+    AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin)
   )
   @HttpCode(HttpStatus.OK)
   async createall(

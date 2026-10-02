@@ -6,7 +6,7 @@ import { Role } from "src/models/enums";
 import { dbinstance } from "src/services/dbservice";
 import { withPrimaryKey } from "src/test-support/fakewhere";
 import { RolePermissionBusiness } from "./role-permission.business";
-import { revokeIfSuperAdminRemoved } from "./session-revocation";
+import { revokeIfRolesChanged, sameRoleSet } from "./session-revocation";
 import { UserBusiness } from "./user.business";
 
 /**
@@ -71,22 +71,36 @@ afterEach(() => jest.restoreAllMocks());
 const setRolesCalled = (u: FakeUser) =>
   u.setRoles.mockImplementation(async () => void order.push("setRoles"));
 
-describe("revokeIfSuperAdminRemoved", () => {
-  it("deletes the user's tokens only when Super Admin was held and is not in the new set", async () => {
-    await revokeIfSuperAdminRemoved("u-1", true, [Role.admin], tnx);
+describe("sameRoleSet", () => {
+  it("compares sets: order and repeats do not matter", () => {
+    expect(sameRoleSet([Role.admin, Role.teacher], [Role.teacher, Role.admin])).toBe(true);
+    expect(sameRoleSet([Role.admin, Role.admin], [Role.admin])).toBe(true);
+    expect(sameRoleSet([], [])).toBe(true);
+  });
+
+  it("is false when a role is added, removed or swapped", () => {
+    expect(sameRoleSet([Role.admin], [Role.admin, Role.teacher])).toBe(false);
+    expect(sameRoleSet([Role.admin, Role.teacher], [Role.admin])).toBe(false);
+    expect(sameRoleSet([Role.admin], [Role.teacher])).toBe(false);
+    expect(sameRoleSet([Role.admin], [])).toBe(false);
+  });
+});
+
+describe("revokeIfRolesChanged", () => {
+  it("deletes the user's tokens, in the given transaction, when the role set changed", async () => {
+    expect(await revokeIfRolesChanged("u-1", [Role.admin], [Role.teacher], tnx)).toBe(true);
     expect(destroy).toHaveBeenCalledWith({ where: { lmsuserid: "u-1" }, transaction: tnx });
   });
 
-  it("does nothing when Super Admin is kept, was never held, or both", async () => {
-    await revokeIfSuperAdminRemoved("u-1", true, [Role.admin, Role.superadmin], tnx);
-    await revokeIfSuperAdminRemoved("u-1", false, [Role.admin], tnx);
-    await revokeIfSuperAdminRemoved("u-1", false, [Role.superadmin], tnx);
-    expect(destroy).not.toHaveBeenCalled();
+  it("covers Super Admin being removed, and an empty new set", async () => {
+    await revokeIfRolesChanged("u-1", [Role.superadmin, Role.admin], [Role.admin], tnx);
+    await revokeIfRolesChanged("u-1", [Role.superadmin], [], tnx);
+    expect(destroy).toHaveBeenCalledTimes(2);
   });
 
-  it("an empty new set removes Super Admin", async () => {
-    await revokeIfSuperAdminRemoved("u-1", true, [], tnx);
-    expect(destroy).toHaveBeenCalledTimes(1);
+  it("does nothing when the set is the same", async () => {
+    expect(await revokeIfRolesChanged("u-1", [Role.admin, Role.teacher], [Role.teacher, Role.admin], tnx)).toBe(false);
+    expect(destroy).not.toHaveBeenCalled();
   });
 });
 
@@ -121,23 +135,26 @@ describe("POST /roles/user-bind-role (RolePermissionBusiness.bindUserRoles)", ()
     expect(order.indexOf("getRoles")).toBeLessThan(order.indexOf("setRoles"));
   });
 
-  it("keeping Super Admin revokes nothing", async () => {
-    const { run } = bind([Role.superadmin], [Role.superadmin, Role.admin], null);
-    await run();
+  it("an unchanged role set revokes nothing, even when sent in another order", async () => {
+    await bind([Role.superadmin], [Role.superadmin], null).run();
+    await bind([Role.admin, Role.teacher], [Role.teacher, Role.admin]).run();
     expect(destroy).not.toHaveBeenCalled();
-    expect(order).toEqual(["setRoles", "commit"]);
+    expect(order).toEqual(["setRoles", "commit", "setRoles", "commit"]);
   });
 
-  it("changing roles for a user who never held Super Admin revokes nothing", async () => {
-    const { run } = bind([Role.admin], [Role.teacher]);
-    await run();
-    expect(destroy).not.toHaveBeenCalled();
-  });
-
-  it("granting Super Admin revokes nothing", async () => {
-    const { run } = bind([Role.admin], [Role.admin, Role.superadmin], null);
-    await run();
-    expect(destroy).not.toHaveBeenCalled();
+  it("any change of the role set (a demotion, an addition, a swap) deletes that user's tokens in the same transaction, before the commit", async () => {
+    for (const [held, next] of [
+      [[Role.organisationadmin], [Role.teacher]],
+      [[Role.admin], [Role.admin, Role.teacher]],
+      [[Role.admin], [Role.admin, Role.superadmin]],
+    ] as Array<[string[], string[]]>) {
+      destroy.mockClear();
+      order.length = 0;
+      await bind(held, next, held.includes(Role.superadmin) || next.includes(Role.superadmin) ? null : IN_ORG).run();
+      expect(destroy).toHaveBeenCalledTimes(1);
+      expect(destroy).toHaveBeenCalledWith({ where: { lmsuserid: "u-1" }, transaction: tnx });
+      expect(order).toEqual(["setRoles", "revoke", "commit"]);
+    }
   });
 
   it("rolls back, and does not commit, when the revocation fails (the role change goes with it)", async () => {
@@ -185,10 +202,18 @@ describe("user update (UserBusiness.updateUser)", () => {
     expect(order).toEqual(["setRoles", "revoke", "commit"]);
   });
 
-  it("keeping Super Admin, or never holding it, revokes nothing", async () => {
+  it("an unchanged role set revokes nothing: an edit of the other fields ends no session", async () => {
     await update([Role.superadmin], [Role.superadmin], null).run();
-    await update([Role.admin], [Role.teacher]).run();
+    await update([Role.admin, Role.teacher], [Role.teacher, Role.admin]).run();
     expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it("a changed role set deletes that user's tokens once, in the same transaction, before the commit", async () => {
+    const { run } = update([Role.organisationadmin], [Role.teacher]);
+    await run();
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledWith({ where: { lmsuserid: "u-1" }, transaction: tnx });
+    expect(order).toEqual(["setRoles", "revoke", "commit"]);
   });
 
   it("an unknown role id is 400: nothing is saved, no roles are set, nothing is revoked, and it rolls back", async () => {

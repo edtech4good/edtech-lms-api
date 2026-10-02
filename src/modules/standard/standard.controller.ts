@@ -80,7 +80,7 @@ export class StandardController {
     description: "Server error",
   })
   // Role.teacher reads: feeds the standard filter on the report screens.
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.teacher))
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher))
   @ApiQuery({ name: "standardname", required: false, type: 'string' })
   @ApiQuery({ name: "schoolname", required: false, type: 'string' })
   @HttpCode(HttpStatus.OK)

@@ -16,13 +16,16 @@ import { LmsUserToken } from "src/models/token.model";
 import { dbinstance } from "src/services/dbservice";
 import { OrgContext } from "src/decorators/org.decorator";
 import {
+  assertMayAddRoles,
+  assertMayChangeSignIn,
   assertMayModifyUser,
   assertMayModifyUserId,
   assertMaySetRoles,
+  heldRoleIds,
   holdsSuperAdmin,
   resolveRequestedRoles,
-  revokeIfSuperAdminRemoved,
   revokeStaffSessions,
+  sameRoleSet,
 } from "./session-revocation";
 import { Logger } from "src/config";
 import { isSameEmailAddress } from "src/services/email-address";
@@ -58,6 +61,8 @@ export class UserBusiness {
         newRoles: rls,
         targetOrganisationid: user.organisationid,
       });
+      // On create every role is an addition: each must be one the caller may add.
+      await assertMayAddRoles({ caller: org, currentRoleIds: [], newRoles: rls, transaction });
       user.lmsuserid = uuidv4();
       user.lmsuserpasswordhash = hashPassword(user.lmsuserpasswordhash);
       // LEGACY, and not a claim about this user. The column is NOT NULL so it
@@ -319,13 +324,16 @@ export class UserBusiness {
   };
 
   getlmsuserbyid = async (lmsuserid: string, org: OrgContext) => {
+    // A caller in an organisation's scope is not shown the permission lists of the
+    // account's roles (they are not loaded), nor Super Admin among them (below).
+    const scoped = scopeOf(org).kind === "organisation";
     const user = await findOwned(lmsusers, lmsuserid, org, {
       attributes: { exclude: ["lmsuserpasswordhash"] },
       include: [{
         model: roles,
         attributes: ["roleid", "rolename"],
         through: {attributes: []},
-        include: [{
+        include: scoped ? [] : [{
           model: permissions,
           attributes: ["permissionid", "permissionname"],
           through: {attributes: []}
@@ -338,17 +346,33 @@ export class UserBusiness {
       }],
       notFound: () => new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist."),
     });
-    const allroles = await new RolePermissionBusiness().getallroles();
+    // The roles the edit form offers: those this caller could add (`canadd` true),
+    // each checked when the account holds it. PLUS every role the account holds
+    // that the caller could not add, checked and `canadd` false, so a form built
+    // from this list submits them back and a save that changes nothing does not
+    // remove them (a kept role is not an addition). Nothing else is added: the role
+    // lists themselves stay limited to what the caller may add. Super Admin is
+    // never included for a caller in an organisation's scope.
+    const offered = await new RolePermissionBusiness().getallroles(org);
     if(user) {
-      const roles = allroles.filter(function (o1) {
-        const matched = user.roles.some(function (o2) {
-          return o1.id === o2.roleid; // return the ones with equal id
-        });
-        if(matched) {
-          o1.checked = true;
+      const held = new Set(user.roles.map((r) => r.roleid));
+      const roles = offered.map((o1) => ({ ...o1, checked: held.has(o1.id), canadd: true }));
+      if (scopeOf(org).kind === "organisation") {
+        const shown = new Set(offered.map((o1) => o1.id));
+        for (const r of user.roles) {
+          if (!shown.has(r.roleid) && r.roleid !== Role.superadmin) {
+            roles.push({ id: r.roleid, text: r.rolename, checked: true, canadd: false });
+          }
         }
-        return true;
-      });
+      }
+      if (scoped) {
+        // The account as plain data, with Super Admin left out of its roles.
+        const shown = user.toJSON() as unknown as Record<string, unknown> & { roles?: Array<{ roleid: string; rolename: string }> };
+        shown.roles = (shown.roles ?? [])
+          .filter((r) => r.roleid !== Role.superadmin)
+          .map((r) => ({ roleid: r.roleid, rolename: r.rolename }));
+        return { user: shown, roles };
+      }
       return { user, roles}
     }
   };
@@ -373,7 +397,8 @@ export class UserBusiness {
       //  3. only a platform caller changes the organisation; the resulting
       //     organisation is checked (live, locked) and the Super Admin rule is
       //     applied with it.
-      const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
+      const roleIdsBefore = await heldRoleIds(user, transaction);
+      const hadSuperAdmin = roleIdsBefore.includes(Role.superadmin);
       assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
       const rls = await resolveRequestedRoles(lmsuserroles, "lmsuserroles", transaction);
       const willHoldSuperAdmin = rls.some((r) => r.roleid === Role.superadmin);
@@ -391,8 +416,23 @@ export class UserBusiness {
         newRoles: rls,
         targetOrganisationid: after.organisationid,
       });
+      // Roles the account does not hold now must be ones the caller may add.
+      await assertMayAddRoles({ caller: org, currentRoleIds: roleIdsBefore, newRoles: rls, transaction });
+      // Fields this route writes on the account, and which of them let the caller
+      // sign in as it: the email (also where a reset or verification mail goes)
+      // and the password. The same predicate decides the refusal and the write.
+      const changesEmail = usr.lmsusername !== user.lmsusername;
+      const changesPassword = Boolean(usr.lmsuserpasswordhash);
+      await assertMayChangeSignIn({
+        caller: org,
+        heldRoles: await user.getRoles({ transaction }),
+        isSelf: currentuser?.lmsuserid === user.lmsuserid,
+        changesEmail,
+        changesPassword,
+        transaction,
+      });
       user.lmsusername = usr.lmsusername;
-      user.lmsuserpasswordhash = usr.lmsuserpasswordhash ? hashPassword(usr.lmsuserpasswordhash) : user.lmsuserpasswordhash;
+      user.lmsuserpasswordhash = changesPassword ? hashPassword(usr.lmsuserpasswordhash) : user.lmsuserpasswordhash;
       user.countries = usr.countries;
       user.schools = usr.schools;
       const fields: Array<keyof lmsusersAttributes> = ['lmsusername', 'lmsuserpasswordhash', 'countries', 'schools', 'updated_at', 'updated_by'];
@@ -406,10 +446,12 @@ export class UserBusiness {
       }
       await user.save({ fields, transaction});
       await user.setRoles(rls, {transaction});
-      await revokeIfSuperAdminRemoved(user.lmsuserid, hadSuperAdmin, rls.map((r) => r.roleid), transaction);
-      if (after.changed) {
-        // A moved account signs in again (the per-request check already refuses
-        // its old token; the rows go too).
+      // A changed role SET, or a move to another organisation, ends the account's
+      // sessions (once), in this transaction. An edit that changes neither ends
+      // nothing. (The per-request check already refuses a moved account's old
+      // token; the rows go too.)
+      const rolesChanged = !sameRoleSet(roleIdsBefore, rls.map((r) => r.roleid));
+      if (rolesChanged || after.changed) {
         await revokeStaffSessions(user.lmsuserid, transaction);
       }
       await transaction.commit();

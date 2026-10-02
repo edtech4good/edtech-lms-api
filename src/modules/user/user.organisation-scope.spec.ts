@@ -234,7 +234,8 @@ describe("staff administration is scoped to the caller's organisation", () => {
   const newStaff = (over: Record<string, unknown> = {}) => ({
     lmsusername: "new.staff@example.com",
     lmsuserpasswordhash: "SamplePass12",
-    lmsuserroles: [Role.admin],
+    // Teacher: a role an organisation's staff may add (Admin is not; see organisation-admin.spec.ts).
+    lmsuserroles: [Role.teacher],
     ...over,
   });
   const edit = (over: Record<string, unknown> = {}) => ({
@@ -422,7 +423,8 @@ describe("staff administration is scoped to the caller's organisation", () => {
   describe("PUT /user/:lmsuserid", () => {
     describe.each(IN_X)("%s", (who) => {
       it("edits an account in X (email, password, roles) and the organisation stays X", async () => {
-        await api.update(callers[who], ID.x1, edit()).expect(200);
+        byId(ID.x1).held = [Role.teacher]; // within the caller's reach (an Admin account is wider than these callers)
+        await api.update(callers[who], ID.x1, edit({ lmsuserroles: [Role.teacher] })).expect(200);
         expect(byId(ID.x1).lmsusername).toBe("renamed@example.com");
         expect(byId(ID.x1).organisationid).toBe(X);
         expect(writes.saves[0].fields).not.toContain("organisationid");

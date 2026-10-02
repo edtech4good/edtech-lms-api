@@ -12,11 +12,15 @@ import { NodeLeaf, TreeNode } from "src/modules/role-permission/models/RoleBase"
 import _ from "lodash";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import {
+  assertMayAddRoles,
   assertMayModifyUser,
   assertMaySetRoles,
-  holdsSuperAdmin,
+  heldRoleIds,
   resolveRequestedRoles,
-  revokeIfSuperAdminRemoved,
+  revokeIfRolesChanged,
+  revokeRoleHolders,
+  rolesCallerMayAdd,
+  sameRoleSet,
 } from "./session-revocation";
 import { Role } from "src/models/enums";
 import { OrgContext } from "src/decorators/org.decorator";
@@ -55,8 +59,10 @@ export class RolePermissionBusiness {
         role.created_by = user.lmsuserid;
         const transaction = await dbinstance.getdbinstance().transaction();
         try {
+            const resolved = await this.resolvePerms({ permissionsid: role.perms ?? [] });
+            await this.assertNotEveryPermission(role.roleid, resolved, transaction);
             const rl = await roles.create(role as any, { transaction });
-            await this.bindRolePerms({roleid: role.roleid, permissionsid: role.perms ?? []}, rl, transaction);
+            await this.bindRolePerms({roleid: role.roleid, permissionsid: role.perms ?? []}, rl, transaction, resolved);
             await transaction.commit();
             return rl;
         } catch (e) {
@@ -69,14 +75,24 @@ export class RolePermissionBusiness {
         const transaction = await dbinstance.getdbinstance().transaction();
         try {
             const rl = await roles.findOne({
-                where: { roleid: role.roleid }
+                where: { roleid: role.roleid },
+                transaction,
             });
             if(rl) {
+                const resolved = await this.resolvePerms({ permissionsid: role.perms ?? [] });
+                await this.assertNotEveryPermission(rl.roleid, resolved, transaction);
+                const before = (await rl.getPermissions({ transaction })).map((p) => p.permissionid);
                 rl.rolename = role.rolename;
                 rl.updated_at = new Date();
                 rl.updated_by = user.lmsuserid;
                 await rl.save({ fields: ['rolename', 'updated_at', 'updated_by'], transaction});
-                await this.bindRolePerms({roleid: rl.roleid, permissionsid: role.perms ?? []}, rl, transaction);
+                await this.bindRolePerms({roleid: rl.roleid, permissionsid: role.perms ?? []}, rl, transaction, resolved);
+                // A changed permission SET reaches the role's holders now: their tokens carry
+                // the permissions the role had when they were minted. An edit that leaves the
+                // set the same (a rename, say) ends nothing.
+                if (!sameRoleSet(before, resolved.map((p) => p.permissionid))) {
+                    await revokeRoleHolders(rl.roleid, transaction);
+                }
                 await transaction.commit();
                 return rl;
             } else {
@@ -95,7 +111,17 @@ export class RolePermissionBusiness {
     // from every Super Admin. Permission seeding now lives solely in the
     // idempotent migrations (20260407120500 + 20260716140000).
 
-    getallRoles = async (paging: IMultiPaging) => {
+    /**
+     * The roles a caller is offered. A platform caller who is not acting as an
+     * organisation sees every role. A caller in an organisation's scope (its
+     * staff, or a platform user acting as it) sees only the roles it could add to
+     * an account (`rolesCallerMayAdd`), so a form built from this list offers
+     * nothing the API would refuse; Super Admin is never among them. The scope
+     * and the caller's permissions come from the validated token (`@Org()`),
+     * never from the request; with no scope the call is refused (403).
+     */
+    getallRoles = async (paging: IMultiPaging, org: OrgContext) => {
+        const scoped = scopeOf(org).kind === "organisation";
         let where: WhereOptions<rolesAttributes> = {
             // isdeleted: false,
         };
@@ -107,12 +133,22 @@ export class RolePermissionBusiness {
         offset = limit * ((paging.pageindex || 1) - 1);
         }
         where = { ...constructWhere<rolesAttributes>(paging, where) };
+        if (scoped) {
+            const allowed = await rolesCallerMayAdd(org, await roles.findAll());
+            // ANDed, so no filter in the request can bring another role back.
+            where = { [Op.and]: [where, { roleid: { [Op.in]: [...allowed] } }] };
+        }
 
         return await roles.findAndCountAll({ where, order, limit, offset });
     }
 
-    getallroles = async () => {
-        const rls = await roles.findAll();
+    /** The id/text list the staff forms use. Same visibility rule as `getallRoles`. */
+    getallroles = async (org: OrgContext) => {
+        const scoped = scopeOf(org).kind === "organisation";
+        const all = await roles.findAll();
+        // The set holds stored ids and is compared exactly: the database compares ids without regard to case.
+        const allowed = scoped ? await rolesCallerMayAdd(org, all) : undefined;
+        const rls = allowed ? all.filter((rl) => allowed.has(rl.roleid)) : all;
         const formatedroles = rls.map(rl => {
             return {
                 id: rl.roleid,
@@ -123,8 +159,9 @@ export class RolePermissionBusiness {
         return formatedroles
     }
 
-    getRolebyid = async (roleid: string) => {
-        const role = await roles.findOne({
+    getRolebyid = async (roleid: string, org: OrgContext) => {
+        const hideSuperAdmin = scopeOf(org).kind === "organisation";
+        const found = await roles.findOne({
             where: { roleid },
             attributes: ['roleid', 'rolename'],
             include: [
@@ -141,6 +178,7 @@ export class RolePermissionBusiness {
                 }
             ]
         });
+        const role = hideSuperAdmin && found?.roleid === Role.superadmin ? null : found;
         const permsNodes = await this.getallPermsNode();
         // source function: https://stackoverflow.com/a/64489535/14708196
         const groupBy = <T>(array: T[], predicate: (value: T, index: number, array: T[]) => string) =>
@@ -168,7 +206,8 @@ export class RolePermissionBusiness {
         return { role, selectedPerms, permsNodes }
     }
 
-    bindRolePerms = async (rolePerms: BindRolePermissionRequest, rl: roles, transaction: Transaction) => {
+    /** The permission rows a request's `permissionsid` stands for (individual ids, and `all_<title>` groups). */
+    resolvePerms = async (rolePerms: { permissionsid: string[] }): Promise<permissions[]> => {
         // get permtitleid if select all perms
         const [all_perms, some_perms] =
         rolePerms.permissionsid.reduce((result: [string[], string[]], element) => {
@@ -199,6 +238,30 @@ export class RolePermissionBusiness {
             perms3 = _.union(perms2, perms3);
         }
         perms = _.union(perms1, perms3);
+        return perms;
+    }
+
+    /**
+     * A role other than Super Admin may not hold every permission: the count-based
+     * `superadmin` wildcard is awarded to whoever holds as many distinct
+     * permissions as the table has rows, and it is a full bypass of the
+     * permission guard. Refused with 400 before anything is written.
+     */
+    assertNotEveryPermission = async (roleid: string | undefined, perms: ReadonlyArray<permissions>, transaction: Transaction) => {
+        if (roleid === Role.superadmin) return;
+        const total = await permissions.count({ transaction });
+        if (total > 0 && new Set(perms.map((p) => p.permissionid)).size >= total) {
+            throw new ApiError(ErrorCode.INVALID_INPUT, "Some of the information isn't valid.", {
+                fields: [{
+                    field: "permissionsid",
+                    message: "A role can't hold every permission, because that would make it Super Admin. Leave at least one out.",
+                }],
+            });
+        }
+    }
+
+    bindRolePerms = async (rolePerms: BindRolePermissionRequest, rl: roles, transaction: Transaction, resolved?: permissions[]) => {
+        const perms = resolved ?? await this.resolvePerms(rolePerms);
         const rolesPerms = await rl?.setPermissions(perms, { transaction }) as unknown as Array<rolePermAttributes>;
         return rolesPerms
     }
@@ -280,7 +343,8 @@ export class RolePermissionBusiness {
                 lock: Transaction.LOCK.UPDATE,
                 notFound: () => new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist."),
             });
-            const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
+            const roleIdsBefore = await heldRoleIds(user, transaction);
+            const hadSuperAdmin = roleIdsBefore.includes(Role.superadmin);
             // A caller who is not platform may not touch a Super Admin account.
             assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
             // 400 unless every requested role exists exactly as given.
@@ -301,10 +365,13 @@ export class RolePermissionBusiness {
                 newRoles: selectedroles,
                 targetOrganisationid: user.organisationid,
             });
+            // Roles the account does not hold now must be ones the caller may add.
+            await assertMayAddRoles({ caller: org, currentRoleIds: roleIdsBefore, newRoles: selectedroles, transaction });
             const result = await user.setRoles(selectedroles, { transaction });
-            await revokeIfSuperAdminRemoved(
+            // A changed role SET ends the account's sessions, in this transaction.
+            await revokeIfRolesChanged(
                 user.lmsuserid,
-                hadSuperAdmin,
+                roleIdsBefore,
                 selectedroles.map((r) => r.roleid),
                 transaction,
             );

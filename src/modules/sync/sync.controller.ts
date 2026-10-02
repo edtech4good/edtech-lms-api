@@ -128,6 +128,7 @@ export class SyncController {
     status: 500,
     description: "Server error",
   })
+  // Not Role.organisationadmin: this pushes to the cloud server with the server key, for every organisation.
   @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
   @HttpCode(HttpStatus.OK)
   async synconline() {
@@ -174,6 +175,7 @@ export class SyncController {
     status: 500,
     description: "Server error",
   })
+  // Not Role.organisationadmin: this pushes to the cloud server with the server key, for every organisation.
   @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
   @HttpCode(HttpStatus.OK)
   async synconlineschool(@Param("schoolname") schoolname: string) {
