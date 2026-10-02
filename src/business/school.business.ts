@@ -8,7 +8,9 @@ import { lockLiveOrganisation, scopeOf } from "./org-scope";
 import { countries } from "src/models/data-models/countries";
 import { curriculums } from "src/models/data-models/curriculums";
 import { schools, schoolsAttributes } from "src/models/data-models/school";
+import { schoolcontributedata } from "src/models/data-models/schoolcontributedata";
 import { schoolusers } from "src/models/data-models/schoolusers";
+import { standards } from "src/models/data-models/standard";
 import { students } from "src/models/data-models/students";
 import { IMultiPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
@@ -193,9 +195,8 @@ export class SchoolBusiness {
    * rename updated only `schools`, which left every learner and login of the
    * school pointing at a name that no longer exists. The copies now follow the
    * school in the same transaction, keyed on `schoolid`, so the id stays correct
-   * and the two names never drift apart. (`standards.schoolname` and
-   * `schoolcontributedata.schoolname` are other tables' copies and are not
-   * touched here.)
+   * and the two names never drift apart. The same goes for the copies in
+   * `standards` and `schoolcontributedata` (both keyed on their own `schoolid`).
    */
   updateschoolName = async (school: schoolsAttributes, user: LmsUserToken, org: OrgContext) => {
     const requested = school.organisationid;
@@ -247,6 +248,17 @@ export class SchoolBusiness {
           { where: { schoolid: tempdt.schoolid }, transaction },
         );
         await schoolusers.update(
+          { schoolname: tempdt.schoolname },
+          { where: { schoolid: tempdt.schoolid }, transaction },
+        );
+        // Other tables' copies of the name, both keyed on their own `schoolid`:
+        // the class list payload (`standards`) and the Fees Collection list
+        // (`schoolcontributedata`), which shows its own column.
+        await standards.update(
+          { schoolname: tempdt.schoolname },
+          { where: { schoolid: tempdt.schoolid }, transaction },
+        );
+        await schoolcontributedata.update(
           { schoolname: tempdt.schoolname },
           { where: { schoolid: tempdt.schoolid }, transaction },
         );

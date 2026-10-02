@@ -1,5 +1,6 @@
 import { curriculums } from "src/models/data-models/curriculums";
 import { schools } from "src/models/data-models/school";
+import { schoolcontributedata } from "src/models/data-models/schoolcontributedata";
 import { schoolusers } from "src/models/data-models/schoolusers";
 import { standards } from "src/models/data-models/standard";
 import { students } from "src/models/data-models/students";
@@ -335,6 +336,8 @@ describe("SchoolBusiness.updateschoolName (PUT /school/update/:schoolid: a renam
   let school: { schoolid: string; schoolname: string; save: jest.Mock; [k: string]: unknown };
   let learners: jest.SpyInstance;
   let logins: jest.SpyInstance;
+  let classes: jest.SpyInstance;
+  let fees: jest.SpyInstance;
 
   beforeEach(() => {
     school = { schoolid: SAMPLE.schoolid, schoolname: SAMPLE.schoolname, save: jest.fn().mockResolvedValue(undefined) };
@@ -342,6 +345,8 @@ describe("SchoolBusiness.updateschoolName (PUT /school/update/:schoolid: a renam
     (schools.findOne as jest.Mock).mockResolvedValue(school);
     learners = jest.spyOn(students, "update").mockResolvedValue([3] as never);
     logins = jest.spyOn(schoolusers, "update").mockResolvedValue([3] as never);
+    classes = jest.spyOn(standards, "update").mockResolvedValue([2] as never);
+    fees = jest.spyOn(schoolcontributedata, "update").mockResolvedValue([1] as never);
   });
 
   const rename = (schoolname: string) =>
@@ -351,11 +356,26 @@ describe("SchoolBusiness.updateschoolName (PUT /school/update/:schoolid: a renam
     await rename("សាលាថ្មី");
 
     expect(school.save).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
-    for (const spy of [learners, logins]) {
+    for (const spy of [learners, logins, classes, fees]) {
       expect(spy).toHaveBeenCalledWith({ schoolname: "សាលាថ្មី" }, { where: { schoolid: SAMPLE.schoolid }, transaction: tnx });
     }
     expect(tnx.commit).toHaveBeenCalledTimes(1);
     expect(tnx.rollback).not.toHaveBeenCalled();
+  });
+
+  it("carries the new name to the class list's copy (standards) and the Fees Collection list's copy (schoolcontributedata), each keyed on its own schoolid", async () => {
+    await rename("Renamed School");
+    expect(classes).toHaveBeenCalledTimes(1);
+    expect(fees).toHaveBeenCalledTimes(1);
+    expect(classes.mock.calls[0][1]).toEqual({ where: { schoolid: SAMPLE.schoolid }, transaction: tnx });
+    expect(fees.mock.calls[0][1]).toEqual({ where: { schoolid: SAMPLE.schoolid }, transaction: tnx });
+  });
+
+  it("rolls back everything when the Fees Collection copy fails to update", async () => {
+    fees.mockRejectedValue(new Error("boom"));
+    await expect(rename("Renamed School")).rejects.toThrow("boom");
+    expect(tnx.rollback).toHaveBeenCalledTimes(1);
+    expect(tnx.commit).not.toHaveBeenCalled();
   });
 
   it("also cascades a rename that only changes a Khmer mark or a trailing space (equal under the collation, not the same name)", async () => {
@@ -378,6 +398,8 @@ describe("SchoolBusiness.updateschoolName (PUT /school/update/:schoolid: a renam
     await rename(SAMPLE.schoolname);
     expect(learners).not.toHaveBeenCalled();
     expect(logins).not.toHaveBeenCalled();
+    expect(classes).not.toHaveBeenCalled();
+    expect(fees).not.toHaveBeenCalled();
     expect(tnx.commit).toHaveBeenCalledTimes(1);
   });
 
@@ -420,6 +442,8 @@ describe("a rename racing a learner create in that school", () => {
       return [1];
     }) as never);
     jest.spyOn(schoolusers, "update").mockResolvedValue([0] as never);
+    jest.spyOn(standards, "update").mockResolvedValue([0] as never);
+    jest.spyOn(schoolcontributedata, "update").mockResolvedValue([0] as never);
 
     await new StudentBusiness().createStudents([{ studentid: "s1", schoolid: school.schoolid, schoolname: school.schoolname }] as never, tnx as never);
     // the rename commits afterwards
