@@ -104,6 +104,8 @@ async function main(): Promise<number> {
       new SchoolBusiness().updateschoolName(
         { schoolid, schoolname: name, countryid: country.countryid, curriculums: [] } as never,
         staff,
+        // package 2b: a school write needs the caller's scope; the scratch school has no organisation
+        { organisationid: null, isplatform: true } as never,
       );
     const rename = edit;
     const createLearner = async (login: string, tx: Transaction, givenName: string) => {
