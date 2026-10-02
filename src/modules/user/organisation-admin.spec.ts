@@ -461,9 +461,11 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
       expect(ids(admin.body.data.data)).toEqual([Role.organisationadmin]);
     });
 
-    it("GET /user/:lmsuserid (the roles offered on the account's edit form)", async () => {
-      const res = await api.get(as, ID.x1).expect(200);
-      expect(ids(res.body.data.roles)).toEqual(FOR_ORG_ADMIN);
+    it("GET /user/:lmsuserid (the roles offered on the account's edit form): what the caller could add, plus the roles the account holds (see the next block)", async () => {
+      const res = await api.get(as, ID.x1).expect(200); // x1 holds Admin
+      expect(ids(res.body.data.roles)).toEqual([...FOR_ORG_ADMIN, Role.admin].sort());
+      const bare = await api.get(as, ID.self).expect(200); // holds only Organisation Admin: nothing extra
+      expect(ids(bare.body.data.roles)).toEqual(FOR_ORG_ADMIN);
     });
 
     it("a platform user who is not acting as an organisation still sees every role, on all three", async () => {
@@ -490,6 +492,83 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
         expect(res.status).toBe(FOR_ORG_ADMIN.includes(id) ? 200 : 403);
         if (res.status === 403) nothingWritten(before);
       }
+    });
+  });
+
+  describe("the edit form keeps the roles an account holds even when the caller could not add them (GET /user/:lmsuserid)", () => {
+    type FormRole = { id: string; text: string; checked: boolean; canadd: boolean };
+    const rolesOf = (res: { body: { data: { roles: FormRole[] } } }) => res.body.data.roles;
+    const byRoleId = (list: FormRole[], id: string) => list.find((r) => r.id === id);
+    /** What the admin UI's edit form submits for the account it just loaded (user-update.component.ts). */
+    const formBody = (res: { body: { data: { user: { lmsusername: string }; roles: FormRole[] } } }) => ({
+      lmsusername: res.body.data.user.lmsusername,
+      lmsuserpasswordhash: null,
+      lmsuserroles: rolesOf(res).filter((r) => r.checked === true).map((r) => r.id),
+      countryids: [],
+      schoolids: [],
+    });
+
+    it("an account holding Admin: Admin is in the list, checked and flagged not addable; what the caller could add is offered unchecked and addable", async () => {
+      const list = rolesOf(await api.get(as, ID.x1).expect(200));
+      expect(byRoleId(list, Role.admin)).toEqual({ id: Role.admin, text: "Admin", checked: true, canadd: false });
+      expect(byRoleId(list, Role.organisationadmin)).toEqual({ id: Role.organisationadmin, text: "Organisation Admin", checked: false, canadd: true });
+      expect(byRoleId(list, CUSTOM_OK)).toMatchObject({ checked: false, canadd: true });
+      expect(list.filter((r) => r.checked).map((r) => r.id)).toEqual([Role.admin]);
+      for (const r of list) expect(Object.keys(r).sort()).toEqual(["canadd", "checked", "id", "text"]);
+    });
+
+    it("a held role the caller could add is checked and addable", async () => {
+      const list = rolesOf(await api.get(as, ID.self).expect(200));
+      expect(byRoleId(list, Role.organisationadmin)).toMatchObject({ checked: true, canadd: true });
+    });
+
+    it("saving the form's body unchanged keeps Admin: 200, the roles are as they were, no session ended", async () => {
+      const res = await api.get(as, ID.x1).expect(200);
+      await api.update(as, ID.x1, formBody(res)).expect(200);
+      expect(byId(ID.x1).held).toEqual([Role.admin]);
+      expect(destroyed).toEqual([]);
+      expect(callOrder).not.toContain("revoke");
+    });
+
+    it("an account holding only roles that are not offered is not emptied by an unchanged save", async () => {
+      byId(ID.x2).held = [Role.admin, Role.user];
+      const res = await api.get(as, ID.x2).expect(200);
+      expect(rolesOf(res).filter((r) => r.checked && !r.canadd).map((r) => r.id).sort()).toEqual([Role.admin, Role.user].sort());
+      await api.update(as, ID.x2, formBody(res)).expect(200);
+      expect(byId(ID.x2).held.sort()).toEqual([Role.admin, Role.user].sort());
+      expect(destroyed).toEqual([]);
+    });
+
+    it("unchecking a held role on the form still removes it (removal is allowed)", async () => {
+      const res = await api.get(as, ID.x1).expect(200);
+      const body = { ...formBody(res), lmsuserroles: [Role.organisationadmin] };
+      await api.update(as, ID.x1, body).expect(200);
+      expect(byId(ID.x1).held).toEqual([Role.organisationadmin]);
+    });
+
+    it("the role lists themselves are unchanged: Admin stays out of GET /roles and POST /roles", async () => {
+      expect((await api.roleList(as).expect(200)).body.data.map((r: { id: string }) => r.id)).not.toContain(Role.admin);
+      expect((await api.rolePage(as).expect(200)).body.data.data.map((r: { roleid: string }) => r.roleid)).not.toContain(Role.admin);
+    });
+
+    it("a legacy account of X holding Super Admin alongside Admin: Super Admin is not in the list, Admin is checked and not addable; saving it is refused (403)", async () => {
+      byId(ID.xs).held = [Role.superadmin, Role.admin];
+      const res = await api.get(as, ID.xs).expect(200);
+      expect(rolesOf(res).map((r) => r.id)).not.toContain(Role.superadmin);
+      expect(byRoleId(rolesOf(res), Role.admin)).toMatchObject({ checked: true, canadd: false });
+      const before = snapshot();
+      await api.update(as, ID.xs, formBody(res)).expect(403);
+      nothingWritten(before);
+    });
+
+    it("a platform user acting as X gets the same list as X's staff; one not acting gets every role, addable, with the held ones checked", async () => {
+      const acting = rolesOf(await api.get(callers.platformActingX, ID.x1).expect(200));
+      expect(byRoleId(acting, Role.admin)).toMatchObject({ checked: true, canadd: false });
+      expect(acting.map((r) => r.id)).not.toContain(Role.superadmin);
+      const platform = rolesOf(await api.get(callers.platform, ID.x1).expect(200));
+      expect(platform).toHaveLength(Object.keys(ROLE_NAMES).length);
+      expect(platform.every((r) => r.canadd)).toBe(true);
+      expect(platform.filter((r) => r.checked).map((r) => r.id)).toEqual([Role.admin]);
     });
   });
 

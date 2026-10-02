@@ -342,17 +342,25 @@ export class UserBusiness {
       }],
       notFound: () => new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist."),
     });
-    const allroles = await new RolePermissionBusiness().getallroles(org);
+    // The roles the edit form offers: those this caller could add (`canadd` true),
+    // each checked when the account holds it. PLUS every role the account holds
+    // that the caller could not add, checked and `canadd` false, so a form built
+    // from this list submits them back and a save that changes nothing does not
+    // remove them (a kept role is not an addition). Nothing else is added: the role
+    // lists themselves stay limited to what the caller may add. Super Admin is
+    // never included for a caller in an organisation's scope.
+    const offered = await new RolePermissionBusiness().getallroles(org);
     if(user) {
-      const roles = allroles.filter(function (o1) {
-        const matched = user.roles.some(function (o2) {
-          return o1.id === o2.roleid; // return the ones with equal id
-        });
-        if(matched) {
-          o1.checked = true;
+      const held = new Set(user.roles.map((r) => r.roleid));
+      const roles = offered.map((o1) => ({ ...o1, checked: held.has(o1.id), canadd: true }));
+      if (scopeOf(org).kind === "organisation") {
+        const shown = new Set(offered.map((o1) => o1.id));
+        for (const r of user.roles) {
+          if (!shown.has(r.roleid) && r.roleid !== Role.superadmin) {
+            roles.push({ id: r.roleid, text: r.rolename, checked: true, canadd: false });
+          }
         }
-        return true;
-      });
+      }
       return { user, roles}
     }
   };
