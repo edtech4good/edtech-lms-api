@@ -17,7 +17,15 @@
  * (2) a rename holds the school row, the create (which read the school's old
  * name earlier) must wait and then store the new name; (3) twelve unsynchronised
  * rename + create pairs; (4) an edit that read the school's old name, queued
- * behind a rename, must not write the old name back over it.
+ * behind a rename, must not write the old name back over it;
+ * (A) a writer that looked a school up BY NAME holds its transaction open while
+ * a rename of that school starts: the rename must wait, then succeed (it used to
+ * deadlock with the writer's insert), and the inserted row must carry the final
+ * name; (B) while such a writer's transaction is open, a rename of an unrelated
+ * school and a school create must not be blocked (the lookup used to lock the
+ * whole name index); (C) a school moved to another country (and renamed) must
+ * not end in a country its organisation is not linked to when the organisation
+ * drops that country at the same moment.
  *
  * What each proves. 1 and 2 are the deterministic proofs of the lock: each
  * checks that the second transaction really WAITED, and removing the lock or
@@ -42,8 +50,15 @@ import { initModels } from "src/models/data-models/init-models";
 import { SchoolBusiness } from "src/business/school.business";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { StudentBusiness } from "src/business/student.business";
+import { OrganisationBusiness } from "src/business/organisation.business";
+import { resolveSchoolByName } from "src/business/school-identity";
 
 const PREFIX = "zzrace";
+const settledWithin = async (p: Promise<unknown>, ms: number): Promise<"ok" | "failed" | "timeout"> =>
+  Promise.race([
+    p.then(() => "ok" as const, () => "failed" as const),
+    new Promise<"timeout">((r) => setTimeout(() => r("timeout"), ms)),
+  ]);
 const SCHOOL_PREFIX = "zzrace school ";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -78,6 +93,9 @@ async function main(): Promise<number> {
     await db.query("DELETE FROM students WHERE schooluserid IN (SELECT schooluserid FROM schoolusers WHERE schoolusername LIKE ?)", { replacements: [`${PREFIX}%`] });
     await db.query("DELETE FROM schoolusers WHERE schoolusername LIKE ?", { replacements: [`${PREFIX}%`] });
     await db.query("DELETE FROM schools WHERE schoolname LIKE ?", { replacements: [`${SCHOOL_PREFIX}%`] });
+    await db.query("DELETE FROM organisationcountry WHERE organisationid IN (SELECT organisationid FROM organisations WHERE organisationcode LIKE ?)", { replacements: [`${PREFIX}%`] });
+    await db.query("DELETE FROM organisations WHERE organisationcode LIKE ?", { replacements: [`${PREFIX}%`] });
+    await db.query("DELETE FROM countries WHERE countryname LIKE ?", { replacements: [`${PREFIX} country%`] });
   };
 
   let failures = 0;
@@ -100,22 +118,23 @@ async function main(): Promise<number> {
     });
 
     const staff = { lmsuserid: "race-script" } as never;
-    const edit = (name: string) =>
-      new SchoolBusiness().updateschoolName(
-        { schoolid, schoolname: name, countryid: country.countryid, curriculums: [] } as never,
-        staff,
-        // package 2b: a school write needs the caller's scope; the scratch school has no organisation
-        { organisationid: null, isplatform: true } as never,
-      );
+    // package 2b: a school write needs the caller's scope
+    const platform = { organisationid: null, isplatform: true } as never;
+    const editSchool = (id: string, name: string, countryid: string) =>
+      new SchoolBusiness().updateschoolName({ schoolid: id, schoolname: name, countryid, curriculums: [] } as never, staff, platform);
+    const edit = (name: string) => editSchool(schoolid, name, country.countryid);
     const rename = edit;
-    const createLearner = async (login: string, tx: Transaction, givenName: string) => {
+    // `byName`: the writer names the school by its NAME only (teacher create, the teacher
+    // CSV import, the learner edit upload); otherwise the id is given as well.
+    const createLearner = async (login: string, tx: Transaction, givenName: string, forSchool = schoolid, byName = false) => {
       const schooluserid = uuid();
+      const ids = byName ? {} : { schoolid: forSchool };
       await new SchoolUserBusiness().createSchoolUser(
-        [{ schooluserid, schoolusername: login, schooluserpasswordhash: "Pw12345", schooluserrole: 4, schooluserstatus: 1, isdisabled: false, schoolid, schoolname: givenName }] as never,
+        [{ schooluserid, schoolusername: login, schooluserpasswordhash: "Pw12345", schooluserrole: 4, schooluserstatus: 1, isdisabled: false, ...ids, schoolname: givenName }] as never,
         tx,
       );
       await new StudentBusiness().createStudents(
-        [{ studentid: uuid(), studentfirstname: "Sample", genderid: 1, city: "c", country: "c", state: "c", curriculumid: curriculum.curriculumid, isactive: 1, schooluserid, schoolid, schoolname: givenName }] as never,
+        [{ studentid: uuid(), studentfirstname: "Sample", genderid: 1, city: "c", country: "c", state: "c", curriculumid: curriculum.curriculumid, isactive: 1, schooluserid, ...ids, schoolname: givenName }] as never,
         tx,
       );
     };
@@ -190,6 +209,88 @@ async function main(): Promise<number> {
       [schoolid],
     );
     check("4: after a rename and a stale edit, no learner or login has a name different from the school's", counts.mismatched === 0);
+
+    // A. a by-name writer holds its transaction open while a rename of that school starts.
+    const nameForA = await currentName();
+    const txA = await begin();
+    await resolveSchoolByName(nameForA, txA);
+    let renameA: "ok" | "failed" | undefined;
+    const rA = rename(`${original} A`).then(() => { renameA = "ok"; }, () => { renameA = "failed"; });
+    await sleep(1500);
+    check("A: the rename waits while the by-name writer's transaction is open", renameA === undefined);
+    let insertedA = true;
+    try {
+      await createLearner(`${PREFIX}A`, txA, nameForA, schoolid, true);
+      await txA.commit();
+    } catch {
+      insertedA = false;
+    }
+    await rA;
+    check("A: the by-name writer's insert succeeds (no deadlock)", insertedA);
+    check("A: the rename succeeds (no deadlock)", renameA === "ok");
+    check("A: the inserted learner and login carry the school's FINAL name", insertedA && (await agrees(`${PREFIX}A`)));
+
+    // B. while a by-name writer's transaction is open, unrelated school writes are not blocked.
+    const otherId = uuid();
+    const otherName = `${SCHOOL_PREFIX}b ${otherId.slice(0, 8)}`;
+    await db.query("INSERT INTO schools (schoolid, schoolname, isdeleted, curriculums, countryid) VALUES (?, ?, 0, JSON_ARRAY(), ?)", {
+      replacements: [otherId, otherName, country.countryid],
+    });
+    const txB = await begin();
+    await resolveSchoolByName(await currentName(), txB);
+    const unrelatedRename = await settledWithin(editSchool(otherId, `${otherName} renamed`, country.countryid), 3000);
+    const unrelatedCreate = await settledWithin(
+      new SchoolBusiness().createschool(
+        { schoolname: `${SCHOOL_PREFIX}b new ${otherId.slice(0, 8)}`, countryid: country.countryid, curriculums: [] } as never,
+        staff,
+        platform,
+      ),
+      3000,
+    );
+    check("B: a rename of an UNRELATED school is not blocked by the open by-name writer", unrelatedRename === "ok");
+    check("B: a school create is not blocked by the open by-name writer", unrelatedCreate === "ok");
+    await txB.commit();
+
+    // C. a school moved to another country while its organisation drops that country.
+    const country2 = uuid();
+    await db.query("INSERT INTO countries (countryid, countryname) VALUES (?, ?)", { replacements: [country2, `${PREFIX} country ${country2.slice(0, 8)}`] });
+    const orgId = uuid();
+    await db.query(
+      "INSERT INTO organisations (organisationid, organisationname, organisationcode, organisationshortname, organisationpreset) VALUES (?, ?, ?, 'ZR', 'schoolnetwork')",
+      { replacements: [orgId, `${PREFIX} org ${orgId.slice(0, 8)}`, `${PREFIX}${orgId.slice(0, 8)}`] },
+    );
+    for (const c of [country.countryid, country2]) {
+      await db.query("INSERT INTO organisationcountry (organisationcountryid, organisationid, countryid) VALUES (?, ?, ?)", { replacements: [uuid(), orgId, c] });
+    }
+    const orgSchool = uuid();
+    const orgSchoolName = `${SCHOOL_PREFIX}c ${orgSchool.slice(0, 8)}`;
+    await db.query("INSERT INTO schools (schoolid, schoolname, isdeleted, curriculums, countryid, organisationid) VALUES (?, ?, 0, JSON_ARRAY(), ?, ?)", {
+      replacements: [orgSchool, orgSchoolName, country.countryid, orgId],
+    });
+    const txL = await begin();
+    await createLearner(`${PREFIX}C`, txL, orgSchoolName, orgSchool);
+    await txL.commit();
+    const holdC = await begin();
+    await db.query("SELECT studentid FROM students WHERE schoolid = ? FOR UPDATE", { replacements: [orgSchool], transaction: holdC });
+    // the rename (also moves the school to country2) passes its country check, then pauses at its cascade
+    const moving = settledWithin(editSchool(orgSchool, `${orgSchoolName} moved`, country2), 15000);
+    await sleep(1500);
+    // the organisation now drops country2
+    let orgOutcome: "ok" | "failed" | undefined;
+    const dropping = new OrganisationBusiness()
+      .updateorganisation(orgId, { organisationname: `${PREFIX} org ${orgId.slice(0, 8)}`, organisationshortname: "ZR" }, [country.countryid], staff)
+      .then(() => { orgOutcome = "ok"; }, () => { orgOutcome = "failed"; });
+    await sleep(1500);
+    check("C: the organisation's country edit waits for the school write that is in progress", orgOutcome === undefined);
+    await holdC.commit();
+    const moved = await moving;
+    await dropping;
+    const [linkedAtEnd] = await select<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM organisationcountry oc JOIN schools s ON s.organisationid = oc.organisationid AND s.countryid = oc.countryid WHERE s.schoolid = ?",
+      [orgSchool],
+    );
+    check("C: the school does not end in a country its organisation is not linked to", linkedAtEnd.n === 1);
+    check("C: exactly one of the two writes won (the other was refused), none half-applied", (moved === "ok") !== (orgOutcome === "ok"));
     reachedEnd = true;
   } finally {
     for (const t of open) {
