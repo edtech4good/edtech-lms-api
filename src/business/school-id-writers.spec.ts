@@ -469,6 +469,7 @@ describe("SchoolBusiness.updateschoolName (PUT /school/update/:schoolid: a renam
     (schools.findOne as jest.Mock).mockResolvedValue(null);
     await expect(rename("x")).resolves.toBeNull();
     expect(learners).not.toHaveBeenCalled();
+    expect(tnx.rollback).toHaveBeenCalledTimes(1); // the lock taken for the read is released
   });
 });
 

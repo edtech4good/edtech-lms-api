@@ -32,8 +32,11 @@ const givenInWhere = (where: unknown): string => (where as { logic: string }).lo
 const sqlTrim = (s: string) => s.replace(/^ +| +$/g, "");
 
 const fakeMysql = (rows = SCHOOLS) => {
-  const findAll = jest.spyOn(schools, "findAll").mockImplementation((async (opts: { where: unknown }) =>
-    rows.filter((r) => collate(sqlTrim(r.schoolname)) === collate(givenInWhere(opts.where)))) as never);
+  const findAll = jest.spyOn(schools, "findAll").mockImplementation((async (opts: { where: unknown }) => {
+    // honour the function the lookup applies to the column: only TRIM strips the stored name's spaces
+    const trims = (opts.where as { attribute: { fn: string } }).attribute.fn === "TRIM";
+    return rows.filter((r) => collate(trims ? sqlTrim(r.schoolname) : r.schoolname) === collate(givenInWhere(opts.where)));
+  }) as never);
   const findOne = jest.spyOn(schools, "findOne").mockImplementation((async (opts: { where: { schoolid: string } }) =>
     rows.find((r) => r.schoolid === opts.where.schoolid) ?? null) as never);
   return { findAll, findOne };
