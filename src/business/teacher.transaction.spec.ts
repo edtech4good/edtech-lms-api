@@ -70,6 +70,8 @@ describe("teacher creation waits for its write and commit", () => {
     jest
       .spyOn(schools, "findAll")
       .mockResolvedValue([{ schoolid: "school-a-id", schoolname: "School A" }] as never);
+    // ...then locks the chosen school by primary key.
+    jest.spyOn(schools, "findOne").mockResolvedValue({ schoolid: "school-a-id", schoolname: "School A" } as never);
   });
 
   afterEach(() => {
