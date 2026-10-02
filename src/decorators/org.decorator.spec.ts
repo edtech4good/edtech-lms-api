@@ -11,7 +11,7 @@ import { Org, OrgContext, orgOf } from "./org.decorator";
 
 /**
  * `@Org()` hands a handler the organisation context of the staff token that
- * authenticated the request: `{ organisationid, isplatform }`, nothing else.
+ * authenticated the request: `{ organisationid, isplatform, permissions }`, nothing else.
  * Unit-tested through `orgOf` (the rule), and over real HTTP through the real
  * strategy and AccessGuard (the decorator itself).
  */
@@ -26,23 +26,29 @@ describe("orgOf", () => {
     ...extra,
   });
 
-  it("returns exactly the two claims", () => {
-    expect(orgOf(staff())).toEqual({ organisationid: ORG, isplatform: false });
+  it("returns exactly the two claims and the permissions (none when the token has none)", () => {
+    expect(orgOf(staff())).toEqual({ organisationid: ORG, isplatform: false, permissions: [] });
   });
 
   it("returns null for 'no organisation' and true for a platform user", () => {
     expect(orgOf(staff({ organisationid: null, isplatform: true }))).toEqual({
       organisationid: null,
       isplatform: true,
+      permissions: [],
     });
   });
 
   it("keeps a platform user's acting organisation next to isplatform: true", () => {
-    expect(orgOf(staff({ isplatform: true }))).toEqual({ organisationid: ORG, isplatform: true });
+    expect(orgOf(staff({ isplatform: true }))).toEqual({ organisationid: ORG, isplatform: true, permissions: [] });
   });
 
   it("does not leak other claims", () => {
-    expect(Object.keys(orgOf(staff())).sort()).toEqual(["isplatform", "organisationid"]);
+    expect(Object.keys(orgOf(staff())).sort()).toEqual(["isplatform", "organisationid", "permissions"]);
+  });
+
+  it("carries the token's permission names, strings only", () => {
+    expect(orgOf(staff({ permissions: ["view_user", 7, null, "create_user"] })).permissions).toEqual(["view_user", "create_user"]);
+    expect(orgOf(staff({ permissions: "view_user" })).permissions).toEqual([]);
   });
 
   it.each([
@@ -126,14 +132,14 @@ describe("@Org() on a route (real strategy and AccessGuard)", () => {
     const res = await get(
       bearer({ lmsuserid: "u1", lmsuserroles: [Role.admin], organisationid: ORG, isplatform: false }),
     ).expect(200);
-    expect(res.body).toEqual({ org: { organisationid: ORG, isplatform: false } });
+    expect(res.body).toEqual({ org: { organisationid: ORG, isplatform: false, permissions: [] } });
   });
 
   it("gives a platform token's context: no organisation, isplatform true", async () => {
     const res = await get(
       bearer({ lmsuserid: "u1", lmsuserroles: [Role.superadmin], organisationid: null, isplatform: true }),
     ).expect(200);
-    expect(res.body).toEqual({ org: { organisationid: null, isplatform: true } });
+    expect(res.body).toEqual({ org: { organisationid: null, isplatform: true, permissions: [] } });
   });
 
   it("reads the token, never the request: a header or a query value changes nothing", async () => {
@@ -142,7 +148,7 @@ describe("@Org() on a route (real strategy and AccessGuard)", () => {
       .set("Authorization", bearer({ lmsuserid: "u1", lmsuserroles: [Role.admin], organisationid: ORG, isplatform: false }))
       .set("X-Organisation-Id", "hijack")
       .expect(200);
-    expect(res.body.org).toEqual({ organisationid: ORG, isplatform: false });
+    expect(res.body.org).toEqual({ organisationid: ORG, isplatform: false, permissions: [] });
   });
 
   it("throws 401 for the application API key: it is not a staff user", async () => {

@@ -12,11 +12,13 @@ import { NodeLeaf, TreeNode } from "src/modules/role-permission/models/RoleBase"
 import _ from "lodash";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import {
+  assertMayAddRoles,
   assertMayModifyUser,
   assertMaySetRoles,
   heldRoleIds,
   resolveRequestedRoles,
   revokeIfRolesChanged,
+  rolesCallerMayAdd,
 } from "./session-revocation";
 import { Role } from "src/models/enums";
 import { OrgContext } from "src/decorators/org.decorator";
@@ -96,15 +98,16 @@ export class RolePermissionBusiness {
     // idempotent migrations (20260407120500 + 20260716140000).
 
     /**
-     * The roles a caller may see. A caller acting in an organisation (a user of
-     * one, or a platform user acting as one) is not shown Super Admin: they
-     * cannot give it, and it is the platform's role. A platform caller who is
-     * not acting as an organisation sees every role. The scope comes from the
-     * validated token (`@Org()`), never from the request; with no scope the
-     * call is refused (403).
+     * The roles a caller is offered. A platform caller who is not acting as an
+     * organisation sees every role. A caller in an organisation's scope (its
+     * staff, or a platform user acting as it) sees only the roles it could add to
+     * an account (`rolesCallerMayAdd`), so a form built from this list offers
+     * nothing the API would refuse; Super Admin is never among them. The scope
+     * and the caller's permissions come from the validated token (`@Org()`),
+     * never from the request; with no scope the call is refused (403).
      */
     getallRoles = async (paging: IMultiPaging, org: OrgContext) => {
-        const hideSuperAdmin = scopeOf(org).kind === "organisation";
+        const scoped = scopeOf(org).kind === "organisation";
         let where: WhereOptions<rolesAttributes> = {
             // isdeleted: false,
         };
@@ -116,9 +119,10 @@ export class RolePermissionBusiness {
         offset = limit * ((paging.pageindex || 1) - 1);
         }
         where = { ...constructWhere<rolesAttributes>(paging, where) };
-        if (hideSuperAdmin) {
-            // ANDed, so no filter in the request can bring it back.
-            where = { [Op.and]: [where, { roleid: { [Op.ne]: Role.superadmin } }] };
+        if (scoped) {
+            const allowed = await rolesCallerMayAdd(org, await roles.findAll());
+            // ANDed, so no filter in the request can bring another role back.
+            where = { [Op.and]: [where, { roleid: { [Op.in]: [...allowed] } }] };
         }
 
         return await roles.findAndCountAll({ where, order, limit, offset });
@@ -126,10 +130,11 @@ export class RolePermissionBusiness {
 
     /** The id/text list the staff forms use. Same visibility rule as `getallRoles`. */
     getallroles = async (org: OrgContext) => {
-        const hideSuperAdmin = scopeOf(org).kind === "organisation";
+        const scoped = scopeOf(org).kind === "organisation";
         const all = await roles.findAll();
-        // Exact comparison here: the database compares ids without regard to case.
-        const rls = hideSuperAdmin ? all.filter((rl) => rl.roleid !== Role.superadmin) : all;
+        // The set holds stored ids and is compared exactly: the database compares ids without regard to case.
+        const allowed = scoped ? await rolesCallerMayAdd(org, all) : undefined;
+        const rls = allowed ? all.filter((rl) => allowed.has(rl.roleid)) : all;
         const formatedroles = rls.map(rl => {
             return {
                 id: rl.roleid,
@@ -140,14 +145,6 @@ export class RolePermissionBusiness {
         return formatedroles
     }
 
-    /**
-     * One role with its permissions. For a caller in an organisation's scope the
-     * Super Admin role does not exist: the answer is exactly the one for an id
-     * that matches no role (`role` null, nothing selected), so its definition
-     * cannot be read there. Decided on the row that was found, by its stored id:
-     * the database matches ids without regard to case, so the spelling in the
-     * request must not decide it.
-     */
     getRolebyid = async (roleid: string, org: OrgContext) => {
         const hideSuperAdmin = scopeOf(org).kind === "organisation";
         const found = await roles.findOne({
@@ -329,6 +326,8 @@ export class RolePermissionBusiness {
                 newRoles: selectedroles,
                 targetOrganisationid: user.organisationid,
             });
+            // Roles the account does not hold now must be ones the caller may add.
+            await assertMayAddRoles({ caller: org, currentRoleIds: roleIdsBefore, newRoles: selectedroles, transaction });
             const result = await user.setRoles(selectedroles, { transaction });
             // A changed role SET ends the account's sessions, in this transaction.
             await revokeIfRolesChanged(

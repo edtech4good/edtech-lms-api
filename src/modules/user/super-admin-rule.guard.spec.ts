@@ -50,6 +50,7 @@ const ROLE_NAMES: Record<string, string> = {
   [Role.superadmin]: "Super Admin",
   [Role.admin]: "Admin",
   [Role.teacher]: "Teacher",
+  [Role.organisationadmin]: "Organisation Admin",
 };
 
 const bearer = (claims: Record<string, unknown>) =>
@@ -220,7 +221,7 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
     });
 
     it("still succeeds for other roles: create, update, bind and delete of a user who is not Super Admin", async () => {
-      await send.create(token, [Role.admin, Role.teacher]).expect(200);
+      await send.create(token, [Role.organisationadmin, Role.teacher]).expect(200);
       expect(create).toHaveBeenCalledTimes(1);
       await send.update(token, [Role.teacher]).expect(200);
       await send.bind(token, [Role.teacher]).expect(200);

@@ -420,7 +420,7 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
       const { accessToken } = await signIn("platform@example.com");
       const { body } = await switchTo(accessToken, ORG_A).expect(200);
       const res = await probe("platform", body.data.accessToken).expect(200);
-      expect(res.body.org).toEqual({ organisationid: ORG_A, isplatform: true });
+      expect(res.body.org).toEqual({ organisationid: ORG_A, isplatform: true, permissions: ["view_organisation"] });
     });
 
     it("the OLD token no longer validates, and neither does the old refresh token", async () => {

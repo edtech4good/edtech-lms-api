@@ -234,7 +234,8 @@ describe("staff administration is scoped to the caller's organisation", () => {
   const newStaff = (over: Record<string, unknown> = {}) => ({
     lmsusername: "new.staff@example.com",
     lmsuserpasswordhash: "SamplePass12",
-    lmsuserroles: [Role.admin],
+    // Teacher: a role an organisation's staff may add (Admin is not; see organisation-admin.spec.ts).
+    lmsuserroles: [Role.teacher],
     ...over,
   });
   const edit = (over: Record<string, unknown> = {}) => ({

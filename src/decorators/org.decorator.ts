@@ -11,6 +11,12 @@ export interface OrgContext {
   organisationid: string | null;
   /** True for a platform user, including while acting as an organisation. */
   isplatform: boolean;
+  /**
+   * The permission names the validated token carries (what the caller holds
+   * now), strings only. Used to bound the roles an organisation's staff may add
+   * to an account; absent means none (fail closed).
+   */
+  permissions?: ReadonlyArray<string>;
 }
 
 /**
@@ -28,10 +34,11 @@ export const orgOf = (user: unknown): OrgContext => {
   if (typeof user !== "object" || user === null || hasSchoolUserId(user)) {
     throw new UnauthorizedException();
   }
-  const { lmsuserid, organisationid, isplatform } = user as {
+  const { lmsuserid, organisationid, isplatform, permissions } = user as {
     lmsuserid?: unknown;
     organisationid?: unknown;
     isplatform?: unknown;
+    permissions?: unknown;
   };
   if (
     typeof lmsuserid !== "string" ||
@@ -40,7 +47,11 @@ export const orgOf = (user: unknown): OrgContext => {
   ) {
     throw new UnauthorizedException();
   }
-  return { organisationid: organisationid as string | null, isplatform: isplatform as boolean };
+  return {
+    organisationid: organisationid as string | null,
+    isplatform: isplatform as boolean,
+    permissions: Array.isArray(permissions) ? permissions.filter((p): p is string => typeof p === "string") : [],
+  };
 };
 
 export const Org = createParamDecorator(

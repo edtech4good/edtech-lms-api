@@ -6,6 +6,8 @@ import { lmsusers } from "../models/data-models/lmsusers";
 import { roles } from "../models/data-models/roles";
 import { tokens } from "../models/data-models/tokens";
 import { Role } from "../models/enums";
+import { permissions } from "../models/data-models/permissions";
+import { SUPERADMIN } from "../models/enums/permissions.enum";
 
 /**
  * Ends every session of one staff user: deletes their rows in `tokens`
@@ -168,5 +170,95 @@ export const assertMaySetRoles = (opts: {
       ErrorCode.NOT_ALLOWED,
       "Only a platform user can remove the Super Admin role.",
     );
+  }
+};
+
+
+/**
+ * The built-in roles an organisation's staff may add to an account. Every other
+ * built-in role (Admin, User, API Key, Super Admin, and any added to the `Role`
+ * enum later) is named in route guards by its identity, so its reach is wider
+ * than its permissions say and an organisation's staff cannot hand it out.
+ */
+const BUILT_IN_ASSIGNABLE_BY_ORGANISATION: ReadonlyArray<string> = [Role.organisationadmin, Role.teacher];
+
+/** Is this role one of the built-in roles (derived from the `Role` enum, never a second list)? */
+const isBuiltInRole = (roleid: string) => (Object.values(Role) as string[]).includes(roleid);
+
+/** Is the caller a platform user who is not acting as an organisation? */
+const isUnscopedPlatform = (caller: OrgContext | undefined) =>
+  caller?.isplatform === true && caller.organisationid === null;
+
+/**
+ * Of these role ROWS, which could the caller add to an account? Reads each
+ * role's grants from the database (inside `transaction` when given). A platform
+ * caller who is not acting as an organisation may add any; everyone else (an
+ * organisation's staff, a platform user acting as one, a missing context) may
+ * add a role only when
+ *  1. it is not a built-in role, or it is one built in for organisations
+ *     (Organisation Admin, Teacher); AND
+ *  2. every permission it holds is one the caller holds now (the permissions
+ *     the validated token carries; the `superadmin` wildcard holds them all).
+ * Rule 2 is what bounds custom roles; it applies to the built-in two as well.
+ */
+export const rolesCallerMayAdd = async (
+  caller: OrgContext | undefined,
+  candidates: ReadonlyArray<roles>,
+  transaction?: Transaction,
+): Promise<Set<string>> => {
+  if (isUnscopedPlatform(caller)) {
+    return new Set(candidates.map((r) => r.roleid));
+  }
+  const held = new Set(caller?.permissions ?? []);
+  const holdsAll = held.has(SUPERADMIN);
+  const eligible = candidates.filter(
+    (r) => !isBuiltInRole(r.roleid) || BUILT_IN_ASSIGNABLE_BY_ORGANISATION.includes(r.roleid),
+  );
+  if (eligible.length === 0) {
+    return new Set();
+  }
+  const withGrants = await roles.findAll({
+    where: { roleid: { [Op.in]: eligible.map((r) => r.roleid) } },
+    include: [{ model: permissions, attributes: ["permissionname"], through: { attributes: [] } }],
+    transaction,
+  });
+  const allowed = new Set<string>();
+  for (const row of withGrants) {
+    // Compare the stored id exactly: the database matches ids without regard to case.
+    if (!eligible.some((r) => r.roleid === row.roleid)) continue;
+    if (holdsAll || (row.permissions ?? []).every((p) => held.has(p.permissionname))) {
+      allowed.add(row.roleid);
+    }
+  }
+  return allowed;
+};
+
+/**
+ * The rule for which roles a caller in an organisation's scope may ADD to an
+ * account (create, update, bind, to itself or to others alike): see
+ * `rolesCallerMayAdd`. "Add" means in the new set and not in the account's
+ * current set (`currentRoleIds`; empty on create). Roles the account already
+ * holds and keeps are not re-checked, and removing a role is not restricted
+ * here (the Super Admin rules in `assertMaySetRoles` still apply). Refused with
+ * 403 (NOT_ALLOWED) before anything is written. Takes resolved role ROWS.
+ * A platform caller not acting as an organisation is unchanged.
+ */
+export const assertMayAddRoles = async (opts: {
+  caller: OrgContext | undefined;
+  currentRoleIds: ReadonlyArray<string>;
+  newRoles: ReadonlyArray<roles>;
+  transaction?: Transaction;
+}) => {
+  if (isUnscopedPlatform(opts.caller)) {
+    return;
+  }
+  const current = new Set(opts.currentRoleIds);
+  const added = opts.newRoles.filter((r) => !current.has(r.roleid));
+  if (added.length === 0) {
+    return;
+  }
+  const allowed = await rolesCallerMayAdd(opts.caller, added, opts.transaction);
+  if (added.some((r) => !allowed.has(r.roleid))) {
+    throw new ApiError(ErrorCode.NOT_ALLOWED, "You can't give a role that has more access than your own.");
   }
 };

@@ -16,6 +16,7 @@ import { LmsUserToken } from "src/models/token.model";
 import { dbinstance } from "src/services/dbservice";
 import { OrgContext } from "src/decorators/org.decorator";
 import {
+  assertMayAddRoles,
   assertMayModifyUser,
   assertMayModifyUserId,
   assertMaySetRoles,
@@ -59,6 +60,8 @@ export class UserBusiness {
         newRoles: rls,
         targetOrganisationid: user.organisationid,
       });
+      // On create every role is an addition: each must be one the caller may add.
+      await assertMayAddRoles({ caller: org, currentRoleIds: [], newRoles: rls, transaction });
       user.lmsuserid = uuidv4();
       user.lmsuserpasswordhash = hashPassword(user.lmsuserpasswordhash);
       // LEGACY, and not a claim about this user. The column is NOT NULL so it
@@ -393,6 +396,8 @@ export class UserBusiness {
         newRoles: rls,
         targetOrganisationid: after.organisationid,
       });
+      // Roles the account does not hold now must be ones the caller may add.
+      await assertMayAddRoles({ caller: org, currentRoleIds: roleIdsBefore, newRoles: rls, transaction });
       user.lmsusername = usr.lmsusername;
       user.lmsuserpasswordhash = usr.lmsuserpasswordhash ? hashPassword(usr.lmsuserpasswordhash) : user.lmsuserpasswordhash;
       user.countries = usr.countries;

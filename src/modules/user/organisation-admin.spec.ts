@@ -17,6 +17,9 @@ import { dbinstance } from "src/services/dbservice";
 import { rowMatches, withPrimaryKey } from "src/test-support/fakewhere";
 import { UserController } from "./user.controller";
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const adminTeacherGrant = require("src/db/migrations/20260716160000-grant-admin-teacher-permissions");
+
 /**
  * The "Organisation Admin" role runs ONE organisation's staff. A user who holds
  * it, in organisation X, can list, read, create, update, disable and give roles
@@ -57,13 +60,40 @@ const ID = {
   gone: "99999999-0000-4000-8000-000000000009",
 };
 
+// Custom roles (not built in): one whose permissions are all ones an Organisation Admin holds, one with a permission it does not.
+const CUSTOM_OK = "custom-ok";
+const CUSTOM_WIDE = "custom-wide";
 const ROLE_NAMES: Record<string, string> = {
   [Role.superadmin]: "Super Admin",
   [Role.admin]: "Admin",
+  [Role.user]: "User",
+  [Role.apikey]: "API Key",
   [Role.teacher]: "Teacher",
   [Role.organisationadmin]: "Organisation Admin",
+  [CUSTOM_OK]: "Custom within reach",
+  [CUSTOM_WIDE]: "Custom beyond reach",
 };
-const roleRow = (roleid: string) => ({ roleid, rolename: ROLE_NAMES[roleid] ?? roleid });
+
+/** What the 16 July grant migration gives Admin and Teacher, as it computes it. */
+const olderGrants = async (): Promise<Record<string, string[]>> => {
+  const byRole: Record<string, string[]> = {};
+  await adminTeacherGrant.up({
+    sequelize: {
+      query: jest.fn(async (_sql: string, o?: { replacements?: { roleid: string; names: string[] } }) => {
+        if (o?.replacements?.names) byRole[o.replacements.roleid] = o.replacements.names;
+        return [[], undefined];
+      }),
+      transaction: (cb: (t: unknown) => Promise<void>) => cb({}),
+    },
+  });
+  return byRole;
+};
+let ROLE_PERMS: Record<string, string[]> = {};
+const roleRow = (roleid: string) => ({
+  roleid,
+  rolename: ROLE_NAMES[roleid] ?? roleid,
+  permissions: (ROLE_PERMS[roleid] ?? []).map((permissionname) => ({ permissionname })),
+});
 
 type Account = {
   lmsuserid: string;
@@ -150,6 +180,17 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
+    const older = await olderGrants();
+    ROLE_PERMS = {
+      [Role.superadmin]: ["superadmin"],
+      [Role.admin]: older[Role.admin],
+      [Role.teacher]: older[Role.teacher],
+      [Role.user]: [],
+      [Role.apikey]: [],
+      [Role.organisationadmin]: [...ORGANISATION_ADMIN_PERMISSIONS_20261002],
+      [CUSTOM_OK]: ["view_user", "view_school"],
+      [CUSTOM_WIDE]: ["view_school", "sync_content"],
+    };
     jest.spyOn(Logger, "warn").mockImplementation(() => Logger);
     const moduleRef = await Test.createTestingModule({
       controllers: [UserController, RolePermissionController],
@@ -252,7 +293,7 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
   const newStaff = (over: Record<string, unknown> = {}) => ({
     lmsusername: "new.staff@example.com",
     lmsuserpasswordhash: "SamplePass12",
-    lmsuserroles: [Role.admin],
+    lmsuserroles: [Role.organisationadmin],
     ...over,
   });
   const edit = (over: Record<string, unknown> = {}) => ({
@@ -310,8 +351,8 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     });
 
     it("POST /roles/user-bind-role: gives roles to an account in X", async () => {
-      await api.bind(as, ID.x2, [Role.admin, Role.teacher]).expect(200);
-      expect(byId(ID.x2).held).toEqual([Role.admin, Role.teacher]);
+      await api.bind(as, ID.x2, [CUSTOM_OK]).expect(200);
+      expect(byId(ID.x2).held).toEqual([CUSTOM_OK]);
     });
   });
 
@@ -329,8 +370,8 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     });
 
     it("when editing the account", async () => {
-      await api.update(as, ID.x2, edit({ lmsuserroles: [Role.organisationadmin, Role.teacher] })).expect(200);
-      expect(byId(ID.x2).held).toEqual([Role.organisationadmin, Role.teacher]);
+      await api.update(as, ID.x2, edit({ lmsuserroles: [Role.organisationadmin] })).expect(200);
+      expect(byId(ID.x2).held).toEqual([Role.organisationadmin]);
     });
   });
 
@@ -339,7 +380,7 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
       ["read", (id) => api.get(as, id)],
       ["update", (id) => api.update(as, id, edit())],
       ["disable", (id) => api.remove(as, id)],
-      ["bind roles", (id) => api.bind(as, id, [Role.teacher])],
+      ["bind roles", (id) => api.bind(as, id, [CUSTOM_OK])],
       ["bind Organisation Admin", (id) => api.bind(as, id, [Role.organisationadmin])],
     ];
     it.each(attempts)("%s", async (_name, act) => {
@@ -395,41 +436,168 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     });
   });
 
-  describe("the role lists it is shown leave out Super Admin", () => {
+  describe("the role lists offer only the roles the caller could add (never Super Admin)", () => {
     const ids = (rows: Array<{ id?: string; roleid?: string }>) => rows.map((r) => r.id ?? r.roleid).sort();
-    const WITHOUT_SUPER = [Role.admin, Role.organisationadmin, Role.teacher].sort();
-    const ALL = [Role.admin, Role.organisationadmin, Role.superadmin, Role.teacher].sort();
+    // An Organisation Admin could add: Organisation Admin itself and the custom role within its permissions.
+    // Not Admin, User, API Key, Super Admin (built in for other uses), not Teacher (it holds view_sync, which the role does not), not the wide custom role.
+    const FOR_ORG_ADMIN = [Role.organisationadmin, CUSTOM_OK].sort();
+    // A platform user acting as X holds every permission, so only the built-in rule limits it.
+    const FOR_ACTING = [Role.organisationadmin, Role.teacher, CUSTOM_OK, CUSTOM_WIDE].sort();
+    const ALL = Object.keys(ROLE_NAMES).sort();
 
     it("GET /roles (the list the staff forms use)", async () => {
       const res = await api.roleList(as).expect(200);
-      expect(ids(res.body.data)).toEqual(WITHOUT_SUPER);
+      expect(ids(res.body.data)).toEqual(FOR_ORG_ADMIN);
     });
 
-    it("POST /roles (the paginated list): rows and total, and a filter cannot bring it back", async () => {
+    it("POST /roles (the paginated list): rows and total, and a filter cannot bring another role back", async () => {
       const res = await api.rolePage(as).expect(200);
-      expect(ids(res.body.data.data)).toEqual(WITHOUT_SUPER);
-      expect(res.body.data.total).toBe(3);
+      expect(ids(res.body.data.data)).toEqual(FOR_ORG_ADMIN);
+      expect(res.body.data.total).toBe(2);
       const filtered = await api.rolePage(as, { filter: [{ key: "rolename", value: "Super" }] }).expect(200);
       expect(filtered.body.data.data).toEqual([]);
       expect(filtered.body.data.total).toBe(0);
+      const admin = await api.rolePage(as, { filter: [{ key: "rolename", value: "Admin" }] }).expect(200);
+      expect(ids(admin.body.data.data)).toEqual([Role.organisationadmin]);
     });
 
     it("GET /user/:lmsuserid (the roles offered on the account's edit form)", async () => {
       const res = await api.get(as, ID.x1).expect(200);
-      expect(ids(res.body.data.roles)).toEqual(WITHOUT_SUPER);
+      expect(ids(res.body.data.roles)).toEqual(FOR_ORG_ADMIN);
     });
 
     it("a platform user who is not acting as an organisation still sees every role, on all three", async () => {
       expect(ids((await api.roleList(callers.platform).expect(200)).body.data)).toEqual(ALL);
       const page = await api.rolePage(callers.platform).expect(200);
       expect(ids(page.body.data.data)).toEqual(ALL);
-      expect(page.body.data.total).toBe(4);
+      expect(page.body.data.total).toBe(ALL.length);
       expect(ids((await api.get(callers.platform, ID.x1).expect(200)).body.data.roles)).toEqual(ALL);
     });
 
-    it("a platform user acting as X is scoped like X's own staff: Super Admin is left out", async () => {
-      expect(ids((await api.roleList(callers.platformActingX).expect(200)).body.data)).toEqual(WITHOUT_SUPER);
-      expect(ids((await api.rolePage(callers.platformActingX).expect(200)).body.data.data)).toEqual(WITHOUT_SUPER);
+    it("a platform user acting as X is scoped like X's own staff: the built-in rule applies, so Admin and Super Admin are left out", async () => {
+      expect(ids((await api.roleList(callers.platformActingX).expect(200)).body.data)).toEqual(FOR_ACTING);
+      expect(ids((await api.rolePage(callers.platformActingX).expect(200)).body.data.data)).toEqual(FOR_ACTING);
+    });
+
+    it("every role a list offers is one the API accepts for that caller, and nothing else is", async () => {
+      for (const id of ALL) {
+        byId(ID.x2).held = []; // nothing held, so every role asked for is an addition
+        writes = { saves: [], setRoles: [], creates: [] };
+        destroyed = [];
+        transaction.commit.mockClear();
+        const before = snapshot();
+        const res = await api.bind(as, ID.x2, [id]);
+        expect(res.status).toBe(FOR_ORG_ADMIN.includes(id) ? 200 : 403);
+        if (res.status === 403) nothingWritten(before);
+      }
+    });
+  });
+
+  describe("which roles an organisation's staff may add to an account", () => {
+    const ADD_ADMIN_TO = {
+      "itself": () => api.bind(as, ID.self, [Role.organisationadmin, Role.admin]),
+      "a colleague (bind)": () => api.bind(as, ID.x2, [Role.admin]),
+      "a colleague (edit)": () => api.update(as, ID.x2, edit({ lmsuserroles: [Role.teacher, Role.admin] })),
+      "itself (edit)": () => api.update(as, ID.self, edit({ lmsuserroles: [Role.organisationadmin, Role.admin] })),
+      "a new account (create)": () => api.create(as, newStaff({ lmsuserroles: [Role.admin] })),
+    };
+
+    it.each(Object.keys(ADD_ADMIN_TO) as Array<keyof typeof ADD_ADMIN_TO>)("Admin cannot be added to %s: 403, nothing written, no session ended", async (where) => {
+      const before = snapshot();
+      const res = await ADD_ADMIN_TO[where]();
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("NOT_ALLOWED");
+      nothingWritten(before);
+      expect(callOrder).not.toContain("revoke");
+      expect(callOrder).not.toContain("commit");
+    });
+
+    it.each([
+      ["User", Role.user],
+      ["API Key", Role.apikey],
+      ["Super Admin", Role.superadmin],
+    ])("%s cannot be added by bind, edit or create: 403, nothing written", async (_n, roleid) => {
+      const before = snapshot();
+      await api.bind(as, ID.self, [Role.organisationadmin, roleid]).expect(403);
+      await api.bind(as, ID.x2, [roleid]).expect(403);
+      await api.update(as, ID.x2, edit({ lmsuserroles: [roleid] })).expect(403);
+      await api.create(as, newStaff({ lmsuserroles: [roleid] })).expect(403);
+      nothingWritten(before);
+    });
+
+    it("a custom role with a permission the caller lacks is refused by bind, edit and create", async () => {
+      const before = snapshot();
+      await api.bind(as, ID.x2, [CUSTOM_WIDE]).expect(403);
+      await api.update(as, ID.x2, edit({ lmsuserroles: [CUSTOM_WIDE] })).expect(403);
+      await api.create(as, newStaff({ lmsuserroles: [CUSTOM_WIDE] })).expect(403);
+      nothingWritten(before);
+    });
+
+    it("a custom role within the caller's permissions is allowed by bind, edit and create", async () => {
+      await api.bind(as, ID.x2, [CUSTOM_OK]).expect(200);
+      expect(byId(ID.x2).held).toEqual([CUSTOM_OK]);
+      await api.update(as, ID.x1, edit({ lmsuserroles: [CUSTOM_OK] })).expect(200);
+      await api.create(as, newStaff({ lmsuserroles: [CUSTOM_OK] })).expect(200);
+    });
+
+    it("Organisation Admin is allowed by bind, edit and create, to others and to itself (no new reach)", async () => {
+      await api.bind(as, ID.x2, [Role.organisationadmin]).expect(200);
+      await api.update(as, ID.x1, edit({ lmsuserroles: [Role.organisationadmin] })).expect(200);
+      await api.create(as, newStaff({ lmsuserroles: [Role.organisationadmin] })).expect(200);
+      await api.bind(as, ID.self, [Role.organisationadmin, CUSTOM_OK]).expect(200);
+    });
+
+    it("Teacher holds a permission Organisation Admin does not (view_sync), so an Organisation Admin cannot add Teacher", async () => {
+      const teacherOnly = ROLE_PERMS[Role.teacher].filter((p) => !ORGANISATION_ADMIN_PERMISSIONS_20261002.includes(p));
+      expect(teacherOnly).toEqual(["view_sync"]);
+      const before = snapshot();
+      await api.bind(as, ID.x1, [Role.teacher]).expect(403);
+      await api.create(as, newStaff({ lmsuserroles: [Role.teacher] })).expect(403);
+      nothingWritten(before);
+    });
+
+    it("Teacher is allowed for a caller that holds every permission Teacher holds: the built-in rule lets it through, the permission rule decides", async () => {
+      const withViewSync = bearer({
+        lmsuserid: ID.self,
+        lmsuserroles: [Role.organisationadmin],
+        permissions: [...ORGANISATION_ADMIN_PERMISSIONS_20261002, "view_sync"],
+        organisationid: X,
+        isplatform: false,
+      });
+      await api.bind(withViewSync, ID.x1, [Role.teacher]).expect(200);
+      expect(byId(ID.x1).held).toEqual([Role.teacher]);
+    });
+
+    it("an account that already holds Admin can be edited keeping it, bound to the same set, and can have it removed", async () => {
+      await api.update(as, ID.x1, edit({ lmsusername: "kept@example.com", lmsuserroles: [Role.admin] })).expect(200);
+      expect(byId(ID.x1).held).toEqual([Role.admin]);
+      await api.bind(as, ID.x1, [Role.admin]).expect(200);
+      // keeping Admin while adding a role it may add is allowed: only the addition is checked
+      await api.bind(as, ID.x1, [Role.admin, Role.organisationadmin]).expect(200);
+      expect(byId(ID.x1).held).toEqual([Role.admin, Role.organisationadmin]);
+      await api.bind(as, ID.x1, [Role.organisationadmin]).expect(200);
+      expect(byId(ID.x1).held).toEqual([Role.organisationadmin]);
+    });
+
+    it("an account that already holds a role beyond the caller's reach keeps it on edit, and can lose it", async () => {
+      byId(ID.x2).held = [CUSTOM_WIDE];
+      await api.update(as, ID.x2, edit({ lmsuserroles: [CUSTOM_WIDE] })).expect(200);
+      await api.bind(as, ID.x2, [CUSTOM_OK]).expect(200);
+    });
+
+    it("a platform user acting as X is bound by the built-in rule: Admin is refused; Organisation Admin, Teacher and any custom role are allowed (it holds every permission)", async () => {
+      const token = callers.platformActingX;
+      const before = snapshot();
+      await api.bind(token, ID.x2, [Role.admin]).expect(403);
+      await api.create(token, newStaff({ lmsuserroles: [Role.admin] })).expect(403);
+      nothingWritten(before);
+      await api.bind(token, ID.x2, [Role.organisationadmin, Role.teacher, CUSTOM_WIDE]).expect(200);
+    });
+
+    it("a platform user who is not acting is not bound by it: Admin may be given", async () => {
+      await api.bind(callers.platform, ID.x2, [Role.admin]).expect(200);
+      await api.update(callers.platform, ID.y1, edit({ lmsuserroles: [Role.admin, Role.user, Role.apikey] })).expect(200);
+      await api.create(callers.platform, newStaff({ lmsuserroles: [Role.admin], organisationid: X })).expect(200);
     });
   });
 
@@ -438,14 +606,14 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
 
     it("can have the role removed by themselves: nothing prevents it, and X is left with none (the platform restores it)", async () => {
       expect(holders().map((a) => a.lmsuserid)).toEqual([ID.self]);
-      await api.bind(as, ID.self, [Role.teacher]).expect(200);
+      await api.bind(as, ID.self, [CUSTOM_OK]).expect(200);
       expect(holders()).toEqual([]);
     });
 
     it("can have the role removed by another Organisation Admin of X", async () => {
       accounts.push(account(ID.x3, "x3.staff@example.com", X, [Role.organisationadmin]));
-      await api.bind(as, ID.x3, [Role.teacher]).expect(200);
-      expect(byId(ID.x3).held).toEqual([Role.teacher]);
+      await api.bind(as, ID.x3, [CUSTOM_OK]).expect(200);
+      expect(byId(ID.x3).held).toEqual([CUSTOM_OK]);
     });
 
     it("can be disabled by another Organisation Admin of X", async () => {
@@ -505,14 +673,14 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
 
   describe("a change to an account's role set ends that account's sessions", () => {
     it("binding a different set (a demotion) revokes the account's tokens: one delete, inside the transaction, before the commit", async () => {
-      await api.bind(as, ID.x1, [Role.teacher]).expect(200);
+      await api.bind(as, ID.x1, [CUSTOM_OK]).expect(200);
       expect(destroyCalls).toEqual([{ lmsuserid: ID.x1, transaction }]);
       expect(callOrder).toEqual(["revoke", "commit"]);
     });
 
     it("an Organisation Admin demoted to Teacher by a colleague loses their sessions", async () => {
       accounts.push(account(ID.x3, "x3.staff@example.com", X, [Role.organisationadmin]));
-      await api.bind(as, ID.x3, [Role.teacher]).expect(200);
+      await api.bind(as, ID.x3, [CUSTOM_OK]).expect(200);
       expect(destroyed).toEqual([ID.x3]);
     });
 
@@ -527,13 +695,13 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     it("editing an account with a different set revokes once; editing it with the same set (other fields only) revokes nothing", async () => {
       await api.update(as, ID.x2, edit({ lmsuserroles: [Role.teacher] })).expect(200);
       expect(destroyed).toEqual([]);
-      await api.update(as, ID.x2, edit({ lmsusername: "again@example.com", lmsuserroles: [Role.admin] })).expect(200);
+      await api.update(as, ID.x2, edit({ lmsusername: "again@example.com", lmsuserroles: [CUSTOM_OK] })).expect(200);
       expect(destroyed).toEqual([ID.x2]);
       expect(destroyCalls[0].transaction).toBe(transaction);
     });
 
     it("a person changing their own roles is included", async () => {
-      await api.bind(as, ID.self, [Role.teacher]).expect(200);
+      await api.bind(as, ID.self, [CUSTOM_OK]).expect(200);
       expect(destroyed).toEqual([ID.self]);
     });
 
@@ -542,7 +710,7 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
         callOrder.push("commit");
         throw new Error("commit failed");
       });
-      const res = await api.bind(as, ID.x1, [Role.teacher]);
+      const res = await api.bind(as, ID.x1, [CUSTOM_OK]);
       expect(res.status).toBe(500);
       expect(destroyCalls[0].transaction).toBe(transaction);
       expect(callOrder).toEqual(["revoke", "commit", "rollback"]);
