@@ -409,7 +409,7 @@ describe("Super Admin role: who may set it (create, update, bind, delete)", () =
     });
 
     it("a caller who is not platform may still edit a user who is NOT Super Admin: email, password, scope and roles", async () => {
-      target.held = [Role.admin];
+      target.held = [Role.teacher]; // within the caller's reach; an Admin account would not be
       for (const who of ["orgSuperAdmin", "orgAdmin"] as const) {
         fake.save.mockClear();
         await edit(callers[who], { lmsusername: "changed@example.com", lmsuserpasswordhash: "ChangedPass12", lmsuserroles: [Role.teacher], countryids: [] }).expect(200);

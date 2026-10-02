@@ -302,6 +302,13 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     lmsuserroles: [Role.admin],
     ...over,
   });
+  /** The form's body for an account when its sign-in details are left alone: same email, no new password (the form sends null). */
+  const keep = (id: string, over: Record<string, unknown> = {}) => ({
+    lmsusername: byId(id).lmsusername,
+    lmsuserpasswordhash: null,
+    lmsuserroles: [...byId(id).held],
+    ...over,
+  });
   const sameError = (a: { status: number; body: Record<string, unknown> }, b: { status: number; body: Record<string, unknown> }) => {
     expect(a.status).toBe(b.status);
     expect({ code: a.body.code, errormessage: a.body.errormessage, hint: a.body.hint }).toEqual({
@@ -338,9 +345,10 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     });
 
     it("PUT /user/:lmsuserid: edits an account in X; its organisation stays X", async () => {
-      await api.update(as, ID.x1, edit()).expect(200);
-      expect(byId(ID.x1).lmsusername).toBe("renamed@example.com");
-      expect(byId(ID.x1).organisationid).toBe(X);
+      accounts.push(account(ID.x3, "x3.staff@example.com", X, [Role.organisationadmin])); // within the caller's reach
+      await api.update(as, ID.x3, edit({ lmsuserroles: [Role.organisationadmin] })).expect(200);
+      expect(byId(ID.x3).lmsusername).toBe("renamed@example.com");
+      expect(byId(ID.x3).organisationid).toBe(X);
       expect(writes.saves[0].fields).not.toContain("organisationid");
     });
 
@@ -370,7 +378,7 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     });
 
     it("when editing the account", async () => {
-      await api.update(as, ID.x2, edit({ lmsuserroles: [Role.organisationadmin] })).expect(200);
+      await api.update(as, ID.x2, keep(ID.x2, { lmsuserroles: [Role.organisationadmin] })).expect(200);
       expect(byId(ID.x2).held).toEqual([Role.organisationadmin]);
     });
   });
@@ -572,12 +580,149 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     });
   });
 
+  describe("the sign-in details of an account WIDER than the caller (email, password) cannot be changed", () => {
+    // Within reach: every role the account holds is one the caller could add. x1 holds Admin and x2 holds
+    // Teacher (it has view_sync, which Organisation Admin lacks): both wider. x3 holds Organisation Admin: within reach.
+    const NEWPW = "ChangedPass12";
+    const widerTargets: Array<[string, string]> = [
+      ["an Admin in X", ID.x1],
+      ["a Teacher in X", ID.x2],
+    ];
+    const hash = (id: string) => byId(id).passwordhash;
+
+    it.each(widerTargets)("%s: a new password is refused (403): nothing written, hash unchanged, no session ended", async (_n, id) => {
+      const before = snapshot();
+      const res = await api.update(as, id, keep(id, { lmsuserpasswordhash: NEWPW }));
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("NOT_ALLOWED");
+      nothingWritten(before);
+      expect(callOrder).not.toContain("revoke");
+    });
+
+    it.each(widerTargets)("%s: a new email is refused (403), unchanged", async (_n, id) => {
+      const before = snapshot();
+      await api.update(as, id, keep(id, { lmsusername: "takeover@example.com" })).expect(403);
+      nothingWritten(before);
+    });
+
+    it("an account holding a custom role wider than the caller is wider too", async () => {
+      byId(ID.x2).held = [CUSTOM_WIDE];
+      const before = snapshot();
+      await api.update(as, ID.x2, keep(ID.x2, { lmsuserpasswordhash: NEWPW })).expect(403);
+      nothingWritten(before);
+    });
+
+    it("one wide role among within-reach ones is enough", async () => {
+      byId(ID.x2).held = [Role.organisationadmin, Role.admin];
+      const before = snapshot();
+      await api.update(as, ID.x2, keep(ID.x2, { lmsuserpasswordhash: NEWPW })).expect(403);
+      nothingWritten(before);
+    });
+
+    it("changing the roles in the same request does not get round it: the account is judged by the roles it holds now", async () => {
+      const before = snapshot();
+      await api.update(as, ID.x1, keep(ID.x1, { lmsuserpasswordhash: NEWPW, lmsuserroles: [Role.organisationadmin] })).expect(403);
+      nothingWritten(before);
+    });
+
+    it("an unchanged save is allowed on a wider account, whatever shape the form sends for 'no new password': null, empty or absent", async () => {
+      const h = hash(ID.x1);
+      for (const shape of [null, "", undefined]) {
+        const body: Record<string, unknown> = keep(ID.x1, { lmsuserpasswordhash: shape });
+        if (shape === undefined) delete body.lmsuserpasswordhash;
+        await api.update(as, ID.x1, body).expect(200);
+      }
+      expect(hash(ID.x1)).toBe(h);
+      expect(byId(ID.x1).lmsusername).toBe("x1.staff@example.com");
+      expect(byId(ID.x1).held).toEqual([Role.admin]);
+    });
+
+    it("the other fields it writes (scope lists) can be changed on a wider account when the email and password are left alone", async () => {
+      await api.update(as, ID.x1, keep(ID.x1, { countryids: [], schoolids: [] })).expect(200);
+      expect(writes.saves[0].fields).toEqual(expect.arrayContaining(["countries", "schools"]));
+    });
+
+    it("removing its roles and disabling it stay allowed on a wider account", async () => {
+      await api.bind(as, ID.x1, [Role.organisationadmin]).expect(200);
+      byId(ID.x2).held = [Role.admin];
+      await api.remove(as, ID.x2).expect(200);
+      expect(byId(ID.x2).isdisabled).toBe(true);
+    });
+
+    it("an account within reach (an Organisation Admin colleague) can have its email and password changed", async () => {
+      accounts.push(account(ID.x3, "x3.staff@example.com", X, [Role.organisationadmin]));
+      await api.update(as, ID.x3, keep(ID.x3, { lmsuserpasswordhash: NEWPW, lmsusername: "x3.new@example.com" })).expect(200);
+      expect(byId(ID.x3).lmsusername).toBe("x3.new@example.com");
+      expect(byId(ID.x3).passwordhash).not.toBe("hash-of-x3.staff@example.com");
+    });
+
+    it("an account with no role is within reach", async () => {
+      accounts.push(account(ID.x3, "x3.staff@example.com", X, []));
+      await api.update(as, ID.x3, keep(ID.x3, { lmsuserpasswordhash: NEWPW })).expect(200);
+    });
+
+    it("an account is always within its own reach: the caller changes its own password and email even if it also holds a role wider than itself", async () => {
+      byId(ID.self).held = [Role.organisationadmin, Role.admin]; // legacy data: it already holds Admin
+      await api.update(as, ID.self, keep(ID.self, { lmsuserpasswordhash: NEWPW, lmsusername: "self.new@example.com" })).expect(200);
+      expect(byId(ID.self).lmsusername).toBe("self.new@example.com");
+    });
+
+    it("a platform user acting as X is bound like X's staff; one not acting is not", async () => {
+      const before = snapshot();
+      await api.update(callers.platformActingX, ID.x1, keep(ID.x1, { lmsuserpasswordhash: NEWPW })).expect(403);
+      nothingWritten(before);
+      await api.update(callers.platform, ID.x1, keep(ID.x1, { lmsuserpasswordhash: NEWPW, lmsusername: "platform.set@example.com" })).expect(200);
+      expect(byId(ID.x1).lmsusername).toBe("platform.set@example.com");
+    });
+
+    it("a platform user acting as X may change the details of an account within reach (it holds every permission, so only built-in roles can be wider)", async () => {
+      accounts.push(account(ID.x3, "x3.staff@example.com", X, [Role.teacher, Role.organisationadmin, CUSTOM_WIDE]));
+      await api.update(callers.platformActingX, ID.x3, keep(ID.x3, { lmsuserpasswordhash: NEWPW })).expect(200);
+    });
+  });
+
+  describe("GET /user/:lmsuserid for a caller in an organisation's scope shows no Super Admin and no permission lists in user.roles", () => {
+    it("a legacy account of X holding Super Admin and Admin: user.roles has Admin only, as {roleid, rolename}", async () => {
+      byId(ID.xs).held = [Role.superadmin, Role.admin];
+      const res = await api.get(as, ID.xs).expect(200);
+      expect(res.body.data.user.roles).toEqual([{ roleid: Role.admin, rolename: "Admin" }]);
+      expect(JSON.stringify(res.body)).not.toContain(Role.superadmin);
+      expect(JSON.stringify(res.body)).not.toContain("permissionname");
+    });
+
+    it("the permission lists are not even loaded for such a caller (the query's role include has no nested include); they are for a platform caller not acting", async () => {
+      const includeOf = () => {
+        const calls = (lmsusers.findOne as unknown as jest.Mock).mock.calls;
+        return calls[calls.length - 1][0].include[0].include as unknown[];
+      };
+      await api.get(as, ID.x1).expect(200);
+      expect(includeOf()).toEqual([]);
+      await api.get(callers.platform, ID.x1).expect(200);
+      expect(includeOf()).toHaveLength(1);
+    });
+
+    it("an ordinary account: its roles carry no permission lists", async () => {
+      const res = await api.get(as, ID.x1).expect(200);
+      expect(res.body.data.user.roles).toEqual([{ roleid: Role.admin, rolename: "Admin" }]);
+    });
+
+    it("a platform user acting as X gets the same; one not acting still gets the full roles with their permissions", async () => {
+      byId(ID.xs).held = [Role.superadmin, Role.admin];
+      const acting = await api.get(callers.platformActingX, ID.xs).expect(200);
+      expect(JSON.stringify(acting.body.data.user.roles)).not.toContain("permissionname");
+      expect(acting.body.data.user.roles.map((r: { roleid: string }) => r.roleid)).toEqual([Role.admin]);
+      const full = await api.get(callers.platform, ID.xs).expect(200);
+      expect(full.body.data.user.roles.map((r: { roleid: string }) => r.roleid).sort()).toEqual([Role.admin, Role.superadmin].sort());
+      expect(JSON.stringify(full.body.data.user.roles)).toContain("permissionname");
+    });
+  });
+
   describe("which roles an organisation's staff may add to an account", () => {
     const ADD_ADMIN_TO = {
       "itself": () => api.bind(as, ID.self, [Role.organisationadmin, Role.admin]),
       "a colleague (bind)": () => api.bind(as, ID.x2, [Role.admin]),
-      "a colleague (edit)": () => api.update(as, ID.x2, edit({ lmsuserroles: [Role.teacher, Role.admin] })),
-      "itself (edit)": () => api.update(as, ID.self, edit({ lmsuserroles: [Role.organisationadmin, Role.admin] })),
+      "a colleague (edit)": () => api.update(as, ID.x2, keep(ID.x2, { lmsuserroles: [Role.teacher, Role.admin] })),
+      "itself (edit)": () => api.update(as, ID.self, keep(ID.self, { lmsuserroles: [Role.organisationadmin, Role.admin] })),
       "a new account (create)": () => api.create(as, newStaff({ lmsuserroles: [Role.admin] })),
     };
 
@@ -599,7 +744,7 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
       const before = snapshot();
       await api.bind(as, ID.self, [Role.organisationadmin, roleid]).expect(403);
       await api.bind(as, ID.x2, [roleid]).expect(403);
-      await api.update(as, ID.x2, edit({ lmsuserroles: [roleid] })).expect(403);
+      await api.update(as, ID.x2, keep(ID.x2, { lmsuserroles: [roleid] })).expect(403);
       await api.create(as, newStaff({ lmsuserroles: [roleid] })).expect(403);
       nothingWritten(before);
     });
@@ -607,7 +752,7 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     it("a custom role with a permission the caller lacks is refused by bind, edit and create", async () => {
       const before = snapshot();
       await api.bind(as, ID.x2, [CUSTOM_WIDE]).expect(403);
-      await api.update(as, ID.x2, edit({ lmsuserroles: [CUSTOM_WIDE] })).expect(403);
+      await api.update(as, ID.x2, keep(ID.x2, { lmsuserroles: [CUSTOM_WIDE] })).expect(403);
       await api.create(as, newStaff({ lmsuserroles: [CUSTOM_WIDE] })).expect(403);
       nothingWritten(before);
     });
@@ -615,13 +760,13 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     it("a custom role within the caller's permissions is allowed by bind, edit and create", async () => {
       await api.bind(as, ID.x2, [CUSTOM_OK]).expect(200);
       expect(byId(ID.x2).held).toEqual([CUSTOM_OK]);
-      await api.update(as, ID.x1, edit({ lmsuserroles: [CUSTOM_OK] })).expect(200);
+      await api.update(as, ID.x1, keep(ID.x1, { lmsuserroles: [CUSTOM_OK] })).expect(200);
       await api.create(as, newStaff({ lmsuserroles: [CUSTOM_OK] })).expect(200);
     });
 
     it("Organisation Admin is allowed by bind, edit and create, to others and to itself (no new reach)", async () => {
       await api.bind(as, ID.x2, [Role.organisationadmin]).expect(200);
-      await api.update(as, ID.x1, edit({ lmsuserroles: [Role.organisationadmin] })).expect(200);
+      await api.update(as, ID.x1, keep(ID.x1, { lmsuserroles: [Role.organisationadmin] })).expect(200);
       await api.create(as, newStaff({ lmsuserroles: [Role.organisationadmin] })).expect(200);
       await api.bind(as, ID.self, [Role.organisationadmin, CUSTOM_OK]).expect(200);
     });
@@ -648,8 +793,13 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     });
 
     it("an account that already holds Admin can be edited keeping it, bound to the same set, and can have it removed", async () => {
-      await api.update(as, ID.x1, edit({ lmsusername: "kept@example.com", lmsuserroles: [Role.admin] })).expect(200);
+      // an edit that leaves the sign-in details alone is allowed and Admin is kept ...
+      await api.update(as, ID.x1, keep(ID.x1, { countryids: [], schoolids: [] })).expect(200);
       expect(byId(ID.x1).held).toEqual([Role.admin]);
+      // ... but a new email or a new password on that wider account is refused (see the sign-in block)
+      await api.update(as, ID.x1, keep(ID.x1, { lmsusername: "kept@example.com" })).expect(403);
+      await api.update(as, ID.x1, keep(ID.x1, { lmsuserpasswordhash: "ChangedPass12" })).expect(403);
+      expect(byId(ID.x1).lmsusername).toBe("x1.staff@example.com");
       await api.bind(as, ID.x1, [Role.admin]).expect(200);
       // keeping Admin while adding a role it may add is allowed: only the addition is checked
       await api.bind(as, ID.x1, [Role.admin, Role.organisationadmin]).expect(200);
@@ -660,7 +810,7 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
 
     it("an account that already holds a role beyond the caller's reach keeps it on edit, and can lose it", async () => {
       byId(ID.x2).held = [CUSTOM_WIDE];
-      await api.update(as, ID.x2, edit({ lmsuserroles: [CUSTOM_WIDE] })).expect(200);
+      await api.update(as, ID.x2, keep(ID.x2, { lmsuserroles: [CUSTOM_WIDE] })).expect(200);
       await api.bind(as, ID.x2, [CUSTOM_OK]).expect(200);
     });
 
@@ -772,9 +922,9 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     });
 
     it("editing an account with a different set revokes once; editing it with the same set (other fields only) revokes nothing", async () => {
-      await api.update(as, ID.x2, edit({ lmsuserroles: [Role.teacher] })).expect(200);
+      await api.update(as, ID.x2, keep(ID.x2, { lmsuserroles: [Role.teacher] })).expect(200);
       expect(destroyed).toEqual([]);
-      await api.update(as, ID.x2, edit({ lmsusername: "again@example.com", lmsuserroles: [CUSTOM_OK] })).expect(200);
+      await api.update(as, ID.x2, keep(ID.x2, { lmsuserroles: [CUSTOM_OK] })).expect(200);
       expect(destroyed).toEqual([ID.x2]);
       expect(destroyCalls[0].transaction).toBe(transaction);
     });

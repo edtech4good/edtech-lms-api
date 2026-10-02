@@ -262,3 +262,69 @@ export const assertMayAddRoles = async (opts: {
     throw new ApiError(ErrorCode.NOT_ALLOWED, "You can't give a role that has more access than your own.");
   }
 };
+
+
+/**
+ * Is this account within the caller's reach? It is when every role it holds is
+ * one the caller could add (`rolesCallerMayAdd`); an account holding any other
+ * role is WIDER than the caller. A platform caller who is not acting as an
+ * organisation reaches everyone, and an account editing itself is always within
+ * its own reach. (An account that holds no role is within reach.)
+ */
+export const isWithinReach = async (opts: {
+  caller: OrgContext | undefined;
+  heldRoles: ReadonlyArray<roles>;
+  isSelf: boolean;
+  transaction?: Transaction;
+}): Promise<boolean> => {
+  if (opts.isSelf || isUnscopedPlatform(opts.caller)) {
+    return true;
+  }
+  const allowed = await rolesCallerMayAdd(opts.caller, opts.heldRoles, opts.transaction);
+  return opts.heldRoles.every((r) => allowed.has(r.roleid));
+};
+
+/**
+ * A caller in an organisation's scope may not change the SIGN-IN IDENTITY (the
+ * email, which is also where a reset or verification mail goes) or the PASSWORD
+ * of an account that is wider than the caller: the caller could then sign in as
+ * that account and hold the reach the caller itself may not hand out. Refused
+ * with 403 before anything is written. Anything else about such an account
+ * (removing roles, disabling it, an edit that changes neither) stays allowed.
+ */
+export const assertMayChangeSignIn = async (opts: {
+  caller: OrgContext | undefined;
+  heldRoles: ReadonlyArray<roles>;
+  isSelf: boolean;
+  changesEmail: boolean;
+  changesPassword: boolean;
+  transaction?: Transaction;
+}) => {
+  if (!opts.changesEmail && !opts.changesPassword) {
+    return;
+  }
+  if (!(await isWithinReach(opts))) {
+    throw new ApiError(
+      ErrorCode.NOT_ALLOWED,
+      "You can't change the sign-in details of an account that has more access than your own.",
+    );
+  }
+};
+
+/**
+ * Ends the sessions of every account that holds the role (inside `transaction`).
+ * A token carries the permissions the role had when it was minted, so a role
+ * whose permissions change must reach its holders now.
+ */
+export const revokeRoleHolders = async (roleid: string, transaction?: Transaction) => {
+  const holders = await lmsusers.findAll({
+    attributes: ["lmsuserid"],
+    include: [{ model: roles, attributes: [], where: { roleid }, required: true }],
+    transaction,
+  });
+  const ids = holders.map((u) => u.lmsuserid);
+  if (ids.length > 0) {
+    await tokens.destroy({ where: { lmsuserid: { [Op.in]: ids } }, transaction });
+  }
+  return ids;
+};

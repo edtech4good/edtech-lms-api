@@ -1,6 +1,6 @@
 import { roles } from "src/models/data-models/roles";
 import { Role } from "src/models/enums";
-import { assertMayAddRoles, rolesCallerMayAdd } from "./session-revocation";
+import { assertMayAddRoles, assertMayChangeSignIn, isWithinReach, rolesCallerMayAdd } from "./session-revocation";
 
 /**
  * The rule for which roles a caller in an organisation's scope may ADD to an
@@ -105,5 +105,47 @@ describe("assertMayAddRoles", () => {
 
   it("a missing caller context is bound (fails closed)", async () => {
     await expect(run(undefined, [], [Role.admin])).rejects.toMatchObject({ code: "NOT_ALLOWED" });
+  });
+});
+
+describe("isWithinReach", () => {
+  const within = (caller: Parameters<typeof isWithinReach>[0]["caller"], held: string[], isSelf = false) =>
+    isWithinReach({ caller, heldRoles: held.map(row), isSelf });
+
+  it("is true when every role held is one the caller could add, and for an account holding none", async () => {
+    expect(await within(staff(["a", "b"]), [Role.organisationadmin, "custom1"])).toBe(true);
+    expect(await within(staff(["a"]), [])).toBe(true);
+  });
+
+  it("is false when any one role held is not addable: built in for another use, or beyond the caller's permissions", async () => {
+    expect(await within(staff(["a", "b"]), [Role.organisationadmin, Role.admin])).toBe(false);
+    expect(await within(staff(["a", "b"]), [Role.organisationadmin, "custom2"])).toBe(false);
+    expect(await within(staff(["a", "b"]), [Role.teacher])).toBe(false);
+  });
+
+  it("an account editing itself is always within reach; a platform caller not acting reaches everyone; one acting is bound", async () => {
+    expect(await within(staff(["a"]), [Role.admin], true)).toBe(true);
+    expect(await within(platform, [Role.admin, Role.superadmin])).toBe(true);
+    expect(await within(acting(["superadmin"]), [Role.admin])).toBe(false);
+  });
+
+  it("a missing caller context is bound (fails closed)", async () => {
+    expect(await within(undefined, [Role.admin])).toBe(false);
+  });
+});
+
+describe("assertMayChangeSignIn", () => {
+  const run = (changesEmail: boolean, changesPassword: boolean, held: string[], isSelf = false) =>
+    assertMayChangeSignIn({ caller: staff(["a", "b"]), heldRoles: held.map(row), isSelf, changesEmail, changesPassword });
+
+  it("refuses (403) an email or password change on a wider account, and each alone is enough", async () => {
+    await expect(run(true, false, [Role.admin])).rejects.toMatchObject({ code: "NOT_ALLOWED" });
+    await expect(run(false, true, [Role.admin])).rejects.toMatchObject({ code: "NOT_ALLOWED" });
+  });
+
+  it("allows a change of neither on a wider account, and either on one within reach", async () => {
+    await run(false, false, [Role.admin]);
+    await run(true, true, [Role.organisationadmin]);
+    await run(true, true, [Role.admin], true);
   });
 });

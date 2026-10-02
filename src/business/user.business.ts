@@ -17,6 +17,7 @@ import { dbinstance } from "src/services/dbservice";
 import { OrgContext } from "src/decorators/org.decorator";
 import {
   assertMayAddRoles,
+  assertMayChangeSignIn,
   assertMayModifyUser,
   assertMayModifyUserId,
   assertMaySetRoles,
@@ -323,13 +324,16 @@ export class UserBusiness {
   };
 
   getlmsuserbyid = async (lmsuserid: string, org: OrgContext) => {
+    // A caller in an organisation's scope is not shown the permission lists of the
+    // account's roles (they are not loaded), nor Super Admin among them (below).
+    const scoped = scopeOf(org).kind === "organisation";
     const user = await findOwned(lmsusers, lmsuserid, org, {
       attributes: { exclude: ["lmsuserpasswordhash"] },
       include: [{
         model: roles,
         attributes: ["roleid", "rolename"],
         through: {attributes: []},
-        include: [{
+        include: scoped ? [] : [{
           model: permissions,
           attributes: ["permissionid", "permissionname"],
           through: {attributes: []}
@@ -360,6 +364,14 @@ export class UserBusiness {
             roles.push({ id: r.roleid, text: r.rolename, checked: true, canadd: false });
           }
         }
+      }
+      if (scoped) {
+        // The account as plain data, with Super Admin left out of its roles.
+        const shown = user.toJSON() as unknown as Record<string, unknown> & { roles?: Array<{ roleid: string; rolename: string }> };
+        shown.roles = (shown.roles ?? [])
+          .filter((r) => r.roleid !== Role.superadmin)
+          .map((r) => ({ roleid: r.roleid, rolename: r.rolename }));
+        return { user: shown, roles };
       }
       return { user, roles}
     }
@@ -406,8 +418,21 @@ export class UserBusiness {
       });
       // Roles the account does not hold now must be ones the caller may add.
       await assertMayAddRoles({ caller: org, currentRoleIds: roleIdsBefore, newRoles: rls, transaction });
+      // Fields this route writes on the account, and which of them let the caller
+      // sign in as it: the email (also where a reset or verification mail goes)
+      // and the password. The same predicate decides the refusal and the write.
+      const changesEmail = usr.lmsusername !== user.lmsusername;
+      const changesPassword = Boolean(usr.lmsuserpasswordhash);
+      await assertMayChangeSignIn({
+        caller: org,
+        heldRoles: await user.getRoles({ transaction }),
+        isSelf: currentuser?.lmsuserid === user.lmsuserid,
+        changesEmail,
+        changesPassword,
+        transaction,
+      });
       user.lmsusername = usr.lmsusername;
-      user.lmsuserpasswordhash = usr.lmsuserpasswordhash ? hashPassword(usr.lmsuserpasswordhash) : user.lmsuserpasswordhash;
+      user.lmsuserpasswordhash = changesPassword ? hashPassword(usr.lmsuserpasswordhash) : user.lmsuserpasswordhash;
       user.countries = usr.countries;
       user.schools = usr.schools;
       const fields: Array<keyof lmsusersAttributes> = ['lmsusername', 'lmsuserpasswordhash', 'countries', 'schools', 'updated_at', 'updated_by'];

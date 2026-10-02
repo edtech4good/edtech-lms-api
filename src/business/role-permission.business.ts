@@ -18,7 +18,9 @@ import {
   heldRoleIds,
   resolveRequestedRoles,
   revokeIfRolesChanged,
+  revokeRoleHolders,
   rolesCallerMayAdd,
+  sameRoleSet,
 } from "./session-revocation";
 import { Role } from "src/models/enums";
 import { OrgContext } from "src/decorators/org.decorator";
@@ -57,8 +59,10 @@ export class RolePermissionBusiness {
         role.created_by = user.lmsuserid;
         const transaction = await dbinstance.getdbinstance().transaction();
         try {
+            const resolved = await this.resolvePerms({ permissionsid: role.perms ?? [] });
+            await this.assertNotEveryPermission(role.roleid, resolved, transaction);
             const rl = await roles.create(role as any, { transaction });
-            await this.bindRolePerms({roleid: role.roleid, permissionsid: role.perms ?? []}, rl, transaction);
+            await this.bindRolePerms({roleid: role.roleid, permissionsid: role.perms ?? []}, rl, transaction, resolved);
             await transaction.commit();
             return rl;
         } catch (e) {
@@ -71,14 +75,24 @@ export class RolePermissionBusiness {
         const transaction = await dbinstance.getdbinstance().transaction();
         try {
             const rl = await roles.findOne({
-                where: { roleid: role.roleid }
+                where: { roleid: role.roleid },
+                transaction,
             });
             if(rl) {
+                const resolved = await this.resolvePerms({ permissionsid: role.perms ?? [] });
+                await this.assertNotEveryPermission(rl.roleid, resolved, transaction);
+                const before = (await rl.getPermissions({ transaction })).map((p) => p.permissionid);
                 rl.rolename = role.rolename;
                 rl.updated_at = new Date();
                 rl.updated_by = user.lmsuserid;
                 await rl.save({ fields: ['rolename', 'updated_at', 'updated_by'], transaction});
-                await this.bindRolePerms({roleid: rl.roleid, permissionsid: role.perms ?? []}, rl, transaction);
+                await this.bindRolePerms({roleid: rl.roleid, permissionsid: role.perms ?? []}, rl, transaction, resolved);
+                // A changed permission SET reaches the role's holders now: their tokens carry
+                // the permissions the role had when they were minted. An edit that leaves the
+                // set the same (a rename, say) ends nothing.
+                if (!sameRoleSet(before, resolved.map((p) => p.permissionid))) {
+                    await revokeRoleHolders(rl.roleid, transaction);
+                }
                 await transaction.commit();
                 return rl;
             } else {
@@ -192,7 +206,8 @@ export class RolePermissionBusiness {
         return { role, selectedPerms, permsNodes }
     }
 
-    bindRolePerms = async (rolePerms: BindRolePermissionRequest, rl: roles, transaction: Transaction) => {
+    /** The permission rows a request's `permissionsid` stands for (individual ids, and `all_<title>` groups). */
+    resolvePerms = async (rolePerms: { permissionsid: string[] }): Promise<permissions[]> => {
         // get permtitleid if select all perms
         const [all_perms, some_perms] =
         rolePerms.permissionsid.reduce((result: [string[], string[]], element) => {
@@ -223,6 +238,30 @@ export class RolePermissionBusiness {
             perms3 = _.union(perms2, perms3);
         }
         perms = _.union(perms1, perms3);
+        return perms;
+    }
+
+    /**
+     * A role other than Super Admin may not hold every permission: the count-based
+     * `superadmin` wildcard is awarded to whoever holds as many distinct
+     * permissions as the table has rows, and it is a full bypass of the
+     * permission guard. Refused with 400 before anything is written.
+     */
+    assertNotEveryPermission = async (roleid: string | undefined, perms: ReadonlyArray<permissions>, transaction: Transaction) => {
+        if (roleid === Role.superadmin) return;
+        const total = await permissions.count({ transaction });
+        if (total > 0 && new Set(perms.map((p) => p.permissionid)).size >= total) {
+            throw new ApiError(ErrorCode.INVALID_INPUT, "Some of the information isn't valid.", {
+                fields: [{
+                    field: "permissionsid",
+                    message: "A role can't hold every permission, because that would make it Super Admin. Leave at least one out.",
+                }],
+            });
+        }
+    }
+
+    bindRolePerms = async (rolePerms: BindRolePermissionRequest, rl: roles, transaction: Transaction, resolved?: permissions[]) => {
+        const perms = resolved ?? await this.resolvePerms(rolePerms);
         const rolesPerms = await rl?.setPermissions(perms, { transaction }) as unknown as Array<rolePermAttributes>;
         return rolesPerms
     }

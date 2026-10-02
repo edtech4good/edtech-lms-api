@@ -46,7 +46,7 @@ const rowOf = (a: Account) => ({
 beforeEach(() => {
   jest.restoreAllMocks();
   accounts = [
-    { lmsuserid: IN_X, organisationid: X, held: [Role.admin] },
+    { lmsuserid: IN_X, organisationid: X, held: [Role.teacher] }, // within an organisation caller's reach (Admin would not be)
     { lmsuserid: IN_Y, organisationid: Y, held: [Role.admin] },
     { lmsuserid: PLATFORM_ACCOUNT, organisationid: null, held: [Role.superadmin] },
   ];
