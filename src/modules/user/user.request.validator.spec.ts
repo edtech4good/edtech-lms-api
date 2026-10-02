@@ -68,8 +68,31 @@ describe("PUT /user/:id body", () => {
   });
 
   it("refuses an unknown key and a missing username", () => {
-    expect(bodyError(updateuser as never, { ...okUpdate, organisationid: ID })).toBeDefined();
+    expect(bodyError(updateuser as never, { ...okUpdate, isplatform: true })).toBeDefined();
     expect(bodyError(updateuser as never, { lmsuserroles: [] })).toBeDefined();
+  });
+
+  it("organisationid is a UUID or null where accepted", () => {
+    expect(bodyError(updateuser as never, { ...okUpdate, organisationid: ID })).toBeUndefined();
+    expect(bodyError(updateuser as never, { ...okUpdate, organisationid: null })).toBeUndefined();
+    expect(bodyError(createuser as never, { ...okCreate, organisationid: ID })).toBeUndefined();
+    expect(bodyError(createuser as never, { ...okCreate, organisationid: null })).toBeUndefined();
+    for (const bad of ["", "not-a-uuid", 7, {}, ["x"]]) {
+      expect(bodyError(updateuser as never, { ...okUpdate, organisationid: bad })).toBeDefined();
+      expect(bodyError(createuser as never, { ...okCreate, organisationid: bad })).toBeDefined();
+    }
+  });
+
+  it("the staff email is an email address no longer than the column (45 characters)", () => {
+    const longest = `${"a".repeat(33)}@example.com`; // 45
+    expect(longest).toHaveLength(45);
+    for (const validator of [createuser, updateuser]) {
+      const base = validator === createuser ? okCreate : okUpdate;
+      expect(bodyError(validator as never, { ...base, lmsusername: longest })).toBeUndefined();
+      expect(bodyError(validator as never, { ...base, lmsusername: `a${longest}` })).toBeDefined();
+      expect(bodyError(validator as never, { ...base, lmsusername: "not an email" })).toBeDefined();
+      expect(bodyError(validator as never, { ...base, lmsusername: "plainname" })).toBeDefined();
+    }
   });
 });
 

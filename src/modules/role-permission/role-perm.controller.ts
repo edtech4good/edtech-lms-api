@@ -234,7 +234,7 @@ export class RolePermissionController {
   //   };
   // }
 
-  @OrgPolicy("owned", { note: "Staff-account administration within the caller's organisation. Super Admin may not be bound to a user who has an organisation." })
+  @OrgPolicy("owned", { note: "Staff-account administration within the caller's organisation. Super Admin may not be bound to a user who has an organisation.", enforcedBy: "src/modules/user/user.organisation-scope.spec.ts" })
   @Post("user-bind-role")
   @ApiResponse({
     status: 200,

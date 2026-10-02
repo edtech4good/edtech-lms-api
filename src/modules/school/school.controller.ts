@@ -24,6 +24,7 @@ import {
 } from "@nestjs/swagger";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import {
@@ -268,7 +269,8 @@ export class SchoolController {
   @HttpCode(HttpStatus.OK)
   async createschool(
     @Body() body: SchoolRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<SchoolCreateResponse> {
     const temp: schoolsAttributes = {
       schoolname: body.schoolname,
@@ -276,9 +278,11 @@ export class SchoolController {
       curriculums: body.curriculums,
       schoolid: "",
       isdeleted: false,
+      // What the request asked for (undefined when not sent); SchoolBusiness decides.
+      organisationid: body.organisationid,
     };
 
-    const data = await new SchoolBusiness().createschool(temp, user);
+    const data = await new SchoolBusiness().createschool(temp, user, org);
     return {
       error: false,
       data: data,
@@ -367,15 +371,17 @@ export class SchoolController {
   async update(
     @Param("schoolid") schoolid: string,
     @Body() body: SchoolRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<SchoolCreateResponse> {
     const data = await new SchoolBusiness().updateschoolName(<schoolsAttributes>{
       schoolid: schoolid,
       schoolname: body.schoolname,
       countryid: body.countryid,
       curriculums: body.curriculums,
-      uitheme: body.uitheme
-    }, user);
+      uitheme: body.uitheme,
+      organisationid: body.organisationid
+    }, user, org);
     return {
       error: false,
       data: data ? data : undefined,

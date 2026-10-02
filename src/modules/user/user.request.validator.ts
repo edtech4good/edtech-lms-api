@@ -7,13 +7,16 @@ import { RequestValidator } from "../../models/RequestValidator";
 const ROLE_ID_MAX_LENGTH = 36;
 const ROLE_IDS_MAX = 50;
 
+/** The width of `lmsusers.lmsusername` in the database (varchar(45)); an email longer than this cannot be stored. */
+const STAFF_EMAIL_MAX_LENGTH = 45;
+
 const createuser: RequestValidator = {
   body: joi.object().keys({
     lmsusername: joi
       .string()
       .email()
       .required()
-      .max(300)
+      .max(STAFF_EMAIL_MAX_LENGTH)
       .min(1)
       .custom(emptyString("User Email"))
       .label("User Email Address"),
@@ -35,7 +38,8 @@ const createuser: RequestValidator = {
     schoolids: joi
       .array()
       .min(0)
-      .items(joi.string())
+      .items(joi.string()),
+    organisationid: joi.string().uuid().allow(null).label("Organisation ID"),
   }),
 };
 
@@ -49,7 +53,8 @@ const createuser: RequestValidator = {
 const updateuser: RequestValidator = {
   body: joi.object().keys({
     lmsuserid: joi.string().uuid().label("User ID"),
-    lmsusername: joi.string().required().min(1).max(300).label("User Email Address"),
+    lmsusername: joi.string().email().required().min(1).max(STAFF_EMAIL_MAX_LENGTH).label("User Email Address"),
+    organisationid: joi.string().uuid().allow(null).label("Organisation ID"),
     lmsuserpasswordhash: joi.string().max(300).allow(null, ""),
     lmsuserroles: joi
       .array()

@@ -58,6 +58,17 @@ import { SetMetadata } from "@nestjs/common";
  *
  *     @OrgPolicy("owned")
  *     @OrgPolicy("owned", { note: "Must list only the linked countries." })
+ *     @OrgPolicy("owned", { enforcedBy: "src/modules/user/user.organisation-scope.spec.ts" })
+ *
+ * An `owned` route counts as enforced in the inventory only when it names, with
+ * `enforcedBy`, a spec file (path from the repository root) that exists and has
+ * a test that runs (not skipped, todo or focused, and not inside a describe that
+ * is) with the route's `METHOD /path` (as the inventory prints it, for example
+ * `PUT /user/:lmsuserid`) in its full title (enclosing describe titles and its
+ * own) and a direct `expect(` call in its body. A signpost, not proof. The
+ * spec is what proves the route limits every read and write to the caller's
+ * organisation; a route without the option, or naming a spec that does not
+ * mention it, stays pending.
  *
  * The optional `note` is a short reason where the choice is not obvious (for
  * example a route that mixes concerns). State what the route REQUIRES.
@@ -98,11 +109,14 @@ export type OrgPolicyName = (typeof ORG_POLICIES)[number];
 
 export interface OrgPolicyOptions {
   note?: string;
+  /** For `owned` routes: the spec file that proves the route is limited to the caller's organisation. */
+  enforcedBy?: string;
 }
 
 export interface OrgPolicyMetadata {
   policy: OrgPolicyName;
   note?: string;
+  enforcedBy?: string;
 }
 
 export const ORG_POLICY_KEY = "orgpolicy";
@@ -111,10 +125,11 @@ export const OrgPolicy = (
   policy: OrgPolicyName,
   options: OrgPolicyOptions = {},
 ): MethodDecorator =>
-  SetMetadata<string, OrgPolicyMetadata>(
-    ORG_POLICY_KEY,
-    options.note === undefined ? { policy } : { policy, note: options.note },
-  );
+  SetMetadata<string, OrgPolicyMetadata>(ORG_POLICY_KEY, {
+    policy,
+    ...(options.note === undefined ? {} : { note: options.note }),
+    ...(options.enforcedBy === undefined ? {} : { enforcedBy: options.enforcedBy }),
+  });
 
 /**
  * Reads the policy declared on a route handler. Takes the handler function

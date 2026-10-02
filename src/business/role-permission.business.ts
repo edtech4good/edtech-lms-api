@@ -18,7 +18,10 @@ import {
   resolveRequestedRoles,
   revokeIfSuperAdminRemoved,
 } from "./session-revocation";
+import { Role } from "src/models/enums";
 import { OrgContext } from "src/decorators/org.decorator";
+import { findOwned, scopeOf } from "./org-scope";
+import { organisationAfterChange } from "./staff-organisation";
 import { SUPERADMIN } from "src/models/enums/permissions.enum";
 import { LmsUserToken } from "src/models/token.model";
 import { IMultiPaging } from '../models/IPaging';
@@ -268,30 +271,43 @@ export class RolePermissionBusiness {
         // One transaction: the new role set and, if Super Admin is being
         // removed, the end of that user's sessions commit together. Every
         // refusal happens before the roles are touched.
+        scopeOf(org);
         const transaction = await dbinstance.getdbinstance().transaction();
         try {
-            const user = await lmsusers.findOne({ where: { lmsuserid: rolePerms.lmsuserid }, transaction, lock: Transaction.LOCK.UPDATE });
-            let result;
-            if (user) {
-                const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
-                // A caller who is not platform may not touch a Super Admin account.
-                assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
-                // 400 unless every requested role exists exactly as given.
-                const selectedroles = await resolveRequestedRoles(rolePerms.rolesid, "rolesid", transaction);
-                assertMaySetRoles({
-                    caller: org,
-                    hadSuperAdmin,
-                    newRoles: selectedroles,
-                    targetOrganisationid: user.organisationid,
-                });
-                result = await user.setRoles(selectedroles, { transaction });
-                await revokeIfSuperAdminRemoved(
-                    user.lmsuserid,
-                    hadSuperAdmin,
-                    selectedroles.map((r) => r.roleid),
-                    transaction,
-                );
-            }
+            // A user outside the caller's scope is a 404.
+            const user = await findOwned(lmsusers, rolePerms.lmsuserid, org, {
+                transaction,
+                lock: Transaction.LOCK.UPDATE,
+                notFound: () => new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist."),
+            });
+            const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
+            // A caller who is not platform may not touch a Super Admin account.
+            assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
+            // 400 unless every requested role exists exactly as given.
+            const selectedroles = await resolveRequestedRoles(rolePerms.rolesid, "rolesid", transaction);
+            // Roles only: the organisation is not changed here, but a platform
+            // account cannot be left with neither Super Admin nor an organisation.
+            await organisationAfterChange({
+                org,
+                requested: undefined,
+                current: user.organisationid ?? null,
+                hadSuperAdmin,
+                willHoldSuperAdmin: selectedroles.some((r) => r.roleid === Role.superadmin),
+                transaction,
+            });
+            assertMaySetRoles({
+                caller: org,
+                hadSuperAdmin,
+                newRoles: selectedroles,
+                targetOrganisationid: user.organisationid,
+            });
+            const result = await user.setRoles(selectedroles, { transaction });
+            await revokeIfSuperAdminRemoved(
+                user.lmsuserid,
+                hadSuperAdmin,
+                selectedroles.map((r) => r.roleid),
+                transaction,
+            );
             await transaction.commit();
             return result;
         } catch (e) {

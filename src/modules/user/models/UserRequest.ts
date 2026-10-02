@@ -11,7 +11,9 @@ export class UserRequest {
   countryids: string[];
   @ApiProperty()
   schoolids: string[];
-  
+  @ApiProperty({ required: false, nullable: true, description: 'Platform callers only. On create: required unless the roles include Super Admin. On update: moves the account.' })
+  organisationid?: string | null;
+
   constructor() {
     this.lmsusername = '';
     this.lmsuserpasswordhash = '';

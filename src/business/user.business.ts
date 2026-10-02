@@ -27,23 +27,36 @@ import {
 import { Logger } from "src/config";
 import { isSameEmailAddress } from "src/services/email-address";
 import { RolePermissionBusiness } from "./role-permission.business";
+import { andOwned, findOwned, scopeOf } from "./org-scope";
+import { organisationAfterChange, organisationForNewAccount } from "./staff-organisation";
+import { organisations } from "src/models/data-models/organisations";
 
 export class UserBusiness {
 
   createUser = async (user: lmsusersAttributes, lmsuserroles: string[] | undefined, currentuser: LmsUserToken | undefined, org: OrgContext) => {
+    // `user.organisationid` is what the request asked for: undefined when the
+    // key was not sent. What the account actually gets is decided below.
+    const requestedOrganisationid = user.organisationid;
+    scopeOf(org); // fail closed before anything else
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
       // The roles are resolved to database rows first (400 unless every
       // requested id is exactly an existing role), and the Super Admin rule is
-      // applied to those rows. A new account has no organisation, so it is a
-      // platform account if it is given Super Admin: only a platform caller may
-      // do that. Nothing has been written when either refuses.
+      // applied to those rows with the organisation the account will get.
+      // Nothing has been written when any of this refuses.
       const rls = await resolveRequestedRoles(lmsuserroles, "lmsuserroles", transaction);
+      const holdsSuperAdminAfter = rls.some((r) => r.roleid === Role.superadmin);
+      user.organisationid = await organisationForNewAccount({
+        org,
+        requested: requestedOrganisationid,
+        holdsSuperAdmin: holdsSuperAdminAfter,
+        transaction,
+      });
       assertMaySetRoles({
         caller: org,
         hadSuperAdmin: false,
         newRoles: rls,
-        targetOrganisationid: user.organisationid ?? null,
+        targetOrganisationid: user.organisationid,
       });
       user.lmsuserid = uuidv4();
       user.lmsuserpasswordhash = hashPassword(user.lmsuserpasswordhash);
@@ -117,6 +130,17 @@ export class UserBusiness {
     const user = await lmsusers.findOne({ where });
     return !!user;
   };
+  /**
+   * One account within the caller's scope, as plain data. An account in another
+   * organisation, or a platform account asked for by an organisation's caller,
+   * is the same 404 as an id that does not exist.
+   */
+  getuserscoped = async (lmsuserid: string, org: OrgContext) => {
+    const user = await findOwned(lmsusers, lmsuserid, org, {
+      notFound: () => new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist."),
+    });
+    return user.get({ plain: true });
+  };
   getuser = async (lmsuserid: any) => {
     const _user = await lmsusers.findOne({ where: { lmsuserid } });
     if (_user) {
@@ -164,20 +188,23 @@ export class UserBusiness {
   };
 
   disableuserbyid = async (lmsuserid: string, org: OrgContext) => {
+    scopeOf(org);
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
-      const lmsuser = await lmsusers.findOne({ where: { lmsuserid }, transaction, lock: Transaction.LOCK.UPDATE });
-      if(lmsuser) {
-        const hadSuperAdmin = await holdsSuperAdmin(lmsuser, transaction);
-        assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
-        // Deleting a user clears every role, Super Admin included.
-        assertMaySetRoles({ caller: org, hadSuperAdmin, newRoles: [], targetOrganisationid: lmsuser.organisationid });
-        lmsuser.isdisabled = true;
-        await lmsuser.save({fields: ['isdisabled'], transaction});
-        await lmsuser.setRoles([], {transaction});
-        // A disabled user's sessions end whatever roles they held.
-        await revokeStaffSessions(lmsuser.lmsuserid, transaction);
-      }
+      const lmsuser = await findOwned(lmsusers, lmsuserid, org, {
+        transaction,
+        lock: Transaction.LOCK.UPDATE,
+        notFound: () => new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist."),
+      });
+      const hadSuperAdmin = await holdsSuperAdmin(lmsuser, transaction);
+      assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
+      // Deleting a user clears every role, Super Admin included.
+      assertMaySetRoles({ caller: org, hadSuperAdmin, newRoles: [], targetOrganisationid: lmsuser.organisationid });
+      lmsuser.isdisabled = true;
+      await lmsuser.save({fields: ['isdisabled'], transaction});
+      await lmsuser.setRoles([], {transaction});
+      // A disabled user's sessions end whatever roles they held.
+      await revokeStaffSessions(lmsuser.lmsuserid, transaction);
       await transaction.commit();
     } catch (e) {
         await transaction.rollback();
@@ -245,7 +272,7 @@ export class UserBusiness {
     await tokenbusiness.clearVerifyEmailToken(userid);
     return localuser;
   };
-  getusersall = async (paging: IPaging) => {
+  getusersall = async (paging: IPaging, org: OrgContext) => {
     let where: WhereOptions<lmsusersAttributes> = {
       isdisabled: false
     };
@@ -256,11 +283,14 @@ export class UserBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
-    where = { ...buildWhere<lmsusersAttributes>(paging, where) };
+    // The caller's scope is ANDed with everything else, the filter included, so
+    // nothing in the request can widen it: an organisation's caller lists only
+    // its own staff, and counts only those.
+    const scopedwhere = andOwned({ ...buildWhere<lmsusersAttributes>(paging, where) }, org);
 
     const users = await lmsusers.findAndCountAll(
       {
-        where, order, limit, offset,
+        where: scopedwhere, order, limit, offset,
         distinct: true,
         attributes: { exclude: ["lmsuserpasswordhash"] },
         include: [
@@ -268,6 +298,12 @@ export class UserBusiness {
             model: roles,
             attributes: ['rolename'],
             through: {attributes: []}
+          },
+          {
+            model: organisations,
+            as: "organisation",
+            attributes: ["organisationid", "organisationname"],
+            required: false,
           }
         ]
       }
@@ -282,9 +318,8 @@ export class UserBusiness {
     return users
   };
 
-  getlmsuserbyid = async (lmsuserid: string) => {
-    const user = await lmsusers.findOne({
-      where: { lmsuserid },
+  getlmsuserbyid = async (lmsuserid: string, org: OrgContext) => {
+    const user = await findOwned(lmsusers, lmsuserid, org, {
       attributes: { exclude: ["lmsuserpasswordhash"] },
       include: [{
         model: roles,
@@ -295,7 +330,13 @@ export class UserBusiness {
           attributes: ["permissionid", "permissionname"],
           through: {attributes: []}
         }]
-      }]
+      }, {
+        model: organisations,
+        as: "organisation",
+        attributes: ["organisationid", "organisationname"],
+        required: false,
+      }],
+      notFound: () => new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist."),
     });
     const allroles = await new RolePermissionBusiness().getallroles();
     if(user) {
@@ -313,43 +354,64 @@ export class UserBusiness {
   };
 
   updateUser = async (usr: lmsusersAttributes, lmsuserroles: string[], currentuser: LmsUserToken | undefined, org: OrgContext) => {
+    // `usr.organisationid` is what the request asked for (undefined: not sent).
+    const requestedOrganisationid = usr.organisationid;
+    scopeOf(org);
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
-      const user = await lmsusers.findOne({
-        where: { lmsuserid: usr.lmsuserid },
+      // A user outside the caller's scope is a 404, whatever else is wrong.
+      const user = await findOwned(lmsusers, usr.lmsuserid, org, {
         transaction,
         lock: Transaction.LOCK.UPDATE,
+        notFound: () => new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist."),
       });
-      if(!user) {
-        await transaction.rollback();
-        return undefined;
-      }
       // Every refusal below happens before the first write, so a refused
       // request leaves the user exactly as it was.
       //  1. a caller who is not platform may not touch a Super Admin account at
       //     all, whatever fields the request changes;
       //  2. the requested roles must all exist (400, no partial save);
-      //  3. the Super Admin rule is applied to the resolved role rows.
+      //  3. only a platform caller changes the organisation; the resulting
+      //     organisation is checked (live, locked) and the Super Admin rule is
+      //     applied with it.
       const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
       assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
       const rls = await resolveRequestedRoles(lmsuserroles, "lmsuserroles", transaction);
+      const willHoldSuperAdmin = rls.some((r) => r.roleid === Role.superadmin);
+      const after = await organisationAfterChange({
+        org,
+        requested: requestedOrganisationid,
+        current: user.organisationid ?? null,
+        hadSuperAdmin,
+        willHoldSuperAdmin,
+        transaction,
+      });
       assertMaySetRoles({
         caller: org,
         hadSuperAdmin,
         newRoles: rls,
-        targetOrganisationid: user.organisationid,
+        targetOrganisationid: after.organisationid,
       });
       user.lmsusername = usr.lmsusername;
       user.lmsuserpasswordhash = usr.lmsuserpasswordhash ? hashPassword(usr.lmsuserpasswordhash) : user.lmsuserpasswordhash;
       user.countries = usr.countries;
       user.schools = usr.schools;
+      const fields: Array<keyof lmsusersAttributes> = ['lmsusername', 'lmsuserpasswordhash', 'countries', 'schools', 'updated_at', 'updated_by'];
+      if (after.changed) {
+        user.organisationid = after.organisationid;
+        fields.push('organisationid');
+      }
       if(currentuser){
         user.updated_at = new Date();
         user.updated_by = currentuser.lmsuserid;
       }
-      await user.save({ fields: ['lmsusername', 'lmsuserpasswordhash', 'countries', 'schools', 'updated_at', 'updated_by'], transaction});
+      await user.save({ fields, transaction});
       await user.setRoles(rls, {transaction});
       await revokeIfSuperAdminRemoved(user.lmsuserid, hadSuperAdmin, rls.map((r) => r.roleid), transaction);
+      if (after.changed) {
+        // A moved account signs in again (the per-request check already refuses
+        // its old token; the rows go too).
+        await revokeStaffSessions(user.lmsuserid, transaction);
+      }
       await transaction.commit();
       // The hash is loaded above (old or newly-set) so it can be preserved
       // or written on save; it must not ride along in the response.

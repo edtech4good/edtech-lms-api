@@ -250,9 +250,24 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
       expect(claimsOf(accessToken)).toMatchObject({ organisationid: ORG_A, isplatform: false });
     });
 
-    it("a user with NO organisation and WITHOUT Super Admin still signs in: organisationid null, isplatform false", async () => {
+    it("a user with NO organisation and WITHOUT Super Admin cannot sign in: the answer is the wrong-password answer, and no token is issued", async () => {
+      const bad = await login("orgstaff@example.com", "WrongPass12").expect(400);
+      const res = await login("unassigned@example.com").expect(400);
+      expect(res.body.code).toBe("LOGIN_FAILED");
+      expect(ERROR_FIELDS(res.body)).toEqual(ERROR_FIELDS(bad.body));
+      expect(res.body.errormessage).toBe("The username or password is incorrect.");
+      expect(tokenTable.filter((t) => t.lmsuserid === "u-unassigned")).toEqual([]);
+      expect(logInfo).toHaveBeenCalledWith(
+        "Sign-in blocked: staff account has no organisation",
+        expect.objectContaining({ username: "unassigned@example.com" }),
+      );
+    });
+
+    it("the same account signs in once it has an organisation", async () => {
+      await login("unassigned@example.com").expect(400);
+      users["u-unassigned"].organisationid = ORG_B;
       const res = await login("unassigned@example.com").expect(200);
-      expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: null, isplatform: false });
+      expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: ORG_B, isplatform: false });
     });
 
     it("a Super Admin who HAS an organisation is never platform", async () => {
@@ -267,7 +282,7 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
     });
 
     it("the legacy lmsuserrole column (superadmin on every account) makes nobody platform", async () => {
-      const { accessToken } = await signIn("unassigned@example.com");
+      const { accessToken } = await signIn("orgstaff@example.com");
       expect(claimsOf(accessToken).lmsuserrole).toBe(Role.superadmin);
       expect(claimsOf(accessToken).isplatform).toBe(false);
     });
@@ -327,23 +342,24 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
   });
 
   describe("refresh re-reads the user; it does not copy claims from the old token", () => {
-    it("issues claims from the database NOW: an organisation assigned since sign-in shows up", async () => {
-      const { refreshToken, accessToken } = await signIn("unassigned@example.com");
-      expect(claimsOf(accessToken)).toMatchObject({ organisationid: null, isplatform: false });
+    it("issues claims from the database NOW: an organisation change since sign-in shows up", async () => {
+      const { refreshToken, accessToken } = await signIn("orgstaff@example.com");
+      expect(claimsOf(accessToken)).toMatchObject({ organisationid: ORG_A, isplatform: false });
 
-      users["u-unassigned"].organisationid = ORG_B;
+      users["u-org"].organisationid = ORG_B;
       const res = await refresh(refreshToken).expect(200);
       expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: ORG_B, isplatform: false });
     });
 
-    it("Super Admin removed since sign-in: the refreshed token is no longer platform", async () => {
+    it("Super Admin removed since sign-in: the account is now unassigned, and the refresh is refused (401)", async () => {
       const { refreshToken, accessToken } = await signIn("platform@example.com");
       expect(claimsOf(accessToken).isplatform).toBe(true);
 
       users["u-platform"].roles = [role(Role.admin)];
-      const res = await refresh(refreshToken).expect(200);
-      expect(claimsOf(res.body.data.accessToken)).toMatchObject({ isplatform: false, organisationid: null });
-      await probe("platform", res.body.data.accessToken).expect(403);
+      const before = JSON.stringify(tokenTable);
+      const res = await refresh(refreshToken).expect(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+      expect(JSON.stringify(tokenTable)).toBe(before);
     });
 
     it("an organisation assigned to a platform user since sign-in: the refreshed token is no longer platform", async () => {
@@ -471,7 +487,6 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
       it.each([
         ["an organisation's staff user", "orgstaff@example.com"],
         ["an organisation's Super Admin", "orgsuper@example.com"],
-        ["a user with no organisation and no Super Admin", "unassigned@example.com"],
       ])("refuses %s, and nothing changes", async (_name, email) => {
         const { accessToken } = await signIn(email);
         const before = JSON.stringify(tokenTable);
@@ -497,16 +512,13 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
         await switchTo(old, ORG_A).expect(401);
       });
 
-      it("the guard decides on the token's claim: a token with isplatform false is refused even if the user holds Super Admin in the database now", async () => {
-        users["u-unassigned"].roles = [role(Role.admin)];
-        const { accessToken } = await signIn("unassigned@example.com");
-        expect(claimsOf(accessToken).isplatform).toBe(false);
-        // Super Admin granted since sign-in: the database would now say platform...
-        users["u-unassigned"].roles = [role(Role.admin), role(Role.superadmin)];
+      it("a token with isplatform false is refused (401) for a user who has since become a platform account: the claim no longer matches", async () => {
+        const { accessToken } = await signIn("orgstaff@example.com");
+        // The account is now a platform account (no organisation, Super Admin).
+        users["u-org"].organisationid = null;
+        users["u-org"].roles = [role(Role.admin), role(Role.superadmin)];
         const before = JSON.stringify(tokenTable);
-        // ...but this token was minted as non-platform, so PlatformGuard refuses it.
-        const res = await switchTo(accessToken, ORG_A).expect(403);
-        expect(res.body.code).toBe("NOT_ALLOWED");
+        await switchTo(accessToken, ORG_A).expect(401);
         expect(JSON.stringify(tokenTable)).toBe(before);
       });
 

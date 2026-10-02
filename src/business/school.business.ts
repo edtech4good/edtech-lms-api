@@ -1,4 +1,10 @@
-import { col, fn, Op, WhereOptions } from "sequelize";
+import { col, fn, Op, Transaction, WhereOptions } from "sequelize";
+import { OrgContext } from "src/decorators/org.decorator";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
+import { organisationcountry } from "src/models/data-models/organisationcountry";
+import { dbinstance, rollbackQuietly } from "src/services/dbservice";
+import { lockLiveOrganisation, scopeOf } from "./org-scope";
 import { countries } from "src/models/data-models/countries";
 import { curriculums } from "src/models/data-models/curriculums";
 import { schools, schoolsAttributes } from "src/models/data-models/school";
@@ -35,11 +41,92 @@ export class SchoolBusiness {
       where: { countryid }
     })
 
-  createschool = async (school: schoolsAttributes, user: LmsUserToken) => {
-    school.schoolid = uuidv4();
-    school.isdeleted = false;
-    school.created_by = user.lmsuserid;
-    return await schools.create(school);
+  /**
+   * Which organisation a school written by this caller gets, checked inside the
+   * caller's transaction.
+   *
+   *  - Caller scope organisation X: the school is X's. A requested organisation,
+   *    if one was sent, must be X (else 403).
+   *  - Caller scope platform: the school gets the organisation the request names,
+   *    or none when it names none. (`schools.organisationid` stays nullable until
+   *    the backfill has assigned every existing school; the next tightening
+   *    makes it required, and this then becomes "must name one".)
+   * An organisation that is written must exist and not be deleted (the row is
+   * locked and read here: the foreign key does not know about `isdeleted`), and
+   * the school's country must be one the organisation is linked to
+   * (`organisationcountry`), else 400.
+   */
+  private schoolOrganisation = async (opts: {
+    org: OrgContext;
+    requested: string | null | undefined;
+    current: string | null;
+    creating: boolean;
+    countryid: string;
+    transaction: Transaction;
+  }): Promise<string | null> => {
+    const scope = scopeOf(opts.org);
+    let resulting: string | null;
+    if (opts.creating) {
+      if (scope.kind === "organisation") {
+        // An organisation's staff write their own organisation; a different
+        // value is refused.
+        if (opts.requested !== undefined && opts.requested !== scope.organisationid) {
+          throw new ApiError(ErrorCode.NOT_ALLOWED);
+        }
+        resulting = scope.organisationid;
+      } else {
+        resulting = opts.requested === undefined ? null : opts.requested;
+      }
+    } else {
+      // Updating: only a platform caller names an organisation (the key is
+      // refused for anyone else); otherwise the school keeps its own.
+      if (opts.requested !== undefined && scope.kind !== "platform") {
+        throw new ApiError(ErrorCode.NOT_ALLOWED);
+      }
+      resulting = opts.requested === undefined ? opts.current : opts.requested;
+    }
+    if (resulting !== null) {
+      if (resulting !== opts.current && !(await lockLiveOrganisation(resulting, opts.transaction))) {
+        throw new ApiError(ErrorCode.INVALID_INPUT, "Some of the information isn't valid.", {
+          fields: [{ field: "organisationid", message: "Choose an organisation that exists." }],
+        });
+      }
+      const linked = await organisationcountry.count({
+        where: { organisationid: resulting, countryid: opts.countryid },
+        transaction: opts.transaction,
+      });
+      if (linked === 0) {
+        throw new ApiError(ErrorCode.INVALID_INPUT, "Some of the information isn't valid.", {
+          fields: [{ field: "countryid", message: "That country isn't one of this organisation's countries." }],
+        });
+      }
+    }
+    return resulting;
+  };
+
+  createschool = async (school: schoolsAttributes, user: LmsUserToken, org: OrgContext) => {
+    const requested = school.organisationid;
+    scopeOf(org);
+    const transaction = await dbinstance.getdbinstance().transaction();
+    try {
+      school.organisationid = await this.schoolOrganisation({
+        org,
+        requested,
+        current: null,
+        creating: true,
+        countryid: school.countryid,
+        transaction,
+      });
+      school.schoolid = uuidv4();
+      school.isdeleted = false;
+      school.created_by = user.lmsuserid;
+      const created = await schools.create(school, { transaction });
+      await transaction.commit();
+      return created;
+    } catch (e) {
+      await rollbackQuietly(transaction);
+      throw e;
+    }
   };
   getschoolbyid = (schoolid: string) =>
     schools.findOne({ where: { schoolid, isdeleted: false }});
@@ -98,15 +185,41 @@ export class SchoolBusiness {
   };
   getschoolname = (schoolname: string) =>
     schools.findAll({ where: { schoolname, isdeleted: false } });
-  updateschoolName = async (school: schoolsAttributes, user: LmsUserToken) => {
-    const tempdt = await this.getschoolbyid(school.schoolid);
-    if (tempdt) {
+  updateschoolName = async (school: schoolsAttributes, user: LmsUserToken, org: OrgContext) => {
+    const requested = school.organisationid;
+    scopeOf(org);
+    const transaction = await dbinstance.getdbinstance().transaction();
+    try {
+      const tempdt = await schools.findOne({
+        where: { schoolid: school.schoolid, isdeleted: false },
+        transaction,
+        lock: Transaction.LOCK.UPDATE,
+      });
+      if (!tempdt) {
+        await transaction.rollback();
+        return null;
+      }
+      // Only a platform caller changes a school's organisation (a different
+      // value from anyone else is refused); whatever the organisation ends up
+      // being, the country must be one of its countries.
+      const resulting = await this.schoolOrganisation({
+        org,
+        requested,
+        current: tempdt.organisationid ?? null,
+        creating: false,
+        countryid: school.countryid,
+        transaction,
+      });
       tempdt.schoolname = school.schoolname;
       tempdt.countryid = school.countryid;
       tempdt.curriculums = school.curriculums;
       tempdt.updated_at = new Date();
       tempdt.updated_by = user.lmsuserid;
       const fields: (keyof schoolsAttributes)[] = ["schoolname", "countryid", "curriculums", "updated_at", "updated_by"];
+      if (requested !== undefined) {
+        tempdt.organisationid = resulting;
+        fields.push("organisationid");
+      }
       // uitheme is optional on this endpoint (branding/logo upload is a
       // later slice) — only touch it, and only save the column, when the
       // caller actually sent one.
@@ -114,11 +227,12 @@ export class SchoolBusiness {
         tempdt.uitheme = school.uitheme;
         fields.push("uitheme");
       }
-      await tempdt.save({ fields });
-      //await tempdt.reload();
+      await tempdt.save({ fields, transaction });
+      await transaction.commit();
       return tempdt;
-    } else {
-      return null;
+    } catch (e) {
+      await rollbackQuietly(transaction);
+      throw e;
     }
   };
   deleteschool = async (schoolid: string, user: LmsUserToken) => {

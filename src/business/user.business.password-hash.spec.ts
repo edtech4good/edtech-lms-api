@@ -1,5 +1,6 @@
 import { lmsusers } from "../models/data-models/init-models";
 import { UserBusiness } from "./user.business";
+import { withPrimaryKey } from "../test-support/fakewhere";
 
 // RolePermissionBusiness.getallroles is an instance arrow-function property
 // (not on the prototype), and getlmsuserbyid constructs its own instance
@@ -9,6 +10,10 @@ jest.mock("./role-permission.business", () => ({
     getallroles: jest.fn().mockResolvedValue([]),
   })),
 }));
+
+withPrimaryKey(lmsusers, "lmsuserid");
+
+const PLATFORM = { organisationid: null, isplatform: true };
 
 /**
  * Guards edtech-lms-api#51: POST /user (the list) and GET /user/:id must
@@ -28,7 +33,7 @@ describe("UserBusiness read paths exclude lmsuserpasswordhash (#51)", () => {
       .spyOn(lmsusers, "findOne")
       .mockResolvedValue({ lmsuserid: "u1", roles: [] } as any);
 
-    await new UserBusiness().getlmsuserbyid("u1");
+    await new UserBusiness().getlmsuserbyid("u1", PLATFORM);
 
     expect(findOneSpy).toHaveBeenCalledTimes(1);
     const callArgs = findOneSpy.mock.calls[0][0] as any;
@@ -42,7 +47,7 @@ describe("UserBusiness read paths exclude lmsuserpasswordhash (#51)", () => {
       .spyOn(lmsusers, "findAndCountAll")
       .mockResolvedValue({ rows: [], count: 0 } as any);
 
-    await new UserBusiness().getusersall({ pageindex: 1, pagesize: 20 } as any);
+    await new UserBusiness().getusersall({ pageindex: 1, pagesize: 20 } as any, PLATFORM);
 
     expect(findAndCountAllSpy).toHaveBeenCalledTimes(1);
     const callArgs = findAndCountAllSpy.mock.calls[0][0] as any;

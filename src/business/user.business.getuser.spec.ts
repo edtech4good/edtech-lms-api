@@ -1,11 +1,14 @@
 import { lmsusers } from "../models/data-models/init-models";
 import { schoolusers } from "../models/data-models/schoolusers";
 import { UserBusiness } from "./user.business";
+import { withPrimaryKey } from "../test-support/fakewhere";
 import { SchoolUserBusiness } from "./schooluser.business";
 import { EditUser, DeleteUser } from "../modules/user/user.business.validator";
 import { signInRequiredIfUserGone } from "../services/session.service";
 import { ApiError } from "../models/ApiError";
 import { ErrorCode } from "../models/enums/errorcode.enum";
+
+withPrimaryKey(lmsusers, "lmsuserid");
 
 /**
  * getuser is called with ADMIN-supplied ids (EditUser/DeleteUser validators).
@@ -35,7 +38,8 @@ describe("getuser for a missing user", () => {
     "admin path %s: a missing user surfaces as NOT_FOUND (admin stays signed in)",
     async (_name, validator) => {
       jest.spyOn(lmsusers, "findOne").mockResolvedValue(null);
-      const err: any = await validator({} as any, { lmsuserid: "missing" }).catch((e: any) => e);
+      const request = { user: { lmsuserid: "caller", organisationid: null, isplatform: true } };
+      const err: any = await validator(request as any, { lmsuserid: "missing" }).catch((e: any) => e);
       expect(err.code).toBe(ErrorCode.NOT_FOUND);
     },
   );

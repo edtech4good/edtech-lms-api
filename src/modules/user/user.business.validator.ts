@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ValidationError, ValidationErrorItem } from "joi";
 import { UserBusiness } from "src/business";
+import { orgOf } from "src/decorators/org.decorator";
 import { SUPERADMIN_USERNAME } from "src/models/enums/permissions.enum";
 import { IRequest } from "src/models/IRequest";
 
@@ -28,8 +29,11 @@ export const EditUser = async (
   request: IRequest,
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
-  const user = await new UserBusiness().getuser(
-    data.lmsuserid
+  // Within the caller's scope: another organisation's account, or a platform
+  // account seen by an organisation's caller, is the same 404 as a missing one.
+  const user = await new UserBusiness().getuserscoped(
+    data.lmsuserid,
+    orgOf(request.user)
   );
   if (!user) {
     const error = new ValidationError("Validation", [], {});
@@ -49,8 +53,11 @@ export const DeleteUser = async (
   request: IRequest,
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
-  const user = await new UserBusiness().getuser(
-    data.lmsuserid
+  // Within the caller's scope: another organisation's account, or a platform
+  // account seen by an organisation's caller, is the same 404 as a missing one.
+  const user = await new UserBusiness().getuserscoped(
+    data.lmsuserid,
+    orgOf(request.user)
   );
   if (!user) {
     const error = new ValidationError("Validation", [], {});
