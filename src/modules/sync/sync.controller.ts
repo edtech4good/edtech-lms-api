@@ -128,7 +128,8 @@ export class SyncController {
     status: 500,
     description: "Server error",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.organisationadmin, Role.superadmin))
+  // Not Role.organisationadmin: this pushes to the cloud server with the server key, for every organisation.
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
   @HttpCode(HttpStatus.OK)
   async synconline() {
     const zip = new AdmZip();
@@ -174,7 +175,8 @@ export class SyncController {
     status: 500,
     description: "Server error",
   })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.organisationadmin, Role.superadmin))
+  // Not Role.organisationadmin: this pushes to the cloud server with the server key, for every organisation.
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
   @HttpCode(HttpStatus.OK)
   async synconlineschool(@Param("schoolname") schoolname: string) {
     const studentusers =

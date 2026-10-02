@@ -18,22 +18,38 @@ const ROLE_LISTS = (r: RouteRecord): string[][] =>
 
 const admits = (r: RouteRecord, role: string) => ROLE_LISTS(r).every((list) => list.length === 0 || list.includes(role));
 
-describe("Organisation Admin is admitted wherever Admin is", () => {
+/**
+ * The only routes where Admin is admitted and the role is deliberately NOT: they
+ * push to the cloud server with the server key, for every organisation at once.
+ */
+const PLATFORM_WIDE = ["POST /sync/cloud", "POST /sync/cloud/:schoolname/students"];
+const keyOf = (r: RouteRecord) => `${r.method} ${r.path}`;
+
+describe("Organisation Admin is admitted wherever Admin is, except the platform-wide pushes", () => {
   let routes: RouteRecord[];
   beforeAll(async () => {
     routes = await enumerateRoutes();
   });
 
-  it("every route that admits Admin admits Organisation Admin, and the other way round", () => {
-    const admin = routes.filter((r) => admits(r, "Role.admin")).map((r) => `${r.method} ${r.path}`);
-    const org = routes.filter((r) => admits(r, "Role.organisationadmin")).map((r) => `${r.method} ${r.path}`);
+  it("every route that admits Admin admits Organisation Admin, except exactly the platform-wide pushes; and never the other way round", () => {
+    const admin = routes.filter((r) => admits(r, "Role.admin")).map(keyOf);
+    const org = routes.filter((r) => admits(r, "Role.organisationadmin")).map(keyOf);
     expect(admin.length).toBeGreaterThan(0);
-    expect(org).toEqual(admin);
+    expect(admin.filter((k) => !org.includes(k)).sort()).toEqual([...PLATFORM_WIDE].sort());
+    expect(org.filter((k) => !admin.includes(k))).toEqual([]);
   });
 
-  it("every explicit role list that names Admin names Organisation Admin", () => {
+  it("every explicit role list that names Admin names Organisation Admin, except those platform-wide pushes", () => {
     const lacking = routes.filter((r) => ROLE_LISTS(r).some((list) => list.includes("Role.admin") && !list.includes("Role.organisationadmin")));
-    expect(lacking.map((r) => `${r.method} ${r.path}`)).toEqual([]);
+    expect(lacking.map(keyOf).sort()).toEqual([...PLATFORM_WIDE].sort());
+  });
+
+  it("the platform-wide pushes name Admin and Super Admin and not Organisation Admin", () => {
+    for (const key of PLATFORM_WIDE) {
+      const r = routes.find((x) => keyOf(x) === key)!;
+      expect(r).toBeDefined();
+      expect(ROLE_LISTS(r)).toEqual([["Role.admin", "Role.superadmin"]]);
+    }
   });
 
   it("no role list names Organisation Admin without Admin (it is not wider than Admin anywhere)", () => {

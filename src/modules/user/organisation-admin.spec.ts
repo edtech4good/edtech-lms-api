@@ -7,6 +7,7 @@ import { ORGANISATION_ADMIN_PERMISSIONS_20261002 } from "src/db/frozen/organisat
 import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
 import { lmsusers } from "src/models/data-models/lmsusers";
 import { organisations } from "src/models/data-models/organisations";
+import { permissionstitle } from "src/models/data-models/permissionstitle";
 import { roles } from "src/models/data-models/roles";
 import { tokens } from "src/models/data-models/tokens";
 import { Role } from "src/models/enums";
@@ -80,6 +81,8 @@ let writes: { saves: Array<{ id: string; fields: string[] }>; setRoles: string[]
   creates: [],
 };
 let destroyed: string[] = [];
+let destroyCalls: Array<{ lmsuserid: string; transaction: unknown }> = [];
+const callOrder: string[] = [];
 const transaction = { commit: jest.fn(), rollback: jest.fn() };
 
 const plain = (a: Account) => ({ lmsuserid: a.lmsuserid, lmsusername: a.lmsusername, organisationid: a.organisationid, isdisabled: a.isdisabled });
@@ -162,10 +165,12 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     jest.restoreAllMocks();
     jest.spyOn(Logger, "warn").mockImplementation(() => Logger);
     tokenExists.mockResolvedValue(true);
-    transaction.commit.mockReset();
-    transaction.rollback.mockReset();
+    transaction.commit.mockReset().mockImplementation(async () => void callOrder.push("commit"));
+    transaction.rollback.mockReset().mockImplementation(async () => void callOrder.push("rollback"));
     writes = { saves: [], setRoles: [], creates: [] };
     destroyed = [];
+    destroyCalls = [];
+    callOrder.length = 0;
     accounts = [
       account(ID.self, "self.admin@example.com", X, [Role.organisationadmin]),
       account(ID.x1, "x1.staff@example.com", X, [Role.admin]),
@@ -208,10 +213,18 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     }) as never);
     jest.spyOn(organisations, "findOne").mockImplementation((async (o: { where: { organisationid: string } }) =>
       [X, Y].includes(o.where.organisationid) ? { organisationid: o.where.organisationid, isdeleted: false } : null) as never);
-    jest.spyOn(tokens, "destroy").mockImplementation((async (o: { where: { lmsuserid: string } }) => {
+    jest.spyOn(tokens, "destroy").mockImplementation((async (o: { where: { lmsuserid: string }; transaction?: unknown }) => {
       destroyed.push(o.where.lmsuserid);
+      destroyCalls.push({ lmsuserid: o.where.lmsuserid, transaction: o.transaction });
+      callOrder.push("revoke");
       return 1;
     }) as never);
+    // One role by id, like MySQL: ignoring case and trailing spaces; the row carries the stored id.
+    jest.spyOn(roles, "findOne").mockImplementation((async (o: { where: { roleid: string } }) => {
+      const stored = Object.keys(ROLE_NAMES).find((c) => c.toLowerCase() === String(o.where.roleid).replace(/ +$/, "").toLowerCase());
+      return stored ? { ...roleRow(stored), permissions: [{ permissionid: `perm-of-${stored}`, permissionname: "view_user", permissionstitle: { permissiontitleid: "title-1" } }] } : null;
+    }) as never);
+    jest.spyOn(permissionstitle, "findAll").mockResolvedValue([] as never);
   });
 
   const snapshot = () => JSON.stringify(accounts);
@@ -232,6 +245,7 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
     remove: (token: string, id: string) => request(app.getHttpServer()).delete(`/user/${id}`).set("Authorization", token),
     bind: (token: string, id: string, rolesid: unknown) =>
       request(app.getHttpServer()).post("/roles/user-bind-role").set("Authorization", token).send({ lmsuserid: id, rolesid }),
+    role: (token: string, id: string) => request(app.getHttpServer()).get(`/roles/${id}`).set("Authorization", token),
     roleList: (token: string) => request(app.getHttpServer()).get("/roles").set("Authorization", token),
     rolePage: (token: string, body: object = {}) => request(app.getHttpServer()).post("/roles").set("Authorization", token).send(body),
   };
@@ -444,6 +458,99 @@ describe("an Organisation Admin runs its own organisation's staff", () => {
       const before = snapshot();
       const res = await api.remove(as, ID.self).expect(400);
       expect(res.body.errormessage).toBe("You can't delete your own account.");
+      nothingWritten(before);
+    });
+  });
+
+  describe("the Super Admin role's definition is not readable in an organisation's scope (GET /roles/:roleid)", () => {
+    const NOBODY = "zzzzzzzz";
+    const sameAnswer = (a: { status: number; body: unknown }, b: { status: number; body: unknown }) => {
+      expect(a.status).toBe(b.status);
+      expect(a.body).toEqual(b.body);
+    };
+
+    it("an Organisation Admin gets exactly the answer for an id that matches no role", async () => {
+      const missing = await api.role(as, NOBODY).expect(200);
+      expect(missing.body.data.role).toBeNull();
+      expect(missing.body.data.selectedPerms).toEqual([]);
+      sameAnswer(await api.role(as, Role.superadmin), missing);
+    });
+
+    it("so does a request that spells the id in another case or with trailing spaces (the database matches those)", async () => {
+      const missing = await api.role(as, NOBODY);
+      sameAnswer(await api.role(as, Role.superadmin.toLowerCase()), missing);
+      sameAnswer(await api.role(as, Role.superadmin.toUpperCase()), missing);
+      sameAnswer(await api.role(as, `${Role.superadmin}%20%20`), missing);
+    });
+
+    it("a platform user acting as X gets the same answer", async () => {
+      const missing = await api.role(callers.platformActingX, NOBODY);
+      sameAnswer(await api.role(callers.platformActingX, Role.superadmin), missing);
+    });
+
+    it("other roles are still readable in that scope", async () => {
+      for (const id of [Role.admin, Role.organisationadmin, Role.teacher]) {
+        const res = await api.role(as, id).expect(200);
+        expect(res.body.data.role.roleid).toBe(id);
+        expect(res.body.data.selectedPerms).toEqual([`perm-of-${id}`]);
+      }
+    });
+
+    it("a platform user who is not acting still reads it", async () => {
+      const res = await api.role(callers.platform, Role.superadmin).expect(200);
+      expect(res.body.data.role.roleid).toBe(Role.superadmin);
+      expect(res.body.data.selectedPerms).toEqual([`perm-of-${Role.superadmin}`]);
+    });
+  });
+
+  describe("a change to an account's role set ends that account's sessions", () => {
+    it("binding a different set (a demotion) revokes the account's tokens: one delete, inside the transaction, before the commit", async () => {
+      await api.bind(as, ID.x1, [Role.teacher]).expect(200);
+      expect(destroyCalls).toEqual([{ lmsuserid: ID.x1, transaction }]);
+      expect(callOrder).toEqual(["revoke", "commit"]);
+    });
+
+    it("an Organisation Admin demoted to Teacher by a colleague loses their sessions", async () => {
+      accounts.push(account(ID.x3, "x3.staff@example.com", X, [Role.organisationadmin]));
+      await api.bind(as, ID.x3, [Role.teacher]).expect(200);
+      expect(destroyed).toEqual([ID.x3]);
+    });
+
+    it("binding the same set revokes nothing, whatever the order", async () => {
+      await api.bind(as, ID.x1, [Role.admin]).expect(200);
+      byId(ID.x2).held = [Role.admin, Role.teacher];
+      await api.bind(as, ID.x2, [Role.teacher, Role.admin]).expect(200);
+      expect(destroyed).toEqual([]);
+      expect(callOrder).toEqual(["commit", "commit"]);
+    });
+
+    it("editing an account with a different set revokes once; editing it with the same set (other fields only) revokes nothing", async () => {
+      await api.update(as, ID.x2, edit({ lmsuserroles: [Role.teacher] })).expect(200);
+      expect(destroyed).toEqual([]);
+      await api.update(as, ID.x2, edit({ lmsusername: "again@example.com", lmsuserroles: [Role.admin] })).expect(200);
+      expect(destroyed).toEqual([ID.x2]);
+      expect(destroyCalls[0].transaction).toBe(transaction);
+    });
+
+    it("a person changing their own roles is included", async () => {
+      await api.bind(as, ID.self, [Role.teacher]).expect(200);
+      expect(destroyed).toEqual([ID.self]);
+    });
+
+    it("the revoke rolls back with the transaction: when the commit fails, the roles and the revoke are rolled back", async () => {
+      transaction.commit.mockReset().mockImplementation(async () => {
+        callOrder.push("commit");
+        throw new Error("commit failed");
+      });
+      const res = await api.bind(as, ID.x1, [Role.teacher]);
+      expect(res.status).toBe(500);
+      expect(destroyCalls[0].transaction).toBe(transaction);
+      expect(callOrder).toEqual(["revoke", "commit", "rollback"]);
+    });
+
+    it("a refused change revokes nothing", async () => {
+      const before = snapshot();
+      await api.bind(as, ID.x1, [Role.superadmin]).expect(403);
       nothingWritten(before);
     });
   });

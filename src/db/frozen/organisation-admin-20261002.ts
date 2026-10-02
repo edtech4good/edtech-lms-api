@@ -1,6 +1,6 @@
 /**
  * The permissions the "Organisation Admin" role is granted by migration
- * 20261002120000-seed-organisation-admin-role: 161 names, written out in full.
+ * 20261002120000-seed-organisation-admin-role: 154 names, written out in full.
  *
  * It is a literal list and NOT derived from the live `Permission` enum, from
  * the Admin role, or from the permissions table, so that no later addition of a
@@ -12,23 +12,19 @@
  *
  *  - Everything Admin holds on the database today (159), cross-checked against
  *    the 16 July grant (PERMISSIONS_AS_SHIPPED_20260716 minus
- *    create/view/update/delete of user and role), with three removed:
- *    `create_country`, `update_country` and `delete_country`. Their only routes
- *    carry PlatformGuard, so an organisation's staff could never use them; the
- *    role does not hold what it cannot use.
+ *    create/view/update/delete of user and role), minus the names withheld
+ *    below (10 of them are in that 159).
  *  - `view_user`, `create_user`, `update_user`, `delete_user`: the staff
  *    administration routes, which are limited to the caller's own organisation.
  *  - `view_role`: the read the staff forms need to list the roles an account
  *    can hold (GET /roles; it is also what the other role reads ask for).
  *
- * What it must NEVER contain, pinned by organisation-admin-role.spec.ts:
- *
- *  - the organisation permissions (view/create/update/delete_organisation):
- *    organisations are platform-only;
- *  - `create_role`, `update_role`, `delete_role`: roles and permissions are
- *    global, so changing them is platform-only (and a role that can edit its
- *    own grants can give itself anything);
- *  - any permission that only a PlatformGuard route asks for.
+ * What it holds on purpose, and why that is not a platform-wide reach: ordinary
+ * reads and writes of data that belongs to one organisation (schools, classes,
+ * learners, teachers, reports, content). Those are limited to the caller's
+ * organisation in a later package and are the same reach Admin has today.
+ * Withheld instead is anything whose action is platform-wide BY DESIGN, so that
+ * scoping the data later cannot make it safe: see ORGANISATION_ADMIN_WITHHELD.
  *
  * It is also far short of "every permission": a role holding every row of the
  * permissions table is awarded the synthetic `superadmin` wildcard by
@@ -39,12 +35,42 @@
  * frozen list. This file lives outside src/db/migrations because sequelize-cli
  * would try to run it.
  */
+
+/**
+ * Permissions the role is deliberately NOT given, each with the reason. Not read
+ * by the migration (the grant list below is the only input); it is here so the
+ * reason sits next to the list, and organisation-admin-role.spec.ts pins every
+ * name as absent from the grant.
+ */
+export const ORGANISATION_ADMIN_WITHHELD_20261002: ReadonlyArray<{ name: string; reason: string }> = [
+  // Organisations are the platform's to create and change.
+  { name: "view_organisation", reason: "organisations are platform-only" },
+  { name: "create_organisation", reason: "organisations are platform-only" },
+  { name: "update_organisation", reason: "organisations are platform-only" },
+  { name: "delete_organisation", reason: "organisations are platform-only" },
+  // Roles and permissions are global; a role that edits roles can give itself anything.
+  { name: "create_role", reason: "roles and permissions are global, so changing them is platform-only" },
+  { name: "update_role", reason: "roles and permissions are global, so changing them is platform-only" },
+  { name: "delete_role", reason: "roles and permissions are global, so changing them is platform-only" },
+  // Countries are shared reference data; their only write routes carry PlatformGuard.
+  { name: "create_country", reason: "countries are global reference data and their write routes are platform-only" },
+  { name: "update_country", reason: "countries are global reference data and their write routes are platform-only" },
+  { name: "delete_country", reason: "countries are global reference data and their write routes are platform-only" },
+  // Sync moves data between servers with the server key, for every organisation at once.
+  { name: "sync_content", reason: "gates the content sync button: pushes ALL content to the cloud server with the server key" },
+  { name: "sync_students", reason: "student sync pushes learners to the cloud server with the server key" },
+  { name: "list_sync", reason: "sync is a platform-wide transfer between servers; no route uses this today" },
+  { name: "create_sync", reason: "sync is a platform-wide transfer between servers; no route uses this today" },
+  { name: "view_sync", reason: "sync is a platform-wide transfer between servers; no route uses this today" },
+  { name: "update_sync", reason: "sync is a platform-wide transfer between servers; no route uses this today" },
+  { name: "delete_sync", reason: "sync is a platform-wide transfer between servers; no route uses this today" },
+];
+
 export const ORGANISATION_ADMIN_PERMISSIONS_20261002: ReadonlyArray<string> = [
   "create_curriculum",
   "view_curriculum",
   "update_curriculum",
   "delete_curriculum",
-  "sync_content",
   "create_baseline-endline",
   "view_baseline-endline",
   "update_baseline-endline",
@@ -126,16 +152,10 @@ export const ORGANISATION_ADMIN_PERMISSIONS_20261002: ReadonlyArray<string> = [
   "update_school",
   "delete_school",
   "view_download_student",
-  "sync_students",
   "view_school_contribution",
   "create_fees_collection",
   "update_fees_collection",
   "delete_fees_collection",
-  "list_sync",
-  "create_sync",
-  "view_sync",
-  "update_sync",
-  "delete_sync",
   "list_export",
   "create_export",
   "view_export",

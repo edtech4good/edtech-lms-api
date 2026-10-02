@@ -19,22 +19,36 @@ export const revokeStaffSessions = (lmsuserid: string, transaction?: Transaction
 export const holdsSuperAdmin = async (user: lmsusers, transaction?: Transaction) =>
   (await user.getRoles({ transaction })).some((role) => role.roleid === Role.superadmin);
 
+/** The ids of the roles an account holds right now (read inside the transaction). */
+export const heldRoleIds = async (user: lmsusers, transaction?: Transaction): Promise<string[]> =>
+  (await user.getRoles({ transaction })).map((role) => role.roleid);
+
+/** Do two lists of role ids name the same SET of roles (order and repeats do not matter)? */
+export const sameRoleSet = (a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean => {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((id) => right.has(id));
+};
+
 /**
- * Call after a user's roles have been replaced. If they held Super Admin
- * before (`hadSuperAdmin`, read before the change) and the new set no longer
- * includes it, their sessions end in the same transaction: a token minted while
- * they were Super Admin carries the wildcard permission and the platform claim,
- * and must not outlive the role.
+ * Call after a user's roles have been replaced. When the SET of roles changed
+ * (`before` was read before the change), the account's sessions end in the same
+ * transaction: a token carries the permissions of the roles held when it was
+ * minted, so a demoted account must not keep its old permissions until the token
+ * expires. An edit that leaves the set the same ends nothing. Returns whether the
+ * set changed.
  */
-export const revokeIfSuperAdminRemoved = async (
+export const revokeIfRolesChanged = async (
   lmsuserid: string,
-  hadSuperAdmin: boolean,
-  newRoleIds: ReadonlyArray<string>,
+  before: ReadonlyArray<string>,
+  after: ReadonlyArray<string>,
   transaction?: Transaction,
-) => {
-  if (hadSuperAdmin && !newRoleIds.includes(Role.superadmin)) {
+): Promise<boolean> => {
+  const changed = !sameRoleSet(before, after);
+  if (changed) {
     await revokeStaffSessions(lmsuserid, transaction);
   }
+  return changed;
 };
 
 /**

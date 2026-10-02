@@ -18,6 +18,7 @@ import { OrganisationController } from "src/modules/organisation/organisation.co
 import { RolePermissionController } from "src/modules/role-permission/role-perm.controller";
 import { StandardController } from "src/modules/standard/standard.controller";
 import { StudentController } from "src/modules/students/student.controller";
+import { SyncController } from "src/modules/sync/sync.controller";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
 
 /**
@@ -74,6 +75,9 @@ const mocks = {
   isexistsorganisationcode: jest.fn(),
   findunusablecountries: jest.fn(),
   switchOrganisation: jest.fn(),
+  syncontentVersion2: jest.fn(),
+  getschooluserbyschoolname: jest.fn(),
+  cloudPut: jest.fn(),
 };
 jest.mock("src/business/country.business", () => ({
   CountryBusiness: jest.fn().mockImplementation(() => ({
@@ -141,6 +145,15 @@ jest.mock("src/business/auth.business", () => ({
     switchOrganisation: mocks.switchOrganisation,
   })),
 }));
+
+jest.mock("src/business/sync.business", () => ({
+  SyncBusiness: jest.fn().mockImplementation(() => ({ syncontentVersion2: mocks.syncontentVersion2 })),
+}));
+jest.mock("src/business/schooluser.business", () => ({
+  SchoolUserBusiness: jest.fn().mockImplementation(() => ({ getschooluserbyschoolname: mocks.getschooluserbyschoolname })),
+}));
+// The push to the cloud server is the thing these routes must not let an organisation's staff start.
+jest.mock("axios", () => ({ __esModule: true, default: { put: (...a: unknown[]) => mocks.cloudPut(...a) } }));
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const ORG = "33333333-3333-4333-8333-333333333333";
@@ -211,6 +224,7 @@ const CONTROLLERS = [
   RolePermissionController,
   StandardController,
   StudentController,
+  SyncController,
 ];
 
 /** "METHOD /path" for every handler of the controllers that carries PlatformGuard (on the handler or its class). */
@@ -277,6 +291,9 @@ describe("an Organisation Admin on the platform routes", () => {
     mocks.getAllcountries.mockResolvedValue([]);
     mocks.getcountryall.mockResolvedValue({ rows: [], count: 0 });
     mocks.getCurriculumsWithFilter.mockResolvedValue([]);
+    mocks.syncontentVersion2.mockResolvedValue("content");
+    mocks.getschooluserbyschoolname.mockResolvedValue([{ get: () => ({ schooluserid: "s1" }) }]);
+    mocks.cloudPut.mockResolvedValue({ status: 200 });
   });
 
   const handlerCalls = () => ROUTES.reduce((n, r) => n + r.handler.mock.calls.length, 0);
@@ -304,6 +321,34 @@ describe("an Organisation Admin on the platform routes", () => {
       const res = await send(app, route, orgAdmin());
       expect(res.status).toBe(403);
       expect(handlerCalls()).toBe(0);
+    });
+  });
+
+  describe("the two sync-to-cloud routes (they push to the cloud server with the server key, for every organisation)", () => {
+    const SYNC_ROUTES: Array<[string, string]> = [
+      ["POST /sync/cloud", "/sync/cloud"],
+      ["POST /sync/cloud/:schoolname/students", "/sync/cloud/Sample%20School/students"],
+    ];
+    const admin = () =>
+      bearer({
+        lmsuserid: "u-admin",
+        lmsuserroles: [Role.admin],
+        permissions: ["view_school"],
+        organisationid: null,
+        isplatform: false,
+      });
+    const post = (path: string, token: string) => request(app.getHttpServer()).post(path).set("Authorization", token);
+
+    it.each(SYNC_ROUTES)("%s: refuses an Organisation Admin with 403, and nothing is pushed", async (_label, path) => {
+      await post(path, orgAdmin()).expect(403);
+      await post(path, orgAdmin("sync_content")).expect(403);
+      expect(mocks.cloudPut).not.toHaveBeenCalled();
+      expect(mocks.syncontentVersion2).not.toHaveBeenCalled();
+    });
+
+    it.each(SYNC_ROUTES)("%s: still admits Admin (the control), which pushes once", async (_label, path) => {
+      await post(path, admin()).expect(200);
+      expect(mocks.cloudPut).toHaveBeenCalledTimes(1);
     });
   });
 

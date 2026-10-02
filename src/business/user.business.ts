@@ -19,10 +19,11 @@ import {
   assertMayModifyUser,
   assertMayModifyUserId,
   assertMaySetRoles,
+  heldRoleIds,
   holdsSuperAdmin,
   resolveRequestedRoles,
-  revokeIfSuperAdminRemoved,
   revokeStaffSessions,
+  sameRoleSet,
 } from "./session-revocation";
 import { Logger } from "src/config";
 import { isSameEmailAddress } from "src/services/email-address";
@@ -373,7 +374,8 @@ export class UserBusiness {
       //  3. only a platform caller changes the organisation; the resulting
       //     organisation is checked (live, locked) and the Super Admin rule is
       //     applied with it.
-      const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
+      const roleIdsBefore = await heldRoleIds(user, transaction);
+      const hadSuperAdmin = roleIdsBefore.includes(Role.superadmin);
       assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
       const rls = await resolveRequestedRoles(lmsuserroles, "lmsuserroles", transaction);
       const willHoldSuperAdmin = rls.some((r) => r.roleid === Role.superadmin);
@@ -406,10 +408,12 @@ export class UserBusiness {
       }
       await user.save({ fields, transaction});
       await user.setRoles(rls, {transaction});
-      await revokeIfSuperAdminRemoved(user.lmsuserid, hadSuperAdmin, rls.map((r) => r.roleid), transaction);
-      if (after.changed) {
-        // A moved account signs in again (the per-request check already refuses
-        // its old token; the rows go too).
+      // A changed role SET, or a move to another organisation, ends the account's
+      // sessions (once), in this transaction. An edit that changes neither ends
+      // nothing. (The per-request check already refuses a moved account's old
+      // token; the rows go too.)
+      const rolesChanged = !sameRoleSet(roleIdsBefore, rls.map((r) => r.roleid));
+      if (rolesChanged || after.changed) {
         await revokeStaffSessions(user.lmsuserid, transaction);
       }
       await transaction.commit();

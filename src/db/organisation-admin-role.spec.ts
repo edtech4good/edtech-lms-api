@@ -1,5 +1,8 @@
 import { createHash } from "crypto";
-import { ORGANISATION_ADMIN_PERMISSIONS_20261002 } from "./frozen/organisation-admin-20261002";
+import {
+  ORGANISATION_ADMIN_PERMISSIONS_20261002,
+  ORGANISATION_ADMIN_WITHHELD_20261002,
+} from "./frozen/organisation-admin-20261002";
 import { PERMISSIONS_AS_SHIPPED_20260716 } from "./frozen/permissions-20260716";
 import { Role } from "../models/enums";
 
@@ -25,16 +28,18 @@ const ADMIN = "zr5ER4QD";
 const sha = (names: ReadonlyArray<string>) =>
   createHash("sha256").update([...names].sort().join("\n")).digest("hex");
 
-const LIST_COUNT = 161;
-const LIST_SHA = "d4925c08362ebbe5ea2c2713125022552910f359d39da72854d78a149db34b79";
+const LIST_COUNT = 154;
+const LIST_SHA = "a2514d484fb652327723436762fcc0239b961c72720f1198d7eb578a42f4d39f";
 
 const ORGANISATION = ["view_organisation", "create_organisation", "update_organisation", "delete_organisation"];
 const ROLE_WRITES = ["create_role", "update_role", "delete_role"];
 const COUNTRY_WRITES = ["create_country", "update_country", "delete_country"];
+/** Sync moves data between servers with the server key, for every organisation at once. */
+const SYNC = ["sync_content", "sync_students", "list_sync", "create_sync", "view_sync", "update_sync", "delete_sync"];
 const STAFF_AND_ROLE_READ = ["view_user", "create_user", "update_user", "delete_user", "view_role"];
 
 describe("the Organisation Admin frozen permission list", () => {
-  it("has exactly the 161 names it shipped with (count and checksum), each once", () => {
+  it("has exactly the 154 names it shipped with (count and checksum), each once", () => {
     expect(ORGANISATION_ADMIN_PERMISSIONS_20261002).toHaveLength(LIST_COUNT);
     expect(new Set(ORGANISATION_ADMIN_PERMISSIONS_20261002).size).toBe(LIST_COUNT);
     expect(sha(ORGANISATION_ADMIN_PERMISSIONS_20261002)).toBe(LIST_SHA);
@@ -64,13 +69,40 @@ describe("the Organisation Admin frozen permission list", () => {
     }
   });
 
+  it.each(SYNC)("holds %s: sync is a platform-wide transfer between servers", (name) => {
+    expect(ORGANISATION_ADMIN_PERMISSIONS_20261002).not.toContain(name);
+  });
+
+  describe("the withheld names", () => {
+    it("lists the organisation, role-write, country-write and sync names, each with a reason of its own", () => {
+      const names = ORGANISATION_ADMIN_WITHHELD_20261002.map((w) => w.name).sort();
+      expect(names).toEqual([...ORGANISATION, ...ROLE_WRITES, ...COUNTRY_WRITES, ...SYNC].sort());
+      for (const w of ORGANISATION_ADMIN_WITHHELD_20261002) {
+        expect(w.reason.trim().length).toBeGreaterThan(10);
+      }
+    });
+
+    it("none of them is granted", () => {
+      for (const w of ORGANISATION_ADMIN_WITHHELD_20261002) {
+        expect(ORGANISATION_ADMIN_PERMISSIONS_20261002).not.toContain(w.name);
+      }
+    });
+
+    it("each is a permission that exists (a misspelt name would pin nothing)", () => {
+      const known = new Set<string>([...PERMISSIONS_AS_SHIPPED_20260716, ...ORGANISATION]);
+      for (const w of ORGANISATION_ADMIN_WITHHELD_20261002) {
+        expect(known.has(w.name)).toBe(true);
+      }
+    });
+  });
+
   it("is made of names that exist in the shipped permission list (no new permission rows)", () => {
     for (const name of ORGANISATION_ADMIN_PERMISSIONS_20261002) {
       expect(PERMISSIONS_AS_SHIPPED_20260716).toContain(name);
     }
   });
 
-  it("is what Admin is granted, plus the staff permissions and view_role, minus the country writes", async () => {
+  it("is what Admin is granted, plus the staff permissions and view_role, minus the country writes and the sync permissions", async () => {
     const calls: Array<{ roleid: string; names: string[] }> = [];
     await adminGrant.up({
       sequelize: {
@@ -83,7 +115,7 @@ describe("the Organisation Admin frozen permission list", () => {
     });
     const admin = calls.find((c) => c.roleid === ADMIN)!.names;
     expect(admin).toHaveLength(159);
-    const expected = [...admin.filter((n) => !COUNTRY_WRITES.includes(n)), ...STAFF_AND_ROLE_READ];
+    const expected = [...admin.filter((n) => !COUNTRY_WRITES.includes(n) && !SYNC.includes(n)), ...STAFF_AND_ROLE_READ];
     expect(sha(ORGANISATION_ADMIN_PERMISSIONS_20261002)).toBe(sha(expected));
   });
 });

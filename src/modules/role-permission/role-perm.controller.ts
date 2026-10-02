@@ -69,11 +69,12 @@ export class RolePermissionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiParam({ name: `roleid`, type: "string", required: true })
   async get(
-    @Param("roleid") roleid: string
+    @Param("roleid") roleid: string,
+    @Org() org: OrgContext
   ): Promise<any> {
     return {
       error: false,
-      data: await new RolePermissionBusiness().getRolebyid(roleid),
+      data: await new RolePermissionBusiness().getRolebyid(roleid, org),
     };
   }
 

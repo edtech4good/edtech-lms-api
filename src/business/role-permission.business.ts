@@ -14,9 +14,9 @@ import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import {
   assertMayModifyUser,
   assertMaySetRoles,
-  holdsSuperAdmin,
+  heldRoleIds,
   resolveRequestedRoles,
-  revokeIfSuperAdminRemoved,
+  revokeIfRolesChanged,
 } from "./session-revocation";
 import { Role } from "src/models/enums";
 import { OrgContext } from "src/decorators/org.decorator";
@@ -140,8 +140,17 @@ export class RolePermissionBusiness {
         return formatedroles
     }
 
-    getRolebyid = async (roleid: string) => {
-        const role = await roles.findOne({
+    /**
+     * One role with its permissions. For a caller in an organisation's scope the
+     * Super Admin role does not exist: the answer is exactly the one for an id
+     * that matches no role (`role` null, nothing selected), so its definition
+     * cannot be read there. Decided on the row that was found, by its stored id:
+     * the database matches ids without regard to case, so the spelling in the
+     * request must not decide it.
+     */
+    getRolebyid = async (roleid: string, org: OrgContext) => {
+        const hideSuperAdmin = scopeOf(org).kind === "organisation";
+        const found = await roles.findOne({
             where: { roleid },
             attributes: ['roleid', 'rolename'],
             include: [
@@ -158,6 +167,7 @@ export class RolePermissionBusiness {
                 }
             ]
         });
+        const role = hideSuperAdmin && found?.roleid === Role.superadmin ? null : found;
         const permsNodes = await this.getallPermsNode();
         // source function: https://stackoverflow.com/a/64489535/14708196
         const groupBy = <T>(array: T[], predicate: (value: T, index: number, array: T[]) => string) =>
@@ -297,7 +307,8 @@ export class RolePermissionBusiness {
                 lock: Transaction.LOCK.UPDATE,
                 notFound: () => new ApiError(ErrorCode.NOT_FOUND, "That user doesn't exist."),
             });
-            const hadSuperAdmin = await holdsSuperAdmin(user, transaction);
+            const roleIdsBefore = await heldRoleIds(user, transaction);
+            const hadSuperAdmin = roleIdsBefore.includes(Role.superadmin);
             // A caller who is not platform may not touch a Super Admin account.
             assertMayModifyUser({ caller: org, targetHoldsSuperAdmin: hadSuperAdmin });
             // 400 unless every requested role exists exactly as given.
@@ -319,9 +330,10 @@ export class RolePermissionBusiness {
                 targetOrganisationid: user.organisationid,
             });
             const result = await user.setRoles(selectedroles, { transaction });
-            await revokeIfSuperAdminRemoved(
+            // A changed role SET ends the account's sessions, in this transaction.
+            await revokeIfRolesChanged(
                 user.lmsuserid,
-                hadSuperAdmin,
+                roleIdsBefore,
                 selectedroles.map((r) => r.roleid),
                 transaction,
             );
