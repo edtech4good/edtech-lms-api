@@ -1,4 +1,4 @@
-import type { Transaction } from "sequelize";
+import { col, fn, Transaction, where as sqlWhere } from "sequelize";
 import { schools } from "src/models/data-models/school";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
@@ -23,7 +23,7 @@ import { ErrorCode } from "src/models/enums/errorcode.enum";
  * `schools.schoolname`'s own collation is NOT the judge. It ignores trailing
  * spaces and gives several Khmer marks (bantoc, nikahit, musikatoan) no
  * weight, so under it "សាលាគំរូ" and "សាលាគរូ" compare EQUAL. The database is
- * only used to narrow the candidates (`WHERE schoolname = ?`); the answer is
+ * only used to narrow the candidates (`WHERE TRIM(schoolname) = ?`); the answer is
  * the candidate that passes the comparison above. More than one candidate
  * passing acts on none and fails.
  *
@@ -75,8 +75,12 @@ export async function resolveSchoolByName(
   if (typeof schoolname !== "string" || schoolname.trim().length === 0) {
     return null;
   }
+  // `TRIM(schoolname) = ?` narrows to the schools whose stored name equals the
+  // given name once surrounding spaces are ignored on BOTH sides, so a school
+  // whose stored name has stray spaces around it is still found. (MySQL's TRIM
+  // removes spaces only; the comparison below is what decides.)
   const candidates = await schools.findAll({
-    where: { schoolname: schoolname.trim().normalize("NFC") },
+    where: sqlWhere(fn("TRIM", col("schoolname")), schoolname.trim().normalize("NFC")),
     ...readOptions(transaction),
   });
   const same = candidates.filter((s) => isSameSchoolName(s.schoolname, schoolname));

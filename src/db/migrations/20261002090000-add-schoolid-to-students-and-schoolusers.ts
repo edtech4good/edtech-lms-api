@@ -6,7 +6,9 @@ import { removeColumnIfPresent, tableOptionsMatchingColumn } from "../migration-
  * `schoolusers`, backfilled from the school's name. Learners and school logins
  * are tied to a school by NAME today; this step only makes the id exist and
  * (with the writers changed in the same package) stay correct. Nothing reads
- * the new column yet, and nothing about `schoolname` changes.
+ * the new column yet. The only names this migration changes are the ones it
+ * fills by the LOOSE pass (see "Backfill"), which it sets to the school's own
+ * stored name.
  *
  * ## Column type
  *
@@ -41,13 +43,42 @@ import { removeColumnIfPresent, tableOptionsMatchingColumn } from "../migration-
  *     filled ONLY when exactly one school matches. A learner whose stored name
  *     differs from the school's only by a trailing space or a Khmer mark still
  *     belongs to that school today (the name join is a collation compare), so
- *     it keeps its school. Its `schoolname` text is NOT rewritten: this
- *     migration changes no names.
+ *     it keeps its school. Its `schoolname` is set to the school's own stored
+ *     name in the same statement, so that after the migration every filled
+ *     row's name is its school's name byte for byte (an edit upload writes
+ *     what the edit export wrote, and the writers refuse a name that is not
+ *     the school's). Readers join by name under the collation, so they are
+ *     unaffected. The old text is NOT kept: `down` does not restore it.
  *  3. Everything else (no match, or several loose matches, or a NULL name) is
  *     left NULL. The counts are printed; never the names.
  *
  * Soft-deleted schools are matched like any other: the id is identity, not
  * liveness. A learner of a deleted school keeps pointing at it.
+ *
+ * The count of names rewritten (loose fills) is printed, count only.
+ *
+ * ## Scale
+ *
+ * Each backfill pass is ONE UPDATE statement per table. That is fine for the
+ * table sizes in use today; before these tables are large it should be batched
+ * (by key range), because a single statement holds its row locks until it ends.
+ *
+ * ## Adding the foreign key
+ *
+ * `ADD FOREIGN KEY` is only done in place (no table copy, no blocked writes)
+ * when `foreign_key_checks` is off; with it on, MySQL copies the whole table.
+ * When the new column holds no value yet (the normal case: it was just added),
+ * there is nothing to validate, so the key is added with `foreign_key_checks=0`
+ * for that statement only, on the migration's own connection, and restored in
+ * a `finally`. When a re-run finds values already there it adds the key the
+ * normal, validating way.
+ *
+ * ## Down
+ *
+ * `down` drops the foreign key, the index and the column. Roll the CODE back
+ * first: every writer of `students` and `schoolusers` references the column,
+ * so with the column gone and the new code running, enrolments and edits fail.
+ * It does not restore the text of any `schoolname` that the loose pass rewrote.
  *
  * ## Idempotence
  *
@@ -159,12 +190,29 @@ module.exports = {
           });
         }
         if (!(await foreignKeyExists(queryInterface, table, fkName(table), transaction))) {
-          await q(
-            `ALTER TABLE \`${table}\` ADD CONSTRAINT \`${fkName(table)}\` ` +
-              `FOREIGN KEY (\`schoolid\`) REFERENCES \`${SCHOOLS}\` (\`schoolid\`) ` +
-              `ON DELETE RESTRICT ON UPDATE CASCADE`,
-            { transaction },
+          const addKey = () =>
+            q(
+              `ALTER TABLE \`${table}\` ADD CONSTRAINT \`${fkName(table)}\` ` +
+                `FOREIGN KEY (\`schoolid\`) REFERENCES \`${SCHOOLS}\` (\`schoolid\`) ` +
+                `ON DELETE RESTRICT ON UPDATE CASCADE`,
+              { transaction },
+            );
+          const filled = await count(
+            q,
+            `SELECT COUNT(*) AS n FROM \`${table}\` WHERE schoolid IS NOT NULL`,
+            transaction,
           );
+          if (filled === 0) {
+            // Nothing to validate: add it in place instead of copying the table.
+            await q("SET foreign_key_checks = 0", { transaction });
+            try {
+              await addKey();
+            } finally {
+              await q("SET foreign_key_checks = 1", { transaction });
+            }
+          } else {
+            await addKey();
+          }
         }
       }
 
@@ -195,7 +243,7 @@ module.exports = {
         const loose = await affected(
           q,
           `UPDATE \`${table}\` t
-             JOIN (SELECT t2.\`${pk}\` AS pk, MIN(s.schoolid) AS schoolid
+             JOIN (SELECT t2.\`${pk}\` AS pk, MIN(s.schoolid) AS schoolid, MIN(s.schoolname) AS schoolname
                      FROM \`${table}\` t2
                      JOIN \`${SCHOOLS}\` s
                        ON t2.schoolname = s.schoolname COLLATE ${nameCollation}
@@ -203,7 +251,7 @@ module.exports = {
                     GROUP BY t2.\`${pk}\`
                    HAVING COUNT(*) = 1) m
                ON m.pk = t.\`${pk}\`
-              SET t.schoolid = m.schoolid
+              SET t.schoolid = m.schoolid, t.schoolname = m.schoolname
             WHERE t.schoolid IS NULL`,
           transaction,
         );
@@ -231,7 +279,7 @@ module.exports = {
         );
         // Counts only, never names.
         console.log(
-          `C4 ${table}: rows=${total} filled_exact=${exact} filled_loose_only=${loose} ` +
+          `C4 ${table}: rows=${total} filled_exact=${exact} filled_loose_only=${loose} names_rewritten=${loose} ` +
             `left_null_no_name=${unnamed} left_null_ambiguous=${ambiguous} left_null_no_match=${unmatched}`,
         );
       }

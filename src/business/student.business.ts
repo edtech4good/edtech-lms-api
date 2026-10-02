@@ -666,7 +666,7 @@ WHERE
     lmsuser: LmsUserToken,
     transaction: Transaction
   ) => {
-    for await (const x of studentdata) {
+    for (const [rowindex, x] of studentdata.entries()) {
       const student = await students.findOne({
         where: { studentid: x.studentid },
         include: [
@@ -683,7 +683,8 @@ WHERE
       // moved to another school gets that school's id together with its OWN
       // stored name (not the text in the file); a name that matches no school
       // fails the whole update.
-      const school = await requireSchoolByName(x.schoolname, transaction);
+      // The error names the row (`students.<i>.schoolname`), so a batch that fails says which learner.
+      const school = await requireSchoolByName(x.schoolname, transaction, `students.${rowindex}.schoolname`);
       const standard = await standards.findOne({
         where: { standardname: x.standard },
         attributes: ['standardid','standardname'],

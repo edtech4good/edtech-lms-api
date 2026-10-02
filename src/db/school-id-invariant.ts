@@ -99,3 +99,20 @@ export const invariantHolds = (result: SchoolIdInvariantRow[]): boolean =>
 /** True when something is reported that must be resolved before the id becomes required. */
 export const hasReportedItems = (result: SchoolIdInvariantRow[]): boolean =>
   result.some((r) => r.nullNoName > 0 || r.nameLooseOnly > 0);
+
+/**
+ * Schools whose stored name has whitespace at either end. REPORTED, not a
+ * failure: the school still works by id, but a by-name writer decides what a
+ * name means after trimming, so such a school is matched only through the
+ * lookup's `TRIM`, and its stored copies on learners keep the stray space. It
+ * should be trimmed (rename it; the rename carries the new name to its
+ * learners, logins, classes and fees rows). The API now trims names on create
+ * and update, so only older rows can have it.
+ */
+export async function countSchoolsWithSurroundingWhitespace(db: Queryable): Promise<number> {
+  const rows = (await db.query(
+    "SELECT COUNT(*) AS n FROM schools WHERE schoolname REGEXP '^[[:space:]]|[[:space:]]$'",
+    { type: QueryTypes.SELECT },
+  )) as Array<{ n: number | string }>;
+  return Number(rows[0]?.n ?? 0);
+}

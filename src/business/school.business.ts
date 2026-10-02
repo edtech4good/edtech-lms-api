@@ -121,6 +121,9 @@ export class SchoolBusiness {
         transaction,
       });
       school.schoolid = uuidv4();
+      // Surrounding whitespace is never part of a school's name: a name stored
+      // with it cannot be matched by the writers that look schools up by name.
+      school.schoolname = school.schoolname.trim();
       school.isdeleted = false;
       school.created_by = user.lmsuserid;
       const created = await schools.create(school, { transaction });
@@ -203,6 +206,10 @@ export class SchoolBusiness {
     scopeOf(org);
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
+      // Read INSIDE the transaction under an update lock, and take the previous
+      // name from this read. Read outside, an edit that had read the old name
+      // could save it back (every listed field is written) after a rename had
+      // committed and cascaded, undoing the cascade for that school.
       const tempdt = await schools.findOne({
         where: { schoolid: school.schoolid, isdeleted: false },
         transaction,
@@ -224,7 +231,7 @@ export class SchoolBusiness {
         transaction,
       });
       const previousname = tempdt.schoolname;
-      tempdt.schoolname = school.schoolname;
+      tempdt.schoolname = school.schoolname.trim();
       tempdt.countryid = school.countryid;
       tempdt.curriculums = school.curriculums;
       tempdt.updated_at = new Date();

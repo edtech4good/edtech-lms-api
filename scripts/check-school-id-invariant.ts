@@ -9,7 +9,12 @@
  * `name_loose_only` are reported with exit 0. Read-only. Prints counts, never names.
  */
 import { dbinstance } from "src/services/dbservice";
-import { checkSchoolIdInvariant, hasReportedItems, invariantHolds } from "src/db/school-id-invariant";
+import {
+  checkSchoolIdInvariant,
+  countSchoolsWithSurroundingWhitespace,
+  hasReportedItems,
+  invariantHolds,
+} from "src/db/school-id-invariant";
 
 async function main() {
   const db = dbinstance.getdbinstance();
@@ -21,6 +26,13 @@ async function main() {
         `null_no_name=${r.nullNoName} name_loose_only=${r.nameLooseOnly}`,
     );
   }
+  const padded = await countSchoolsWithSurroundingWhitespace(db);
+  console.log(
+    `schools: with_surrounding_whitespace=${padded}` +
+      (padded > 0
+        ? " (reported, exit 0: a school whose stored name has whitespace at either end; rename it to trim it)"
+        : ""),
+  );
   const ok = invariantHolds(result);
   if (hasReportedItems(result)) {
     console.log(

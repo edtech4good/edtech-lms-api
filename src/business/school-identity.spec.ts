@@ -27,9 +27,13 @@ const KHMER = { schoolid: "id-khmer", schoolname: "សាលាគំរូ" }; 
 const CLOSED = { schoolid: "id-closed", schoolname: "Sample Closed School" }; // soft-deleted in the table
 const SCHOOLS = [SAMPLE, KHMER, CLOSED];
 
+// The lookup is `WHERE TRIM(schoolname) = ?` (a Sequelize `where(fn, value)`): `logic` is the given value.
+const givenInWhere = (where: unknown): string => (where as { logic: string }).logic;
+const sqlTrim = (s: string) => s.replace(/^ +| +$/g, "");
+
 const fakeMysql = (rows = SCHOOLS) => {
-  const findAll = jest.spyOn(schools, "findAll").mockImplementation((async (opts: { where: { schoolname: string } }) =>
-    rows.filter((r) => collate(r.schoolname) === collate(opts.where.schoolname))) as never);
+  const findAll = jest.spyOn(schools, "findAll").mockImplementation((async (opts: { where: unknown }) =>
+    rows.filter((r) => collate(sqlTrim(r.schoolname)) === collate(givenInWhere(opts.where)))) as never);
   const findOne = jest.spyOn(schools, "findOne").mockImplementation((async (opts: { where: { schoolid: string } }) =>
     rows.find((r) => r.schoolid === opts.where.schoolid) ?? null) as never);
   return { findAll, findOne };
@@ -81,7 +85,7 @@ describe("resolveSchoolByName", () => {
   it("does NOT resolve a Khmer name that differs from the school's only by a mark the collation ignores", async () => {
     fakeMysql();
     const withoutNikahit = "សាលាគរូ";
-    expect(await schools.findAll({ where: { schoolname: withoutNikahit } } as never)).toHaveLength(1); // MySQL would offer it
+    expect(await schools.findAll({ where: { logic: withoutNikahit } } as never)).toHaveLength(1); // MySQL would offer it
     await expect(resolveSchoolByName(withoutNikahit)).resolves.toBeNull();
   });
 
@@ -127,10 +131,18 @@ describe("resolveSchoolByName", () => {
     expect(JSON.stringify(findAll.mock.calls[0][0])).not.toMatch(/isdeleted/);
   });
 
-  it("narrows the database lookup with the trimmed, NFC form of the name", async () => {
+  it("narrows the database lookup with TRIM(schoolname) = the trimmed, NFC form of the name", async () => {
     const { findAll } = fakeMysql();
-    await resolveSchoolByName("  Café School ");
-    expect(findAll.mock.calls[0][0]).toEqual(expect.objectContaining({ where: { schoolname: "Café School" } }));
+    await resolveSchoolByName("  Cafe\u0301 School ");
+    const where = findAll.mock.calls[0][0]!.where as unknown as { attribute: { fn: string }; logic: string };
+    expect(where.attribute.fn).toBe("TRIM");
+    expect(where.logic).toBe("Caf\u00e9 School");
+  });
+
+  it("finds a school whose STORED name has surrounding spaces (it would otherwise never be found by name)", async () => {
+    fakeMysql([{ schoolid: "id-padded", schoolname: "  Padded School  " }]);
+    await expect(resolveSchoolByName("Padded School")).resolves.toEqual({ schoolid: "id-padded", schoolname: "  Padded School  " });
+    await expect(resolveSchoolByName(" padded school ")).resolves.toEqual({ schoolid: "id-padded", schoolname: "  Padded School  " });
   });
 
   it("looks up inside the writer's transaction, under a shared lock on the school row", async () => {

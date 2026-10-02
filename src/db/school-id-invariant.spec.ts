@@ -1,4 +1,10 @@
-import { checkSchoolIdInvariant, hasReportedItems, invariantHolds, SchoolIdInvariantRow } from "./school-id-invariant";
+import {
+  checkSchoolIdInvariant,
+  countSchoolsWithSurroundingWhitespace,
+  hasReportedItems,
+  invariantHolds,
+  SchoolIdInvariantRow,
+} from "./school-id-invariant";
 
 /**
  * The invariant check is a script for a real database (`npm run
@@ -76,5 +82,23 @@ describe("the verdict", () => {
   it("does NOT fail for a name that is equal to its school's only under the collation: reported, not failed", () => {
     expect(invariantHolds([ok, { ...other, nameLooseOnly: 3 }])).toBe(true);
     expect(hasReportedItems([ok, { ...other, nameLooseOnly: 3 }])).toBe(true);
+  });
+});
+
+describe("schools whose stored name has surrounding whitespace", () => {
+  it("counts them with a regex on leading or trailing whitespace (not the collation, which ignores trailing spaces)", async () => {
+    const query = jest.fn().mockResolvedValue([{ n: "3" }]);
+    expect(await countSchoolsWithSurroundingWhitespace({ query })).toBe(3);
+    const sql = String(query.mock.calls[0][0]);
+    expect(sql).toMatch(/FROM schools/);
+    expect(sql).toMatch(/REGEXP '\^\[\[:space:\]\]\|\[\[:space:\]\]\$'/);
+  });
+
+  it("is 0 when nothing comes back", async () => {
+    expect(await countSchoolsWithSurroundingWhitespace({ query: jest.fn().mockResolvedValue([]) })).toBe(0);
+  });
+
+  it("is not part of the verdict: it is reported, never a failure", () => {
+    expect(invariantHolds([{ table: "students", rows: 1, nullWithName: 0, nullNoName: 0, nameDifferent: 0, nameLooseOnly: 0 }])).toBe(true);
   });
 });

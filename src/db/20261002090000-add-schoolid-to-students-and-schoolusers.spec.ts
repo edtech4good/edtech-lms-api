@@ -20,6 +20,8 @@ type State = {
   schoolidCollation: string;
   schoolnameCollation: string;
   affected: number[]; // successive UPDATE results
+  filled: number; // rows already holding a schoolid when the foreign key is added
+  fkFails: boolean;
 };
 
 const TX = { id: "the-transaction" };
@@ -33,6 +35,8 @@ const makeState = (over: Partial<State> = {}): State => ({
   schoolidCollation: "utf8mb4_unicode_ci",
   schoolnameCollation: "utf8mb4_unicode_ci",
   affected: [],
+  filled: 0,
+  fkFails: false,
   ...over,
 });
 
@@ -57,8 +61,14 @@ const makeQueryInterface = (state: State) => {
       const table = opts?.replacements?.[0] as string;
       return Promise.resolve(state.hasFk[table] ? [{ name: `fk_${table}_schoolid` }] : []);
     }
+    if (/WHERE schoolid IS NOT NULL/.test(sql)) {
+      return Promise.resolve([{ n: state.filled }]);
+    }
     if (/COUNT\(\*\) AS n/.test(sql)) {
       return Promise.resolve([{ n: 0 }]);
+    }
+    if (state.fkFails && /ADD CONSTRAINT/.test(sql)) {
+      return Promise.reject(new Error("fk failed"));
     }
     return Promise.resolve([[], undefined]); // ALTER TABLE etc.
   });
@@ -133,6 +143,37 @@ describe("20261002090000 up()", () => {
     }
   });
 
+  it("adds the key IN PLACE (foreign_key_checks off for that statement only) when the new column holds no value yet", async () => {
+    const { qi, query } = makeQueryInterface(makeState({ filled: 0 }));
+    await migration.up(qi);
+    const all = statements(query);
+    for (const table of ["students", "schoolusers"]) {
+      const add = all.findIndex((x) => x.includes("ADD CONSTRAINT") && x.includes(`\`${table}\``));
+      expect(all[add - 1]).toBe("SET foreign_key_checks = 0");
+      expect(all[add + 1]).toBe("SET foreign_key_checks = 1");
+    }
+    // and every one of those ran on the migration's own connection
+    for (const c of query.mock.calls.filter((c) => /foreign_key_checks|ADD CONSTRAINT/.test(String(c[0])))) {
+      expect(c[1]).toEqual({ transaction: TX });
+    }
+  });
+
+  it("restores foreign_key_checks even when adding the key fails", async () => {
+    const { qi, query } = makeQueryInterface(makeState({ filled: 0, fkFails: true }));
+    await expect(migration.up(qi)).rejects.toThrow("fk failed");
+    const all = statements(query);
+    const add = all.findIndex((x) => x.includes("ADD CONSTRAINT"));
+    expect(all[add - 1]).toBe("SET foreign_key_checks = 0");
+    expect(all[add + 1]).toBe("SET foreign_key_checks = 1");
+  });
+
+  it("adds the key the normal, validating way (checks left ON) when the column already holds values", async () => {
+    const { qi, query } = makeQueryInterface(makeState({ filled: 7 }));
+    await migration.up(qi);
+    expect(statements(query).filter((x) => /foreign_key_checks/.test(x))).toHaveLength(0);
+    expect(alters(query).filter((x) => /ADD CONSTRAINT/.test(x))).toHaveLength(2);
+  });
+
   it("builds the structure of both tables before it backfills anything", async () => {
     const { qi, query } = makeQueryInterface(makeState());
     await migration.up(qi);
@@ -171,10 +212,14 @@ describe("20261002090000 up()", () => {
     // Keyed on the table's own primary key
     expect(loose).toMatch(/t2\.`studentid`/);
     expect(updates[3]).toMatch(/t2\.`schooluserid`/);
-    // Names are never rewritten.
-    for (const sql of updates) {
-      expect(sql).not.toMatch(/SET t\.schoolname/);
-    }
+    // The LOOSE pass sets the row's name to the school's own stored name (so the
+    // edit export/upload loop works and name_loose_only is 0 afterwards); the
+    // EXACT pass leaves names alone (they already are the school's).
+    expect(loose).toMatch(/MIN\(s\.schoolname\) AS schoolname/);
+    expect(loose).toMatch(/SET t\.schoolid = m\.schoolid, t\.schoolname = m\.schoolname/);
+    expect(updates[3]).toMatch(/SET t\.schoolid = m\.schoolid, t\.schoolname = m\.schoolname/);
+    expect(updates[0]).not.toMatch(/SET t\.schoolname|t\.schoolname = /);
+    expect(updates[0]).toMatch(/SET t\.schoolid = s\.schoolid\s/);
   });
 
   it("includes soft-deleted schools in the match (the id is identity, not liveness)", async () => {
@@ -192,10 +237,10 @@ describe("20261002090000 up()", () => {
     const lines = logSpy.mock.calls.map((c) => String(c[0]));
     expect(lines).toHaveLength(2);
     expect(lines[0]).toBe(
-      "C4 students: rows=0 filled_exact=20 filled_loose_only=0 left_null_no_name=0 left_null_ambiguous=0 left_null_no_match=0",
+      "C4 students: rows=0 filled_exact=20 filled_loose_only=0 names_rewritten=0 left_null_no_name=0 left_null_ambiguous=0 left_null_no_match=0",
     );
     expect(lines[1]).toBe(
-      "C4 schoolusers: rows=0 filled_exact=18 filled_loose_only=2 left_null_no_name=0 left_null_ambiguous=0 left_null_no_match=0",
+      "C4 schoolusers: rows=0 filled_exact=18 filled_loose_only=2 names_rewritten=2 left_null_no_name=0 left_null_ambiguous=0 left_null_no_match=0",
     );
   });
 
