@@ -186,6 +186,13 @@ describe("attaching refuses a cross-owner link", () => {
       expect((await call("put", `/level/quiz/question/setlesson/${row}`, { lessonid: fx[Y].lesson })).status).toBe(400);
       expect((await call("put", `/level/quiz/question/setlesson/${row}`, { lessonid: fx[X].lesson })).status).toBe(200);
     });
+
+    it("...and by the question end alone: a row on an unowned level whose question is X's takes no lesson of Y", async () => {
+      const row = uid();
+      db.add("levelquizquestions", { levelquizquestionid: row, levelid: fx.null.level, questionid: fx[X].question });
+      expect((await call("put", `/level/quiz/question/setlesson/${row}`, { lessonid: fx[Y].lesson })).status).toBe(400);
+      expect((await call("put", `/level/quiz/question/setlesson/${row}`, { lessonid: fx[X].lesson })).status).toBe(200);
+    });
   });
 
   describe("a document to a learning and to a plan", () => {
@@ -279,6 +286,11 @@ describe("attaching refuses a cross-owner link", () => {
       const second = makeFixture(X);
       db.tables.baselinequestion.find((r) => r.curriculumbaselineid === fx[X].baseline)!.questionid = fx[Y].question;
       expect((await clone(fx[X], second)).status).toBe(400);
+      expect(db.createdIn("baselinequestion")).toEqual([]);
+    });
+    it("the two baselines' own owners are compared even when no copied question carries an owner", async () => {
+      db.tables.questions.find((q) => q.questionid === fx[X].question)!.organisationid = null;
+      expect((await clone(fx[X], makeFixture(Y))).status).toBe(400);
       expect(db.createdIn("baselinequestion")).toEqual([]);
     });
     it("unowned baselines clone onto an owned one (until the owners are assigned)", async () => {
