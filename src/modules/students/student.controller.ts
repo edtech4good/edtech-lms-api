@@ -55,6 +55,7 @@ import { IPaging } from "src/models/IPaging";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { LmsUserToken } from "src/models/token.model";
 import { dbinstance } from "src/services/dbservice";
+import { attachmentDisposition } from "src/services/content-disposition";
 import { v4 as uuidv4 } from "uuid";
 import { SchoolExistsById } from "../school/school.business.validator";
 import { SchoolRole } from "./../../models/enums/school.role.enum";
@@ -115,7 +116,7 @@ export class StudentController {
     const csvString = await json2csv(students);
     res.set({
       "Content-Type": "application/csv",
-      "Content-Disposition": `attachment; filename="students-${schoolname}.csv"`,
+      "Content-Disposition": attachmentDisposition(`students-${schoolname}.csv`),
     });
     return new StreamableFile(Buffer.from(csvString));
   }
