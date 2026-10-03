@@ -38,7 +38,7 @@ import { attachmentDisposition } from "src/services/content-disposition";
 @Controller("export")
 @ApiBearerAuth()
 export class ExportController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get(":schoolname/students")
   @ApiResponse({
     status: 200,
@@ -107,7 +107,7 @@ export class ExportController {
     return new StreamableFile(zip.toBuffer());
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get(":schoolname/teachers")
   @ApiResponse({
     status: 200,

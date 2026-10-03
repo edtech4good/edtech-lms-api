@@ -43,7 +43,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @Controller("import")
 @ApiBearerAuth()
 export class ImportController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Put(":schoolname/teachers")
   @ApiResponse({
     status: 200,

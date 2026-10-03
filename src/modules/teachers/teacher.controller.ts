@@ -68,7 +68,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
   description: "Server error",
 })
 export class TeacherController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -100,7 +100,7 @@ export class TeacherController {
     };
   }
 
-  @OrgPolicy("owned", { note: "The optional cloud push must send only the teachers created by this call." })
+  @OrgPolicy("owned", { note: "The optional cloud push must send only the teachers created by this call.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -204,7 +204,7 @@ export class TeacherController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Delete(":schooluserid")
   @ApiResponse({
     status: 200,

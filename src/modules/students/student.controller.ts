@@ -90,7 +90,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 )
 export class StudentController {
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("download-students")
   @ApiResponse({
     status: 200,
@@ -133,7 +133,7 @@ export class StudentController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -175,7 +175,7 @@ export class StudentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -207,7 +207,7 @@ export class StudentController {
     };
   }
 
-  @OrgPolicy("owned", { note: "The optional cloud push must send only the learners created by this call." })
+  @OrgPolicy("owned", { note: "The optional cloud push must send only the learners created by this call.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -370,7 +370,7 @@ export class StudentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Delete(":schooluserid")
   @ApiResponse({
     status: 200,
@@ -428,7 +428,7 @@ export class StudentController {
     }
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get(":studentid")
   @ApiResponse({
     status: 200,
@@ -456,7 +456,7 @@ export class StudentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("stats/:studentid")
   @ApiResponse({
     status: 200,
@@ -478,7 +478,7 @@ export class StudentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("stats/:studentid/practice")
   @ApiResponse({
     status: 200,
@@ -503,7 +503,7 @@ export class StudentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("stats/:studentid/quiz")
   @ApiResponse({
     status: 200,
@@ -528,7 +528,7 @@ export class StudentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("stats/:studentid/level")
   @ApiResponse({
     status: 200,
@@ -577,7 +577,7 @@ export class StudentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Put("update")
   @ApiResponse({
     status: 200,

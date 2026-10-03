@@ -60,7 +60,7 @@ export class CountryController {
       };
     }
 
-    @OrgPolicy("owned", { note: "Must find only a country linked to the caller's organisation." })
+    @OrgPolicy("owned", { note: "Must find only a country linked to the caller's organisation.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
     @Get(":countryid")
     @ApiResponse({
         status: 200,
@@ -90,7 +90,7 @@ export class CountryController {
         };
     }
 
-    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation." })
+    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
     @Get("")
     @ApiResponse({
         status: 200,
@@ -113,7 +113,7 @@ export class CountryController {
         };
     }
 
-    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation." })
+    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
     @Post("")
     @ApiResponse({
         status: 200,

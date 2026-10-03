@@ -11,8 +11,11 @@ import { Op } from "sequelize";
  */
 type Row = Record<string, unknown>;
 
+// MySQL keeps a boolean in a tinyint: `true` and `1` are the same stored value
+const flag = (v: unknown) => (typeof v === "boolean" ? Number(v) : v);
+
 const equal = (a: unknown, b: unknown, ignoreCase = false) =>
-  ignoreCase && typeof a === "string" && typeof b === "string" ? a.toLowerCase() === b.toLowerCase() : (a ?? null) === (b ?? null);
+  ignoreCase && typeof a === "string" && typeof b === "string" ? a.toLowerCase() === b.toLowerCase() : (flag(a) ?? null) === (flag(b) ?? null);
 
 const matchesValue = (actual: unknown, expected: unknown, ignoreCase = false): boolean => {
   if (expected !== null && typeof expected === "object" && !Array.isArray(expected)) {

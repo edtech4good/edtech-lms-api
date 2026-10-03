@@ -124,7 +124,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -157,7 +157,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("")
   @ApiResponse({
     status: 200,
@@ -178,7 +178,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("country/:countryid")
   @ApiResponse({
     status: 200,
@@ -203,7 +203,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("country/:countryid/curriculum/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -235,7 +235,7 @@ export class SchoolController {
     return response;
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get('curriculumid')
   @ApiResponse({
     status: 200,
@@ -267,7 +267,7 @@ export class SchoolController {
     return data;
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -307,7 +307,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Delete(":schoolid")
   @ApiResponse({
     status: 200,
@@ -338,7 +338,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get(":schoolid")
   @ApiResponse({
     status: 200,
@@ -367,7 +367,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Put("update/:schoolid")
   @ApiResponse({
     status: 200,
@@ -407,7 +407,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -439,7 +439,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get(":schoolid/curriculums")
   @ApiResponse({
     status: 200,

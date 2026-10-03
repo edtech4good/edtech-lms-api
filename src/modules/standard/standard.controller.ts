@@ -67,7 +67,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiBearerAuth()
 export class StandardController {
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -102,7 +102,7 @@ export class StandardController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -144,7 +144,7 @@ export class StandardController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Delete(":standardid")
   @ApiResponse({
     status: 200,
@@ -179,7 +179,7 @@ export class StandardController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get(":standardid")
   @ApiResponse({
     status: 200,
@@ -211,7 +211,7 @@ export class StandardController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Put(":standardid")
   @ApiResponse({
     status: 200,
@@ -252,7 +252,7 @@ export class StandardController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -335,7 +335,7 @@ export class StandardController {
     }
   }
   
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("school/:schoolid")
   @ApiResponse({
     status: 200,

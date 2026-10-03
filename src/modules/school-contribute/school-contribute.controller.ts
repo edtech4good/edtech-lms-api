@@ -30,7 +30,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiBearerAuth()
 export class SchoolContributeController {
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Post("create")
 @ApiResponse({
     status: 200,
@@ -71,7 +71,7 @@ async createSchoolContribute(
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Post("getallschoolcontribute/:schoolid")
 @ApiResponse({
     status: 200,
@@ -115,7 +115,7 @@ async getall(
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Put("updateschoolname/:schoolid")
 @ApiResponse({
     status: 200,
@@ -151,7 +151,7 @@ async update(
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Put("updateschooldashboard/:schoolcontributeid")
 @ApiResponse({
     status: 200,
@@ -187,7 +187,7 @@ async updateschoolcontribute(
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Delete("deleteschoolcontribute/:schoolid")
 @ApiResponse({
   status: 200,
@@ -218,7 +218,7 @@ async delete(
   };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Delete("deleteschoolcontributeid/:schoolcontributeid")
 @ApiResponse({
   status: 200,
@@ -249,7 +249,7 @@ async deleteschoolcontribute(
   };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get('getschooldashboard/schoolcontributeid/:schoolcontributeid')
 @ApiResponse({
     status: 200,
@@ -280,7 +280,7 @@ async getSchoolsContributeId(@Param('schoolcontributeid') schoolcontributeid: st
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get('getschooldashboardid/:schoolid')
 @ApiResponse({
     status: 200,
@@ -311,7 +311,7 @@ async getSchoolsReport(@Param('schoolid') schoolid: string, @Org() org: OrgConte
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get('getallschooldashboard')
 @ApiResponse({
     status: 200,
@@ -338,7 +338,7 @@ async getAllSchoolsReport(@Org() org: OrgContext): Promise<any> {
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get('getschoolcontribute/:schoolid')
 @ApiResponse({
   status: 200,
@@ -365,7 +365,7 @@ async getSchoolsName(@Param('schoolid') schoolid: string, @Org() org: OrgContext
   };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get("getallschoolcontribute")
 @ApiResponse({
     status: 200,
@@ -384,7 +384,7 @@ async getSchoolContribute(@Org() org: OrgContext): Promise<any> {
     return new SchoolcontributeBusiness().getAllSchoolContribute('','','', org);
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get("all")
 @ApiResponse({
     status: 200,
@@ -419,7 +419,7 @@ async getSchool(
       };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Post("report/download")
 @ApiResponse({
   status: 200,

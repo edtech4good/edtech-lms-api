@@ -17,6 +17,7 @@ import { lessons } from "src/models/data-models/lessons";
 import { levelquizquestions } from "src/models/data-models/levelquizquestions";
 import { levels } from "src/models/data-models/levels";
 import { organisationcountry } from "src/models/data-models/organisationcountry";
+import { organisations } from "src/models/data-models/organisations";
 import { schoolcontributedata } from "src/models/data-models/schoolcontributedata";
 import { questions } from "src/models/data-models/questions";
 import { questiontags } from "src/models/data-models/questiontags";
@@ -75,6 +76,7 @@ const MODELS = {
   standards: [standards, "standardid"],
   schoolcontributedata: [schoolcontributedata, "schoolcontributeid"],
   organisationcountry: [organisationcountry, "organisationcountryid"],
+  organisations: [organisations, "organisationid"],
 } as const;
 
 /**
