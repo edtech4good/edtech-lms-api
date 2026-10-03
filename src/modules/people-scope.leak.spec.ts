@@ -230,8 +230,8 @@ describe("people and schools are confined to the caller's organisation", () => {
   };
 
   /**
-   * The row in the path is the one checked: a request for Y's row that also names X's own row in the field a business
-   * rule reads is the 404 a row that is not there gets for the same request, with every table unchanged.
+   * The row in the path is the one checked: a request for Y's row that also names X's own row elsewhere in the
+   * request is the 404 a row that is not there gets for the same request, with every table unchanged.
    */
   const pathRowChecked = async (who: Who, method: "get" | "post" | "put" | "delete", foreign: string, missing: string, body: object) => {
     const res = await refuses(who, method, foreign, body);
