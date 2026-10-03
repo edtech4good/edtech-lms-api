@@ -6,12 +6,16 @@ import { RequestValidator } from '../../models/RequestValidator';
 export const createquestion: RequestValidator = ({
   body: joi.object().keys({
     questionidentifier: joi.string().required().max(100).min(3).custom(emptyString("Question identifier")).label("Question identifier"),
+    // The owner is never a client field: it comes from the caller's organisation on create and never changes.
+    organisationid: joi.any().forbidden().label("Organisation"),
   }).unknown(true),
 });
 
 export const updatequestion: RequestValidator = ({
   body: joi.object().keys({
     questionidentifier: joi.string().required().max(100).min(3).custom(emptyString("Question identifier")).label("Question identifier"),
+    // The owner is never a client field: it comes from the caller's organisation on create and never changes.
+    organisationid: joi.any().forbidden().label("Organisation"),
   }).unknown(true),
   params: joi.object().keys({
     questionid: joi.string().required().uuid().label('Question ID'),

@@ -19,6 +19,8 @@ import { RequirePermissions } from 'src/decorators/requirePermissions.decorator'
 import { Permission } from 'src/models/enums/permissions.enum';
 import { CheckPermissionsGuard } from 'src/guards/checkPermission.guard';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { assertSameOwner, ownerOfCurriculumBaseline, ownerOfQuestion } from "src/business/content-owner";
+import { baselinequestion } from "src/models/data-models/baselinequestion";
 
 @ApiExtraModels(ResponseBoolean)
 @ApiExtraModels(BaselineQuestionBase)
@@ -57,6 +59,8 @@ export class BaselinequestionController {
       @Body() body: baselinequestionRequest,
       @User() user: LmsUserToken
   ): Promise<BaselineQuestionCreateResponse> {
+      // The baseline is its curriculum's; the question must have the same owner.
+      assertSameOwner(await ownerOfCurriculumBaseline(body.curriculumbaselineid), await ownerOfQuestion(body.questionid));
       const temp: baselinequestionAttributes = {
           curriculumbaselineid: body.curriculumbaselineid,
           questionid: body.questionid,
@@ -99,6 +103,17 @@ export class BaselinequestionController {
       @Body() body: baselinequestioncloneRequest,
       @User() user: LmsUserToken
   ): Promise<any> {
+      // The clone is the target baseline's: it takes the target curriculum's owner, so the source baseline's
+      // curriculum must have the same owner, and so must every question that is copied across.
+      const sourceOwner = await ownerOfCurriculumBaseline(body.curriculumbaselineid);
+      const targetOwner = await ownerOfCurriculumBaseline(body.clonecurriculumbaselineid);
+      assertSameOwner(sourceOwner, targetOwner);
+      for (const row of await baselinequestion.findAll({
+        where: { curriculumbaselineid: body.curriculumbaselineid, isdeleted: false },
+        attributes: ["questionid"],
+      })) {
+        if (row.questionid) assertSameOwner(targetOwner, await ownerOfQuestion(row.questionid));
+      }
       const data = await new BaselineQuestionBusiness().clone(
         body.curriculumbaselineid,
         body.clonecurriculumbaselineid,

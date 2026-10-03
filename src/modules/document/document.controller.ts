@@ -47,6 +47,8 @@ import { RequirePermissions } from "src/decorators/requirePermissions.decorator"
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { Permission } from "src/models/enums/permissions.enum";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { assertTagsFitOwner, ownerForNewContent, ownerOfDocument } from "src/business/content-owner";
 
 @ApiExtraModels(DocumentBase)
 @ApiTags("Document")
@@ -90,8 +92,11 @@ export class DocumentController {
   @ApiConsumes("multipart/form-data")
   async uploadFile(
     @UploadedFiles() files: Array<Express.Multer.File>,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
+    // The owner is the organisation the caller acts in; refused before anything is uploaded.
+    const organisationid = ownerForNewContent(org);
     if (!files || files.length <= 0) {
       throw new ApiError(ErrorCode.FILE_REJECTED, "That file type isn't supported.");
     }
@@ -123,6 +128,7 @@ export class DocumentController {
       isdeleted: false,
       documenttypeid: filename.filetype,
       lastupdated: new Date(),
+      organisationid,
     };
 
     if (await db.isexistsdocumentName(temp)) {
@@ -278,6 +284,7 @@ export class DocumentController {
     @Param("tag") tag: string,
     @User() user: LmsUserToken
   ): Promise<ResponseBoolean> {
+    await assertTagsFitOwner("document", [tag], await ownerOfDocument(documentid));
     await new DocumentBusiness().adddocumentTag(documentid, tag, user);
     return {
       error: false,

@@ -20,6 +20,8 @@ import { RequirePermissions } from 'src/decorators/requirePermissions.decorator'
 import { CheckPermissionsGuard } from 'src/guards/checkPermission.guard';
 import { Permission } from 'src/models/enums/permissions.enum';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { ownerForNewContent } from "src/business/content-owner";
 
 
 @ApiExtraModels(QuestionTagBase)
@@ -51,9 +53,11 @@ export class QuestionTagController {
   @HttpCode(HttpStatus.OK)
   async create(
     @Body() body: QuestionTagRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<QuestionTagCreateResponse> {
     const temp: questiontagsAttributes = {
+      organisationid: ownerForNewContent(org),
       questiontagname: body.questiontagname,
       questiontagid: "",
       isdeleted: false

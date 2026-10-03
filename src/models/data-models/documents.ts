@@ -12,6 +12,7 @@ export interface documentsAttributes {
   lastupdated: Date;
   created_at?: Date;
   created_by?: string;
+  organisationid?: string | null;
   updated_at?: Date;
   updated_by?: string;
   deleted_at?: Date;
@@ -20,7 +21,7 @@ export interface documentsAttributes {
 
 export type documentsPk = "documentid";
 export type documentsId = documents[documentsPk];
-export type documentsOptionalAttributes = "documentid" | "documents3meta" | "isdeleted" | "documenttags" | "lastupdated";
+export type documentsOptionalAttributes = "documentid" | "documents3meta" | "isdeleted" | "documenttags" | "lastupdated" | "organisationid";
 export type documentsCreationAttributes = Optional<documentsAttributes, documentsOptionalAttributes>;
 
 export class documents extends Model<documentsAttributes, documentsCreationAttributes> implements documentsAttributes {
@@ -33,6 +34,7 @@ export class documents extends Model<documentsAttributes, documentsCreationAttri
   lastupdated!: Date;
   created_at!: Date;
   created_by!: string;
+  organisationid?: string | null;
   updated_at!: Date;
   updated_by!: string;
   deleted_at!: Date;
@@ -76,6 +78,14 @@ export class documents extends Model<documentsAttributes, documentsCreationAttri
         type: 'TIMESTAMP',
         defaultValue: Sequelize.Sequelize.literal('CURRENT_TIMESTAMP'),
         allowNull: true
+      },
+      organisationid: {
+        type: DataTypes.STRING(36),
+        allowNull: true,
+        references: {
+          model: 'organisations',
+          key: 'organisationid'
+        }
       },
       created_by: {
         type: DataTypes.STRING(36),

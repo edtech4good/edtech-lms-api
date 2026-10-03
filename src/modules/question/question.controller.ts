@@ -57,6 +57,8 @@ import {
   updatequestionIdentifier,
 } from "./question.request.validator";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { assertTagsFitOwner, ownerForNewContent, ownerOfQuestion } from "src/business/content-owner";
 
 @ApiExtraModels(ResponseBoolean)
 @ApiExtraModels(QuestionBase)
@@ -91,10 +93,15 @@ export class QuestionController {
   @HttpCode(HttpStatus.OK)
   async create(
     @Body() @Body() body: Question,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
+    // The owner is the organisation the caller acts in; tags must not be another organisation's.
+    const organisationid = ownerForNewContent(org);
+    await assertTagsFitOwner("question", (body.questiontags as unknown as string[] | undefined) ?? [], organisationid);
     await new QuestionBusiness().createquestion(<questionsAttributes>{
       ...body,
+      organisationid,
     }, user);
 
     return {
@@ -370,6 +377,7 @@ export class QuestionController {
     @Param("tag") tag: string,
     @User() user: LmsUserToken
   ): Promise<ResponseBoolean> {
+    await assertTagsFitOwner("question", [tag], await ownerOfQuestion(questionid));
     await new QuestionBusiness().addquestionTag(questionid, tag, user);
     return {
       error: false,

@@ -8,6 +8,7 @@ export interface questiontagsAttributes {
   isdeleted: Boolean;
   created_at?: Date;
   created_by?: string;
+  organisationid?: string | null;
   updated_at?: Date;
   updated_by?: string;
   deleted_at?: Date;
@@ -16,7 +17,7 @@ export interface questiontagsAttributes {
 
 export type questiontagsPk = "questiontagid";
 export type questiontagsId = questiontags[questiontagsPk];
-export type questiontagsOptionalAttributes = "questiontagid" | "isdeleted";
+export type questiontagsOptionalAttributes = "questiontagid" | "isdeleted" | "organisationid";
 export type questiontagsCreationAttributes = Optional<questiontagsAttributes, questiontagsOptionalAttributes>;
 
 export class questiontags extends Model<questiontagsAttributes, questiontagsCreationAttributes> implements questiontagsAttributes {
@@ -25,6 +26,7 @@ export class questiontags extends Model<questiontagsAttributes, questiontagsCrea
   isdeleted!: Boolean;
   created_at!: Date;
   created_by!: string;
+  organisationid?: string | null;
   updated_at!: Date;
   updated_by!: string;
   deleted_at!: Date;
@@ -54,6 +56,14 @@ export class questiontags extends Model<questiontagsAttributes, questiontagsCrea
         type: 'TIMESTAMP',
         defaultValue: Sequelize.Sequelize.literal('CURRENT_TIMESTAMP'),
         allowNull: true
+      },
+      organisationid: {
+        type: DataTypes.STRING(36),
+        allowNull: true,
+        references: {
+          model: 'organisations',
+          key: 'organisationid'
+        }
       },
       created_by: {
         type: DataTypes.STRING(36),

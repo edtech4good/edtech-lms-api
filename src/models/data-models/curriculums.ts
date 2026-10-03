@@ -14,6 +14,7 @@ export interface curriculumsAttributes {
   countryid?: Array<string>;
   created_at?: Date;
   created_by?: string;
+  organisationid?: string | null;
   updated_at?: Date;
   updated_by?: string;
   deleted_at?: Date;
@@ -39,6 +40,7 @@ export class curriculums
   isdeleted!: boolean;
   created_at!: Date;
   created_by!: string;
+  organisationid?: string | null;
   updated_at!: Date;
   updated_by!: string;
   deleted_at!: Date;
@@ -106,6 +108,14 @@ export class curriculums
           type: 'TIMESTAMP',
           defaultValue: Sequelize.Sequelize.literal('CURRENT_TIMESTAMP'),
           allowNull: true
+        },
+        organisationid: {
+          type: DataTypes.STRING(36),
+          allowNull: true,
+          references: {
+            model: 'organisations',
+            key: 'organisationid'
+          }
         },
         created_by: {
           type: DataTypes.STRING(36),

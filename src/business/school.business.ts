@@ -1,4 +1,5 @@
 import { col, fn, Op, Transaction, WhereOptions } from "sequelize";
+import { assertSameOwner, ownerOfCurriculum } from "./content-owner";
 import { OrgContext } from "src/decorators/org.decorator";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
@@ -20,6 +21,13 @@ import { constructWhere } from "src/services/util.service";
 import { v4 as uuidv4 } from "uuid";
 import { CurriculumBusiness } from "./curriculum.business";
 import { StudentBusiness } from "./student.business";
+
+/** Every curriculum in `ids` must have the school's owner (or none yet: see `assertSameOwner`). */
+const assertCurriculumsFitOwner = async (owner: string | null | undefined, ids: unknown, transaction: Transaction) => {
+  for (const id of Array.isArray(ids) ? (ids as string[]) : []) {
+    assertSameOwner(owner ?? null, await ownerOfCurriculum(id, transaction));
+  }
+};
 
 export class SchoolBusiness {
   getschoolbyname = (schoolname: string) =>
@@ -128,6 +136,8 @@ export class SchoolBusiness {
         countryid: school.countryid,
         transaction,
       });
+      // A curriculum of another organisation cannot be attached to the school.
+      await assertCurriculumsFitOwner(school.organisationid, school.curriculums, transaction);
       school.schoolid = uuidv4();
       // Surrounding whitespace is never part of a school's name: a name stored
       // with it cannot be matched by the writers that look schools up by name.
@@ -249,6 +259,13 @@ export class SchoolBusiness {
         countryid: school.countryid,
         transaction,
       });
+      // Curriculums newly attached (or all of them, when the school's organisation changed) must
+      // belong to the school's organisation; links that were already there are not re-checked.
+      const before = Array.isArray(tempdt.curriculums) ? (tempdt.curriculums as string[]) : [];
+      const attaching = (Array.isArray(school.curriculums) ? (school.curriculums as string[]) : []).filter(
+        (id) => (tempdt.organisationid ?? null) !== (resulting ?? null) || !before.includes(id),
+      );
+      await assertCurriculumsFitOwner(resulting, attaching, transaction);
       const previousname = tempdt.schoolname;
       tempdt.schoolname = school.schoolname.trim();
       tempdt.countryid = school.countryid;
