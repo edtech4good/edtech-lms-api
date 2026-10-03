@@ -41,7 +41,10 @@ describe("roster payload getters keep schoolid out of the login and the included
   };
 
   it("getschooluserbyschoolid (export of a school's learners; cloud sync, sync/cloud/:schoolname/students)", async () => {
-    guards(await capture((b) => b.getschooluserbyschoolid("school-1")));
+    const sql = await capture((b) => b.getschooluserbyschoolid("school-1"));
+    guards(sql);
+    // the order the export always had (by learner id), now pinned rather than left to the query plan
+    expect(sql).toMatch(/ORDER BY `student`\.`studentid` ASC/);
   });
 
   it("getschooluserbyid (cloud push of learners just created)", async () => {

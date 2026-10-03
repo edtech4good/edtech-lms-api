@@ -54,6 +54,11 @@ export class SchoolUserBusiness {
           attributes: studentApiAttributes,
         },
       ],
+      // The rows used to come out in the order MySQL scanned `students` (by learner
+      // id), because the filter had no index to use. With the filter on the indexed
+      // `schoolid` the plan, and so the order, changed. The export is a payload for
+      // another service, so its order is pinned to what it always was.
+      order: [[students, "studentid", "ASC"]],
     });
   };
 

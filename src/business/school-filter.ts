@@ -1,4 +1,4 @@
-import { Op } from "sequelize";
+import { Op, WhereOptions } from "sequelize";
 import { schools } from "src/models/data-models/school";
 import { resolveSchoolRef } from "./school-identity";
 
@@ -60,7 +60,8 @@ export async function extractSchoolFilters<T extends SchoolFilterEntry>(filters:
 }
 
 /** The `where` fragment limiting a table with a `schoolid` column to the filtered schools (nothing added when none was sent). */
-export const schoolIdsWhere = (schoolids: string[] | undefined) =>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const schoolIdsWhere = (schoolids: string[] | undefined): WhereOptions<any> =>
   schoolids === undefined ? {} : { schoolid: { [Op.in]: schoolids } };
 
 /**
