@@ -116,6 +116,12 @@ const idsOf = (rows: Row[], key: string) => rows.map((r) => r[key] as string).so
 const sorted = (...ids: string[]) => [...ids].sort();
 const KHMER_FIRST = { X: "សុខា", Y: "ដារា", U: "វិបុល" };
 
+const withoutReference = (body: Row) => {
+  const { reference, logid, stack, ...rest } = body;
+  return rest;
+};
+const refusalOf = (res: request.Response) => ({ status: res.status, body: withoutReference(JSON.parse((res.body as Buffer).toString("utf8"))) });
+
 const textOf = (res: request.Response, cb: (err: Error | null, body: unknown) => void) => {
   const chunks: Buffer[] = [];
   res.on("data", (c: Buffer) => chunks.push(c));
@@ -203,7 +209,8 @@ describe("people and schools are confined to the caller's organisation", () => {
   };
   const enc = encodeURIComponent;
   /** What a refusal says, without the per-request reference. */
-  const said = (res: request.Response) => ({ status: res.status, code: res.body.code, errormessage: res.body.errormessage, fields: res.body.fields });
+  /** The whole refusal (status and body), without what differs per request. */
+  const said = (res: request.Response) => ({ status: res.status, body: withoutReference(res.body) });
   const learnersOf = (res: request.Response) => idsOf(res.body.data as Row[], "studentid");
 
   // a refusal that must have written nothing is checked against every table as it stood just before
@@ -220,6 +227,16 @@ describe("people and schools are confined to the caller's organisation", () => {
     const none = await refuses(who, method, missing, body);
     expect(res.status).toBe(404);
     expect(said(res)).toEqual(said(none));
+  };
+
+  /**
+   * The row in the path is the one checked: a request for Y's row that also names X's own row in the field a business
+   * rule reads is the 404 a row that is not there gets for the same request, with every table unchanged.
+   */
+  const pathRowChecked = async (who: Who, method: "get" | "post" | "put" | "delete", foreign: string, missing: string, body: object) => {
+    const res = await refuses(who, method, foreign, body);
+    const none = await refuses(who, method, missing, body);
+    return { res, none };
   };
 
   // ───────────────────────────── schools ─────────────────────────────
@@ -380,6 +397,10 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("PUT /school/update/:schoolid", () => {
+    it.each(IN_X)("%s: a request that names another row in its body besides the one in the path is refused (400), unchanged", async (who) => {
+      const res = await refuses(who, "put", `/school/update/${S_Y}`, { ...edit({ countryid: C2 }), schoolid: S_X });
+      expect(res.status).toBe(400);
+    });
     const edit = (over: object = {}) => ({ schoolname: "សាលាដាក់ឈ្មោះថ្មី", countryid: C1, curriculums: [CUR_X], ...over });
     it.each(IN_X)("%s: renames X's school and the copies of the name that hang off it", async (who) => {
       await send(who, "put", `/school/update/${S_X}`, edit()).expect(200);
@@ -408,6 +429,11 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("DELETE /school/:schoolid", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's school, with X's own school named in the request, is the 404 a missing school gets, unchanged", async (who) => {
+      const { res, none } = await pathRowChecked(who, "delete", `/school/${S_Y}`, `/school/${MISSING}`, { schoolid: uuid(211) });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+    });
     beforeEach(() => {
       // schools with no learners (a school with learners cannot be deleted)
       db.add("schools", { schoolid: uuid(211), schoolname: "ទទេ ក", organisationid: X, countryid: C1, curriculums: [] });
@@ -476,6 +502,11 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("DELETE /standard/:standardid", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's class, with X's own class named in the request, is the 404 a missing class gets, unchanged", async (who) => {
+      const { res, none } = await pathRowChecked(who, "delete", `/standard/${K_Y}`, `/standard/${MISSING}`, { standardid: K_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+    });
     it.each(IN_X)("%s: deletes X's class", async (who) => {
       await send(who, "delete", `/standard/${K_X}`).expect(200);
       expect(db.tables.standards.find((k) => k.standardid === K_X)!.isdeleted).toBe(true);
@@ -506,6 +537,10 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("PUT /standard/:standardid", () => {
+    it.each(IN_X)("%s: a request that names another row in its body besides the one in the path is refused (400), unchanged", async (who) => {
+      const res = await refuses(who, "put", `/standard/${K_Y}`, { ...edit(S_X), standardid: K_X });
+      expect(res.status).toBe(400);
+    });
     const edit = (school: string) => ({ standardname: "ថ្នាក់ដាក់ឈ្មោះថ្មី", schoolid: school });
     it.each(IN_X)("%s: renames X's class", async (who) => {
       await send(who, "put", `/standard/${K_X}`, edit(S_X)).expect(200);
@@ -569,10 +604,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       expect(csv(res)).not.toContain(KHMER_FIRST.U);
     });
     it.each(IN_X)("%s: Y's school, by id or by name, the unowned one, or Y's learner by id, are the 404 a school or learner that is not there gets", async (who) => {
-      const refusal = async (query: string) => {
-        const res = await download(who, query);
-        return { status: res.status, body: JSON.parse((res.body as Buffer).toString("utf8")) };
-      };
+      const refusal = async (query: string) => refusalOf(await download(who, query));
       const missingSchool = await refusal(`?schoolid=${MISSING}`);
       const missingByName = await refusal(`?schoolname=${enc(KNOWN_NAME_NOT_THERE)}`);
       const missingLearner = await refusal(`?studentid=${MISSING}`);
@@ -580,8 +612,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       for (const [query, like] of [[`?schoolid=${S_Y}`, missingSchool], [`?schoolid=${S_U}`, missingSchool], [`?schoolname=${enc(NAME_Y)}`, missingByName], [`?studentid=${STU_Y}`, missingLearner], [`?studentid=${STU_U}`, missingLearner]] as const) {
         const got = await refusal(query);
         expect(got.status).toBe(404);
-        expect(got.body.errormessage).toBe(like.body.errormessage);
-        expect(got.body.code).toBe(like.body.code);
+        expect(got).toEqual(like);
       }
     });
     it.each([...WHOLE_PLATFORM, "a server token" as Who])("%s: still reaches every organisation's learners", async (who) => {
@@ -636,6 +667,15 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("POST /student/create", () => {
+    it.each(IN_X)("%s: a class of another school of X's, not the school the learner is enrolled in, is the 404 a class that is not there gets, nothing is written", async (who) => {
+      db.add("schools", { schoolid: uuid(241), schoolname: "សាលា ទីពីរ", organisationid: X, countryid: C1, curriculums: [] });
+      db.add("standards", { standardid: uuid(242), standardname: "ថ្នាក់ ទីពីរ", schoolid: uuid(241), schoolname: "សាលា ទីពីរ" });
+      const res = await refuses(who, "post", "/student/create", body(S_X, CUR_X, uuid(242)));
+      const none = await refuses(who, "post", "/student/create", body(S_X, CUR_X, MISSING));
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+      db.nothingCreated();
+    });
     const row = (n: number) => ({
       city: "ភ្នំពេញ", country: "Cambodia", dateofjoin: "01-01-2026", studentfirstname: `សុខា${n}`, genderid: "1", state: "Phnom Penh",
       schoolusername: `newlearner${n}`, schooluserpasswordhash: "pass1234",
@@ -679,6 +719,11 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("DELETE /student/:schooluserid", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's learner, with X's own learner named in the request, is the 404 a missing learner gets, unchanged", async (who) => {
+      const { res, none } = await pathRowChecked(who, "delete", `/student/${USR_Y}`, `/student/${MISSING}`, { schooluserid: USR_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+    });
     it.each(IN_X)("%s: removes X's learner and their login", async (who) => {
       await send(who, "delete", `/student/${USR_X}`).expect(200);
       expect(db.tables.students.find((s) => s.studentid === STU_X)!.isdeleted).toBe(true);
@@ -695,6 +740,11 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("GET /student/:studentid", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's learner, with X's own learner named in the request, is the 404 a missing learner gets", async (who) => {
+      const { res, none } = await pathRowChecked(who, "get", `/student/${STU_Y}`, `/student/${MISSING}`, { studentid: STU_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+    });
     it.each(IN_X)("%s: X's learner", async (who) => {
       const res = await send(who, "get", `/student/${STU_X}`).expect(200);
       expect(res.body.data).toMatchObject({ studentid: STU_X, studentfirstname: KHMER_FIRST.X });
@@ -716,6 +766,12 @@ describe("people and schools are confined to the caller's organisation", () => {
   const progressQueries = () => queries.filter((q) => !/rpiuseraccess/.test(q.sql));
 
   describe("GET /student/stats/:studentid", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's learner, with X's own learner named in the request, is the 404 a missing learner gets, and nothing is read", async (who) => {
+      const { res, none } = await pathRowChecked(who, "get", path(STU_Y), path(MISSING), { studentid: STU_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+      expect(progressQueries()).toEqual([]);
+    });
     const path = (id: string) => `/student/stats/${id}`;
     it.each(IN_X)("%s: X's learner's stats are read, for that learner only", async (who) => {
       await send(who, "get", path(STU_X)).expect(200);
@@ -735,6 +791,12 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("GET /student/stats/:studentid/level", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's learner, with X's own learner named in the request, is the 404 a missing learner gets, and nothing is read", async (who) => {
+      const { res, none } = await pathRowChecked(who, "get", path(STU_Y), path(MISSING), { studentid: STU_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+      expect(progressQueries()).toEqual([]);
+    });
     const path = (id: string) => `/student/stats/${id}/level`;
     it.each(IN_X)("%s: X's learner's stats are read, for that learner only", async (who) => {
       await send(who, "get", path(STU_X)).expect(200);
@@ -754,6 +816,12 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("GET /student/stats/:studentid/practice", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's learner, with X's own learner named in the request, is the 404 a missing learner gets, and nothing is read", async (who) => {
+      const { res, none } = await pathRowChecked(who, "get", path(STU_Y), path(MISSING), { studentid: STU_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+      expect(progressQueries()).toEqual([]);
+    });
     const path = (id: string) => `/student/stats/${id}/practice`;
     it.each(IN_X)("%s: X's learner's stats are read, for that learner only", async (who) => {
       await send(who, "get", path(STU_X)).expect(200);
@@ -773,6 +841,12 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("GET /student/stats/:studentid/quiz", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's learner, with X's own learner named in the request, is the 404 a missing learner gets, and nothing is read", async (who) => {
+      const { res, none } = await pathRowChecked(who, "get", path(STU_Y), path(MISSING), { studentid: STU_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+      expect(progressQueries()).toEqual([]);
+    });
     const path = (id: string) => `/student/stats/${id}/quiz`;
     it.each(IN_X)("%s: X's learner's stats are read, for that learner only", async (who) => {
       await send(who, "get", path(STU_X)).expect(200);
@@ -792,6 +866,12 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("PUT /student/update", () => {
+    it.each(IN_X)("%s: a school of the same name in another organisation neither makes the name ambiguous nor is the learner moved into it", async (who) => {
+      db.add("schools", { schoolid: uuid(233), schoolname: NAME_X, organisationid: Y, countryid: C2, curriculums: [] });
+      await send(who, "put", "/student/update", { students: [ownRow()] }).expect(200);
+      expect(firstName(STU_X)).toBe("ឈ្មោះថ្មី");
+      expect(db.tables.students.find((st) => st.studentid === STU_X)!.schoolid).toBe(S_X);
+    });
     const rowFor = (studentid: string, schooluserid: string, username: string, schoolname: string, curriculum: string, klass: string) => ({
       studentid, schooluserid, schoolusername: username, schoolname, curriculums: curriculum, standard: klass, studentfirstname: "ឈ្មោះថ្មី", genderid: "1",
       city: "ភ្នំពេញ", country: "Cambodia", state: "Phnom Penh", dateofjoin: "01-01-2026", isactive: 1,
@@ -880,6 +960,11 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("DELETE /teacher/:schooluserid", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's teacher, with X's own teacher named in the request, is the 404 a missing teacher gets, unchanged", async (who) => {
+      const { res, none } = await pathRowChecked(who, "delete", `/teacher/${TCH_Y}`, `/teacher/${MISSING}`, { schooluserid: TCH_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+    });
     it.each(IN_X)("%s: removes X's teacher", async (who) => {
       await send(who, "delete", `/teacher/${TCH_X}`).expect(200);
       expect(db.tables.schoolusers.find((s) => s.schooluserid === TCH_X)!.isdeleted).toBe(true);
@@ -934,6 +1019,10 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("PUT /school-contribute/updateschoolname/:schoolid", () => {
+    it.each(IN_X)("%s: a request that names another row in its body besides the one in the path is refused (400), unchanged", async (who) => {
+      const res = await refuses(who, "put", `/school-contribute/updateschoolname/${S_Y}`, { ...edit(C2), schoolid: S_X });
+      expect(res.status).toBe(400);
+    });
     const edit = (country: string) => ({ schoolname: "ឈ្មោះដែលអតិថិជនផ្ញើ", countryid: country });
     it.each(IN_X)("%s: refreshes the school columns of X's school's fees rows with the school's own name", async (who) => {
       await send(who, "put", `/school-contribute/updateschoolname/${S_X}`, edit(C1)).expect(200);
@@ -950,6 +1039,10 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("PUT /school-contribute/updateschooldashboard/:schoolcontributeid", () => {
+    it.each(IN_X)("%s: a request that names another row in its body besides the one in the path is refused (400), unchanged", async (who) => {
+      const res = await refuses(who, "put", `/school-contribute/updateschooldashboard/${F_Y}`, { ...edit, schoolcontributeid: F_X });
+      expect(res.status).toBe(400);
+    });
     const edit = { expected: 900, actual: 90 };
     it.each(IN_X)("%s: edits X's fees row", async (who) => {
       await send(who, "put", `/school-contribute/updateschooldashboard/${F_X}`, edit).expect(200);
@@ -966,6 +1059,11 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("DELETE /school-contribute/deleteschoolcontribute/:schoolid", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's school, with X's own school named in the request, is the 404 a missing school gets, unchanged", async (who) => {
+      const { res, none } = await pathRowChecked(who, "delete", `/school-contribute/deleteschoolcontribute/${S_Y}`, `/school-contribute/deleteschoolcontribute/${MISSING}`, { schoolid: S_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+    });
     it.each(IN_X)("%s: removes the fees rows of X's school", async (who) => {
       await send(who, "delete", `/school-contribute/deleteschoolcontribute/${S_X}`).expect(200);
       expect(db.tables.schoolcontributedata.find((f) => f.schoolcontributeid === F_X)!.isdeleted).toBe(true);
@@ -982,6 +1080,11 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("DELETE /school-contribute/deleteschoolcontributeid/:schoolcontributeid", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's fees row, with X's own row named in the request, is the 404 a missing row gets, unchanged", async (who) => {
+      const { res, none } = await pathRowChecked(who, "delete", `/school-contribute/deleteschoolcontributeid/${F_Y}`, `/school-contribute/deleteschoolcontributeid/${MISSING}`, { schoolcontributeid: F_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+    });
     it.each(IN_X)("%s: removes X's fees row", async (who) => {
       await send(who, "delete", `/school-contribute/deleteschoolcontributeid/${F_X}`).expect(200);
       expect(db.tables.schoolcontributedata.find((f) => f.schoolcontributeid === F_X)!.isdeleted).toBe(true);
@@ -1102,8 +1205,12 @@ describe("people and schools are confined to the caller's organisation", () => {
   // ───────────────────────────── exports and imports ─────────────────────────────
 
   describe("GET /export/:schoolname/students", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's school, with X's own school named in the request, is the 404 a missing school gets", async (who) => {
+      const { res, none } = await pathRowChecked(who, "get", `/export/${enc(NAME_Y)}/students`, `/export/${enc(KNOWN_NAME_NOT_THERE)}/students`, { schoolname: NAME_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+    });
     const get = (who: Who, segment: string) => send(who, "get", `/export/${enc(segment)}/students`).buffer(true).parse(textOf as never);
-    const refusalBody = (res: request.Response) => JSON.parse((res.body as Buffer).toString("utf8"));
     it.each(IN_X)("%s: X's school by name or by id: X's learners only", async (who) => {
       for (const segment of [NAME_X, S_X]) {
         const res = await get(who, segment).expect(200);
@@ -1117,8 +1224,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       for (const [segment, like] of [[NAME_Y, missingByName], [NAME_U, missingByName], [S_Y, missingById], [S_U, missingById]] as const) {
         const res = await get(who, segment);
         expect(res.status).toBe(404);
-        expect(refusalBody(res).errormessage).toBe(refusalBody(like).errormessage);
-        expect(refusalBody(res).code).toBe(refusalBody(like).code);
+        expect(refusalOf(res)).toEqual(refusalOf(like));
       }
     });
     it.each(IN_X)("%s: a school of the same name in another organisation does not make the name ambiguous", async (who) => {
@@ -1135,8 +1241,12 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("GET /export/:schoolname/teachers", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's school, with X's own school named in the request, is the 404 a missing school gets", async (who) => {
+      const { res, none } = await pathRowChecked(who, "get", `/export/${enc(NAME_Y)}/teachers`, `/export/${enc(KNOWN_NAME_NOT_THERE)}/teachers`, { schoolname: NAME_X });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+    });
     const get = (who: Who, segment: string) => send(who, "get", `/export/${enc(segment)}/teachers`).buffer(true).parse(textOf as never);
-    const refusalBody = (res: request.Response) => JSON.parse((res.body as Buffer).toString("utf8"));
     it.each(IN_X)("%s: X's school by name or by id: X's teachers only", async (who) => {
       for (const segment of [NAME_X, S_X]) {
         const res = await get(who, segment).expect(200);
@@ -1149,7 +1259,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       for (const segment of [NAME_Y, NAME_U, S_Y, S_U]) {
         const res = await get(who, segment);
         expect(res.status).toBe(404);
-        expect(refusalBody(res).errormessage).toBe(refusalBody(missing).errormessage);
+        expect(refusalOf(res)).toEqual(refusalOf(missing));
       }
     });
     it.each(WHOLE_PLATFORM)("%s: any school's teachers", async (who) => {
@@ -1159,6 +1269,21 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("PUT /import/:schoolname/teachers", () => {
+    it.each(IN_X)("%s: the row in the path is the one checked: Y's school, with X's own school named in a field of the upload, is the 404 a missing school gets, unchanged", async (who) => {
+      const withField = (segment: string) => upload(who, segment).field("schoolname", NAME_X);
+      const before = db.snapshot();
+      const res = await withField(NAME_Y);
+      const none = await withField(KNOWN_NAME_NOT_THERE);
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+      expect(db.snapshot()).toEqual(before);
+    });
+    it.each(IN_X)("%s: a school of the same name in another organisation neither makes the name ambiguous nor is the school written to", async (who) => {
+      db.add("schools", { schoolid: uuid(234), schoolname: NAME_X, organisationid: Y, countryid: C2, curriculums: [] });
+      await upload(who, NAME_X).expect(200);
+      expect(db.createdIn("schoolusers")).toHaveLength(1);
+      expect(db.createdIn("schoolusers")[0]).toMatchObject({ schoolid: S_X });
+    });
     const upload = (who: Who, segment: string) =>
       request(app.getHttpServer())
         .put(`/import/${enc(segment)}/teachers`)

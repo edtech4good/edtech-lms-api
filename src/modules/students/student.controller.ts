@@ -243,10 +243,10 @@ export class StudentController {
     try {
       // The school must be one of the caller's (live; unknown or not theirs: 404), before anything is written or pushed.
       const school = await findOwnedSchool(org, _body.schoolid, { transaction: tnx, field: "schoolid" });
-      // A class the learners are put in must be one of the caller's schools' classes too (the platform, not
-      // acting as an organisation, is not limited).
+      // A class the learners are put in must be a class of that school (the platform, not acting as an
+      // organisation, is not limited).
       if (_body.standard && scopeOf(org).kind !== "platform") {
-        await findOwnedStandard(org, _body.standard, tnx);
+        await findOwnedStandard(org, _body.standard, tnx, school.schoolid);
       }
       // Enrolling is a link between the school and each curriculum: refused, before anything is written, when they have different owners
       // (the school is the row read just above).

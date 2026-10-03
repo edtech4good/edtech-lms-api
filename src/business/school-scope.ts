@@ -75,18 +75,25 @@ export const andSchoolScope = (where: WhereOptions, org: OrgContext): WhereOptio
   return limit ? { [Op.and]: [where, limit] } : where;
 };
 
+// The ids are read once per caller context: a request's `@Org()` value is built for that request, so the memo lives
+// as long as the request does (a context object is never shared between requests). A failed read is not kept.
+const idsByContext = new WeakMap<object, Promise<string[]>>();
+
 /** The ids of the schools in scope, or `undefined` for the platform (every school, owned or not). */
 export const ownedSchoolIds = async (org: OrgContext, transaction?: Transaction): Promise<string[] | undefined> => {
   const scope = scopeOf(org);
   if (scope.kind === "platform") {
     return undefined;
   }
-  const rows = await schools.findAll({
-    attributes: ["schoolid"],
-    where: { organisationid: scope.organisationid },
-    transaction,
-  });
-  return rows.map((s) => s.schoolid);
+  let ids = idsByContext.get(org);
+  if (!ids) {
+    ids = schools
+      .findAll({ attributes: ["schoolid"], where: { organisationid: scope.organisationid }, transaction })
+      .then((rows) => rows.map((s) => s.schoolid));
+    idsByContext.set(org, ids);
+    ids.catch(() => idsByContext.delete(org));
+  }
+  return ids;
 };
 
 /** A where-fragment limiting a table with a `schoolid` column to the schools in scope (nothing added for the platform). */
@@ -199,12 +206,12 @@ export const findOwnedTeacher = (org: OrgContext, schooluserid: unknown, transac
     transaction,
   );
 
-/** A class by id (live), in scope; else 404. */
-export const findOwnedStandard = (org: OrgContext, standardid: unknown, transaction?: Transaction) =>
+/** A class by id (live), in scope (and, when `schoolid` is given, in that school); else 404. */
+export const findOwnedStandard = (org: OrgContext, standardid: unknown, transaction?: Transaction, schoolid?: string) =>
   findOwnedChild(
     standards,
     org,
-    { standardid: typeof standardid === "string" ? standardid : null, isdeleted: false },
+    { standardid: typeof standardid === "string" ? standardid : null, isdeleted: false, ...(schoolid === undefined ? {} : { schoolid }) },
     standardNotFound,
     transaction,
   );

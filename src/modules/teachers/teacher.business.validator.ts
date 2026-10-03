@@ -35,8 +35,7 @@ export const BulkUpload = async (
 /**
  * A teacher that does not exist and one that is another organisation's (or in a
  * school with none) are reported identically: 404 "That teacher doesn't exist.",
- * thrown. (A rule sees the path, query and body merged, the body last; the
- * handler checks the teacher again from the path itself.)
+ * thrown. (The handler checks the teacher named in the path again.)
  */
 export const ValidateTeacherid = async (
   request: IRequest,

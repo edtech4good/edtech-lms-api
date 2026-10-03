@@ -10,8 +10,7 @@ import { IRequest } from "src/models/IRequest";
  * a staff token, or the application API key, which is served as the platform).
  * A school that does not exist, is another organisation's, or has none is
  * reported identically: 404 "That school doesn't exist.", thrown, never a
- * field error. (A rule sees the path, query and body merged, the body last: the
- * handler checks the school again from the path itself.)
+ * field error. (The handler checks the school named in the path again.)
  */
 
 /**

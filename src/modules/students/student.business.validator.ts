@@ -35,8 +35,8 @@ export const BulkUpload = async (
 /**
  * A learner that does not exist and one that is another organisation's (or in
  * a school with none) are reported identically: 404 "That student doesn't
- * exist.", thrown. (A rule sees the path, query and body merged, the body last;
- * the business methods check the learner again from the path itself.)
+ * exist.", thrown. (The business methods check the learner named in the path
+ * again.)
  */
 export const ValidateSchoolUserid = async (
   request: IRequest,
