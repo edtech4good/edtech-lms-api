@@ -10,6 +10,7 @@ import {
   documenttags,
 } from "../models/data-models/init-models";
 import { subjects, subjectsAttributes } from "src/models/data-models/subjects";
+import { studentApiAttributes } from "./student-api-payload";
 
 export class SubjectBusiness {
   createsubject = async (subject: subjectsAttributes, user: LmsUserToken) => {
@@ -97,7 +98,8 @@ export class SubjectBusiness {
     };
     const order = ["subjectname"];
 
-    return await subjects.findAll({ where, order });
+    // only the sync payload (student API) reads this: see student-api-payload.ts
+    return await subjects.findAll({ where, order, attributes: studentApiAttributes });
   };
   subjectbindtocurriculum = async (subjectid: string) => {
     const where: WhereOptions<curriculumsAttributes> = {

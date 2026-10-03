@@ -39,7 +39,7 @@ import { SubjectBusiness } from "./subject.business";
 export class SyncBusiness {
   // old version apk
   synconline = async () => {
-    const curriculums = await new CurriculumBusiness().getCurriculums();
+    const curriculums = await new CurriculumBusiness().getCurriculumsForStudentApi();
     const curriculumbaselines =
       await new CurriculumBaseLineBusiness().getCurriculumBaseLines(true);
     // const baselinequestion = await new BaselineQuestionBusiness().getBaselineQuestion();
@@ -85,7 +85,7 @@ export class SyncBusiness {
 
   // this function made for new version apk
   syncontentVersion2 = async () => {
-    const curriculums = await new CurriculumBusiness().getCurriculums();
+    const curriculums = await new CurriculumBusiness().getCurriculumsForStudentApi();
     const curriculumbaselines =
       await new CurriculumBaseLineBusiness().getCurriculumBaseLines();
     const baselinequestion = await new BaselineQuestionBusiness().getBaselineQuestion();
@@ -135,7 +135,7 @@ export class SyncBusiness {
   };
 
   getreportdata = async () => {
-    const curriculums = await new CurriculumBusiness().getCurriculums();
+    const curriculums = await new CurriculumBusiness().getCurriculumsForStudentApi();
     const curriculumbaselines =
       await new CurriculumBaseLineBusiness().getCurriculumBaseLines();
     const baselinequestion = await new BaselineQuestionBusiness().getBaselineQuestion();

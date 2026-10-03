@@ -22,6 +22,7 @@ import {
 } from "../models/data-models/init-models";
 import { buildWhere } from "./../services/util.service";
 import { subjects } from "src/models/data-models/subjects";
+import { studentApiAttributes } from "./student-api-payload";
 
 export class CurriculumBusiness {
   createCurriculum = async (curriculum: curriculumsAttributes, user: LmsUserToken) => {
@@ -85,6 +86,15 @@ export class CurriculumBusiness {
     const order = ["curriculumname"];
 
     return await curriculums.findAll({ where, order });
+  };
+  /** The same rows for a payload that goes to the student API: without the columns it does not have (see student-api-payload.ts). */
+  getCurriculumsForStudentApi = async () => {
+    const where: WhereOptions<curriculumsAttributes> = {
+      //isdeleted: false,
+    };
+    const order = ["curriculumname"];
+
+    return await curriculums.findAll({ where, order, attributes: studentApiAttributes });
   };
   getCurriculumsWithFilter = async (cur: string, studentid: string, standardid: string, schoolid: string | undefined) => {
     const where: WhereOptions<curriculumsAttributes> = {

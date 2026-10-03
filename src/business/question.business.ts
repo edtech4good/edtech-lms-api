@@ -21,6 +21,7 @@ import {
   questions,
   questionsAttributes,
 } from "../models/data-models/questions";
+import { studentApiAttributes } from "./student-api-payload";
 export class QuestionBusiness {
   createquestion = async (question: questionsAttributes, user: LmsUserToken) => {
     let tempquestion: any = new Question();
@@ -106,7 +107,8 @@ export class QuestionBusiness {
   };
   getquestionbyid = (questionid: string) =>
     questions.findOne({ where: { questionid, isdeleted: false } });
-  getquestions = () => questions.findAll({});
+  // sync payload (student API): see student-api-payload.ts
+  getquestions = () => questions.findAll({ attributes: studentApiAttributes });
   getquestionall = async (paging: IPaging) => {
     let where: WhereOptions<questionsAttributes> = {
       isdeleted: false,
