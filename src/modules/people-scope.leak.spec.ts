@@ -197,7 +197,8 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   const send = (who: Who, method: "get" | "post" | "put" | "delete", path: string, body?: object) => {
-    const r = request(app.getHttpServer())[method](path).set("Authorization", callers[who]);
+    // one connection per request: the routes that refuse before reading a body must not leave bytes for the next
+    const r = request(app.getHttpServer())[method](path).set("Authorization", callers[who]).set("Connection", "close");
     return body ? r.send(body) : r;
   };
   const enc = encodeURIComponent;
@@ -1162,6 +1163,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       request(app.getHttpServer())
         .put(`/import/${enc(segment)}/teachers`)
         .set("Authorization", callers[who])
+        .set("Connection", "close")
         .attach("importfile", Buffer.from("teacherusername,teacheruserpassword\nimported1,pw1\n", "utf8"), "teachers.csv");
     it.each(IN_X)("%s: imports teachers into X's school, by name or by id", async (who) => {
       await upload(who, NAME_X).expect(200);
@@ -1239,7 +1241,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       expect(idsOf(res.body.data, "countryid")).toEqual(sorted(C1, C2, C3));
     });
     it("a school-user token (a teacher login) still reads every country: it has no organisation context here", async () => {
-      const res = await request(app.getHttpServer()).get("/country/all").set("Authorization", teacherLogin).expect(200);
+      const res = await request(app.getHttpServer()).get("/country/all").set("Authorization", teacherLogin).set("Connection", "close").expect(200);
       expect(idsOf(res.body.data, "countryid")).toEqual(sorted(C1, C2, C3));
     });
   });
@@ -1288,7 +1290,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       ["put", `/import/${S_X}/teachers`],
     ] as const)("a server token is still refused (401) where the route does not admit it: %s %s", async (method, path) => {
       const before = db.snapshot();
-      const res = await send("a server token", method, path, {});
+      const res = await send("a server token", method, path, method === "get" || method === "delete" ? undefined : {});
       expect(res.status).toBe(401);
       expect(db.snapshot()).toEqual(before);
     });
