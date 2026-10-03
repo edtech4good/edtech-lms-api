@@ -31,12 +31,14 @@ export class SchoolBusiness {
     students.findAll({
       attributes: [
         [fn("min", col("schooltype")), "schooltype"],
-        "schoolname",
+        // one row per school (by id: two schools may share a name); the name is the stored copy
+        [fn("min", col("schoolname")), "schoolname"],
+        "schoolid",
         [fn("min", col("city")), "city"],
         [fn("min", col("country")), "country"],
         [fn("min", col("state")), "state"],
       ],
-      group: "schoolname",
+      group: "schoolid",
     });
 
   getschoolsbycountry = (countryid: string) =>
@@ -336,8 +338,11 @@ export class SchoolBusiness {
     };
     const tempdt = await schools.findOne({ where });
 
+    if (!tempdt) {
+      return false;
+    }
     const count = await new StudentBusiness().getstudentcountbyschool(
-      tempdt?.schoolname || ""
+      tempdt.schoolid
     );
 
     return count > 0;

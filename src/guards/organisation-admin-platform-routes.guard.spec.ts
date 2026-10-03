@@ -76,9 +76,14 @@ const mocks = {
   findunusablecountries: jest.fn(),
   switchOrganisation: jest.fn(),
   syncontentVersion2: jest.fn(),
-  getschooluserbyschoolname: jest.fn(),
+  getschooluserbyschoolid: jest.fn(),
   cloudPut: jest.fn(),
 };
+// The cloud-sync and export routes resolve their `:schoolname` segment to a school first.
+jest.mock("src/business/school-identity", () => ({
+  ...jest.requireActual("src/business/school-identity"),
+  resolveSchoolSegment: jest.fn(async (segment: string) => ({ schoolid: "school-1", schoolname: segment })),
+}));
 jest.mock("src/business/country.business", () => ({
   CountryBusiness: jest.fn().mockImplementation(() => ({
     createcountry: mocks.createcountry,
@@ -150,7 +155,7 @@ jest.mock("src/business/sync.business", () => ({
   SyncBusiness: jest.fn().mockImplementation(() => ({ syncontentVersion2: mocks.syncontentVersion2 })),
 }));
 jest.mock("src/business/schooluser.business", () => ({
-  SchoolUserBusiness: jest.fn().mockImplementation(() => ({ getschooluserbyschoolname: mocks.getschooluserbyschoolname })),
+  SchoolUserBusiness: jest.fn().mockImplementation(() => ({ getschooluserbyschoolid: mocks.getschooluserbyschoolid })),
 }));
 // The push to the cloud server is the thing these routes must not let an organisation's staff start.
 jest.mock("axios", () => ({ __esModule: true, default: { put: (...a: unknown[]) => mocks.cloudPut(...a) } }));
@@ -292,7 +297,7 @@ describe("an Organisation Admin on the platform routes", () => {
     mocks.getcountryall.mockResolvedValue({ rows: [], count: 0 });
     mocks.getCurriculumsWithFilter.mockResolvedValue([]);
     mocks.syncontentVersion2.mockResolvedValue("content");
-    mocks.getschooluserbyschoolname.mockResolvedValue([{ get: () => ({ schooluserid: "s1" }) }]);
+    mocks.getschooluserbyschoolid.mockResolvedValue([{ get: () => ({ schooluserid: "s1" }) }]);
     mocks.cloudPut.mockResolvedValue({ status: 200 });
   });
 

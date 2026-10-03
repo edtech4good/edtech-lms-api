@@ -38,6 +38,7 @@ import { IMultiPaging } from "src/models/IPaging";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { LmsUserToken } from "src/models/token.model";
 import { SchoolBusiness } from "../../business/school.business";
+import { resolveSchoolByNameForRead } from "../../business/school-identity";
 import { SchoolCreateResponse } from "./models/SchoolBase";
 import { SchoolGetAllByCountry, SchoolGetAllByCurriculum, SchoolGetAllResponse } from "./models/SchoolGetAllResponse";
 import { SchoolGetAllTeacherResponse } from "./models/SchoolGetAllTeacherResponse";
@@ -85,19 +86,31 @@ export class SchoolController {
     description: "School branding fetched successfully",
   })
   @ApiQuery({ name: "schoolname", required: false, type: "string" })
+  @ApiQuery({ name: "schoolid", required: false, type: "string" })
   @HttpCode(HttpStatus.OK)
   async getBranding(
-    @Query("schoolname") schoolname: unknown
+    @Query("schoolname") schoolname: unknown,
+    @Query("schoolid") schoolid: unknown
   ): Promise<any> {
     const defaultBranding = { uitheme: "kids", brandingconfig: null };
     // Express parses `?schoolname[x]=1` into an object, not a string; that
     // would reach Sequelize's `where` and throw. Anything that isn't a
     // non-empty string skips the query entirely and fails open to the
     // default rather than surfacing a 500.
-    if (typeof schoolname !== "string" || !schoolname) {
+    //
+    // The school is named by its id (preferred) or by its name, as the learner
+    // app sends the stored name today. A name is resolved to the id with the
+    // writers' text rule; an unknown or ambiguous name, like an unknown id, fails
+    // open to the default.
+    let school = null;
+    if (typeof schoolid === "string" && schoolid.trim()) {
+      school = await new SchoolBusiness().getschoolbyid(schoolid.trim());
+    } else if (typeof schoolname === "string" && schoolname) {
+      const resolved = await resolveSchoolByNameForRead(schoolname).catch(() => null);
+      school = resolved ? await new SchoolBusiness().getschoolbyid(resolved.schoolid) : null;
+    } else {
       return { error: false, data: defaultBranding };
     }
-    const school = await new SchoolBusiness().getschoolbyname(schoolname);
     if (!school) {
       return { error: false, data: defaultBranding };
     }

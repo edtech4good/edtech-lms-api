@@ -12,6 +12,7 @@ import { IPaging } from 'src/models/IPaging';
 import { ResponseBoolean } from 'src/models/ResponseBoolean';
 import { LmsUserToken } from 'src/models/token.model';
 import { GradeBusiness } from '../../business';
+import { resolveSchoolRef } from "src/business/school-identity";
 import { BusinessValidationInterceptor } from '../../interceptors/businessvalidation.interceptor';
 import { CreateGrade, DeleteGrade, EditGrade } from './grade.business.validator';
 import { creategrade, deletegrade, showallgrade, showgrade, showgradebycurriculum, updategrade } from "./grade.request.validator";
@@ -51,6 +52,7 @@ export class GradeController {
   @ApiQuery({ name: "studentid", required: false, type: 'string' })
   @ApiQuery({ name: "standardid", required: false, type: 'string' })
   @ApiQuery({ name: "schoolname", required: false, type: 'string' })
+  @ApiQuery({ name: "schoolid", required: false, type: 'string' })
   @HttpCode(HttpStatus.OK)
   async getAllGrades(
     @Query("grade") gradename: string = '',
@@ -58,8 +60,11 @@ export class GradeController {
     @Query("studentid") studentid: string = '',
     @Query("standardid") standardid: string = '',
     @Query("schoolname") schoolname: string = '',
+    @Query("schoolid") schoolid: string = '',
   ): Promise<any> {
-    const data = await new GradeBusiness().getGradesWithFilter(gradename, curid, studentid, standardid, schoolname);
+    // The school is named by id or by name; resolved once, here (unknown: 404).
+    const school = await resolveSchoolRef({ schoolid, schoolname });
+    const data = await new GradeBusiness().getGradesWithFilter(gradename, curid, studentid, standardid, school?.schoolid);
     return {
         data: data,
         error: false,

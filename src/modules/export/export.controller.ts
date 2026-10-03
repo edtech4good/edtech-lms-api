@@ -27,7 +27,8 @@ import {
 } from "src/interceptors";
 import { TokenType } from "src/models/enums";
 import { Permission } from "src/models/enums/permissions.enum";
-import { SchoolExists } from "../school/school.business.validator";
+import { SchoolExistsForRead } from "../school/school.business.validator";
+import { resolveSchoolSegment } from "src/business/school-identity";
 import { getschoolstudents } from "../school/school.request.validator";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { attachmentDisposition } from "src/services/content-disposition";
@@ -52,7 +53,7 @@ export class ExportController {
   })
   @UseInterceptors(
     new SchemaValidationInterceptor(getschoolstudents),
-    new BusinessValidationInterceptor([SchoolExists])
+    new BusinessValidationInterceptor([SchoolExistsForRead])
   )
   @ApiParam({ name: `schoolname`, type: "string", required: true })
   @ApiQuery({ name: "cloud", required: false, type: String })
@@ -65,9 +66,11 @@ export class ExportController {
     @Response({ passthrough: true }) res: any
   ): Promise<any> {
     const online = (cloud === 'true') ? true : false;
+    // The segment names the school by NAME (as before) or by id; resolved once, here.
+    const school = await resolveSchoolSegment(schoolname, { forRead: true });
     const studentusers =
-      await new SchoolUserBusiness().getschooluserbyschoolname(
-        schoolname.trim(),
+      await new SchoolUserBusiness().getschooluserbyschoolid(
+        school.schoolid,
         online
       );
     if (studentusers.length <= 0) {
@@ -75,7 +78,7 @@ export class ExportController {
     }
     res.set({
       "Content-Type": "application/zip",
-      "Content-Disposition": attachmentDisposition(`students-${schoolname.trim()}.zip`),
+      "Content-Disposition": attachmentDisposition(`students-${school.schoolname}.zip`),
     });
     const payload: exportpayload = { 
       studentusers: [],
@@ -118,7 +121,7 @@ export class ExportController {
   })
   @UseInterceptors(
     new SchemaValidationInterceptor(getschoolstudents),
-    new BusinessValidationInterceptor([SchoolExists])
+    new BusinessValidationInterceptor([SchoolExistsForRead])
   )
   @ApiParam({ name: `schoolname`, type: "string", required: true })
   @RequirePermissions(Permission.VIEW_TEACHER)
@@ -128,15 +131,16 @@ export class ExportController {
     @Param("schoolname") schoolname: string,
     @Response({ passthrough: true }) res: any
   ): Promise<any> {
-    const teacherusers = await new TeacherBusiness().getteacheruserbyschoolname(
-      schoolname.trim()
+    const school = await resolveSchoolSegment(schoolname, { forRead: true });
+    const teacherusers = await new TeacherBusiness().getteacheruserbyschoolid(
+      school.schoolid
     );
     if (teacherusers.length <= 0) {
       throw new ApiError(ErrorCode.NOT_FOUND, "There are no teachers to export.");
     }
     res.set({
       "Content-Type": "application/zip",
-      "Content-Disposition": attachmentDisposition(`teachers-${schoolname.trim()}.zip`),
+      "Content-Disposition": attachmentDisposition(`teachers-${school.schoolname}.zip`),
     });
 
     const zip = new AdmZip();

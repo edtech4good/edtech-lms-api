@@ -1,3 +1,4 @@
+import { resolveSchoolRef, resolveSchoolSegment } from "src/business/school-identity";
 import {
   Body,
   Controller,
@@ -82,14 +83,18 @@ export class ReportController {
   })
   @ApiQuery({ name: "countryid", required: false, type: 'string' })
   @ApiQuery({ name: "schoolname", required: false, type: 'string' })
+  @ApiQuery({ name: "schoolid", required: false, type: 'string' })
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_PLUS_REACH, Permission.VIEW_SCHOOL_REACH)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getStudentGender(
     @Query("countryid") countryid: string = '',
     @Query("schoolname") schoolname: string = '',
+    @Query("schoolid") schoolid: string = '',
   ): Promise<any> {
-    const data = await new ReportBusiness().getAllStudentsGender(countryid, schoolname);
+    // The school is named by id or by name; resolved once, here (unknown: 404).
+    const school = await resolveSchoolRef({ schoolid, schoolname });
+    const data = await new ReportBusiness().getAllStudentsGender(countryid, school?.schoolid);
     return {
         data: data,
         error: false,
@@ -112,14 +117,18 @@ export class ReportController {
   })
   @ApiQuery({ name: "countryid", required: false, type: 'string' })
   @ApiQuery({ name: "schoolname", required: false, type: 'string' })
+  @ApiQuery({ name: "schoolid", required: false, type: 'string' })
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_PLUS_REACH, Permission.VIEW_SCHOOL_REACH)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getStudentDisability(
     @Query("countryid") countryid: string = '',
     @Query("schoolname") schoolname: string = '',
+    @Query("schoolid") schoolid: string = '',
   ): Promise<any> {
-    const data = await new ReportBusiness().getAllStudentsDisability(countryid, schoolname);
+    // The school is named by id or by name; resolved once, here (unknown: 404).
+    const school = await resolveSchoolRef({ schoolid, schoolname });
+    const data = await new ReportBusiness().getAllStudentsDisability(countryid, school?.schoolid);
     return {
         data: data,
         error: false,
@@ -141,14 +150,18 @@ export class ReportController {
     description: "Server error",
   })
   @ApiQuery({ name: "schoolname", required: false, type: 'string' })
+  @ApiQuery({ name: "schoolid", required: false, type: 'string' })
   @ApiQuery({ name: "countryid", required: false, type: 'string' })
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_PLUS_REACH, Permission.VIEW_SCHOOL_REACH)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getStudentsOfflineOnline(
     @Query("schoolname") schoolname: string = '',
+    @Query("schoolid") schoolid: string = '',
     @Query("countryid") countryid: string = '',
   ): Promise<any> {
+    // The school is named by id or by name; resolved once, here (unknown: 404).
+    const school = await resolveSchoolRef({ schoolid, schoolname });
     // const response = await axios.get(
     //   `${Config.fortyk.api.rpi.cloud}/report/offlineonline?schoolname=${schoolname}&countryid=${countryid}`,
     //   {
@@ -157,8 +170,8 @@ export class ReportController {
     //     },
     //   }
     // )
-    const onlinestudents = await new ReportBusiness().getStudentsOfflineOnline(schoolname, countryid, 'online');
-    const offlinestudents = await new ReportBusiness().getStudentsOfflineOnline(schoolname, countryid, 'offline');
+    const onlinestudents = await new ReportBusiness().getStudentsOfflineOnline(school?.schoolid, countryid, 'online');
+    const offlinestudents = await new ReportBusiness().getStudentsOfflineOnline(school?.schoolid, countryid, 'offline');
     const data = new ReportBusiness().formatChartsOfflineOnline(onlinestudents, offlinestudents);
     return {
       error: false,
@@ -453,7 +466,9 @@ export class ReportController {
   async getSchoolData(
     @Param("schoolname") schoolname: string,
   ): Promise<any> {
-    const data = await new ReportBusiness().getDashboardBySchool(schoolname);
+    // The segment names the school by NAME (as before) or by id; resolved once, here.
+    const school = await resolveSchoolSegment(schoolname, { forRead: true });
+    const data = await new ReportBusiness().getDashboardBySchool(school.schoolid);
     return {
         data: data,
         error: false,

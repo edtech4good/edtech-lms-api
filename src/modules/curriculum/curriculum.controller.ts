@@ -1,3 +1,4 @@
+import { resolveSchoolRef } from "src/business/school-identity";
 import {
   Body,
   Controller,
@@ -98,14 +99,18 @@ export class CurriculumController {
   @ApiQuery({ name: "studentid", required: false, type: 'string' })
   @ApiQuery({ name: "standardid", required: false, type: 'string' })
   @ApiQuery({ name: "schoolname", required: false, type: 'string' })
+  @ApiQuery({ name: "schoolid", required: false, type: 'string' })
   @HttpCode(HttpStatus.OK)
   async getAllCurriculums(
     @Query("cur") cur: string = '',
     @Query("studentid") studentid: string = '',
     @Query("standardid") standardid: string = '',
     @Query("schoolname") schoolname: string = '',
+    @Query("schoolid") schoolid: string = '',
   ): Promise<any> {
-    const data = await new CurriculumBusiness().getCurriculumsWithFilter(cur, studentid, standardid, schoolname);
+    // The school is named by id or by name; resolved once, here (unknown: 404).
+    const school = await resolveSchoolRef({ schoolid, schoolname });
+    const data = await new CurriculumBusiness().getCurriculumsWithFilter(cur, studentid, standardid, school?.schoolid);
     return {
         data: data,
         error: false,

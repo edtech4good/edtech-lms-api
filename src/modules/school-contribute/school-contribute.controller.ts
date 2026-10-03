@@ -1,3 +1,4 @@
+import { resolveSchoolRef } from "src/business/school-identity";
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Response, StreamableFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import {schoolcontributedataAttributes} from "../../models/data-models/schoolcontributedata";
 import { ApiBearerAuth, ApiBody, ApiExtraModels, ApiParam, ApiQuery, ApiResponse, ApiTags, getSchemaPath } from "@nestjs/swagger";
@@ -394,13 +395,16 @@ async getSchoolContribute(): Promise<any> {
 @ApiQuery({name: 'date', required: false, type: 'string'})
 @ApiQuery({ name: "countryid", required: false, type: 'string' })
 @ApiQuery({ name: "schoolname", required: false, type: 'string' })
+@ApiQuery({ name: "schoolid", required: false, type: 'string' })
 async getSchool(
     @Query("countryid") countryid: string = '',
     @Query("schoolname") schoolname: string = '',
+    @Query("schoolid") schoolid: string = '',
     @Query("date") date: string = '',
 ): Promise<any> {
-
-    const data = await  new SchoolcontributeBusiness().getSchoolDashboardCountry(schoolname, countryid, date);
+    // The school is named by id or by name; resolved once, here (unknown: 404).
+    const school = await resolveSchoolRef({ schoolid, schoolname });
+    const data = await  new SchoolcontributeBusiness().getSchoolDashboardCountry(school?.schoolid, countryid, date);
     return {
         error: false,
         data: data,

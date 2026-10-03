@@ -20,8 +20,8 @@ import { WG_DOMAIN_COLUMNS } from "src/models/enums";
 import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
-import { SchoolBusiness } from "./school.business";
 import { requireSchoolByName, withSchoolIds } from "./school-identity";
+import { extractSchoolFilters, schoolIdsWhere } from "./school-filter";
 import { hashPassword } from "src/services/password.service";
 import { LmsUserToken } from "src/models/token.model";
 import { CountryBusiness } from "./country.business";
@@ -79,11 +79,14 @@ export class StudentBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
+    // A search by school name is carried out on the schools and the rows are
+    // limited to those schools' ids (see school-filter.ts).
+    const { rest: restfilter, schoolids } = await extractSchoolFilters(paging.filter);
     studentwhere = {
       ...buildWhere<studentsAttributes>(
         {
           ...paging,
-          filter: paging.filter?.filter(
+          filter: restfilter.filter(
             (x) =>
               !(
                 x.key?.indexOf("schooluser.") !== -1 ||
@@ -93,13 +96,14 @@ export class StudentBusiness {
         },
         studentwhere
       ),
+      ...schoolIdsWhere(schoolids),
     };
     schooluserwhere = {
       ...buildWhere<schoolusersAttributes>(
         {
           ...paging,
-          filter: paging.filter
-            ?.filter((x) => x.key?.indexOf("schooluser.") !== -1)
+          filter: restfilter
+            .filter((x) => x.key?.indexOf("schooluser.") !== -1)
             .map((x) => ({ ...x, key: x.key?.replace("schooluser.", "") })),
         },
         schooluserwhere
@@ -129,9 +133,7 @@ export class StudentBusiness {
         {
           model: schoolusers,
           attributes: {
-            // `schoolid` too: an include with its own `attributes` bypasses the model's
-            // default scope (SCHOOL_ID_DEFAULT_SCOPE), so it is excluded here by hand.
-            exclude: [`schooluserpasswordhash`, "schoolname", "schooluserid", "schoolid"],
+            exclude: [`schooluserpasswordhash`, "schoolname", "schooluserid"],
           },
           where: schooluserwhere,
         },
@@ -211,7 +213,8 @@ export class StudentBusiness {
     };
   };
 
-  getStudentsWithFilter = async (userid: string, schoolname: string, standard: string, teacher: boolean = false) => {
+  // `schoolid` is already resolved by the route (see resolveSchoolRef); undefined = every school.
+  getStudentsWithFilter = async (userid: string, schoolid: string | undefined, standard: string, teacher: boolean = false) => {
     const where: WhereOptions<studentsAttributes> = {
       "$schooluser.schoolusername$": {
         [Op.like]: `%${userid.trim()}%`
@@ -219,7 +222,7 @@ export class StudentBusiness {
       // Soft-deleted learners drop out of this filter list too.
       isdeleted: false,
     };
-    if(schoolname) where.schoolname = schoolname;
+    if(schoolid) where.schoolid = schoolid;
     if(standard) where.standard = standard;
     if(!teacher) where.is_teacher_acc = teacher;
     const order = ["created_at"];
@@ -235,7 +238,7 @@ export class StudentBusiness {
         }
       ]
     }
-    if(!schoolname && !standard) options.limit = 50;
+    if(!schoolid && !standard) options.limit = 50;
 
     return await students.findAll(options);
   };
@@ -268,9 +271,7 @@ export class StudentBusiness {
         {
           model: schoolusers,
           attributes: {
-            // `schoolid` too: an include with its own `attributes` bypasses the model's
-            // default scope (SCHOOL_ID_DEFAULT_SCOPE), so it is excluded here by hand.
-            exclude: [`schooluserpasswordhash`, "schoolname", "schooluserid", "schoolid"],
+            exclude: [`schooluserpasswordhash`, "schoolname", "schooluserid"],
           },
         },
         {
@@ -311,8 +312,8 @@ export class StudentBusiness {
       transaction,
     });
 
-  getstudentcountbyschool = (schoolname: string) =>
-    students.count({ where: { schoolname } });
+  getstudentcountbyschool = (schoolid: string) =>
+    students.count({ where: { schoolid } });
 
   getstudentcountbystandard = (standard: string) =>
     students.count({ where: { standard } });
@@ -337,16 +338,7 @@ export class StudentBusiness {
       },
     );
 
-  // `ss.*` selects every column of `students`, so the C4 `schoolid` would reach the
-  // response. It is stripped (see SCHOOL_ID_DEFAULT_SCOPE) until readers move to it.
-  getstudentstats = async (studentid: string) => {
-    const rows = await this.getstudentstatsrows(studentid);
-    return (rows as Array<Record<string, unknown>>).map(
-      ({ schoolid: _schoolid, ...rest }) => rest,
-    );
-  };
-
-  private getstudentstatsrows = (studentid: string) =>
+  getstudentstats = (studentid: string) =>
     dbinstance.getdbinstance().query(
       `SELECT 
       ss.*,
@@ -550,15 +542,12 @@ WHERE
     return allstandards;
   }
 
-  getAllStudentsForEdit = async (countryid: string = '', schoolname: string = '', studentid: string = '') => {
+  // `schoolid` is already resolved by the route (an unknown school was a 404 there).
+  getAllStudentsForEdit = async (countryid: string = '', schoolid: string = '', studentid: string = '') => {
     const countryexists = await new CountryBusiness().getcountrybyid(
       countryid
     );
     if(countryid && !countryexists) throw new ApiError(ErrorCode.NOT_FOUND, "That country doesn't exist.");
-    const schoolexists = await new SchoolBusiness().getschoolbyname(
-      schoolname
-    );
-    if(schoolname && !schoolexists) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
     const where: WhereOptions<studentsAttributes> = {};
     where.isactive = 1;
     // Soft-deleted learners are excluded here too, not just from getAllStudents:
@@ -566,7 +555,7 @@ WHERE
     // edit list. History/reports still retain them.
     where.isdeleted = false;
     if(countryid) where['$school.countryid$'] = countryid;
-    if(schoolname) where.schoolname = schoolname;
+    if(schoolid) where.schoolid = schoolid;
     if(studentid) where.studentid = studentid;
     const stds = await students.findAll({
       where,
@@ -693,7 +682,7 @@ WHERE
             model: schools,
             attributes: [],
             required: true,
-            where: { schoolname: school.schoolname }
+            where: { schoolid: school.schoolid }
           }
         ]
       });

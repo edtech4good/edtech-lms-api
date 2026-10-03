@@ -16,6 +16,7 @@ import AdmZip from "adm-zip";
 import axios from "axios";
 import FormData from "form-data";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
+import { resolveSchoolSegment } from "src/business/school-identity";
 import { SyncBusiness } from "src/business/sync.business";
 import { Config } from "src/config";
 import { AccessGuard } from "src/guards/access.guard";
@@ -179,9 +180,11 @@ export class SyncController {
   @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
   @HttpCode(HttpStatus.OK)
   async synconlineschool(@Param("schoolname") schoolname: string) {
+    // The segment names the school by NAME (as before) or by id; resolved once, here.
+    const school = await resolveSchoolSegment(schoolname, { forRead: true });
     const studentusers =
-      await new SchoolUserBusiness().getschooluserbyschoolname(
-        schoolname.trim(),
+      await new SchoolUserBusiness().getschooluserbyschoolid(
+        school.schoolid,
         true
       );
     if (studentusers.length <= 0) {

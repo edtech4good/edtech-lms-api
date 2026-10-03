@@ -198,13 +198,14 @@ export class StandardBusiness {
     return await standards.findAll({ where, order });
   };
 
-  getStandardsWithFilter = async (standardname: string, schoolname: string) => {
+  // `schoolid` is already resolved by the route (see resolveSchoolRef); undefined = every school.
+  getStandardsWithFilter = async (standardname: string, schoolid: string | undefined) => {
     const where: WhereOptions<standardsAttributes> = {
       standardname: {
         [Op.like]: `%${standardname.trim()}%`
       }
     };
-    if(schoolname) where["$school.schoolname$"] = schoolname;
+    if(schoolid) where.schoolid = schoolid;
 
     return await standards.findAll(
       {

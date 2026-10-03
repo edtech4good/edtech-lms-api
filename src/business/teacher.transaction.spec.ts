@@ -8,7 +8,7 @@ import { dbinstance, rollbackQuietly } from "src/services/dbservice";
  * Both ways of creating teachers write inside a transaction and must not
  * answer until the write and the commit have finished. Before this was fixed
  * they called `tnx.commit()` / `tnx.rollback()` without awaiting them, and
- * `addteacheruserbyschoolname` swallowed its error, so:
+ * `addteacheruserbyschoolid` swallowed its error, so:
  *
  * - a failing teacher insert via PUT /import/:schoolname/teachers still
  *   answered 200 with no teachers created;
@@ -78,11 +78,11 @@ describe("teacher creation waits for its write and commit", () => {
     jest.restoreAllMocks();
   });
 
-  describe("TeacherBusiness.addteacheruserbyschoolname (PUT /import/:schoolname/teachers)", () => {
+  describe("TeacherBusiness.addteacheruserbyschoolid (PUT /import/:schoolname/teachers)", () => {
     const teachers = [{ teacherusername: "teacher9", teacheruserpassword: "pw-9" }];
 
     it("resolves only after the commit has finished", async () => {
-      await new TeacherBusiness().addteacheruserbyschoolname(teachers, "School A");
+      await new TeacherBusiness().addteacheruserbyschoolid(teachers, "school-a-id");
 
       expect(tnx.committed).toBe(true);
       expect(tnx.rollback).not.toHaveBeenCalled();
@@ -92,7 +92,7 @@ describe("teacher creation waits for its write and commit", () => {
       jest.spyOn(schoolusers, "bulkCreate").mockReturnValue(rejectLater("ER_DUP_ENTRY") as never);
 
       await expect(
-        new TeacherBusiness().addteacheruserbyschoolname(teachers, "School A")
+        new TeacherBusiness().addteacheruserbyschoolid(teachers, "school-a-id")
       ).rejects.toThrow("ER_DUP_ENTRY");
       expect(tnx.commit).not.toHaveBeenCalled();
       expect(tnx.rolledBack).toBe(true);
@@ -103,7 +103,7 @@ describe("teacher creation waits for its write and commit", () => {
       tnx.rollback.mockRejectedValue(finishedError());
 
       await expect(
-        new TeacherBusiness().addteacheruserbyschoolname(teachers, "School A")
+        new TeacherBusiness().addteacheruserbyschoolid(teachers, "school-a-id")
       ).rejects.toThrow("commit failed");
     });
   });

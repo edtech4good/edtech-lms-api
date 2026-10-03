@@ -49,7 +49,7 @@ const showallfeedback: RequestValidator = {
     filter: joi
       .array()
       .items({
-        key: joi.string().valid("schoolname").required(),
+        key: joi.string().valid("schoolname", "schoolid").required(),
         value: joi.string().required(),
       })
       .max(5)

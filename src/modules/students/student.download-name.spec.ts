@@ -24,6 +24,14 @@ jest.mock("src/business/token.business", () => ({
   })),
 }));
 
+// The route resolves the school named in the query to its id (and stored name) first.
+jest.mock("src/business/school-identity", () => ({
+  ...jest.requireActual("src/business/school-identity"),
+  resolveSchoolRef: jest.fn(async (ref: { schoolname?: string }) =>
+    ref.schoolname ? { schoolid: "school-1", schoolname: ref.schoolname } : undefined,
+  ),
+}));
+
 const getAllStudentsForEdit = jest.fn();
 jest.mock("src/business/student.business", () => ({
   ...jest.requireActual("src/business/student.business"),
@@ -68,7 +76,8 @@ describe("GET /student/download-students: the file name of a school with a Khmer
     const encoded = /filename\*=UTF-8''(.*)$/.exec(header)?.[1] as string;
     expect(decodeURIComponent(encoded)).toBe(`students-${KHMER_SCHOOL}.csv`);
     expect(res.body).toContain(KHMER_LEARNER);
-    expect(getAllStudentsForEdit).toHaveBeenCalledWith("", KHMER_SCHOOL, "");
+    // the business layer is handed the resolved school ID, not the name
+    expect(getAllStudentsForEdit).toHaveBeenCalledWith("", "school-1", "");
   });
 
   it("a school with an ASCII name still gets the plain header it always had", async () => {

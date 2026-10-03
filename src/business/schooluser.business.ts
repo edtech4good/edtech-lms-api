@@ -8,6 +8,7 @@ import {
 } from "src/models/data-models/schoolusers";
 import { students, studentsAttributes } from "src/models/data-models/students";
 import { withSchoolIds } from "./school-identity";
+import { studentApiAttributes } from "./student-api-payload";
 
 export class SchoolUserBusiness {
   // No caller today; kept writing both school columns (see school-identity.ts).
@@ -26,7 +27,7 @@ export class SchoolUserBusiness {
   // ever add an `isdeleted: false` filter here — or make the soft delete also
   // clear `schooluserstatus` — deleted learners drop out of this export, their
   // `isdeleted` never syncs, and the tablet login-block silently stops working.
-  getschooluserbyschoolname = async (schoolname: string, online: boolean = false) => {
+  getschooluserbyschoolid = async (schoolid: string, online: boolean = false) => {
     schoolusers.hasOne(students, {
       foreignKey: "schooluserid",
       sourceKey: "schooluserid",
@@ -39,21 +40,25 @@ export class SchoolUserBusiness {
     if(!online) {
       schoolwhere.is_teacher_acc = false;
     }
-    schoolwhere.schoolname = schoolname;
+    schoolwhere.schoolid = schoolid;
 
     return schoolusers.findAll({
       where: {
         schooluserstatus: true,
       },
-      attributes: {
-        exclude: [],
-      },
+      attributes: studentApiAttributes,
       include: [
         {
           where: schoolwhere,
           model: students,
+          attributes: studentApiAttributes,
         },
       ],
+      // The rows used to come out in the order MySQL scanned `students` (by learner
+      // id), because the filter had no index to use. With the filter on the indexed
+      // `schoolid` the plan, and so the order, changed. The export is a payload for
+      // another service, so its order is pinned to what it always was.
+      order: [[students, "studentid", "ASC"]],
     });
   };
 
@@ -73,12 +78,11 @@ export class SchoolUserBusiness {
           [Op.in]: schooluserid,
         },
       },
-      attributes: {
-        exclude: [],
-      },
+      attributes: studentApiAttributes,
       include: [
         {
           model: students,
+          attributes: studentApiAttributes,
         },
       ],
     });
@@ -92,6 +96,7 @@ export class SchoolUserBusiness {
           [Op.in]: schooluserid,
         },
       },
+      attributes: studentApiAttributes,
     });
   };
 
@@ -194,13 +199,12 @@ export class SchoolUserBusiness {
       where: {
         schooluserstatus: true,
       },
-      attributes: {
-        exclude: [],
-      },
+      attributes: studentApiAttributes,
       include: [
         {
           model: students,
-          required: false
+          required: false,
+          attributes: studentApiAttributes,
         },
       ],
     });

@@ -30,6 +30,7 @@ import {
 import { TokenType } from "src/models/enums";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { SchoolExists } from "../school/school.business.validator";
+import { resolveSchoolSegment } from "src/business/school-identity";
 import { getschoolstudents } from "../school/school.request.validator";
 import { parse } from "csv";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
@@ -115,8 +116,10 @@ export class ImportController {
       throw new ApiError(ErrorCode.FILE_REJECTED, "That file is missing a username or password for one or more teachers.");
     }
     const tb = new TeacherBusiness();
-    const duplicates = await tb.getteacherusersbyschoolname(
-      schoolname.trim(),
+    // The segment names the school by NAME (as before) or by id; resolved once, here.
+    const school = await resolveSchoolSegment(schoolname);
+    const duplicates = await tb.getteacherusersbyschoolid(
+      school.schoolid,
       newteachers.map((x) => x.teacherusername)
     );
     if (duplicates.length > 0) {
@@ -130,7 +133,7 @@ export class ImportController {
         .map(({ i }) => ({ field: `rows[${i}].teacherusername`, message: "That username is already taken." }));
       throw new ApiError(ErrorCode.INVALID_INPUT, "Some usernames in this file are already taken.", { fields });
     }
-    await tb.addteacheruserbyschoolname(newteachers, schoolname.trim());
+    await tb.addteacheruserbyschoolid(newteachers, school.schoolid);
     return {
       error: false,
       data: true,

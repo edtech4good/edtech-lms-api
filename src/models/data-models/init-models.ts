@@ -491,19 +491,24 @@ export function initModels(sequelize: Sequelize) {
   syncs.belongsTo(schoolusers, {
       foreignKey: "created_by",
   });
+  // A learner and a school login belong to their school by its ID (C4 added the
+  // column; the name copies stay, but nothing joins on them any more, so two
+  // organisations can each have a school of the same name).
   schools.hasMany(schoolusers, {
-    foreignKey: "schoolname",
+    foreignKey: "schoolid",
+    sourceKey: "schoolid",
   });
   schoolusers.belongsTo(schools, {
-    foreignKey: "schoolname",
-    targetKey: "schoolname"
+    foreignKey: "schoolid",
+    targetKey: "schoolid",
   });
   schools.hasMany(students, {
-    foreignKey: "schoolname",
+    foreignKey: "schoolid",
+    sourceKey: "schoolid",
   });
   students.belongsTo(schools, {
-    foreignKey: "schoolname",
-    targetKey: "schoolname"
+    foreignKey: "schoolid",
+    targetKey: "schoolid",
   });
   schoolusers.hasMany(studentappusages, {
     foreignKey: "schooluserid",

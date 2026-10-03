@@ -23,6 +23,7 @@ import {
   getSchemaPath,
 } from "@nestjs/swagger";
 import { StandardBusiness } from "src/business/standard.business";
+import { resolveSchoolRef } from "src/business/school-identity";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
 import { AccessGuard } from "src/guards/access.guard";
@@ -83,12 +84,16 @@ export class StandardController {
   @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher))
   @ApiQuery({ name: "standardname", required: false, type: 'string' })
   @ApiQuery({ name: "schoolname", required: false, type: 'string' })
+  @ApiQuery({ name: "schoolid", required: false, type: 'string' })
   @HttpCode(HttpStatus.OK)
   async getAllSchoolsWithFilter(
     @Query("standardname") standardname: string = '',
-    @Query("schoolname") schoolname: string = ''
+    @Query("schoolname") schoolname: string = '',
+    @Query("schoolid") schoolid: string = ''
   ): Promise<any> {
-    const data = await new StandardBusiness().getStandardsWithFilter(standardname, schoolname);
+    // The school is named by id or by name; resolved once, here (unknown: 404).
+    const school = await resolveSchoolRef({ schoolid, schoolname });
+    const data = await new StandardBusiness().getStandardsWithFilter(standardname, school?.schoolid);
     return {
         data: data,
         error: false,

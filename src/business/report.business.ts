@@ -1,3 +1,4 @@
+import { resolveSchoolFromFilters } from "./school-filter";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { isAfter, parseISO, startOfDay, startOfMonth, subDays, subMonths } from "date-fns";
@@ -118,18 +119,19 @@ export class ReportBusiness {
     }
 
     /** Scope a student count to a country and/or school, as the reach charts do. */
-    private studentReachWhere = async (countryid: string, schoolname: string) => {
+    // `schoolid` is already resolved by the route (see resolveSchoolRef); undefined = every school.
+    private studentReachWhere = async (countryid: string, schoolid: string | undefined) => {
         const where: any = {};
         if(countryid && countryid !== 'all') {
             const country = await countries.findOne({ where: { countryid }});
             if(country) where.country = country.countryname;
         }
-        if(schoolname) where.schoolname = schoolname;
+        if(schoolid) where.schoolid = schoolid;
         return where;
     }
 
-    getAllStudentsGender = async (countryid: string, schoolname: string) => {
-        const where = await this.studentReachWhere(countryid, schoolname);
+    getAllStudentsGender = async (countryid: string, schoolid: string | undefined) => {
+        const where = await this.studentReachWhere(countryid, schoolid);
         where.genderid = 1;
         const numberOfBoys = await students.count({
             where: where,
@@ -154,8 +156,8 @@ export class ReportBusiness {
      * lands there, and a chart claiming they had no disability would be a
      * statement about data we do not hold.
      */
-    getAllStudentsDisability = async (countryid: string, schoolname: string) => {
-        const where = await this.studentReachWhere(countryid, schoolname);
+    getAllStudentsDisability = async (countryid: string, schoolid: string | undefined) => {
+        const where = await this.studentReachWhere(countryid, schoolid);
         const answered = {
             [Op.or]: WG_DOMAIN_COLUMNS.map((column) => ({
                 [column]: { [Op.ne]: null },
@@ -182,12 +184,12 @@ export class ReportBusiness {
         return chartFormat;
     }
 
-    getStudentsOfflineOnline = async (schoolname: string, countryid: string, type: string) => {
+    getStudentsOfflineOnline = async (schoolid: string | undefined, countryid: string, type: string) => {
         const where: WhereOptions<studentsAttributes> = {
             isactive: 1,
             type
         }
-        if(schoolname) where.schoolname = schoolname;
+        if(schoolid) where.schoolid = schoolid;
         if(countryid && countryid !== 'all') {
             const country = await countries.findOne({
                 where: { countryid },
@@ -397,7 +399,7 @@ export class ReportBusiness {
                     attributes: ['standardname']
                 });
                 const schoolcountry = await schools.findOne({
-                    where: { schoolname: student?.schoolname },
+                    where: { schoolid: student?.schoolid ?? '' },
                     attributes: ['schoolname'],
                     include: [
                         {
@@ -716,7 +718,7 @@ export class ReportBusiness {
                     attributes: ['standardname']
                 });
                 const schoolcountry = await schools.findOne({
-                    where: { schoolname: std?.schoolname },
+                    where: { schoolid: std?.schoolid ?? '' },
                     attributes: ['schoolname'],
                     include: [
                         {
@@ -847,7 +849,10 @@ export class ReportBusiness {
         buildCustomWhere(paging.filter ?? [], {key: 'levelid', fields: '$studentprogresses.lessonquiz.lesson.level.levelid$', where: where});
         buildCustomWhere(paging.filter ?? [], {key: 'lessonid', fields: '$studentprogresses.lessonquiz.lesson.lessonid$', where: where});
         buildCustomWhere(paging.filter ?? [], {key: 'countryid', fields: '$school.countryid$', where: where});
-        buildCustomWhere(paging.filter ?? [], {key: 'schoolid', fields: '$school.schoolid$', where: where});
+        // A school filter arrives as a name (as the admin UI sends it) or an id; it is
+        // resolved once, here (an unknown school is a 404), and the learners are limited by id.
+        const filteredSchool = await resolveSchoolFromFilters(paging.filter);
+        if (filteredSchool) where['$school.schoolid$'] = filteredSchool.schoolid;
         buildCustomWhere(paging.filter ?? [], {fields: 'standard', where: where});
         buildCustomWhere(paging.filter ?? [], {fields: 'studentid', where: where});
         const {progress, curriculum} = await this.getAllStudentsWithProgress(type, {where, order, limit, offset});
@@ -900,8 +905,10 @@ export class ReportBusiness {
             offset = limit * ((paging.pageindex || 1) - 1);
         }
         buildCustomWhere(paging.filter ?? [], {key: 'countryid', fields: '$school.countryid$', where: where});
-        buildCustomWhere(paging.filter ?? [], {key: 'schoolname', fields: '$school.schoolname$', where: where});
-        buildCustomWhere(paging.filter ?? [], {key: 'schoolid', fields: '$school.schoolid$', where: where});
+        // A school filter arrives as a name (as the admin UI sends it) or an id; it is
+        // resolved once, here, and the learners are limited to that school by id.
+        const filteredSchool = await resolveSchoolFromFilters(paging.filter);
+        if (filteredSchool) where['$school.schoolid$'] = filteredSchool.schoolid;
         buildCustomWhere(paging.filter ?? [], {fields: 'studentid', where: where});
         buildCustomWhere(paging.filter ?? [], {fields: 'standard', where: where});
         buildCustomWhere(paging.filter ?? [], {fields: 'startDate', where: whereUsage});
@@ -1069,7 +1076,8 @@ export class ReportBusiness {
         return chartFormat;
     }
 
-    getDashboardBySchool = async (schoolname: string) => {
+    // `schoolid` is already resolved by the route (see resolveSchoolRef).
+    getDashboardBySchool = async (schoolid: string) => {
         const numberOfTeachers = await schoolusers.count({
             where: {
                 schooluserrole: 3
@@ -1078,13 +1086,13 @@ export class ReportBusiness {
                 {
                     model: schools,
                     required: true,
-                    where: { schoolname }
+                    where: { schoolid }
                 }
             ]
         });
         const numberOfStudents = await students.count({
             where: {
-                schoolname
+                schoolid
             },
         });
         const chartFormat: Array<ChartItemFormat> = [];
@@ -1138,7 +1146,7 @@ export class ReportBusiness {
         return chartFormat;
     }
 
-    getStudentsGenderBySchool = async (schoolname: string) => {
+    getStudentsGenderBySchool = async (schoolid: string) => {
         const numberOfBoys = await students.count({
             where: {
                 genderid: 1,
@@ -1152,7 +1160,7 @@ export class ReportBusiness {
                         {
                             model: schools,
                             required: true,
-                            where: { schoolname }
+                            where: { schoolid }
                         }
                     ]
                 }
@@ -1171,7 +1179,7 @@ export class ReportBusiness {
                         {
                             model: schools,
                             required: true,
-                            where: { schoolname }
+                            where: { schoolid }
                         }
                     ]
                 }
@@ -1200,13 +1208,13 @@ export class ReportBusiness {
             // Resolve the country's school users first and filter on them, so the
             // aggregate runs with no include and no primary key is added. This is
             // the same shape as the working aggregate in getStudentStatus above.
-            // schoolusers joins schools on schoolname, not an id.
+            // schoolusers belong to their school by id.
             const countryschools = await schools.findAll({
                 where: { countryid: country.countryid, isdeleted: false },
-                attributes: ['schoolname'],
+                attributes: ['schoolid'],
             });
             const countryschoolusers = await schoolusers.findAll({
-                where: { schoolname: { [Op.in]: countryschools.map(s => s.schoolname) } },
+                where: { schoolid: { [Op.in]: countryschools.map(s => s.schoolid) } },
                 attributes: ['schooluserid'],
             });
             const usages = await studentappusages.findAll({
@@ -1386,7 +1394,7 @@ export class ReportBusiness {
                     attributes: ['standardname']
                 });
                 const schoolcountry = await schools.findOne({
-                    where: { schoolname: student?.schoolname },
+                    where: { schoolid: student?.schoolid ?? '' },
                     attributes: ['schoolname'],
                     include: [
                         {
@@ -1755,7 +1763,7 @@ export class ReportBusiness {
                     attributes: ['standardname']
                 });
                 const schoolcountry = await schools.findOne({
-                    where: { schoolname: student?.schoolname },
+                    where: { schoolid: student?.schoolid ?? '' },
                     attributes: ['schoolname'],
                     include: [
                         {
@@ -1951,7 +1959,7 @@ export class ReportBusiness {
                     attributes: ['standardname']
                 });
                 const schoolcountry = await schools.findOne({
-                    where: { schoolname: std?.schoolname },
+                    where: { schoolid: std?.schoolid ?? '' },
                     attributes: ['schoolname'],
                     include: [
                         {

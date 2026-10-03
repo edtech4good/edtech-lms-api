@@ -86,7 +86,7 @@ export class CurriculumBusiness {
 
     return await curriculums.findAll({ where, order });
   };
-  getCurriculumsWithFilter = async (cur: string, studentid: string, standardid: string, schoolname: string) => {
+  getCurriculumsWithFilter = async (cur: string, studentid: string, standardid: string, schoolid: string | undefined) => {
     const where: WhereOptions<curriculumsAttributes> = {
       isdeleted: false,
       curriculumstatus: true,
@@ -105,11 +105,9 @@ export class CurriculumBusiness {
         [Op.in]: std.curriculumids ?? []
       }
     }
-    if(schoolname) {
+    if(schoolid) {
       const school = await schools.findOne({
-        where: {
-          schoolname: schoolname
-        }
+        where: { schoolid }
       });
       if(school) {
         where.curriculumid = {
