@@ -602,11 +602,146 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
       });
     });
 
-    it("a refresh after switching returns to the user's own claims (the acting choice is not carried over)", async () => {
-      const first = await signIn("platform@example.com");
-      const toA = (await switchTo(first.accessToken, ORG_A).expect(200)).body.data;
-      const res = await refresh(toA.refreshToken).expect(200);
-      expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: null, isplatform: true });
+    describe("a refresh keeps the organisation a platform user is acting as, while it is still valid", () => {
+      // The session's acting organisation is recorded in the signed refresh token
+      // (claim `actingorganisationid`), written by the switcher; a refresh reads it
+      // back and decides again from the database.
+      const actingAs = async (organisationid: string) => {
+        const first = await signIn("platform@example.com");
+        return (await switchTo(first.accessToken, organisationid).expect(200)).body.data as { accessToken: string; refreshToken: string };
+      };
+
+      it("is recorded in the refresh token the switcher issues, and nowhere else: not in the access token, not at sign-in", async () => {
+        const signed = await signIn("platform@example.com");
+        expect(claimsOf(signed.refreshToken).actingorganisationid).toBeUndefined();
+        const toA = await actingAs(ORG_A);
+        expect(claimsOf(toA.refreshToken).actingorganisationid).toBe(ORG_A);
+        expect(claimsOf(toA.accessToken).actingorganisationid).toBeUndefined();
+      });
+
+      it("refresh while acting keeps the organisation: the new token acts as it, stays platform, and works on a platform route", async () => {
+        const toA = await actingAs(ORG_A);
+        const res = await refresh(toA.refreshToken).expect(200);
+        const claims = claimsOf(res.body.data.accessToken);
+        expect(claims).toMatchObject({ organisationid: ORG_A, isplatform: true, lmsuserid: "u-platform" });
+        expect(claims.actingorganisationid).toBeUndefined();
+        const seen = await probe("platform", res.body.data.accessToken).expect(200);
+        expect(seen.body.org).toMatchObject({ organisationid: ORG_A, isplatform: true });
+      });
+
+      it("keeps it across a chain of refreshes (each new refresh token records it again)", async () => {
+        let current = await actingAs(ORG_B);
+        for (let i = 0; i < 3; i++) {
+          const res = await refresh(current.refreshToken).expect(200);
+          current = res.body.data;
+          expect(claimsOf(current.accessToken)).toMatchObject({ organisationid: ORG_B, isplatform: true });
+          expect(claimsOf(current.refreshToken).actingorganisationid).toBe(ORG_B);
+        }
+      });
+
+      it("the old access and refresh tokens stop working after a refresh, as before", async () => {
+        const toA = await actingAs(ORG_A);
+        await refresh(toA.refreshToken).expect(200);
+        await probe("any", toA.accessToken).expect(401);
+        await refresh(toA.refreshToken).expect(401);
+      });
+
+      it("returns to the platform view when the organisation has been suspended: 200, organisationid null, and it does not come back by itself", async () => {
+        const toA = await actingAs(ORG_A);
+        orgTable.get(ORG_A)!.organisationstatus = false;
+        const res = await refresh(toA.refreshToken).expect(200);
+        expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: null, isplatform: true });
+        expect(claimsOf(res.body.data.refreshToken).actingorganisationid).toBeUndefined();
+        orgTable.get(ORG_A)!.organisationstatus = true;
+        const again = await refresh(res.body.data.refreshToken).expect(200);
+        expect(claimsOf(again.body.data.accessToken)).toMatchObject({ organisationid: null, isplatform: true });
+      });
+
+      it("returns to the platform view when the organisation has been deleted", async () => {
+        const toA = await actingAs(ORG_A);
+        orgTable.get(ORG_A)!.isdeleted = true;
+        const res = await refresh(toA.refreshToken).expect(200);
+        expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: null, isplatform: true });
+      });
+
+      it("returns to the platform view when the organisation row is gone", async () => {
+        const toA = await actingAs(ORG_A);
+        orgTable.delete(ORG_A);
+        const res = await refresh(toA.refreshToken).expect(200);
+        expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: null, isplatform: true });
+      });
+
+      it("a user who lost Super Admin since: the refresh is refused (401), as the per-request rules already say", async () => {
+        const toA = await actingAs(ORG_A);
+        users["u-platform"].roles = [role(Role.admin)];
+        const before = JSON.stringify(tokenTable);
+        const res = await refresh(toA.refreshToken).expect(401);
+        expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+        expect(JSON.stringify(tokenTable)).toBe(before);
+      });
+
+      it("a user who was given an organisation since: the refreshed token is its own organisation's, not platform, and not the acting one", async () => {
+        const toA = await actingAs(ORG_A);
+        users["u-platform"].organisationid = ORG_B;
+        const res = await refresh(toA.refreshToken).expect(200);
+        expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: ORG_B, isplatform: false });
+        expect(claimsOf(res.body.data.refreshToken).actingorganisationid).toBeUndefined();
+      });
+
+      it("a user who is disabled since must sign in again (401)", async () => {
+        const toA = await actingAs(ORG_A);
+        users["u-platform"].isdisabled = true;
+        await refresh(toA.refreshToken).expect(401);
+      });
+
+      it("a claim that is not an organisation id is ignored: the platform view", async () => {
+        const toA = await actingAs(ORG_A);
+        const decoded = claimsOf(toA.refreshToken);
+        for (const bad of ["not-a-uuid", 7, "", null, {}]) {
+          const forged = sign({ ...decoded, actingorganisationid: bad }, Config.fortyk.api.applicationsecret);
+          const res = await refresh(forged).expect(200);
+          expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: null, isplatform: true });
+          // the refresh replaced the tokens; act again for the next case
+          Object.assign(toA, (await switchTo(res.body.data.accessToken, ORG_A).expect(200)).body.data);
+          Object.assign(decoded, claimsOf(toA.refreshToken));
+        }
+      });
+
+      it("a refresh token whose signature is not ours is refused (the claim cannot be added by a client)", async () => {
+        const toA = await actingAs(ORG_A);
+        const forged = sign({ ...claimsOf(toA.refreshToken), actingorganisationid: ORG_B }, "not-the-server-secret");
+        await refresh(forged).expect(401);
+      });
+
+      it("a refresh does not write a switch audit line", async () => {
+        const toA = await actingAs(ORG_A);
+        logInfo.mockClear();
+        await refresh(toA.refreshToken).expect(200);
+        expect(logInfo).not.toHaveBeenCalledWith("Platform user switched organisation", expect.anything());
+      });
+
+      it("sign-in never starts in an acting state, even right after acting", async () => {
+        await actingAs(ORG_A);
+        const again = await signIn("platform@example.com");
+        expect(claimsOf(again.accessToken)).toMatchObject({ organisationid: null, isplatform: true });
+        expect(claimsOf(again.refreshToken).actingorganisationid).toBeUndefined();
+        const res = await refresh(again.refreshToken).expect(200);
+        expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: null, isplatform: true });
+      });
+
+      it("an organisation's own staff are unaffected: their refresh token carries no acting claim and refresh keeps their organisation", async () => {
+        const { refreshToken } = await signIn("orgstaff@example.com");
+        expect(claimsOf(refreshToken).actingorganisationid).toBeUndefined();
+        const res = await refresh(refreshToken).expect(200);
+        expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: ORG_A, isplatform: false });
+      });
+
+      it("an organisation user holding a forged acting claim stays in its own organisation", async () => {
+        const { refreshToken } = await signIn("orgstaff@example.com");
+        const forged = sign({ ...claimsOf(refreshToken), actingorganisationid: ORG_B }, Config.fortyk.api.applicationsecret);
+        const res = await refresh(forged).expect(200);
+        expect(claimsOf(res.body.data.accessToken)).toMatchObject({ organisationid: ORG_A, isplatform: false });
+      });
     });
   });
 });

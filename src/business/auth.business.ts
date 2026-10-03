@@ -1,5 +1,7 @@
 import { lmsusers, students } from "../models/data-models/init-models";
 import { LmsUserToken } from "src/models/token.model";
+import { decode } from "jsonwebtoken";
+import { isUuidShaped } from "src/services/organisation-claims";
 import { OrganisationBusiness } from "./organisation.business";
 import { organisationClaims } from "./token.business";
 import { hashPassword, verifyPassword } from "src/services/password.service";
@@ -84,10 +86,33 @@ export class AuthBusiness {
         throw new Error('Token payload missing or invalid');
       }
       await this.verifyuser(user);
-      return await tokenbusiness.generateAuthToken(user);
+      return await tokenbusiness.generateAuthToken(user, {
+        actingorganisationid: await this.stillActingOrganisation(user, refreshToken),
+      });
     } catch (error) {
       throw new ApiError(ErrorCode.SIGN_IN_REQUIRED);
     }
+  };
+
+  /**
+   * The organisation a refresh keeps acting in, or null (the platform view).
+   * The refresh token carries it (`actingorganisationid`, written when the
+   * switcher issued it; the signature was checked before this is called). It is
+   * kept only while the database still agrees: the user is still a platform
+   * account (no organisation, Super Admin) and the organisation exists, is not
+   * deleted and is not suspended. Otherwise the session returns to the platform
+   * view, exactly as a refresh did before. Sign-in never passes one.
+   */
+  private stillActingOrganisation = async (user: lmsusers, refreshToken: string): Promise<string | null> => {
+    const claimed = (decode(refreshToken) as { actingorganisationid?: unknown } | null)?.actingorganisationid;
+    if (!isUuidShaped(claimed)) {
+      return null;
+    }
+    const roleids = (user.roles ?? []).map((role) => role.roleid);
+    if (!organisationClaims(user.organisationid, roleids).isplatform) {
+      return null;
+    }
+    return (await new OrganisationBusiness().getactiveorganisation(claimed)) ? claimed : null;
   };
 
   /**
