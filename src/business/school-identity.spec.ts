@@ -2,10 +2,13 @@ import { schools } from "src/models/data-models/school";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import {
+  findSchoolSegment,
   isSameSchoolName,
   normaliseSchoolName,
   requireSchoolByName,
   resolveSchoolById,
+  resolveSchoolRef,
+  resolveSchoolSegment,
   resolveSchoolByName,
   withSchoolIds,
 } from "./school-identity";
@@ -290,5 +293,66 @@ describe("withSchoolIds", () => {
   it("fails the whole batch when one row names no school", async () => {
     fakeMysql();
     await expect(withSchoolIds([{ schoolname: "Sample School" }, { schoolname: "សាលាគរូ" }])).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("reading: a school named at a route's boundary", () => {
+  it("resolveSchoolRef: an id is checked to exist and returned with the school's own name", async () => {
+    fakeMysql();
+    await expect(resolveSchoolRef({ schoolid: "id-sample" })).resolves.toEqual(SAMPLE);
+  });
+
+  it("resolveSchoolRef: a name is resolved with the writers' text rule", async () => {
+    fakeMysql();
+    await expect(resolveSchoolRef({ schoolname: " SAMPLE school " })).resolves.toEqual(SAMPLE);
+    await expect(resolveSchoolRef({ schoolname: "សាលាគំរូ" })).resolves.toEqual(KHMER);
+  });
+
+  it("resolveSchoolRef: the id wins when both are given; blank or missing means no school filter", async () => {
+    fakeMysql();
+    await expect(resolveSchoolRef({ schoolid: "id-khmer", schoolname: "Sample School" })).resolves.toEqual(KHMER);
+    for (const none of [{}, { schoolname: "" }, { schoolname: "   " }, { schoolid: null, schoolname: undefined }, { schoolid: 5 as never }]) {
+      await expect(resolveSchoolRef(none)).resolves.toBeUndefined();
+    }
+  });
+
+  it("resolveSchoolRef: an unknown id or name is a 404, and so is a name that differs only by a Khmer mark", async () => {
+    fakeMysql();
+    for (const ref of [{ schoolid: "nope" }, { schoolname: "Nowhere" }, { schoolname: "សាលាគរូ" }]) {
+      await expect(resolveSchoolRef(ref)).rejects.toMatchObject({ code: ErrorCode.NOT_FOUND, message: "That school doesn't exist." });
+    }
+  });
+
+  it("resolveSchoolRef: an ambiguous name fails rather than picking one", async () => {
+    fakeMysql([
+      { schoolid: "id-1", schoolname: "Sample School" },
+      { schoolid: "id-2", schoolname: "sample school" },
+    ]);
+    await expect(resolveSchoolRef({ schoolname: "Sample School" })).rejects.toBeInstanceOf(ApiError);
+  });
+
+  describe("a path segment that is a name or an id", () => {
+    const ID = "11111111-1111-4111-8111-111111111111";
+    const uuidSchool = { schoolid: ID, schoolname: "Uuid School" };
+
+    it("a UUID that is a school's id is that school; a name is resolved as a name", async () => {
+      fakeMysql([...SCHOOLS, uuidSchool]);
+      await expect(findSchoolSegment(ID)).resolves.toEqual(uuidSchool);
+      await expect(findSchoolSegment("Sample School")).resolves.toEqual(SAMPLE);
+      await expect(findSchoolSegment("  uuid SCHOOL")).resolves.toEqual(uuidSchool);
+    });
+
+    it("a UUID that is no school's id falls through to the name rule, then is not found", async () => {
+      fakeMysql();
+      await expect(findSchoolSegment(ID)).resolves.toBeNull();
+      await expect(resolveSchoolSegment(ID)).rejects.toMatchObject({ code: ErrorCode.NOT_FOUND });
+    });
+
+    it("resolveSchoolSegment returns the id and the school's stored name (for file names); unknown is a 404", async () => {
+      fakeMysql();
+      await expect(resolveSchoolSegment("sample school")).resolves.toEqual(SAMPLE);
+      await expect(resolveSchoolSegment("Nowhere")).rejects.toMatchObject({ code: ErrorCode.NOT_FOUND });
+      await expect(resolveSchoolSegment("សាលាគរូ")).rejects.toMatchObject({ code: ErrorCode.NOT_FOUND });
+    });
   });
 });
