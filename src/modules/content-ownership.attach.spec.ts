@@ -151,12 +151,25 @@ describe("attaching refuses a cross-owner link", () => {
     return body ? req.send(body) : req;
   };
 
-  /** Runs one path over every owner combination. `table` is the table the attach writes to (checked after a refusal). */
+  /** The column an allowed update must have written: any update changes `updated_at`, so a changed snapshot alone proves nothing. */
+  type Stored = { table: ContentTable; key: string; id: string; column: string; expected: unknown };
+  const expectStored = ({ table, key, id, column, expected }: Stored) => {
+    const row = db.tables[table].find((r) => r[key] === id);
+    expect(row).toBeDefined();
+    expect(row![column]).toEqual(expected);
+  };
+
+  /**
+   * Runs one path over every owner combination. `table` is the table the attach writes to (checked after a refusal).
+   * A path that updates a row (`created` false) names, in `stored`, the row and column the update sets and the value it must
+   * hold afterwards, so an allowed update that dropped the new id fails.
+   */
   const matrix = (
     name: string,
     table: ContentTable,
     send: (parent: Fx, other: Fx) => ReturnType<typeof call>,
     created = true,
+    stored?: (parent: Fx, other: Fx) => Stored,
   ) =>
     describe(name, () => {
       it.each(OWNERS)("%s", async (_label, parentOwner, otherOwner, allowed) => {
@@ -167,7 +180,11 @@ describe("attaching refuses a cross-owner link", () => {
         if (allowed) {
           expect(res.status).toBe(200);
           if (created) expect(db.createdIn(table).length).toBeGreaterThan(0);
-          else expect(db.snapshot()).not.toEqual(before);
+          else {
+            expect(db.snapshot()).not.toEqual(before);
+            expect(stored).toBeDefined();
+            expectStored(stored!(parent, other));
+          }
         } else {
           expect(res.status).toBe(400);
           expect(res.body.code).toBe("INVALID_INPUT");
@@ -192,11 +209,12 @@ describe("attaching refuses a cross-owner link", () => {
   });
 
   describe("a lesson set on a level quiz question: the lesson must have the owner of both ends of the row", () => {
+    let row = "";
     matrix("PUT /level/quiz/question/setlesson/:id", "levelquizquestions", (rowOwner, lessonFx) => {
-      const row = uid();
+      row = uid();
       db.add("levelquizquestions", { levelquizquestionid: row, levelid: rowOwner.level, questionid: rowOwner.question });
       return call("put", `/level/quiz/question/setlesson/${row}`, { lessonid: lessonFx.lesson });
-    }, false);
+    }, false, (_rowOwner, lessonFx) => ({ table: "levelquizquestions", key: "levelquizquestionid", id: row, column: "lessonid", expected: lessonFx.lesson }));
 
     it("a row whose own ends disagree is judged by both: a lesson of Y cannot be set on a row of X, whatever the question's owner", async () => {
       const row = uid();
@@ -222,17 +240,21 @@ describe("attaching refuses a cross-owner link", () => {
     const learningUpdate = (p: Fx, d: Fx) => ({ documentid: d.document, lessonid: p.lesson, lessonlearningname: "ការរៀន", lessonlearningdescription: "ពិពណ៌នា" });
     matrix("POST /lesson/learning/:lessonid", "lessonlearnings", (p, d) => call("post", `/lesson/learning/${p.lesson}`, learning(p, d)));
     matrix("PUT /lesson/learning/:id (re-pointing its document)", "lessonlearnings", (p, d) =>
-      call("put", `/lesson/learning/${p.learning}`, learningUpdate(p, d)), false);
+      call("put", `/lesson/learning/${p.learning}`, learningUpdate(p, d)), false,
+      (p, d) => ({ table: "lessonlearnings", key: "lessonlearningid", id: p.learning, column: "documentid", expected: d.document }));
     const plan = (d: Fx) => ({ documentid: d.document, lessonplanname: "ផែនការ", lessonplandescription: "ពិពណ៌នា", lessonplanorder: 1 });
     const planUpdate = (p: Fx, d: Fx) => ({ documentid: d.document, lessonid: p.lesson, lessonplanname: "ផែនការ", lessonplandescription: "ពិពណ៌នា" });
     matrix("POST /lesson/plan/:lessonid", "lessonplans", (p, d) => call("post", `/lesson/plan/${p.lesson}`, plan(d)));
     matrix("PUT /lesson/plan/:id (re-pointing its document)", "lessonplans", (p, d) =>
-      call("put", `/lesson/plan/${p.plan}`, planUpdate(p, d)), false);
+      call("put", `/lesson/plan/${p.plan}`, planUpdate(p, d)), false,
+      (p, d) => ({ table: "lessonplans", key: "lessonplanid", id: p.plan, column: "documentid", expected: d.document }));
   });
 
   describe("a tag to a question and to a document (tags are stored by name)", () => {
-    matrix("GET /question/tag/:questionid/:tag", "questions", (p, t) => call("get", `/question/tag/${p.question}/${t.qtag}`), false);
-    matrix("GET /document/tag/:documentid/:tag", "documents", (p, t) => call("get", `/document/tag/${p.document}/${t.dtag}`), false);
+    matrix("GET /question/tag/:questionid/:tag", "questions", (p, t) => call("get", `/question/tag/${p.question}/${t.qtag}`), false,
+      (p, t) => ({ table: "questions", key: "questionid", id: p.question, column: "questiontags", expected: [t.qtag] }));
+    matrix("GET /document/tag/:documentid/:tag", "documents", (p, t) => call("get", `/document/tag/${p.document}/${t.dtag}`), false,
+      (p, t) => ({ table: "documents", key: "documentid", id: p.document, column: "documenttags", expected: [t.dtag] }));
 
     it("POST /question/create with tags: X's question takes X's tag and a name nobody has, not Y's tag", async () => {
       const body = (tags: string[]) => ({ questionidentifier: `new-${tags.join("-")}`, questiontext: "សួស្តី", templatetypeid: 1, questioncorrectvalue: 1, questiontags: tags });
@@ -246,7 +268,8 @@ describe("attaching refuses a cross-owner link", () => {
 
   describe("a subject to a curriculum", () => {
     matrix("PUT /curriculum/:id (changing its subject)", "curriculums", (p, s) =>
-      call("put", `/curriculum/${p.curriculum}`, { curriculumname: "Renamed", subjectid: s.subject, countryid: [] }), false);
+      call("put", `/curriculum/${p.curriculum}`, { curriculumname: "Renamed", subjectid: s.subject, countryid: [] }), false,
+      (p, s) => ({ table: "curriculums", key: "curriculumid", id: p.curriculum, column: "subjectid", expected: s.subject }));
   });
 
   describe("a baseline to its curriculum and its schools", () => {
@@ -313,20 +336,25 @@ describe("attaching refuses a cross-owner link", () => {
   describe("a subtree moved to a new parent: it may only go to a parent of its own owner (the parent id is a body field of the update)", () => {
     const platformNotActing = bearer({ lmsuserid: "p", lmsuserroles: [Role.superadmin], permissions: ["superadmin", ...PERMS], organisationid: null, isplatform: true });
     const names = { gradename: "Grade A", levelname: "Level A", lessonname: "Lesson A", lessonpracticename: "Practice A", lessonquizname: "Quiz A" };
-    // [route, the update sent for `own` (the subtree) with `newParent` as the parent id, the stored parent id of own]
-    const routes: Array<[string, (own: Fx, newParent: Fx) => ReturnType<typeof call>, (own: Fx) => string]> = [
+    // [route, the update sent for `own` (the subtree) with `newParent` as the parent id, the row and parent column that update sets]
+    const routes: Array<[string, (own: Fx, newParent: Fx) => ReturnType<typeof call>, (own: Fx, newParent: Fx) => Stored]> = [
       ["PUT /grade/:id (curriculumid)", (own, np) =>
-        call("put", `/grade/${own.grade}`, { gradename: names.gradename, gradeorder: 1, curriculumid: np.curriculum, passing_points: 8 }), (own) => own.curriculum],
+        call("put", `/grade/${own.grade}`, { gradename: names.gradename, gradeorder: 1, curriculumid: np.curriculum, passing_points: 8 }),
+        (own, np) => ({ table: "grades", key: "gradeid", id: own.grade, column: "curriculumid", expected: np.curriculum })],
       ["PUT /level/:id (gradeid)", (own, np) =>
-        call("put", `/level/${own.level}`, { levelname: names.levelname, levelorder: 1, gradeid: np.grade, quiz_points: 10, passing_points: 8 }), (own) => own.grade],
+        call("put", `/level/${own.level}`, { levelname: names.levelname, levelorder: 1, gradeid: np.grade, quiz_points: 10, passing_points: 8 }),
+        (own, np) => ({ table: "levels", key: "levelid", id: own.level, column: "gradeid", expected: np.grade })],
       ["PUT /lesson/:id (levelid)", (own, np) =>
-        call("put", `/lesson/${own.lesson}`, { lessonname: names.lessonname, lessonorder: 1, levelid: np.level, total_points: 100, passing_points: 0 }), (own) => own.level],
+        call("put", `/lesson/${own.lesson}`, { lessonname: names.lessonname, lessonorder: 1, levelid: np.level, total_points: 100, passing_points: 0 }),
+        (own, np) => ({ table: "lessons", key: "lessonid", id: own.lesson, column: "levelid", expected: np.level })],
       ["PUT /lesson/practice/:id (lessonid)", (own, np) =>
-        call("put", `/lesson/practice/${own.practice}`, { lessonid: np.lesson, lessonpracticename: names.lessonpracticename, lessonpracticedescription: "ពិពណ៌នា", points: 10 }), (own) => own.lesson],
+        call("put", `/lesson/practice/${own.practice}`, { lessonid: np.lesson, lessonpracticename: names.lessonpracticename, lessonpracticedescription: "ពិពណ៌នា", points: 10 }),
+        (own, np) => ({ table: "lessonpractices", key: "lessonpracticeid", id: own.practice, column: "lessonid", expected: np.lesson })],
       ["PUT /lesson/quiz/:id (lessonid)", (own, np) =>
-        call("put", `/lesson/quiz/${own.quiz}`, { lessonid: np.lesson, lessonquizname: names.lessonquizname, lessonquizdescription: "ពិពណ៌នា", points: 10 }), (own) => own.lesson],
+        call("put", `/lesson/quiz/${own.quiz}`, { lessonid: np.lesson, lessonquizname: names.lessonquizname, lessonquizdescription: "ពិពណ៌នា", points: 10 }),
+        (own, np) => ({ table: "lessonquizzes", key: "lessonquizid", id: own.quiz, column: "lessonid", expected: np.lesson })],
     ];
-    for (const [name, send] of routes) matrix(name, "grades", send, false);
+    for (const [name, send, stored] of routes) matrix(name, "grades", send, false, stored);
 
     // a baseline's own owner is its curriculum's. The caller check already judges the new curriculum, so the rows that
     // isolate the new rule are those where the caller is not acting (no side to compare) or is X with a baseline of Y.
@@ -343,6 +371,8 @@ describe("attaching refuses a cross-owner link", () => {
         if (allowed) {
           expect(res.status).toBe(200);
           expect(db.snapshot()).not.toEqual(before);
+          expectStored({ table: "curriculumbaseline", key: "curriculumbaselineid", id: own.baseline, column: "curriculumid", expected: np.curriculum });
+          expectStored({ table: "curriculumbaseline", key: "curriculumbaselineid", id: own.baseline, column: "baselineid", expected: np.curriculum });
         } else {
           expect(res.status).toBe(400);
           expect(res.body.errormessage).toBe(MESSAGE);

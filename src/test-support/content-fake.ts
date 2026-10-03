@@ -36,7 +36,8 @@ import { rowMatches, withPrimaryKey } from "./fakewhere";
  * A found row is a copy: setting a field on it changes nothing until `save()` (or
  * the instance `update()`) writes it back, as with the real model, and `save` and
  * `update` write only the fields they are given when a `fields` option names them.
- * The static `update(values, { where })` writes into the rows it matches.
+ * The static `update(values, { where })` writes into the rows it matches (a field named in `fields` that `values` does not hold is
+ * skipped, as Sequelize skips it).
  * `snapshot()` is every table as it stands, to compare before and after a refusal
  * that must have written nothing (an update writes no `created` entry).
  * The columns in `IGNORE_CASE` are compared without regard to case, as MySQL's
@@ -172,7 +173,7 @@ export class ContentFake {
       }) as never);
       jest.spyOn(m, "update" as never).mockImplementation((async (values: Row, o?: { where?: unknown; fields?: ReadonlyArray<string> }) => {
         const found = match(o?.where);
-        for (const row of found) for (const key of o?.fields ?? Object.keys(values)) row[key] = values[key];
+        for (const row of found) for (const key of o?.fields ?? Object.keys(values)) if (key in values) row[key] = values[key];
         return [found.length];
       }) as never);
       jest.spyOn(m, "bulkCreate" as never).mockImplementation((async (list: Row[]) => {
