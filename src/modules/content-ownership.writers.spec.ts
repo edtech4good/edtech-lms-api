@@ -121,6 +121,17 @@ describe("content writers set the owner from the caller's scope", () => {
       await post("/question/create", "X's Admin", body({ organisationid: Y })).expect(400);
       db.nothingCreated();
     });
+    it.each([["a string", "easy"], ["an object", { easy: true }], ["a number", 3]])("tags that are %s, not a list, are refused with 400 (not a server error) and nothing is written", async (_what, questiontags) => {
+      const res = await post("/question/create", "X's Admin", body({ questiontags }));
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("INVALID_INPUT");
+      db.nothingCreated();
+    });
+    it("no tags (absent, null or empty) is allowed", async () => {
+      await post("/question/create", "X's Admin", body({ questionidentifier: "សំណួរ-101" })).expect(200);
+      await post("/question/create", "X's Admin", body({ questionidentifier: "សំណួរ-102", questiontags: null })).expect(200);
+      await post("/question/create", "X's Admin", body({ questionidentifier: "សំណួរ-103", questiontags: [] })).expect(200);
+    });
   });
 
   describe("POST /document/upload", () => {
@@ -156,7 +167,27 @@ describe("content writers set the owner from the caller's scope", () => {
   });
 
   describe("update never changes the owner", () => {
-    it("PUT /curriculum/:id refuses an organisationid in the body, and the curriculum keeps its owner", async () => {
+    it("PUT /curriculum/:id with a valid body writes the new name and the curriculum keeps its owner", async () => {
+      db.add("curriculums", { curriculumid: "44444444-4444-4444-8444-444444444444", curriculumname: "Old", organisationid: X, curriculumstatus: true });
+      const res = await request(app.getHttpServer())
+        .put("/curriculum/44444444-4444-4444-8444-444444444444")
+        .set("Authorization", callers["X's Admin"])
+        .send({ curriculumname: "New name", subjectid: SUBJECT_X, countryid: [] });
+      expect(res.status).toBe(200);
+      expect(db.tables.curriculums[0]).toMatchObject({ curriculumname: "New name", organisationid: X });
+    });
+
+    it("PUT /question/:id with a valid body writes the new identifier and the question keeps its owner", async () => {
+      db.add("questions", { questionid: "55555555-5555-4555-8555-555555555555", questionidentifier: "old-id", organisationid: X });
+      const res = await request(app.getHttpServer())
+        .put("/question/55555555-5555-4555-8555-555555555555")
+        .set("Authorization", callers["X's Admin"])
+        .send({ questionidentifier: "new-identifier" });
+      expect(res.status).toBe(200);
+      expect(db.tables.questions[0]).toMatchObject({ questionidentifier: "new-identifier", organisationid: X });
+    });
+
+    it("PUT /curriculum/:id refuses an organisationid in the body (the request validator does), and the curriculum keeps its owner", async () => {
       db.add("curriculums", { curriculumid: "44444444-4444-4444-8444-444444444444", curriculumname: "Old", organisationid: X, curriculumstatus: true });
       const res = await request(app.getHttpServer())
         .put("/curriculum/44444444-4444-4444-8444-444444444444")
@@ -166,7 +197,7 @@ describe("content writers set the owner from the caller's scope", () => {
       expect(db.tables.curriculums[0].organisationid).toBe(X);
     });
 
-    it("PUT /question/:id refuses an organisationid in the body", async () => {
+    it("PUT /question/:id refuses an organisationid in the body (the request validator does), and the question keeps its owner", async () => {
       db.add("questions", { questionid: "55555555-5555-4555-8555-555555555555", questionidentifier: "old-id", organisationid: X });
       const res = await request(app.getHttpServer())
         .put("/question/55555555-5555-4555-8555-555555555555")

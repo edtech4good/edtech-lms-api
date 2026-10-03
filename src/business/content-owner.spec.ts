@@ -1,4 +1,4 @@
-import { questiontags } from "src/models/data-models/questiontags";
+import { ApiError } from "src/models/ApiError";
 import { ContentFake } from "src/test-support/content-fake";
 import {
   assertSameOwner,
@@ -152,9 +152,16 @@ describe("ownerForNewContent / callerOwner", () => {
     expect(callerOwner({ organisationid: null, isplatform: true })).toBeNull();
   });
 
-  it("no scope at all fails closed (403)", () => {
+  it("no scope at all fails closed (403, NOT_ALLOWED)", () => {
     for (const org of [undefined, { organisationid: null, isplatform: false }]) {
-      expect(() => ownerForNewContent(org as never)).toThrow();
+      let refusal: ApiError | undefined;
+      try {
+        ownerForNewContent(org as never);
+      } catch (e) {
+        refusal = e as ApiError;
+      }
+      expect(refusal?.code).toBe("NOT_ALLOWED");
+      expect(refusal?.getStatus()).toBe(403);
     }
   });
 });
@@ -182,12 +189,15 @@ describe("assertTagsFitOwner", () => {
 
   it("the same name owned by two organisations is fine for either of them", async () => {
     await fits("question", ["shared"], X);
-    await fits("question", ["SHARED"], Y);
+    await fits("question", ["shared"], Y);
   });
 
-  it("names match without regard to case, as the database does (it hands back the row for 'hard' when asked for 'HARD')", async () => {
-    jest.spyOn(questiontags, "findAll").mockResolvedValue([{ questiontagname: "hard", organisationid: Y }] as never);
+  it("names match without regard to case, as the database does: 'HARD' is Y's tag 'hard' and 'Lesson' is Y's document tag", async () => {
+    // the fake compares tag names case-insensitively (as MySQL's collation does), so the lookup finds the row
+    // for 'hard' when asked for 'HARD' and it is the function's own comparison that must still see it as Y's
     await expect(fits("question", ["HARD"], X)).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(fits("document", ["Lesson"], X)).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await fits("question", ["EASY"], X);
   });
 
   it("an unowned question or document takes any tag (for now), and no tags is nothing to check", async () => {

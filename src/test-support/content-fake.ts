@@ -30,6 +30,14 @@ import { rowMatches, withPrimaryKey } from "./fakewhere";
  * given, so an ownership rule that reads a row by id really reads it.
  * Every `create` is recorded in `created` (table, then the attributes) so a spec
  * can assert what was written, and `nothingCreated()` after a refusal.
+ * A found row is a copy: setting a field on it changes nothing until `save()` (or
+ * the instance `update()`) writes it back, as with the real model, and `save` and
+ * `update` write only the fields they are given when a `fields` option names them.
+ * The static `update(values, { where })` writes into the rows it matches.
+ * `snapshot()` is every table as it stands, to compare before and after a refusal
+ * that must have written nothing (an update writes no `created` entry).
+ * The columns in `IGNORE_CASE` are compared without regard to case, as MySQL's
+ * default collation does.
  */
 type Row = Record<string, unknown>;
 
@@ -60,6 +68,10 @@ const MODELS = {
 
 export type ContentTable = keyof typeof MODELS;
 
+const IGNORE_CASE = ["questiontagname", "documenttagname"];
+// what the wrapper adds to a row: never copied back into it
+const INSTANCE_ONLY = new Set(["get", "setDataValue", "save", "reload", "update", "toJSON", "getGrade"]);
+
 export class ContentFake {
   tables: Record<string, Row[]> = {};
   created: Array<{ table: ContentTable; row: Row }> = [];
@@ -73,6 +85,10 @@ export class ContentFake {
     this.tables[table].push({ isdeleted: false, ...row });
   }
 
+  snapshot(): Record<string, Row[]> {
+    return JSON.parse(JSON.stringify(this.tables));
+  }
+
   nothingCreated() {
     expect(this.created).toEqual([]);
   }
@@ -82,15 +98,42 @@ export class ContentFake {
   }
 
   private wrap(table: ContentTable, row: Row) {
-    return {
+    const write = (instance: Row, fields?: ReadonlyArray<string>) => {
+      for (const key of fields ?? Object.keys(instance)) {
+        if (!INSTANCE_ONLY.has(key) && key in instance) row[key] = instance[key];
+      }
+    };
+    const instance: Row = {
       ...row,
-      get: () => row,
-      setDataValue: (k: string, v: unknown) => void (row[k] = v),
-      save: async () => row,
-      reload: async () => row,
-      update: async () => row,
+      // what the instance holds now (the stored row with this instance's changes), as Sequelize's `get()` does
+      get: () => Object.fromEntries([...Object.entries(row), ...Object.entries(instance).filter(([k]) => !INSTANCE_ONLY.has(k))]),
+      // sets the value on the instance only: nothing reaches the row until `save()`
+      setDataValue: (k: string, v: unknown) => {
+        instance[k] = v;
+      },
+      save: async (o?: { fields?: ReadonlyArray<string> }) => {
+        write(instance, o?.fields);
+        return instance;
+      },
+      reload: async () => {
+        Object.assign(instance, row);
+        return instance;
+      },
+      update: async (values: Row, o?: { fields?: ReadonlyArray<string> }) => {
+        Object.assign(instance, values);
+        write(instance, o?.fields ?? Object.keys(values));
+        return instance;
+      },
       toJSON: () => row,
     };
+    // the association accessor a level's points recompute reads its grade through
+    if (table === "levels") {
+      instance.getGrade = async () => {
+        const grade = this.tables.grades.find((g) => g.gradeid === row.gradeid);
+        return grade ? this.wrap("grades", grade) : null;
+      };
+    }
+    return instance;
   }
 
   install() {
@@ -99,7 +142,7 @@ export class ContentFake {
       withPrimaryKey(model, key);
       const m = model as unknown as Record<string, unknown>;
       const rows = () => this.tables[name];
-      const match = (where: unknown) => rows().filter((r) => rowMatches(r, where));
+      const match = (where: unknown) => rows().filter((r) => rowMatches(r, where, IGNORE_CASE));
       jest.spyOn(m, "findOne" as never).mockImplementation((async (o?: { where?: unknown }) => {
         const found = match(o?.where)[0];
         return found ? this.wrap(name, found) : null;
@@ -121,7 +164,11 @@ export class ContentFake {
         this.tables[name] = rows().filter((r) => !gone.includes(r));
         return gone.length;
       }) as never);
-      jest.spyOn(m, "update" as never).mockResolvedValue([1] as never);
+      jest.spyOn(m, "update" as never).mockImplementation((async (values: Row, o?: { where?: unknown; fields?: ReadonlyArray<string> }) => {
+        const found = match(o?.where);
+        for (const row of found) for (const key of o?.fields ?? Object.keys(values)) row[key] = values[key];
+        return [found.length];
+      }) as never);
       jest.spyOn(m, "bulkCreate" as never).mockImplementation((async (list: Row[]) => {
         for (const attrs of list) {
           const row = { ...attrs };

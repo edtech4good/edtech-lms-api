@@ -8,6 +8,8 @@ export const createquestion: RequestValidator = ({
     questionidentifier: joi.string().required().max(100).min(3).custom(emptyString("Question identifier")).label("Question identifier"),
     // The owner is never a client field: it comes from the caller's organisation on create and never changes.
     organisationid: joi.any().forbidden().label("Organisation"),
+    // Tags are a list of tag names; a string or an object would break the ownership check on them.
+    questiontags: joi.array().items(joi.string().allow("")).allow(null).label("Question tags"),
   }).unknown(true),
 });
 
