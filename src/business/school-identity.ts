@@ -58,7 +58,7 @@ export interface ResolvedSchool {
 const columns = ["schoolid", "schoolname"];
 
 /** A read with no lock (the by-name narrowing). */
-const plainRead = (transaction?: Transaction) => ({ attributes: columns, transaction });
+const plainRead = (transaction?: Transaction) => ({ attributes: [...columns, "isdeleted"], transaction });
 
 /** A read by primary key under a shared lock when there is a transaction. */
 const lockedRead = (transaction?: Transaction) => ({
@@ -72,6 +72,36 @@ const noSuchSchool = (field: string) =>
     fields: [{ field, message: "That school doesn't exist." }],
   });
 
+/**
+ * The schools whose stored name is `schoolname` under the text rule above, live or
+ * soft-deleted, read WITHOUT a lock.
+ *
+ * `TRIM(schoolname) = ?` narrows to the schools whose stored name equals the
+ * given name once surrounding spaces are ignored on BOTH sides, so a school
+ * whose stored name has stray spaces around it is still found. (MySQL's TRIM
+ * removes spaces only; the comparison below is what decides.)
+ *
+ * The narrowing takes NO LOCK. A locking read on this predicate scans the
+ * `schoolname` index and locks every entry it passes for the whole
+ * transaction: that blocks the rename or create of an UNRELATED school until
+ * this transaction ends, and it deadlocks with a rename of the chosen school
+ * (the rename needs the index entry, the insert's foreign-key check needs the
+ * school row). So the school is chosen unlocked and then locked BY PRIMARY
+ * KEY, which locks one row.
+ */
+async function sameNameCandidates(schoolname: string, transaction?: Transaction): Promise<schools[]> {
+  const candidates = await schools.findAll({
+    where: sqlWhere(fn("TRIM", col("schoolname")), schoolname.trim().normalize("NFC")),
+    ...plainRead(transaction),
+  });
+  return candidates.filter((s) => isSameSchoolName(s.schoolname, schoolname));
+}
+
+const ambiguousName = (field: string) =>
+  new ApiError(ErrorCode.INVALID_INPUT, "That school name matches more than one school.", {
+    fields: [{ field, message: "That school name matches more than one school." }],
+  });
+
 /** The school a given name refers to, or null. Throws if the name refers to more than one. */
 export async function resolveSchoolByName(
   schoolname: string | null | undefined,
@@ -81,27 +111,9 @@ export async function resolveSchoolByName(
   if (typeof schoolname !== "string" || schoolname.trim().length === 0) {
     return null;
   }
-  // `TRIM(schoolname) = ?` narrows to the schools whose stored name equals the
-  // given name once surrounding spaces are ignored on BOTH sides, so a school
-  // whose stored name has stray spaces around it is still found. (MySQL's TRIM
-  // removes spaces only; the comparison below is what decides.)
-  //
-  // The narrowing takes NO LOCK. A locking read on this predicate scans the
-  // `schoolname` index and locks every entry it passes for the whole
-  // transaction: that blocks the rename or create of an UNRELATED school until
-  // this transaction ends, and it deadlocks with a rename of the chosen school
-  // (the rename needs the index entry, the insert's foreign-key check needs the
-  // school row). So the school is chosen unlocked and then locked BY PRIMARY
-  // KEY, which locks one row.
-  const candidates = await schools.findAll({
-    where: sqlWhere(fn("TRIM", col("schoolname")), schoolname.trim().normalize("NFC")),
-    ...plainRead(transaction),
-  });
-  const same = candidates.filter((s) => isSameSchoolName(s.schoolname, schoolname));
+  const same = await sameNameCandidates(schoolname, transaction);
   if (same.length > 1) {
-    throw new ApiError(ErrorCode.INVALID_INPUT, "That school name matches more than one school.", {
-      fields: [{ field, message: "That school name matches more than one school." }],
-    });
+    throw ambiguousName(field);
   }
   if (same.length === 0) {
     return null;
@@ -121,6 +133,34 @@ export async function resolveSchoolByName(
     return null;
   }
   return { schoolid: locked.schoolid, schoolname: locked.schoolname };
+}
+
+/**
+ * The school a given name refers to, for a READ (a report, a list, an export).
+ *
+ * This differs from `resolveSchoolByName` on purpose. A writer acts on the school
+ * the caller named and must never guess ("the id is identity": a name that
+ * matches two schools, one of them soft-deleted, is ambiguous and fails). A read
+ * asks for what is there to look at, so when more than one school matches and
+ * EXACTLY ONE of them is live, that live school is the answer; the soft-deleted
+ * namesake stays reachable by its id. Two live matches are still ambiguous (400).
+ * No lock: a read does not hold the school.
+ */
+export async function resolveSchoolByNameForRead(
+  schoolname: string | null | undefined,
+  field = "schoolname",
+): Promise<ResolvedSchool | null> {
+  if (typeof schoolname !== "string" || schoolname.trim().length === 0) {
+    return null;
+  }
+  let same = await sameNameCandidates(schoolname);
+  if (same.length > 1) {
+    same = same.filter((s) => !s.isdeleted);
+    if (same.length !== 1) {
+      throw ambiguousName(field);
+    }
+  }
+  return same.length === 1 ? { schoolid: same[0].schoolid, schoolname: same[0].schoolname } : null;
 }
 
 /** The school with this id (live or soft-deleted), or null. */
@@ -224,13 +264,18 @@ export async function resolveSchoolRef(ref: { schoolid?: unknown; schoolname?: u
     return school;
   }
   if (present(ref.schoolname)) {
-    const school = await resolveSchoolByName(ref.schoolname);
+    const school = await resolveSchoolByNameForRead(ref.schoolname);
     if (!school) {
       throw schoolNotFound();
     }
     return school;
   }
   return undefined;
+}
+
+export interface SegmentOptions {
+  /** Resolve a name for a read: one live school among several namesakes wins. Writers leave this off. */
+  forRead?: boolean;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -242,7 +287,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * whose NAME is a UUID that is some other school's id cannot be reached by name
  * here; use the id.) `null` when it names no school.
  */
-export async function findSchoolSegment(segment: string): Promise<ResolvedSchool | null> {
+export async function findSchoolSegment(segment: string, options: SegmentOptions = {}): Promise<ResolvedSchool | null> {
   const trimmed = (segment ?? "").trim();
   if (UUID.test(trimmed)) {
     const byId = await resolveSchoolById(trimmed);
@@ -250,12 +295,15 @@ export async function findSchoolSegment(segment: string): Promise<ResolvedSchool
       return byId;
     }
   }
-  return resolveSchoolByName(trimmed);
+  return options.forRead ? resolveSchoolByNameForRead(trimmed) : resolveSchoolByName(trimmed);
 }
 
-/** `findSchoolSegment`, but an unknown school is a 404. Returns the id and the school's own stored name (for file names). */
-export async function resolveSchoolSegment(segment: string): Promise<ResolvedSchool> {
-  const school = await findSchoolSegment(segment);
+/**
+ * `findSchoolSegment`, but an unknown school is a 404. Returns the id and the school's own stored name (for file names).
+ * A route that only READS passes `{ forRead: true }` (see `resolveSchoolByNameForRead`); a route that writes does not.
+ */
+export async function resolveSchoolSegment(segment: string, options: SegmentOptions = {}): Promise<ResolvedSchool> {
+  const school = await findSchoolSegment(segment, options);
   if (!school) {
     throw schoolNotFound();
   }

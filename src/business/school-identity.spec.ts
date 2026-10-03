@@ -10,6 +10,7 @@ import {
   resolveSchoolRef,
   resolveSchoolSegment,
   resolveSchoolByName,
+  resolveSchoolByNameForRead,
   withSchoolIds,
 } from "./school-identity";
 
@@ -134,7 +135,8 @@ describe("resolveSchoolByName", () => {
   it("resolves a soft-deleted school: the id is identity, not liveness (no isdeleted filter)", async () => {
     const { findAll } = fakeMysql();
     await expect(resolveSchoolByName("Sample Closed School")).resolves.toEqual(CLOSED);
-    expect(JSON.stringify(findAll.mock.calls[0][0])).not.toMatch(/isdeleted/);
+    // the column is SELECTED (a read may prefer the live school) but never filtered on
+    expect(JSON.stringify(findAll.mock.calls[0][0]?.where)).not.toMatch(/isdeleted/);
   });
 
   it("narrows the database lookup with TRIM(schoolname) = the trimmed, NFC form of the name", async () => {
@@ -354,5 +356,56 @@ describe("reading: a school named at a route's boundary", () => {
       await expect(resolveSchoolSegment("Nowhere")).rejects.toMatchObject({ code: ErrorCode.NOT_FOUND });
       await expect(resolveSchoolSegment("សាលាគរូ")).rejects.toMatchObject({ code: ErrorCode.NOT_FOUND });
     });
+  });
+});
+
+describe("reading prefers the live school; writing never guesses", () => {
+  // Two schools may come to share a name once the unique index no longer covers soft-deleted rows.
+  const LIVE = { schoolid: "id-live", schoolname: "Sample School", isdeleted: false };
+  const GONE = { schoolid: "id-gone", schoolname: "Sample School", isdeleted: true };
+  const LIVE2 = { schoolid: "id-live-2", schoolname: "sample school", isdeleted: false };
+  const GONE2 = { schoolid: "id-gone-2", schoolname: "Sample School ", isdeleted: true };
+  const ID = "11111111-1111-4111-8111-111111111111";
+
+  it("one live and one soft-deleted school of the name: a read by name is the live one", async () => {
+    fakeMysql([LIVE, GONE]);
+    const live = { schoolid: "id-live", schoolname: "Sample School" };
+    await expect(resolveSchoolByNameForRead("Sample School")).resolves.toEqual(live);
+    await expect(resolveSchoolRef({ schoolname: " sample SCHOOL" })).resolves.toEqual(live);
+    await expect(findSchoolSegment("Sample School", { forRead: true })).resolves.toEqual(live);
+    await expect(resolveSchoolSegment("Sample School", { forRead: true })).resolves.toEqual(live);
+  });
+
+  it("the soft-deleted namesake is still reachable by its id", async () => {
+    fakeMysql([LIVE, GONE]);
+    await expect(resolveSchoolRef({ schoolid: "id-gone" })).resolves.toEqual({ schoolid: "id-gone", schoolname: "Sample School" });
+  });
+
+  it("two live schools of the name stay ambiguous (400) for a read, and so do two soft-deleted ones", async () => {
+    fakeMysql([LIVE, LIVE2, GONE]);
+    await expect(resolveSchoolByNameForRead("Sample School")).rejects.toMatchObject({ code: ErrorCode.INVALID_INPUT });
+    await expect(resolveSchoolRef({ schoolname: "Sample School" })).rejects.toMatchObject({ code: ErrorCode.INVALID_INPUT });
+    fakeMysql([GONE, GONE2]);
+    await expect(resolveSchoolRef({ schoolname: "Sample School" })).rejects.toMatchObject({ code: ErrorCode.INVALID_INPUT });
+  });
+
+  it("a single match is returned whether it is live or soft-deleted, and no match is null", async () => {
+    fakeMysql([GONE]);
+    await expect(resolveSchoolByNameForRead("Sample School")).resolves.toEqual({ schoolid: "id-gone", schoolname: "Sample School" });
+    await expect(resolveSchoolByNameForRead("Nowhere")).resolves.toBeNull();
+  });
+
+  it("the writers' resolver does NOT prefer the live school: the id is identity, so a shared name fails", async () => {
+    fakeMysql([LIVE, GONE]);
+    await expect(resolveSchoolByName("Sample School")).rejects.toMatchObject({ code: ErrorCode.INVALID_INPUT });
+    await expect(requireSchoolByName("Sample School")).rejects.toMatchObject({ code: ErrorCode.INVALID_INPUT });
+    // and a segment resolved for a write (no forRead) fails the same way
+    await expect(findSchoolSegment("Sample School")).rejects.toMatchObject({ code: ErrorCode.INVALID_INPUT });
+    await expect(resolveSchoolSegment("Sample School")).rejects.toMatchObject({ code: ErrorCode.INVALID_INPUT });
+  });
+
+  it("a UUID segment that is a school's id is that school, forRead or not", async () => {
+    fakeMysql([LIVE, GONE, { schoolid: ID, schoolname: "Uuid School", isdeleted: true }]);
+    await expect(findSchoolSegment(ID, { forRead: true })).resolves.toEqual({ schoolid: ID, schoolname: "Uuid School" });
   });
 });

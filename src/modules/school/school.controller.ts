@@ -38,7 +38,7 @@ import { IMultiPaging } from "src/models/IPaging";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { LmsUserToken } from "src/models/token.model";
 import { SchoolBusiness } from "../../business/school.business";
-import { resolveSchoolByName } from "../../business/school-identity";
+import { resolveSchoolByNameForRead } from "../../business/school-identity";
 import { SchoolCreateResponse } from "./models/SchoolBase";
 import { SchoolGetAllByCountry, SchoolGetAllByCurriculum, SchoolGetAllResponse } from "./models/SchoolGetAllResponse";
 import { SchoolGetAllTeacherResponse } from "./models/SchoolGetAllTeacherResponse";
@@ -106,7 +106,7 @@ export class SchoolController {
     if (typeof schoolid === "string" && schoolid.trim()) {
       school = await new SchoolBusiness().getschoolbyid(schoolid.trim());
     } else if (typeof schoolname === "string" && schoolname) {
-      const resolved = await resolveSchoolByName(schoolname).catch(() => null);
+      const resolved = await resolveSchoolByNameForRead(schoolname).catch(() => null);
       school = resolved ? await new SchoolBusiness().getschoolbyid(resolved.schoolid) : null;
     } else {
       return { error: false, data: defaultBranding };

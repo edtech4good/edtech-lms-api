@@ -4,27 +4,46 @@ import { SchoolBusiness } from "src/business/school.business";
 import { findSchoolSegment } from "src/business/school-identity";
 import { IRequest } from "src/models/IRequest";
 
+const schoolSegmentInvalid = (): ValidationError => {
+  const error = new ValidationError("Validation", [], {});
+  error.details = [];
+  const erroritem: ValidationErrorItem = {
+    message: "",
+    path: ['schoolname'],
+    type: 'any.invalid',
+  };
+  erroritem.message = "That school doesn't exist.";
+  error.details.push(erroritem);
+  return error;
+};
+
+/**
+ * WRITE routes (`PUT /import/:schoolname/teachers`). The route's `:schoolname`
+ * segment is a school's NAME or its id (see findSchoolSegment); the school must be
+ * a live one, as before, and a name that matches two schools is not guessed.
+ */
 export const SchoolExists = async (
   request: IRequest,
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
-  // The route's `:schoolname` segment is a school's NAME or its id (see
-  // findSchoolSegment); the school must be a live one, as before.
   const found = await findSchoolSegment(data.schoolname ?? "");
   const schoolexists = found ? await new SchoolBusiness().getschoolbyid(found.schoolid) : null;
-  if (!schoolexists) {
-    const error = new ValidationError("Validation", [], {});
-    error.details = [];
-    const erroritem: ValidationErrorItem = {
-      message: "",
-      path: ['schoolname'],
-      type: 'any.invalid',
-    };
-    erroritem.message = "That school doesn't exist.";
-    error.details.push(erroritem);
-    return [error];
-  }
-  return [];
+  return schoolexists ? [] : [schoolSegmentInvalid()];
+};
+
+/**
+ * READ routes (`GET /export/:schoolname/students` and `/teachers`). The id is
+ * identity, not liveness: a soft-deleted school can be read by its id, as the
+ * reports and the edit export already allow. A name is resolved the way the
+ * route's own handler resolves it (`forRead`: one live school among namesakes wins).
+ * Do not put this on a route that writes.
+ */
+export const SchoolExistsForRead = async (
+  request: IRequest,
+  data: any
+): Promise<Array<ValidationError | null | undefined>> => {
+  const found = await findSchoolSegment(data.schoolname ?? "", { forRead: true });
+  return found ? [] : [schoolSegmentInvalid()];
 };
 
 export const SchoolExistsById = async (

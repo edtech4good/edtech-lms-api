@@ -849,7 +849,10 @@ export class ReportBusiness {
         buildCustomWhere(paging.filter ?? [], {key: 'levelid', fields: '$studentprogresses.lessonquiz.lesson.level.levelid$', where: where});
         buildCustomWhere(paging.filter ?? [], {key: 'lessonid', fields: '$studentprogresses.lessonquiz.lesson.lessonid$', where: where});
         buildCustomWhere(paging.filter ?? [], {key: 'countryid', fields: '$school.countryid$', where: where});
-        buildCustomWhere(paging.filter ?? [], {key: 'schoolid', fields: '$school.schoolid$', where: where});
+        // A school filter arrives as a name (as the admin UI sends it) or an id; it is
+        // resolved once, here (an unknown school is a 404), and the learners are limited by id.
+        const filteredSchool = await resolveSchoolFromFilters(paging.filter);
+        if (filteredSchool) where['$school.schoolid$'] = filteredSchool.schoolid;
         buildCustomWhere(paging.filter ?? [], {fields: 'standard', where: where});
         buildCustomWhere(paging.filter ?? [], {fields: 'studentid', where: where});
         const {progress, curriculum} = await this.getAllStudentsWithProgress(type, {where, order, limit, offset});

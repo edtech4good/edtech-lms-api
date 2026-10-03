@@ -55,6 +55,37 @@ describe("roster payload getters keep schoolid out of the login and the included
     guards(await capture((b) => b.getschoolusers()));
   });
 
+  // The join type decides WHICH logins reach the payload: an inner join silently drops
+  // a login that has no learner row. Pinned for every getter that includes the learner.
+  describe("the learner join keeps (or drops) logins exactly as the payload always has", () => {
+    it("getschoolusers: LEFT OUTER JOIN, so a login with no learner row stays in sync/report-data", async () => {
+      const sql = await capture((b) => b.getschoolusers());
+      expect(sql).toMatch(/LEFT OUTER JOIN `students` AS `student`/);
+      expect(sql).not.toMatch(/INNER JOIN/);
+    });
+
+    it("getschooluserbyid: LEFT OUTER JOIN, so a login with no learner row is still pushed", async () => {
+      const sql = await capture((b) => b.getschooluserbyid(["u1"]));
+      expect(sql).toMatch(/LEFT OUTER JOIN `students` AS `student`/);
+      expect(sql).not.toMatch(/INNER JOIN/);
+    });
+
+    it("getschooluserbyschoolid: INNER JOIN, because the export is the school's learners (the school filter is on the learner)", async () => {
+      const sql = await capture((b) => b.getschooluserbyschoolid("school-1"));
+      expect(sql).toMatch(/INNER JOIN `students` AS `student`/);
+      expect(sql).not.toMatch(/LEFT OUTER JOIN/);
+    });
+
+    it("getschoolteachersbyid and the teacher export have no join at all", async () => {
+      for (const sql of [
+        await capture((b) => b.getschoolteachersbyid(["t1"])),
+        await capture(async () => new TeacherBusiness().getteacheruserbyschoolid("school-1")),
+      ]) {
+        expect(sql).not.toMatch(/JOIN/);
+      }
+    });
+  });
+
   it("getschoolteachersbyid (cloud push of teachers just created)", async () => {
     const sql = await capture((b) => b.getschoolteachersbyid(["t1"]));
     expect(sql).toMatch(/`schoolname`/);

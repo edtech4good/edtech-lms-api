@@ -27,7 +27,7 @@ import {
 } from "src/interceptors";
 import { TokenType } from "src/models/enums";
 import { Permission } from "src/models/enums/permissions.enum";
-import { SchoolExists } from "../school/school.business.validator";
+import { SchoolExistsForRead } from "../school/school.business.validator";
 import { resolveSchoolSegment } from "src/business/school-identity";
 import { getschoolstudents } from "../school/school.request.validator";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
@@ -53,7 +53,7 @@ export class ExportController {
   })
   @UseInterceptors(
     new SchemaValidationInterceptor(getschoolstudents),
-    new BusinessValidationInterceptor([SchoolExists])
+    new BusinessValidationInterceptor([SchoolExistsForRead])
   )
   @ApiParam({ name: `schoolname`, type: "string", required: true })
   @ApiQuery({ name: "cloud", required: false, type: String })
@@ -67,7 +67,7 @@ export class ExportController {
   ): Promise<any> {
     const online = (cloud === 'true') ? true : false;
     // The segment names the school by NAME (as before) or by id; resolved once, here.
-    const school = await resolveSchoolSegment(schoolname);
+    const school = await resolveSchoolSegment(schoolname, { forRead: true });
     const studentusers =
       await new SchoolUserBusiness().getschooluserbyschoolid(
         school.schoolid,
@@ -121,7 +121,7 @@ export class ExportController {
   })
   @UseInterceptors(
     new SchemaValidationInterceptor(getschoolstudents),
-    new BusinessValidationInterceptor([SchoolExists])
+    new BusinessValidationInterceptor([SchoolExistsForRead])
   )
   @ApiParam({ name: `schoolname`, type: "string", required: true })
   @RequirePermissions(Permission.VIEW_TEACHER)
@@ -131,7 +131,7 @@ export class ExportController {
     @Param("schoolname") schoolname: string,
     @Response({ passthrough: true }) res: any
   ): Promise<any> {
-    const school = await resolveSchoolSegment(schoolname);
+    const school = await resolveSchoolSegment(schoolname, { forRead: true });
     const teacherusers = await new TeacherBusiness().getteacheruserbyschoolid(
       school.schoolid
     );

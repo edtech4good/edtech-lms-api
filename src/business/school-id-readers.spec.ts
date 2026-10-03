@@ -326,6 +326,40 @@ describe("reports", () => {
   });
 });
 
+describe("the last completed quiz report", () => {
+  const run = async (filter: unknown[]) => {
+    const rb = new ReportBusiness();
+    const progress = jest.fn().mockResolvedValue({ progress: { rows: [], count: 0 }, curriculum: null });
+    (rb as unknown as { getAllStudentsWithProgress: unknown }).getAllStudentsWithProgress = progress;
+    await rb.getStudentLastCompletedQuiz({ pageindex: 1, pagesize: 20, filter } as never, false, 1);
+    return (progress.mock.calls[0][1] as { where: Record<string, unknown> }).where;
+  };
+
+  it("a schoolname filter (as the admin sends it) narrows the report to that school, by id", async () => {
+    const where = await run([{ key: "schoolname", value: "another school" }]);
+    expect(where["$school.schoolid$"]).toBe("id-other");
+    expect(Object.keys(where)).not.toContain("$school.schoolname$");
+  });
+
+  it("a schoolid filter still works", async () => {
+    expect((await run([{ key: "schoolid", value: "id-sample" }]))["$school.schoolid$"]).toBe("id-sample");
+  });
+
+  it("no school filter: every school", async () => {
+    expect(Object.keys(await run([]))).not.toContain("$school.schoolid$");
+  });
+
+  it("an unknown school name or id is a 404, and so is a name that differs only by a Khmer mark", async () => {
+    for (const f of [
+      { key: "schoolname", value: "Nowhere" },
+      { key: "schoolid", value: "nope" },
+      { key: "schoolname", value: "សាលាគរូ" },
+    ]) {
+      await expect(run([f])).rejects.toMatchObject({ code: "NOT_FOUND" });
+    }
+  });
+});
+
 describe("feedback", () => {
   it("a school filter limits the feedback to that school's logins by id", async () => {
     const f = jest.spyOn(feedbacks, "findAndCountAll").mockResolvedValue({ count: 0, rows: [] } as never);

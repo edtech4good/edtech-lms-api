@@ -467,7 +467,7 @@ export class ReportController {
     @Param("schoolname") schoolname: string,
   ): Promise<any> {
     // The segment names the school by NAME (as before) or by id; resolved once, here.
-    const school = await resolveSchoolSegment(schoolname);
+    const school = await resolveSchoolSegment(schoolname, { forRead: true });
     const data = await new ReportBusiness().getDashboardBySchool(school.schoolid);
     return {
         data: data,

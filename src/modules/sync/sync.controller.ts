@@ -181,7 +181,7 @@ export class SyncController {
   @HttpCode(HttpStatus.OK)
   async synconlineschool(@Param("schoolname") schoolname: string) {
     // The segment names the school by NAME (as before) or by id; resolved once, here.
-    const school = await resolveSchoolSegment(schoolname);
+    const school = await resolveSchoolSegment(schoolname, { forRead: true });
     const studentusers =
       await new SchoolUserBusiness().getschooluserbyschoolid(
         school.schoolid,
