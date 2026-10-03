@@ -30,6 +30,7 @@ import { Permission } from "src/models/enums/permissions.enum";
 import { SchoolExists } from "../school/school.business.validator";
 import { getschoolstudents } from "../school/school.request.validator";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { attachmentDisposition } from "src/services/content-disposition";
 
 @ApiTags("Export")
 @Controller("export")
@@ -74,7 +75,7 @@ export class ExportController {
     }
     res.set({
       "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="students-${schoolname.trim()}.zip"`,
+      "Content-Disposition": attachmentDisposition(`students-${schoolname.trim()}.zip`),
     });
     const payload: exportpayload = { 
       studentusers: [],
@@ -135,7 +136,7 @@ export class ExportController {
     }
     res.set({
       "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="teachers-${schoolname.trim()}.zip"`,
+      "Content-Disposition": attachmentDisposition(`teachers-${schoolname.trim()}.zip`),
     });
 
     const zip = new AdmZip();
