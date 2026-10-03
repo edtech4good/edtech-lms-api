@@ -7,7 +7,9 @@ import {
   schoolusersAttributes,
 } from "src/models/data-models/schoolusers";
 import { students, studentsAttributes } from "src/models/data-models/students";
+import { OrgContext } from "src/decorators/org.decorator";
 import { withSchoolIds } from "./school-identity";
+import { andInOwnedSchools } from "./school-scope";
 import { studentApiAttributes } from "./student-api-payload";
 
 export class SchoolUserBusiness {
@@ -166,10 +168,11 @@ export class SchoolUserBusiness {
   // create time (not a DB error), and freeing it would mean renaming the row,
   // which corrupts the learner history this soft delete exists to keep.
   // Learner usernames are auto-generated, so reuse pressure is near zero.
-  deleteschooluser = (
+  deleteschooluser = async (
     schooluserid: string,
     deletedby: string,
     transaction: Transaction,
+    org: OrgContext,
   ) =>
     schoolusers.update(
       {
@@ -178,10 +181,8 @@ export class SchoolUserBusiness {
         deleted_by: deletedby,
       },
       {
-        where: {
-          schooluserid,
-          isdeleted: false,
-        },
+        // Only a login of one of the caller's schools.
+        where: await andInOwnedSchools({ schooluserid, isdeleted: false }, org, transaction),
         transaction,
       },
     );

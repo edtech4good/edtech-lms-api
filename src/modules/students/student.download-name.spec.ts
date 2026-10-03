@@ -77,7 +77,8 @@ describe("GET /student/download-students: the file name of a school with a Khmer
     expect(decodeURIComponent(encoded)).toBe(`students-${KHMER_SCHOOL}.csv`);
     expect(res.body).toContain(KHMER_LEARNER);
     // the business layer is handed the resolved school ID, not the name
-    expect(getAllStudentsForEdit).toHaveBeenCalledWith("", "school-1", "");
+    // (and the caller's scope: a platform user not acting as an organisation)
+    expect(getAllStudentsForEdit).toHaveBeenCalledWith("", "school-1", "", expect.objectContaining({ organisationid: null, isplatform: true }));
   });
 
   it("a school with an ASCII name still gets the plain header it always had", async () => {

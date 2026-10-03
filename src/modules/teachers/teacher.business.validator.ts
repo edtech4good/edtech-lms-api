@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ValidationError, ValidationErrorItem } from "joi";
 import { TeacherBusiness } from "src/business/teacher.business";
+import { findOwnedTeacher } from "src/business/school-scope";
+import { orgOrServerOf } from "src/decorators/org.decorator";
 import { IRequest } from "src/models/IRequest";
 import { TeacherImportBody } from "./models/teachersimport";
 
@@ -30,41 +32,18 @@ export const BulkUpload = async (
   return [];
 };
 
+/**
+ * A teacher that does not exist and one that is another organisation's (or in a
+ * school with none) are reported identically: 404 "That teacher doesn't exist.",
+ * thrown. (A rule sees the path, query and body merged, the body last; the
+ * handler checks the teacher again from the path itself.)
+ */
 export const ValidateTeacherid = async (
   request: IRequest,
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new TeacherBusiness().getTeacherByID(
-    data.schooluserid
-  );
-  if (!tagexists) {
-    const error = new ValidationError("Validation", [], {});
-    error.details = [];
-    const erroritem: ValidationErrorItem = {
-      message: "",
-      path: ['schooluserid'],
-      type: 'any.invalid',
-    };
-    erroritem.message = "That teacher doesn't exist.";
-    error.details.push(erroritem);
-    return [error];
-  }
+  await findOwnedTeacher(orgOrServerOf(request.user), data.schooluserid);
   return [];
 };
 
-export const ValidateTeacherUserid = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new TeacherBusiness().getTeacherByID(data.schooluserid);
-  if (!tagexists) {
-    const error = new ValidationError('Validation', [], {});
-    error.details = [];
-    const erroritem: ValidationErrorItem = {
-      message: '',
-      path: ['schooluserid'],
-      type: 'any.invalid',
-    };
-    erroritem.message = "That teacher doesn't exist.";
-    error.details.push(erroritem);
-    return [error];
-  }
-  return [];
-};
+export const ValidateTeacherUserid = ValidateTeacherid;

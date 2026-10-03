@@ -99,6 +99,9 @@ const makeFixture = (owner: string | null) => {
 const bearer = (claims: Record<string, unknown>) =>
   `Bearer ${sign({ jti: "test-jti", ...claims }, Config.fortyk.api.applicationsecret, { expiresIn: "5m" })}`;
 const PERMS = [...ORGANISATION_ADMIN_PERMISSIONS_20261002];
+// Enrolling learners is limited to the caller's own schools (people-scope.leak.spec.ts), so the owner matrix for learners runs
+// as a platform user not acting as an organisation, who may use any school: only the owners of the school and the curriculum differ.
+const asPlatform = bearer({ lmsuserid: "p", lmsuserroles: [Role.superadmin], permissions: ["superadmin", ...PERMS], organisationid: null, isplatform: true });
 const asX = bearer({ lmsuserid: "oa", lmsuserroles: [Role.organisationadmin], permissions: PERMS, organisationid: X, isplatform: false });
 
 type Case = [label: string, parent: string | null, other: string | null, allowed: boolean];
@@ -405,10 +408,10 @@ describe("attaching refuses a cross-owner link", () => {
       schoolusername: `learner${n}`, schooluserpasswordhash: "pass1234",
     });
     const importBody = (school: Fx, curriculums: Fx[]) => ({ curriculumid: curriculums.map((c) => c.curriculum), schoolid: school.school, standard: "Class A", students: [row(1)] });
-    matrix("POST /student/create (the import)", "students", (school, curriculum) => call("post", "/student/create", importBody(school, [curriculum])));
+    matrix("POST /student/create (the import)", "students", (school, curriculum) => call("post", "/student/create", importBody(school, [curriculum]), asPlatform));
 
     it("a second curriculum of another owner among the first stops the whole import (400), nothing is written", async () => {
-      const refused = await call("post", "/student/create", importBody(fx[X], [fx[X], fx[Y]]));
+      const refused = await call("post", "/student/create", importBody(fx[X], [fx[X], fx[Y]]), asPlatform);
       expect(refused.status).toBe(400);
       expect(refused.body.errormessage).toBe(MESSAGE);
       expect(db.createdIn("students")).toEqual([]);
@@ -432,10 +435,11 @@ describe("attaching refuses a cross-owner link", () => {
         curriculums: nameOf(curriculum), studentfirstname: `សុខា${l.n}`, genderid: "1", city: "ភ្នំពេញ", country: "Cambodia", state: "Phnom Penh",
         dateofjoin: "01-01-2026", isactive: 1,
       });
-      const update = (rows: object[]) => call("put", "/student/update", { students: rows });
+      const update = (rows: object[]) => call("put", "/student/update", { students: rows }, asPlatform);
       const storedCurriculums = (l: { studentid: string }) => db.tables.students.find((r) => r.studentid === l.studentid)!.curriculumids;
       beforeEach(() => {
-        db.add("standards", { standardid: uid(), standardname: "Class A" });
+        // a class belongs to a school: the one the learners are in
+        db.add("standards", { standardid: uid(), standardname: "Class A", schoolid: fx[X].school });
         // the school is found by its name through `WHERE TRIM(schoolname) = ?`, which the fake does not read
         jest.spyOn(schools, "findAll").mockImplementation((async (o: { where: { logic: string } }) =>
           db.tables.schools.filter((r) => String(r.schoolname).trim() === o.where.logic)) as never);

@@ -39,8 +39,8 @@ const buildToken = (roles: Array<string>, permissions: Array<string>) =>
       lmsuserid: "u1",
       lmsuserroles: roles,
       permissions,
-      // The organisation claims every staff token carries: no organisation, not platform.
-      organisationid: null,
+      // The organisation claims every staff token carries: a user of an organisation (the reads are limited to it).
+      organisationid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       isplatform: false,
     },
     Config.fortyk.api.applicationsecret,

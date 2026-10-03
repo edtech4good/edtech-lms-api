@@ -32,13 +32,14 @@ import { isValid, parse } from "date-fns";
 import FormData from "form-data";
 import { json2csv } from "json-2-csv";
 import { assertEnrolmentFits } from "src/business/content-owner";
-import { SchoolBusiness } from "src/business/school.business";
-import { resolveSchoolRef } from "src/business/school-identity";
+import { findOwnedSchool, findOwnedStandard, findOwnedStudent, resolveOwnedSchoolRef } from "src/business/school-scope";
+import { scopeOf } from "src/business/org-scope";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { StudentBusiness } from "src/business/student.business";
 import { Config } from "src/config";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
+import { Org, OrgContext, OrgOrServer } from "src/decorators/org.decorator";
 import { AccessGuard } from "src/guards/access.guard";
 import { PlatformGuard } from "src/guards/platform.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
@@ -114,11 +115,16 @@ export class StudentController {
     @Query("schoolname") schoolname: string = '',
     @Query("schoolid") schoolid: string = '',
     @Query("studentid") studentid: string = '',
-    @Response({ passthrough: true }) res: any
+    @Response({ passthrough: true }) res: any,
+    @OrgOrServer() org: OrgContext,
   ) {
-    // The school is named by id or by name; resolved once, here (unknown: 404).
-    const school = await resolveSchoolRef({ schoolid, schoolname });
-    const students = await new StudentBusiness().getAllStudentsForEdit(countryid, school?.schoolid, studentid);
+    // The school is named by id or by name; resolved once, here, among the caller's schools (unknown or not theirs: 404).
+    const school = await resolveOwnedSchoolRef(org, { schoolid, schoolname });
+    // A learner named by id must be one of the caller's (404 otherwise).
+    if (studentid) {
+      await findOwnedStudent(org, { studentid });
+    }
+    const students = await new StudentBusiness().getAllStudentsForEdit(countryid, school?.schoolid, studentid, org);
     const csvString = await json2csv(students);
     res.set({
       "Content-Type": "application/csv",
@@ -157,11 +163,12 @@ export class StudentController {
     @Query("schoolname") schoolname: string = '',
     @Query("schoolid") schoolid: string = '',
     @Query("teacher") teacher: string = '',
+    @Org() org: OrgContext,
   ): Promise<any> {
     const search_teacher = teacher === 'true' ? true : false;
-    // The school is named by id or by name; resolved once, here (unknown: 404).
-    const school = await resolveSchoolRef({ schoolid, schoolname });
-    const data = await new StudentBusiness().getStudentsWithFilter(userid, school?.schoolid, standard, search_teacher);
+    // The school is named by id or by name; resolved once, here, among the caller's schools (unknown or not theirs: 404).
+    const school = await resolveOwnedSchoolRef(org, { schoolid, schoolname });
+    const data = await new StudentBusiness().getStudentsWithFilter(userid, school?.schoolid, standard, search_teacher, org);
     return {
         data: data,
         error: false,
@@ -183,12 +190,12 @@ export class StudentController {
   @RequirePermissions(Permission.VIEW_STUDENT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IPaging): Promise<any> {
+  async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<any> {
     const tempresult = await new StudentBusiness().getAllStudents({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
-    });
+    }, org);
     return {
       error: false,
       data: {
@@ -229,13 +236,17 @@ export class StudentController {
     @Body() _body: StudentImportBody,
     @Query("cloud") cloud: boolean = false,
     @Query("online") online: string = 'true',
+    @OrgOrServer() org: OrgContext,
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
     let result: Array<schoolusers>;
     try {
-      const school = await new SchoolBusiness().getschoolbyid(_body.schoolid)
-      if (!school) {
-        throw new ApiError(ErrorCode.INVALID_INPUT, "That school doesn't exist.", { fields: [{ field: 'schoolid', message: "That school doesn't exist." }] });
+      // The school must be one of the caller's (live; unknown or not theirs: 404), before anything is written or pushed.
+      const school = await findOwnedSchool(org, _body.schoolid, { transaction: tnx, field: "schoolid" });
+      // A class the learners are put in must be one of the caller's schools' classes too (the platform, not
+      // acting as an organisation, is not limited).
+      if (_body.standard && scopeOf(org).kind !== "platform") {
+        await findOwnedStandard(org, _body.standard, tnx);
       }
       // Enrolling is a link between the school and each curriculum: refused, before anything is written, when they have different owners
       // (the school is the row read just above).
@@ -381,6 +392,7 @@ export class StudentController {
   async deleteuser(
     @Param("schooluserid") schooluserid: string,
     @User() user: LmsUserToken,
+    @Org() org: OrgContext,
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
     try {
@@ -393,6 +405,7 @@ export class StudentController {
         schooluserid,
         user.lmsuserid,
         tnx,
+        org,
       );
       if (!studentDeleted) {
         throw new ApiError(ErrorCode.NOT_FOUND, "That student doesn't exist. It may have already been removed.");
@@ -401,6 +414,7 @@ export class StudentController {
         schooluserid,
         user.lmsuserid,
         tnx,
+        org,
       );
       await tnx.commit();
 
@@ -433,8 +447,8 @@ export class StudentController {
   @RequirePermissions(Permission.VIEW_STUDENT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getuser(@Param("studentid") studentid: string): Promise<any> {
-    const tempresult = await new StudentBusiness().getStudent(studentid);
+  async getuser(@Param("studentid") studentid: string, @Org() org: OrgContext): Promise<any> {
+    const tempresult = await new StudentBusiness().getStudent(studentid, org);
 
     return {
       error: false,
@@ -456,10 +470,10 @@ export class StudentController {
   @RequirePermissions(Permission.VIEW_STUDENT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getstudentstats(@Param("studentid") studentid: string): Promise<any> {
+  async getstudentstats(@Param("studentid") studentid: string, @Org() org: OrgContext): Promise<any> {
     const tb = new StudentBusiness();
     return {
-      data: (await tb.getstudentstats(studentid))[0],
+      data: (await tb.getstudentstats(studentid, org))[0],
       error: false,
     };
   }
@@ -479,11 +493,12 @@ export class StudentController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   async getstudentpracticestats(
-    @Param("studentid") studentid: string
+    @Param("studentid") studentid: string,
+    @Org() org: OrgContext,
   ): Promise<any> {
     const tb = new StudentBusiness();
     return {
-      data: await tb.getstudentpracticestats(studentid),
+      data: await tb.getstudentpracticestats(studentid, org),
       error: false,
     };
   }
@@ -503,11 +518,12 @@ export class StudentController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `studentid`, type: "string", required: true })
   async getstudentquizstats(
-    @Param("studentid") studentid: string
+    @Param("studentid") studentid: string,
+    @Org() org: OrgContext,
   ): Promise<any> {
     const tb = new StudentBusiness();
     return {
-      data: await tb.getstudentquizstats(studentid),
+      data: await tb.getstudentquizstats(studentid, org),
       error: false,
     };
   }
@@ -527,11 +543,12 @@ export class StudentController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `studentid`, type: "string", required: true })
   async getstudentlevelstats(
-    @Param("studentid") studentid: string
+    @Param("studentid") studentid: string,
+    @Org() org: OrgContext,
   ): Promise<any> {
     const tb = new StudentBusiness();
     return {
-      data: await tb.getstudentlevelstats(studentid),
+      data: await tb.getstudentlevelstats(studentid, org),
       error: false,
     };
   }
@@ -581,14 +598,16 @@ export class StudentController {
   @HttpCode(HttpStatus.OK)
   async updateStudents(
     @Body() _body: StudentEditedImportBody,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @OrgOrServer() org: OrgContext,
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
     try {
       await new StudentBusiness().updateStudents(
         _body.students,
         user,
-        tnx
+        tnx,
+        org,
       );
       await tnx.commit();
     } catch (e) {
