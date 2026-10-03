@@ -12,10 +12,15 @@ import { BaselinequestionController } from "./baselinequestion/baselinequestion.
 import { CurriculumBaseLineController } from "./curriculumbaseline/curriculumbaseline.controller";
 import { CurriculumController } from "./curriculum/curriculum.controller";
 import { DocumentController } from "./document/document.controller";
+import { GradeController } from "./grade/grade.controller";
+import { LessonController } from "./lesson/lesson.controller";
 import { LessonLearningController } from "./lesson/lesson.learning.controller";
 import { LessonPlanController } from "./lesson/lesson.plan.controller";
+import { LessonPracticeController } from "./lesson/lesson.practice.controller";
 import { LessonPracticeQuestionController } from "./lesson/lesson.practice.questions.controller";
+import { LessonQuizController } from "./lesson/lesson.quiz.controller";
 import { LessonQuizQuestionController } from "./lesson/lesson.quiz.questions.controller";
+import { LevelController } from "./level/level.controller";
 import { LevelQuizQuestionController } from "./level/level.quiz.questions.controller";
 import { QuestionController } from "./question/question.controller";
 
@@ -113,6 +118,7 @@ describe("attaching refuses a cross-owner link", () => {
       controllers: [
         LessonPracticeQuestionController, LessonQuizQuestionController, LevelQuizQuestionController, LessonLearningController, LessonPlanController,
         BaselinequestionController, CurriculumBaseLineController, CurriculumController, QuestionController, DocumentController,
+        GradeController, LevelController, LessonController, LessonPracticeController, LessonQuizController,
       ],
       providers: [JwtAccessStrategy],
     }).compile();
@@ -277,6 +283,65 @@ describe("attaching refuses a cross-owner link", () => {
       expect(res.status).toBe(400);
       expect(res.body.errormessage).toBe(MESSAGE);
       expect(db.snapshot()).toEqual(before);
+    });
+  });
+
+  describe("a subtree moved to a new parent: it may only go to a parent of its own owner (the parent id is a body field of the update)", () => {
+    const platformNotActing = bearer({ lmsuserid: "p", lmsuserroles: [Role.superadmin], permissions: ["superadmin", ...PERMS], organisationid: null, isplatform: true });
+    const names = { gradename: "Grade A", levelname: "Level A", lessonname: "Lesson A", lessonpracticename: "Practice A", lessonquizname: "Quiz A" };
+    // [route, the update sent for `own` (the subtree) with `newParent` as the parent id, the stored parent id of own]
+    const routes: Array<[string, (own: Fx, newParent: Fx) => ReturnType<typeof call>, (own: Fx) => string]> = [
+      ["PUT /grade/:id (curriculumid)", (own, np) =>
+        call("put", `/grade/${own.grade}`, { gradename: names.gradename, gradeorder: 1, curriculumid: np.curriculum, passing_points: 8 }), (own) => own.curriculum],
+      ["PUT /level/:id (gradeid)", (own, np) =>
+        call("put", `/level/${own.level}`, { levelname: names.levelname, levelorder: 1, gradeid: np.grade, quiz_points: 10, passing_points: 8 }), (own) => own.grade],
+      ["PUT /lesson/:id (levelid)", (own, np) =>
+        call("put", `/lesson/${own.lesson}`, { lessonname: names.lessonname, lessonorder: 1, levelid: np.level, total_points: 100, passing_points: 0 }), (own) => own.level],
+      ["PUT /lesson/practice/:id (lessonid)", (own, np) =>
+        call("put", `/lesson/practice/${own.practice}`, { lessonid: np.lesson, lessonpracticename: names.lessonpracticename, lessonpracticedescription: "ពិពណ៌នា", points: 10 }), (own) => own.lesson],
+      ["PUT /lesson/quiz/:id (lessonid)", (own, np) =>
+        call("put", `/lesson/quiz/${own.quiz}`, { lessonid: np.lesson, lessonquizname: names.lessonquizname, lessonquizdescription: "ពិពណ៌នា", points: 10 }), (own) => own.lesson],
+    ];
+    for (const [name, send] of routes) matrix(name, "grades", send, false);
+
+    // a baseline's own owner is its curriculum's. The caller check already judges the new curriculum, so the rows that
+    // isolate the new rule are those where the caller is not acting (no side to compare) or is X with a baseline of Y.
+    const baselineUpdate = (own: Fx, np: Fx, token = asX) =>
+      call("put", `/curriculumbaseline/update/${own.baseline}`, {
+        baselineid: np.curriculum, curriculumid: np.curriculum, baselinename: "Moved baseline", baselinetype: 2,
+        startdate: "2026-01-01", enddate: "2026-12-31", schoolid: [],
+      }, token);
+    describe("PUT /curriculumbaseline/update/:id (curriculumid), by a platform user who is not acting", () => {
+      it.each(OWNERS)("%s", async (_label, ownOwner, newOwner, allowed) => {
+        const own = fixtureOf(ownOwner);
+        const np = ownOwner === newOwner ? makeFixture(newOwner) : fixtureOf(newOwner);
+        const res = await baselineUpdate(own, np, platformNotActing);
+        if (allowed) {
+          expect(res.status).toBe(200);
+          expect(db.snapshot()).not.toEqual(before);
+        } else {
+          expect(res.status).toBe(400);
+          expect(res.body.errormessage).toBe(MESSAGE);
+          expect(db.snapshot()).toEqual(before);
+        }
+      });
+    });
+    it("PUT /curriculumbaseline/update/:id: X's Organisation Admin cannot move a baseline of Y onto a curriculum of X (its own curriculum is judged too)", async () => {
+      const res = await baselineUpdate(fx[Y], fx[X]);
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe(MESSAGE);
+      expect(db.snapshot()).toEqual(before);
+    });
+
+    describe("a form that sends the stored parent id again is not refused", () => {
+      const resend: Array<[string, (own: Fx) => ReturnType<typeof call>]> = [
+        ...routes.map(([name, send]) => [name, (own: Fx) => send(own, own)] as [string, (own: Fx) => ReturnType<typeof call>]),
+        ["PUT /curriculumbaseline/update/:id (curriculumid)", (own) => baselineUpdate(own, own)],
+      ];
+      it.each(resend)("%s: 200", async (_name, send) => {
+        expect((await send(fx[X])).status).toBe(200);
+        expect(db.snapshot()).not.toEqual(before);
+      });
     });
   });
 

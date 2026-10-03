@@ -58,6 +58,7 @@ import {
 import { LessonRequest } from "./models/LessonRequest";
 import { LessonResponse } from "./models/LessonResponse";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { assertSameOwner, ownerOfLesson, ownerOfLevel } from "src/business/content-owner";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -304,6 +305,8 @@ export class LessonController {
     @Body() body: LessonRequest,
     @Request() payload: IRequest
   ): Promise<LessonCreateResponse> {
+    // Moving a lesson moves everything beneath it: it may only go to a level with the same owner.
+    assertSameOwner(await ownerOfLesson(lessonid), await ownerOfLevel(body.levelid));
     const data = await new LessonBusiness().updateLesson(
       <lessonsAttributes>{
         lessonid,

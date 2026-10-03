@@ -21,6 +21,7 @@ import { GradeGetAllByCurriculumResponse, GradeGetAllResponse, GradeGetResponse 
 import { GradeRequest } from './models/GradeRequest';
 import { GradeResponse } from './models/GradeResponse';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { assertSameOwner, ownerOfCurriculum, ownerOfGrade } from "src/business/content-owner";
 
 
 @ApiExtraModels(GradeBase)
@@ -284,6 +285,8 @@ export class GradeController {
     @Body() body: GradeRequest,
     @User() user: LmsUserToken
   ): Promise<GradeCreateResponse> {
+    // Moving a grade moves everything beneath it: it may only go to a curriculum with the same owner.
+    assertSameOwner(await ownerOfGrade(gradeid), await ownerOfCurriculum(body.curriculumid));
     const data = await new GradeBusiness().updateGrade(<gradesAttributes>{
       gradeid,
       gradename: body.gradename,

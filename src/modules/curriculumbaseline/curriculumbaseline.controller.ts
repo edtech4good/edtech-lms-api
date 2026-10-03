@@ -58,7 +58,7 @@ import axios from "axios";
 import { Config } from "src/config";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { Org, OrgContext } from "src/decorators/org.decorator";
-import { assertSameOwner, callerOwner, ownerOfCurriculum, ownerOfSchool } from "src/business/content-owner";
+import { assertSameOwner, callerOwner, ownerOfCurriculum, ownerOfCurriculumBaseline, ownerOfSchool } from "src/business/content-owner";
 
 /**
  * A baseline has no owner of its own: its curriculum's. It may only be made for a curriculum the caller's
@@ -196,6 +196,9 @@ export class CurriculumBaseLineController {
     @Org() org: OrgContext
   ): Promise<CurriculumBaseLineCreateResponse> {
     await assertBaselineFits(body.curriculumid, body.schoolid, org);
+    // Moving a baseline moves its questions with it: it may only go to a curriculum with the same owner as its current one
+    // (a platform user who is not acting is judged by this alone).
+    assertSameOwner(await ownerOfCurriculumBaseline(curriculumbaselineid), await ownerOfCurriculum(body.curriculumid));
     const data =  await new CurriculumBaseLineBusiness().updateCurriculumBaseLine(<curriculumbaselineAttributes>
       {
         curriculumbaselineid,
