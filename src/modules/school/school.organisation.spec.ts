@@ -4,6 +4,7 @@ import { sign } from "jsonwebtoken";
 import request from "supertest";
 import { Config, Logger } from "src/config";
 import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
+import { curriculums } from "src/models/data-models/curriculums";
 import { organisationcountry } from "src/models/data-models/organisationcountry";
 import { organisations } from "src/models/data-models/organisations";
 import { schools } from "src/models/data-models/school";
@@ -289,6 +290,55 @@ describe("schools write their organisation", () => {
 
     it("an unassigned caller has no scope: 403, nothing written", async () => {
       await update(callers.unassigned, SCHOOL_IN_X, school()).expect(403);
+      nothingWritten();
+    });
+  });
+
+  describe("a curriculum can only be attached to a school of the same organisation", () => {
+    const CX = "c0000000-0000-4000-8000-0000000000a1"; // owned by X
+    const CY = "c0000000-0000-4000-8000-0000000000b1"; // owned by Y
+    const CU = "c0000000-0000-4000-8000-0000000000c1"; // not owned yet
+    beforeEach(() => {
+      const owners: Record<string, string | null> = { [CX]: X, [CY]: Y, [CU]: null };
+      jest.spyOn(curriculums, "findOne").mockImplementation((async (o: { where: { curriculumid: string } }) =>
+        o.where.curriculumid in owners ? { curriculumid: o.where.curriculumid, organisationid: owners[o.where.curriculumid] } : null) as never);
+    });
+    const refusal = (res: { status: number; body: { errormessage: string } }) => {
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("These belong to different organisations, so one can't be attached to the other.");
+    };
+
+    describe.each(IN_X)("%s", (who) => {
+      it("create: a curriculum of X is attached; one of Y is refused (400) and nothing is written; an unowned one is allowed", async () => {
+        await create(callers[who], school({ curriculums: [CX, CU] })).expect(200);
+        expect(created).toHaveLength(1);
+        created = [];
+        transaction.commit.mockClear();
+        refusal(await create(callers[who], school({ curriculums: [CX, CY] })));
+        nothingWritten();
+      });
+
+      it("update: adding a curriculum of Y is refused (400), nothing saved; adding one of X or an unowned one is allowed", async () => {
+        refusal(await update(callers[who], SCHOOL_IN_X, school({ curriculums: [CY] })));
+        nothingWritten();
+        await update(callers[who], SCHOOL_IN_X, school({ curriculums: [CX, CU] })).expect(200);
+        expect(table[0].curriculums).toEqual([CX, CU]);
+      });
+
+      it("update: a link that is already there is not re-checked, so an edit that keeps it still works", async () => {
+        table[0].curriculums = [CY];
+        await update(callers[who], SCHOOL_IN_X, school({ curriculums: [CY] })).expect(200);
+      });
+    });
+
+    it("a school with no organisation yet takes any curriculum (allowed until the owners are assigned)", async () => {
+      await create(callers.platform, school({ curriculums: [CX, CY] })).expect(200);
+      expect(created[0].organisationid).toBeNull();
+    });
+
+    it("the platform moving a school to another organisation re-checks every curriculum it has", async () => {
+      table[0].curriculums = [CX];
+      refusal(await update(callers.platform, SCHOOL_IN_X, school({ organisationid: Y, countryid: C2, curriculums: [CX] })));
       nothingWritten();
     });
   });
