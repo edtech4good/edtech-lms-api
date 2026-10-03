@@ -30,7 +30,8 @@ import {
 import { TokenType } from "src/models/enums";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { SchoolExists } from "../school/school.business.validator";
-import { resolveSchoolSegment } from "src/business/school-identity";
+import { resolveOwnedSchoolSegment } from "src/business/school-scope";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 import { getschoolstudents } from "../school/school.request.validator";
 import { parse } from "csv";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
@@ -86,7 +87,8 @@ export class ImportController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async putteachers(
     @Param("schoolname") schoolname: string,
-    @UploadedFile() file: Express.Multer.File
+    @UploadedFile() file: Express.Multer.File,
+    @Org() org: OrgContext,
   ): Promise<any> {
     const newteachers: Array<any> = [];
     try {
@@ -117,7 +119,7 @@ export class ImportController {
     }
     const tb = new TeacherBusiness();
     // The segment names the school by NAME (as before) or by id; resolved once, here.
-    const school = await resolveSchoolSegment(schoolname);
+    const school = await resolveOwnedSchoolSegment(org, schoolname);
     const duplicates = await tb.getteacherusersbyschoolid(
       school.schoolid,
       newteachers.map((x) => x.teacherusername)
@@ -133,7 +135,7 @@ export class ImportController {
         .map(({ i }) => ({ field: `rows[${i}].teacherusername`, message: "That username is already taken." }));
       throw new ApiError(ErrorCode.INVALID_INPUT, "Some usernames in this file are already taken.", { fields });
     }
-    await tb.addteacheruserbyschoolid(newteachers, school.schoolid);
+    await tb.addteacheruserbyschoolid(newteachers, school.schoolid, org);
     return {
       error: false,
       data: true,

@@ -18,6 +18,7 @@ import { createschool as createSchoolRequest, updateschool as updateSchoolReques
 import { StudentController } from "src/modules/students/student.controller";
 import { TeacherController } from "src/modules/teachers/teacher.controller";
 import { dbinstance } from "src/services/dbservice";
+import { rowMatches } from "src/test-support/fakewhere";
 
 /**
  * C4: every writer of `students` and `schoolusers` stores the school's id next
@@ -46,8 +47,9 @@ beforeEach(() => {
   // the by-name lookup is `WHERE TRIM(schoolname) = ?`: a Sequelize where(fn, value), `logic` is the value
   jest.spyOn(schools, "findAll").mockImplementation((async (opts: { where: { logic: string } }) =>
     known.filter((s) => collate(s.schoolname.replace(/^ +| +$/g, "")) === collate(opts.where.logic))) as never);
-  jest.spyOn(schools, "findOne").mockImplementation((async (opts: { where: { schoolid: string } }) =>
-    known.find((s) => s.schoolid === opts.where.schoolid) ?? null) as never);
+  // by id, with whatever else the lookup asks (a live school, the caller's organisation)
+  jest.spyOn(schools, "findOne").mockImplementation((async (opts: { where: unknown }) =>
+    known.find((s) => rowMatches({ ...s, isdeleted: false }, opts.where)) ?? null) as never);
 });
 
 afterEach(() => jest.restoreAllMocks());
@@ -166,7 +168,7 @@ describe("StudentController.createall (POST /student/create)", () => {
     const users = echoUsers();
     const learners = jest.spyOn(students, "bulkCreate").mockResolvedValue([] as never);
 
-    await new StudentController().createall(body as never, false, "true");
+    await new StudentController().createall(body as never, false, "true", PLATFORM);
 
     expect(rowsOf(users)[0]).toMatchObject(KHMER);
     expect(rowsOf(learners)[0]).toMatchObject({ ...KHMER, studentfirstname: "សុខា" });
@@ -186,7 +188,7 @@ describe("StudentController.createall (POST /student/create)", () => {
     const users = echoUsers();
     const learners = jest.spyOn(students, "bulkCreate").mockResolvedValue([] as never);
 
-    await new StudentController().createall(body as never, false, "true");
+    await new StudentController().createall(body as never, false, "true", PLATFORM);
 
     expect(rowsOf(users)[0]).toMatchObject(KHMER);
     expect(rowsOf(learners)[0]).toMatchObject(KHMER);
@@ -198,7 +200,7 @@ describe("StudentController.createall (POST /student/create)", () => {
     const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
     const learners = jest.spyOn(students, "bulkCreate").mockResolvedValue([] as never);
 
-    await expect(new StudentController().createall(body as never, false, "true")).rejects.toBeInstanceOf(ApiError);
+    await expect(new StudentController().createall(body as never, false, "true", PLATFORM)).rejects.toBeInstanceOf(ApiError);
 
     expect(users).not.toHaveBeenCalled();
     expect(learners).not.toHaveBeenCalled();
@@ -213,7 +215,7 @@ describe("StudentController.createall (POST /student/create)", () => {
       .mockResolvedValue(null);
     const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
 
-    await expect(new StudentController().createall(body as never, false, "true")).rejects.toBeInstanceOf(ApiError);
+    await expect(new StudentController().createall(body as never, false, "true", PLATFORM)).rejects.toBeInstanceOf(ApiError);
     expect(users).not.toHaveBeenCalled();
     expect(tnx.rollback).toHaveBeenCalled();
   });
@@ -225,6 +227,7 @@ describe("TeacherController.createall (POST /teacher/create)", () => {
     await new TeacherController().createall(
       { schoolname: KHMER.schoolname, teachers: [{ schoolusername: "khm.teacher", schooluserpasswordhash: "pw" }] } as never,
       false,
+    PLATFORM,
     );
     expect(rowsOf(users)[0]).toMatchObject(KHMER);
   });
@@ -234,6 +237,7 @@ describe("TeacherController.createall (POST /teacher/create)", () => {
     await new TeacherController().createall(
       { schoolname: "SAMPLE school  ", teachers: [{ schoolusername: "t", schooluserpasswordhash: "pw" }] } as never,
       false,
+    PLATFORM,
     );
     expect(rowsOf(users)[0]).toMatchObject(SAMPLE);
   });
@@ -245,6 +249,7 @@ describe("TeacherController.createall (POST /teacher/create)", () => {
         new TeacherController().createall(
           { schoolname, teachers: [{ schoolusername: "x", schooluserpasswordhash: "pw" }] } as never,
           false,
+        PLATFORM,
         ),
       ).rejects.toBeInstanceOf(ApiError);
     }
@@ -255,7 +260,7 @@ describe("TeacherController.createall (POST /teacher/create)", () => {
   it("names the field in the error: a teacher request names one school for the whole request, so the field is schoolname", async () => {
     jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
     const err = await new TeacherController()
-      .createall({ schoolname: "Nowhere", teachers: [{ schoolusername: "x", schooluserpasswordhash: "pw" }] } as never, false)
+      .createall({ schoolname: "Nowhere", teachers: [{ schoolusername: "x", schooluserpasswordhash: "pw" }] } as never, false, PLATFORM)
       .catch((e) => e);
     expect(err.fields).toEqual([{ field: "schoolname", message: "That school doesn't exist." }]);
   });
@@ -266,14 +271,14 @@ describe("TeacherBusiness.addteacheruserbyschoolid (PUT /import/:schoolname/teac
 
   it("writes the id and the school's own name, the school read in the same transaction under a shared lock", async () => {
     const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
-    await new TeacherBusiness().addteacheruserbyschoolid(teachers, SAMPLE.schoolid);
+    await new TeacherBusiness().addteacheruserbyschoolid(teachers, SAMPLE.schoolid, PLATFORM);
     expect(rowsOf(users)[0]).toMatchObject(SAMPLE);
     expect(schools.findOne).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx, lock: "SHARE" }));
   });
 
   it("imports nothing for a school id that matches no school (404), and rolls back", async () => {
     const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
-    await expect(new TeacherBusiness().addteacheruserbyschoolid(teachers, "no-such-school")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new TeacherBusiness().addteacheruserbyschoolid(teachers, "no-such-school", PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(users).not.toHaveBeenCalled();
     expect(tnx.rollback).toHaveBeenCalledTimes(1);
   });
@@ -315,7 +320,7 @@ describe("StudentBusiness.updateStudents (PUT /student/update: a learner move be
   });
 
   const run = (schoolname: string) =>
-    new StudentBusiness().updateStudents([edit(schoolname)] as never, { lmsuserid: "staff" } as never, tnx as never);
+    new StudentBusiness().updateStudents([edit(schoolname)] as never, { lmsuserid: "staff" } as never, tnx as never, PLATFORM);
 
   it("writes the new school's id with its name on the learner AND on the login", async () => {
     await run(KHMER.schoolname);
@@ -340,7 +345,7 @@ describe("StudentBusiness.updateStudents (PUT /student/update: a learner move be
 
   it("names the failing ROW in the error, students.<i>.schoolname, so a batch that fails says which learner", async () => {
     const err = await new StudentBusiness()
-      .updateStudents([edit(KHMER.schoolname), edit("Nowhere"), edit("Sample School")] as never, { lmsuserid: "staff" } as never, tnx as never)
+      .updateStudents([edit(KHMER.schoolname), edit("Nowhere"), edit("Sample School")] as never, { lmsuserid: "staff" } as never, tnx as never, PLATFORM)
       .catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err.fields).toEqual([{ field: "students.1.schoolname", message: "That school doesn't exist." }]);
@@ -468,9 +473,9 @@ describe("SchoolBusiness.updateschoolName (PUT /school/update/:schoolid: a renam
     expect(tnx.commit).not.toHaveBeenCalled();
   });
 
-  it("returns null for a school that does not exist, writing nothing", async () => {
+  it("a school that does not exist is a 404, writing nothing", async () => {
     (schools.findOne as jest.Mock).mockResolvedValue(null);
-    await expect(rename("x")).resolves.toBeNull();
+    await expect(rename("x")).rejects.toMatchObject({ code: "NOT_FOUND", message: "That school doesn't exist." });
     expect(learners).not.toHaveBeenCalled();
     expect(tnx.rollback).toHaveBeenCalledTimes(1); // the lock taken for the read is released
   });
@@ -542,6 +547,7 @@ describe("classes and Fees Collection rows store the school's own name, read in 
     await new StandardBusiness().createstandard(
       { standardname: "Class 1", schoolid: KHMER.schoolid, schoolname: "a name the client sent" } as never,
       user,
+      PLATFORM,
     );
     expect(schools.findOne).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx, lock: "SHARE" }));
     expect(create.mock.calls[0][0]).toMatchObject({ schoolid: KHMER.schoolid, schoolname: KHMER.schoolname });
@@ -553,7 +559,7 @@ describe("classes and Fees Collection rows store the school's own name, read in 
     known = [];
     const create = jest.spyOn(standards, "create").mockResolvedValue({} as never);
     await expect(
-      new StandardBusiness().createstandard({ standardname: "Class 1", schoolid: "nope" } as never, user),
+      new StandardBusiness().createstandard({ standardname: "Class 1", schoolid: "nope" } as never, user, PLATFORM),
     ).rejects.toBeInstanceOf(ApiError);
     expect(create).not.toHaveBeenCalled();
     expect(tnx.rollback).toHaveBeenCalledTimes(1);
@@ -566,6 +572,7 @@ describe("classes and Fees Collection rows store the school's own name, read in 
     await new StandardBusiness().updatestandardName(
       { standardid: "c1", standardname: "Class 2", schoolid: SAMPLE.schoolid } as never,
       user,
+      PLATFORM,
     );
     expect(klass.schoolname).toBe(SAMPLE.schoolname);
     expect(klass.save).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
@@ -584,6 +591,7 @@ describe("classes and Fees Collection rows store the school's own name, read in 
       await new SchoolcontributeBusiness().updatedSchoolContribute(
         { schoolid: SAMPLE.schoolid, schoolname: "client text", countryid: "country-1" } as never,
         user,
+        PLATFORM,
       );
       for (const r of found) {
         expect(r.schoolname).toBe(SAMPLE.schoolname);
@@ -599,7 +607,7 @@ describe("classes and Fees Collection rows store the school's own name, read in 
       found[1].save.mockRejectedValue(new Error("save failed"));
       jest.spyOn(schoolcontributedata, "findAll").mockResolvedValue(found as never);
       await expect(
-        new SchoolcontributeBusiness().updatedSchoolContribute({ schoolid: SAMPLE.schoolid, countryid: "c" } as never, user),
+        new SchoolcontributeBusiness().updatedSchoolContribute({ schoolid: SAMPLE.schoolid, countryid: "c" } as never, user, PLATFORM),
       ).rejects.toThrow("save failed");
       expect(tnx.rollback).toHaveBeenCalledTimes(1);
       expect(tnx.commit).not.toHaveBeenCalled();
@@ -610,7 +618,7 @@ describe("classes and Fees Collection rows store the school's own name, read in 
       const found = rows();
       jest.spyOn(schoolcontributedata, "findAll").mockResolvedValue(found as never);
       await expect(
-        new SchoolcontributeBusiness().updatedSchoolContribute({ schoolid: "nope", countryid: "c" } as never, user),
+        new SchoolcontributeBusiness().updatedSchoolContribute({ schoolid: "nope", countryid: "c" } as never, user, PLATFORM),
       ).rejects.toBeInstanceOf(ApiError);
       expect(found[0].save).not.toHaveBeenCalled();
     });
@@ -634,7 +642,7 @@ describe("school names are trimmed on create and update", () => {
     (schools.findOne as jest.Mock).mockReset();
     (schools.findOne as jest.Mock).mockResolvedValue({ schoolid: "s", countryid: "c", curriculums: [] });
     jest.spyOn(schools, "count").mockResolvedValue(1 as never);
-    await EditSchool({} as never, { ...input, schoolid: "s" });
+    await EditSchool({ user: { lmsuserid: "p", organisationid: null, isplatform: true } } as never, { ...input, schoolid: "s" });
     const byName = (schools.findOne as jest.Mock).mock.calls.find((c) => c[0].where.schoolname !== undefined);
     expect(byName![0].where.schoolname).toBe("Sample School");
   });

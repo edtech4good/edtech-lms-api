@@ -36,7 +36,7 @@ const getSchoolDashboardCountry = jest.fn().mockResolvedValue([]);
 const getAllSchooldashboard = jest.fn().mockResolvedValue([]);
 const getSchooldashboard = jest.fn().mockResolvedValue([]);
 const getschoolcontributeid = jest.fn().mockResolvedValue({});
-const getSchoolContributeById = jest.fn().mockResolvedValue({});
+const getOwnedSchoolContribute = jest.fn().mockResolvedValue({});
 const getAllSchoolContribute = jest.fn().mockResolvedValue([]);
 const getAllSchoolContributeId = jest.fn().mockResolvedValue({ rows: [], count: 0 });
 
@@ -46,7 +46,7 @@ jest.mock("../../business/schoolcontribute.business", () => ({
     getAllSchooldashboard,
     getSchooldashboard,
     getschoolcontributeid,
-    getSchoolContributeById,
+    getOwnedSchoolContribute,
     getAllSchoolContribute,
     getAllSchoolContributeId,
   })),
@@ -59,8 +59,8 @@ const buildToken = (roles: Array<string>, permissions: Array<string>) =>
       lmsuserid: "u1",
       lmsuserroles: roles,
       permissions,
-      // The organisation claims every staff token carries: no organisation, not platform.
-      organisationid: null,
+      // The organisation claims every staff token carries: a user of an organisation (the reads are limited to it).
+      organisationid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       isplatform: false,
     },
     Config.fortyk.api.applicationsecret,
@@ -97,7 +97,7 @@ const GET_ROUTES: Array<[string, jest.Mock]> = [
   ["/school-contribute/getallschooldashboard", getAllSchooldashboard],
   [`/school-contribute/getschooldashboardid/${SCHOOL_UUID}`, getSchooldashboard],
   [`/school-contribute/getschooldashboard/schoolcontributeid/${CONTRIBUTE_UUID}`, getschoolcontributeid],
-  ["/school-contribute/getschoolcontribute/school-1", getSchoolContributeById],
+  ["/school-contribute/getschoolcontribute/school-1", getOwnedSchoolContribute],
   ["/school-contribute/getallschoolcontribute", getAllSchoolContribute],
 ];
 
@@ -120,7 +120,7 @@ describe("School-contribute read routes require view_school_contribution", () =>
       getAllSchooldashboard,
       getSchooldashboard,
       getschoolcontributeid,
-      getSchoolContributeById,
+      getOwnedSchoolContribute,
       getAllSchoolContribute,
       getAllSchoolContributeId,
     ].forEach((m) => m.mockClear());

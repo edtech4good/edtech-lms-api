@@ -28,7 +28,8 @@ import {
 import { TokenType } from "src/models/enums";
 import { Permission } from "src/models/enums/permissions.enum";
 import { SchoolExistsForRead } from "../school/school.business.validator";
-import { resolveSchoolSegment } from "src/business/school-identity";
+import { resolveOwnedSchoolSegment } from "src/business/school-scope";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 import { getschoolstudents } from "../school/school.request.validator";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { attachmentDisposition } from "src/services/content-disposition";
@@ -63,11 +64,12 @@ export class ExportController {
   async getstudents(
     @Param("schoolname") schoolname: string,
     @Query("cloud") cloud: string = 'false',
-    @Response({ passthrough: true }) res: any
+    @Response({ passthrough: true }) res: any,
+    @Org() org: OrgContext,
   ): Promise<any> {
     const online = (cloud === 'true') ? true : false;
     // The segment names the school by NAME (as before) or by id; resolved once, here.
-    const school = await resolveSchoolSegment(schoolname, { forRead: true });
+    const school = await resolveOwnedSchoolSegment(org, schoolname, { forRead: true });
     const studentusers =
       await new SchoolUserBusiness().getschooluserbyschoolid(
         school.schoolid,
@@ -129,9 +131,10 @@ export class ExportController {
   @HttpCode(HttpStatus.OK)
   async getteachers(
     @Param("schoolname") schoolname: string,
-    @Response({ passthrough: true }) res: any
+    @Response({ passthrough: true }) res: any,
+    @Org() org: OrgContext,
   ): Promise<any> {
-    const school = await resolveSchoolSegment(schoolname, { forRead: true });
+    const school = await resolveOwnedSchoolSegment(org, schoolname, { forRead: true });
     const teacherusers = await new TeacherBusiness().getteacheruserbyschoolid(
       school.schoolid
     );
