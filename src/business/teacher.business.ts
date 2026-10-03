@@ -9,37 +9,46 @@ import { IPaging } from "src/models/IPaging";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import { buildWhere } from "src/services/util.service";
 import { v4 } from "uuid";
-import { requireSchoolByName } from "./school-identity";
+import { resolveSchoolById, schoolNotFound } from "./school-identity";
+import { extractSchoolFilters, schoolIdsWhere } from "./school-filter";
+import { studentApiAttributes } from "./student-api-payload";
 
 export class TeacherBusiness {
-  getteacheruserbyschoolname = (schoolname: string) =>
+  // A school's teachers, for the export a classroom Pi imports (a payload for the
+  // student API: see student-api-payload.ts).
+  getteacheruserbyschoolid = (schoolid: string) =>
     schoolusers.findAll({
       where: {
-        schoolname,
+        schoolid,
         schooluserrole: SchoolRole.TEACHER,
       },
+      attributes: studentApiAttributes,
     });
-  getteacherusersbyschoolname = (
-    schoolname: string,
+  getteacherusersbyschoolid = (
+    schoolid: string,
     teachersusername: Array<string>
   ) =>
     schoolusers.findAll({
       where: {
-        schoolname,
+        schoolid,
         schooluserrole: SchoolRole.TEACHER,
         schoolusername: {
           [Op.in]: teachersusername,
         },
       },
     });
-  addteacheruserbyschoolname = async (
+  addteacheruserbyschoolid = async (
     teachers: Array<any>,
-    schoolname: string
+    schoolid: string
   ) => {
     const tnx = await dbinstance.getdbinstance().transaction();
     try {
-      // Resolved inside the transaction; the school's own stored name is what is written.
-      const school = await requireSchoolByName(schoolname, tnx);
+      // The school is read inside the transaction, locked by primary key (shared); its
+      // own stored name is what is written next to the id.
+      const school = await resolveSchoolById(schoolid, tnx);
+      if (!school) {
+        throw schoolNotFound();
+      }
       const su = await schoolusers.bulkCreate(
         teachers.map((x) => ({
           schooluserpasswordhash: hashPassword(x.teacheruserpassword),
@@ -68,14 +77,18 @@ export class TeacherBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
 
+    // A search by school name is carried out on the schools and the rows are
+    // limited to those schools' ids (see school-filter.ts).
+    const { rest, schoolids } = await extractSchoolFilters(paging.filter);
     schooluserwhere = {
       ...buildWhere<schoolusersAttributes>(
         {
           ...paging,
-          filter: paging.filter,
+          filter: rest,
         },
         schooluserwhere
       ),
+      ...schoolIdsWhere(schoolids),
       schooluserrole: SchoolRole.TEACHER,
       // Soft-deleted teachers drop off the roster, same as learners.
       isdeleted: false,

@@ -188,12 +188,14 @@ export class AuthController {
       body.lmsusername,
       body.lmsuserpassword
     );
-    // schoolname on `students` is denormalized (no join in the login path);
-    // look the school row up here, immediately before token generation, so
-    // TokenBusiness stays IO-free. Missing row -> generateTeacherAuthToken
-    // defaults to uitheme 'kids' / schoolid null.
-    const school = userloggedinfo.schoolname
-      ? await new SchoolBusiness().getschoolbyname(userloggedinfo.schoolname)
+    // The learner or login belongs to its school by id (`schoolusers.schoolid`);
+    // `schoolname` on the rows is a stored copy and is only carried in the token for
+    // older clients. Look the school row up by that id here, immediately before
+    // token generation, so TokenBusiness stays IO-free. Missing row ->
+    // generateTeacherAuthToken defaults to uitheme 'kids' / schoolid null.
+    const schoolid = userloggedinfo.schooluser?.schoolid ?? userloggedinfo.schoolid;
+    const school = schoolid
+      ? await new SchoolBusiness().getschoolbyid(schoolid)
       : null;
 
     return {

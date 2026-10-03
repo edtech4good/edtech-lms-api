@@ -261,23 +261,21 @@ describe("TeacherController.createall (POST /teacher/create)", () => {
   });
 });
 
-describe("TeacherBusiness.addteacheruserbyschoolname (PUT /import/:schoolname/teachers)", () => {
+describe("TeacherBusiness.addteacheruserbyschoolid (PUT /import/:schoolname/teachers, the route resolves the school first)", () => {
   const teachers = [{ teacherusername: "t9", teacheruserpassword: "pw" }];
 
-  it("writes the id and the school's own name, resolved in the same transaction", async () => {
+  it("writes the id and the school's own name, the school read in the same transaction under a shared lock", async () => {
     const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
-    await new TeacherBusiness().addteacheruserbyschoolname(teachers, "sample school");
+    await new TeacherBusiness().addteacheruserbyschoolid(teachers, SAMPLE.schoolid);
     expect(rowsOf(users)[0]).toMatchObject(SAMPLE);
-    expect(schools.findAll).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx }));
+    expect(schools.findOne).toHaveBeenCalledWith(expect.objectContaining({ transaction: tnx, lock: "SHARE" }));
   });
 
-  it("imports nothing for a name that matches no school or only matches under the collation", async () => {
+  it("imports nothing for a school id that matches no school (404), and rolls back", async () => {
     const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
-    for (const name of ["Nowhere", "សាលាគរូ"]) {
-      await expect(new TeacherBusiness().addteacheruserbyschoolname(teachers, name)).rejects.toBeInstanceOf(ApiError);
-    }
+    await expect(new TeacherBusiness().addteacheruserbyschoolid(teachers, "no-such-school")).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(users).not.toHaveBeenCalled();
-    expect(tnx.rollback).toHaveBeenCalledTimes(2);
+    expect(tnx.rollback).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -337,7 +335,7 @@ describe("StudentBusiness.updateStudents (PUT /student/update: a learner move be
     expect(update.mock.calls[0][0]).toMatchObject(SAMPLE);
     expect(user.schoolname).toBe(SAMPLE.schoolname);
     expect(user.schoolid).toBe(SAMPLE.schoolid);
-    expect(JSON.stringify((standard.mock.calls[0][0] as { include: unknown }).include)).toContain(SAMPLE.schoolname);
+    expect(JSON.stringify((standard.mock.calls[0][0] as { include: unknown }).include)).toContain(SAMPLE.schoolid);
   });
 
   it("names the failing ROW in the error, students.<i>.schoolname, so a batch that fails says which learner", async () => {

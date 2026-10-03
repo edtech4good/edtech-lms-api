@@ -40,7 +40,7 @@ jest.mock("src/business/sync.business", () => ({
 }));
 jest.mock("src/business/schooluser.business", () => ({
   SchoolUserBusiness: jest.fn().mockImplementation(() => ({
-    getschooluserbyschoolname: async () => [],
+    getschooluserbyschoolid: async () => [],
   })),
 }));
 jest.mock("axios", () => ({

@@ -1,5 +1,6 @@
 import { Sequelize } from "sequelize";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
+import { TeacherBusiness } from "src/business/teacher.business";
 import { schoolusers } from "src/models/data-models/schoolusers";
 import { students } from "src/models/data-models/students";
 
@@ -33,12 +34,14 @@ describe("roster payload getters keep schoolid out of the login and the included
     expect(sql).toMatch(/`student`\.`studentid`/);
     expect(sql).toMatch(/`student`\.`schoolname`/);
     expect(sql).toMatch(/`schoolusers`\.`schoolname`/);
-    // ...and neither side selects the new column
-    expect(sql).not.toMatch(/schoolid/);
+    // ...and neither side SELECTS the new column. (The school filter of a query may
+    // legitimately name it in its JOIN condition; only what is selected is the payload.)
+    const selected = sql.split(" FROM ")[0];
+    expect(selected).not.toMatch(/schoolid/);
   };
 
-  it("getschooluserbyschoolname (cloud push of a school's learners, sync/cloud/:schoolname/students)", async () => {
-    guards(await capture((b) => b.getschooluserbyschoolname("Sample School")));
+  it("getschooluserbyschoolid (export of a school's learners; cloud sync, sync/cloud/:schoolname/students)", async () => {
+    guards(await capture((b) => b.getschooluserbyschoolid("school-1")));
   });
 
   it("getschooluserbyid (cloud push of learners just created)", async () => {
@@ -52,6 +55,18 @@ describe("roster payload getters keep schoolid out of the login and the included
   it("getschoolteachersbyid (cloud push of teachers just created)", async () => {
     const sql = await capture((b) => b.getschoolteachersbyid(["t1"]));
     expect(sql).toMatch(/`schoolname`/);
-    expect(sql).not.toMatch(/schoolid/);
+    expect(sql.split(" FROM ")[0]).not.toMatch(/schoolid/);
+  });
+
+  it("getteacheruserbyschoolid (export of a school's teachers) selects the login's columns without schoolid, though it filters on it", async () => {
+    const sql = await capture(async () => new TeacherBusiness().getteacheruserbyschoolid("school-1"));
+    expect(sql).toMatch(/`schoolname`/);
+    expect(sql.split(" FROM ")[0]).not.toMatch(/schoolid/);
+    expect(sql).toMatch(/`schoolid` = 'school-1'/);
+  });
+
+  it("the admin API's own reads DO carry schoolid (only the student-API payloads hide it)", async () => {
+    const sql = await capture(async () => schoolusers.findAll({ where: { schoolname: "x" } }));
+    expect(sql.split(" FROM ")[0]).toMatch(/`schoolid`/);
   });
 });

@@ -1,15 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ValidationError, ValidationErrorItem } from "joi";
 import { SchoolBusiness } from "src/business/school.business";
+import { findSchoolSegment } from "src/business/school-identity";
 import { IRequest } from "src/models/IRequest";
 
 export const SchoolExists = async (
   request: IRequest,
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
-  const schoolexists = await new SchoolBusiness().getschoolbyname(
-    data.schoolname
-  );
+  // The route's `:schoolname` segment is a school's NAME or its id (see
+  // findSchoolSegment); the school must be a live one, as before.
+  const found = await findSchoolSegment(data.schoolname ?? "");
+  const schoolexists = found ? await new SchoolBusiness().getschoolbyid(found.schoolid) : null;
   if (!schoolexists) {
     const error = new ValidationError("Validation", [], {});
     error.details = [];

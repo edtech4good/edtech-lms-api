@@ -3,7 +3,6 @@ import * as Sequelize from 'sequelize';
 import { DataTypes, Model, Optional } from 'sequelize';
 import { rpiuseraccess } from './rpiuseraccess';
 import { schools } from './school';
-import { SCHOOL_ID_DEFAULT_SCOPE } from './school-id-scope';
 import { studentappusages } from './studentappusage';
 import type { students, studentsId } from './students';
 
@@ -14,7 +13,7 @@ export interface schoolusersAttributes {
   schooluserrole: number;
   schooluserstatus: number;
   schoolname?: string;
-  /** Added by C4. Written alongside `schoolname`; not read anywhere yet (see SCHOOL_ID_DEFAULT_SCOPE). */
+  /** Added by C4. The school's id: what a learner or login belongs to. `schoolname` is a stored copy. */
   schoolid?: string;
   isdisabled: boolean;
   isdeleted?: boolean;
@@ -142,7 +141,6 @@ export class schoolusers extends Model<schoolusersAttributes, schoolusersCreatio
     sequelize,
     tableName: 'schoolusers',
     timestamps: false,
-    defaultScope: SCHOOL_ID_DEFAULT_SCOPE,
     indexes: [
       {
         name: "PRIMARY",

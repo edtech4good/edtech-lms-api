@@ -6,7 +6,6 @@ import type { grades, gradesId } from "./grades";
 import type { lessons, lessonsId } from "./lessons";
 import type { levels, levelsId } from "./levels";
 import { schools } from "./school";
-import { SCHOOL_ID_DEFAULT_SCOPE } from "./school-id-scope";
 import type { schoolusers, schoolusersId } from "./schoolusers";
 import { standards } from "./standard";
 import { studentprogress } from "./studentprogress";
@@ -33,7 +32,7 @@ export interface studentsAttributes {
   standard?: string;
   schooltype?: string;
   schoolname?: string;
-  /** Added by C4. Written alongside `schoolname`; not read anywhere yet (see SCHOOL_ID_DEFAULT_SCOPE). */
+  /** Added by C4. The school's id: what a learner or login belongs to. `schoolname` is a stored copy. */
   schoolid?: string;
   city: string;
   country: string;
@@ -416,7 +415,6 @@ export class students
         sequelize,
         tableName: "students",
         timestamps: false,
-        defaultScope: SCHOOL_ID_DEFAULT_SCOPE,
         indexes: [
           {
             name: "PRIMARY",

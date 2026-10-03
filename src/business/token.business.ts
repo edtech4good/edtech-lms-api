@@ -416,12 +416,12 @@ export class TokenBusiness {
       studentcurrentlevelid: user.studentcurrentlevelid,
       schoolusername: user.schooluser.schoolusername,
       schooluserrole: user.schooluser.schooluserrole,
-      // `schools` is looked up by the caller (schoolname is a denormalized
-      // column here, not a join) and passed in so this stays pure of IO.
-      // Missing school row -> default theme, no schoolid.
-      // `uitheme`/`schoolid` are display/theming claims only, derived from a
-      // denormalized name match (not a foreign key) — nothing must ever
-      // authorize on them.
+      // `schools` is looked up by the caller, by the id on the learner's login row,
+      // and passed in so this stays pure of IO. Missing school row -> default
+      // theme, no schoolid. `schoolname` above is the stored copy, kept in the
+      // payload for older clients: nothing looks anything up by it. `uitheme` and
+      // `schoolid` are display/theming claims only — nothing must ever authorize
+      // on them.
       uitheme: school?.uitheme ?? "kids",
       schoolid: school?.schoolid ?? null,
     };

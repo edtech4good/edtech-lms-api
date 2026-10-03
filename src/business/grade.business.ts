@@ -144,7 +144,7 @@ export class GradeBusiness {
       ),
     };
   };
-  getGradesWithFilter = async (gradename: string, curid: string, studentid: string, standardid: string, schoolname: string) => {
+  getGradesWithFilter = async (gradename: string, curid: string, studentid: string, standardid: string, schoolid: string | undefined) => {
     const where: WhereOptions<gradesAttributes> = {
       isdeleted: false,
       gradestatus: true,
@@ -159,7 +159,7 @@ export class GradeBusiness {
       const wherestd: any = {};
       if(studentid) wherestd.studentid = studentid;
       if(standardid) wherestd.standard = standardid;
-      if(schoolname) wherestd.schoolname = schoolname;
+      if(schoolid) wherestd.schoolid = schoolid;
       const std = await students.findOne({
         where: wherestd, attributes: [],
         include: [

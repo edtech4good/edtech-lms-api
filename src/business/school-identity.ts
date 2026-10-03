@@ -192,3 +192,72 @@ export async function withSchoolIds<T extends { schoolid?: string | null; school
   }
   return out;
 }
+
+/**
+ * ## Reading: a school named at a route's boundary
+ *
+ * A route that is handed a school (a query parameter, a path segment, a body
+ * field) resolves it to the school's ID once, here, and the business layer works
+ * with the id. The id is the identity: two organisations can each have a school
+ * of the same name, so nothing below the boundary may look a school up by name.
+ *
+ *  - A `schoolid` is checked to exist (live or soft-deleted: the id is identity,
+ *    not liveness) and wins when both are given.
+ *  - A `schoolname` is resolved with the same text rule the writers use (trim,
+ *    NFC, lower-case on both sides; a Khmer mark or an accent still makes a
+ *    different school; more than one school passing fails).
+ *  - Neither given (undefined, null, empty or blank): no school filter, `undefined`.
+ *  - What comes back is the school's id AND its own stored name (for file names).
+ *  - An unknown id or name is a 404 ("That school doesn't exist."), never an
+ *    empty result that looks like a school with no learners.
+ */
+export const schoolNotFound = () => new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
+
+const present = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
+
+export async function resolveSchoolRef(ref: { schoolid?: unknown; schoolname?: unknown }): Promise<ResolvedSchool | undefined> {
+  if (present(ref.schoolid)) {
+    const school = await resolveSchoolById(ref.schoolid.trim());
+    if (!school) {
+      throw schoolNotFound();
+    }
+    return school;
+  }
+  if (present(ref.schoolname)) {
+    const school = await resolveSchoolByName(ref.schoolname);
+    if (!school) {
+      throw schoolNotFound();
+    }
+    return school;
+  }
+  return undefined;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A path segment that used to be a school NAME (`/export/:schoolname/students`)
+ * and may now also be a school ID. A segment shaped like a UUID that is a
+ * school's id is that school; anything else is resolved as a name. (A school
+ * whose NAME is a UUID that is some other school's id cannot be reached by name
+ * here; use the id.) `null` when it names no school.
+ */
+export async function findSchoolSegment(segment: string): Promise<ResolvedSchool | null> {
+  const trimmed = (segment ?? "").trim();
+  if (UUID.test(trimmed)) {
+    const byId = await resolveSchoolById(trimmed);
+    if (byId) {
+      return byId;
+    }
+  }
+  return resolveSchoolByName(trimmed);
+}
+
+/** `findSchoolSegment`, but an unknown school is a 404. Returns the id and the school's own stored name (for file names). */
+export async function resolveSchoolSegment(segment: string): Promise<ResolvedSchool> {
+  const school = await findSchoolSegment(segment);
+  if (!school) {
+    throw schoolNotFound();
+  }
+  return school;
+}

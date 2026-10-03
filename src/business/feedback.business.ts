@@ -1,3 +1,4 @@
+import { resolveSchoolFromFilters } from "./school-filter";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { Op, WhereOptions } from "sequelize";
@@ -169,7 +170,12 @@ export class FeedbackBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     buildCustomWhere(paging.filter ?? [], {key: 'countryid', fields: '$schooluser.school.countryid$', where: where});
-    buildCustomWhere(paging.filter ?? [], {key: 'schoolname', fields: '$schooluser.schoolname$', where: where});
+    // A school filter arrives as a name (as the admin UI sends it) or an id; it is
+    // resolved once, here, and the feedback is limited to that school's logins by id.
+    const filteredSchool = await resolveSchoolFromFilters(paging.filter);
+    if (filteredSchool) {
+      (where as any)['$schooluser.schoolid$'] = filteredSchool.schoolid;
+    }
     buildCustomWhere(paging.filter ?? [], {fields: 'startDate', where: whereUsage});
     buildCustomWhere(paging.filter ?? [], {fields: 'endDate', where: whereUsage});
     if(whereUsage.startDate) {

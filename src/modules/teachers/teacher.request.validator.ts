@@ -36,6 +36,7 @@ export const showallteachers: RequestValidator = {
           .string()
           .valid(
             "schoolname",
+            "schoolid",
             "schoolusername",
           )
           .required(),

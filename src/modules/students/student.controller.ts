@@ -32,6 +32,7 @@ import { isValid, parse } from "date-fns";
 import FormData from "form-data";
 import { json2csv } from "json-2-csv";
 import { SchoolBusiness } from "src/business/school.business";
+import { resolveSchoolRef } from "src/business/school-identity";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { StudentBusiness } from "src/business/student.business";
 import { Config } from "src/config";
@@ -105,18 +106,22 @@ export class StudentController {
   // @UseGuards(AccessGuard(TokenType.ACCESS))
   @ApiQuery({ name: "countryid", required: false, type: 'string' })
   @ApiQuery({ name: "schoolname", required: false, type: 'string' })
+  @ApiQuery({ name: "schoolid", required: false, type: 'string' })
   @ApiQuery({ name: "studentid", required: false, type: 'string' })
   async sync(
     @Query("countryid") countryid: string = '',
     @Query("schoolname") schoolname: string = '',
+    @Query("schoolid") schoolid: string = '',
     @Query("studentid") studentid: string = '',
     @Response({ passthrough: true }) res: any
   ) {
-    const students = await new StudentBusiness().getAllStudentsForEdit(countryid, schoolname, studentid);
+    // The school is named by id or by name; resolved once, here (unknown: 404).
+    const school = await resolveSchoolRef({ schoolid, schoolname });
+    const students = await new StudentBusiness().getAllStudentsForEdit(countryid, school?.schoolid, studentid);
     const csvString = await json2csv(students);
     res.set({
       "Content-Type": "application/csv",
-      "Content-Disposition": attachmentDisposition(`students-${schoolname}.csv`),
+      "Content-Disposition": attachmentDisposition(`students-${school?.schoolname ?? ''}.csv`),
     });
     return new StreamableFile(Buffer.from(csvString));
   }
@@ -142,16 +147,20 @@ export class StudentController {
   @ApiQuery({ name: "userid", required: false, type: 'string' })
   @ApiQuery({ name: "standard", required: false, type: 'string' })
   @ApiQuery({ name: "schoolname", required: false, type: 'string' })
+  @ApiQuery({ name: "schoolid", required: false, type: 'string' })
   @ApiQuery({ name: "teacher", required: false, type: 'string' })
   @HttpCode(HttpStatus.OK)
   async getAllStudents(
     @Query("userid") userid: string = '',
     @Query("standard") standard: string = '',
     @Query("schoolname") schoolname: string = '',
+    @Query("schoolid") schoolid: string = '',
     @Query("teacher") teacher: string = '',
   ): Promise<any> {
     const search_teacher = teacher === 'true' ? true : false;
-    const data = await new StudentBusiness().getStudentsWithFilter(userid, schoolname, standard, search_teacher);
+    // The school is named by id or by name; resolved once, here (unknown: 404).
+    const school = await resolveSchoolRef({ schoolid, schoolname });
+    const data = await new StudentBusiness().getStudentsWithFilter(userid, school?.schoolid, standard, search_teacher);
     return {
         data: data,
         error: false,

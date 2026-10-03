@@ -167,9 +167,10 @@ export class SchoolcontributeBusiness {
         });
      }
 
-    getAllSchoolContribute = async (schoolname: string, countryid: string, date: string) => {
+    // `schoolid` is already resolved by the route (see resolveSchoolRef); '' / undefined = every school.
+    getAllSchoolContribute = async (schoolid: string | undefined, countryid: string, date: string) => {
         const getDashboard: any[] = [];
-        const allSchool = await this.getSchoolsWithFilter(schoolname,countryid)
+        const allSchool = await this.getSchoolsWithFilter(schoolid,countryid)
         for( const school of allSchool){
             const dashboard = await this.getSchoolContributeById(school.schoolid,date);
             if(dashboard.length > 0 && dashboard != null){
@@ -337,9 +338,9 @@ export class SchoolcontributeBusiness {
           return schoolcontribute;
     }
 
-    getSchoolDashboardCountry = async (schoolname: string, countryid: string, date: string) =>{
+    getSchoolDashboardCountry = async (schoolid: string | undefined, countryid: string, date: string) =>{
         const data: Array<LineChartFormat> = [];
-        const school = await this.getAllSchoolContribute(schoolname, countryid, date);
+        const school = await this.getAllSchoolContribute(schoolid, countryid, date);
         for(const getSchool of school){
             const item: Array<ChartItemFormat> = [
                 {
@@ -399,7 +400,7 @@ export class SchoolcontributeBusiness {
         return report;
     }
 
-    getSchoolsWithFilter = async (schoolname: string, countryid: string) => {
+    getSchoolsWithFilter = async (schoolid: string | undefined, countryid: string) => {
         const where: WhereOptions<schoolsAttributes> = {
           isdeleted: false,
         };
@@ -407,8 +408,8 @@ export class SchoolcontributeBusiness {
         if(countryid) {
           where.countryid = countryid;
         }
-        if(schoolname){
-            where.schoolname = schoolname;
+        if(schoolid){
+            where.schoolid = schoolid;
         }
         return await schools.findAll({ where, order });
       };
