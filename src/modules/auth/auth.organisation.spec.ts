@@ -720,6 +720,27 @@ describe("staff sign-in, refresh and the organisation switcher", () => {
         expect(logInfo).not.toHaveBeenCalledWith("Platform user switched organisation", expect.anything());
       });
 
+      it("a refresh that ends the acting session writes ONE audit line (user, the organisation it stopped acting as, the reason, the client address); one that keeps acting writes none", async () => {
+        const toA = await actingAs(ORG_A);
+        logInfo.mockClear();
+        const kept = await refresh(toA.refreshToken).expect(200);
+        const ended = () => logInfo.mock.calls.filter((c) => (c[1] as { audit?: string })?.audit === "organisation-switch-end");
+        expect(ended()).toEqual([]);
+        orgTable.get(ORG_A)!.organisationstatus = false;
+        await refresh(kept.body.data.refreshToken).expect(200);
+        expect(ended()).toHaveLength(1);
+        expect(ended()[0][1]).toMatchObject({
+          audit: "organisation-switch-end",
+          lmsuserid: "u-platform",
+          username: "platform@example.com",
+          fromorganisationid: ORG_A,
+          toorganisationid: null,
+          reason: "organisation-unavailable",
+          ip: expect.any(String),
+        });
+        expect(JSON.stringify(ended())).not.toContain(kept.body.data.refreshToken);
+      });
+
       it("sign-in never starts in an acting state, even right after acting", async () => {
         await actingAs(ORG_A);
         const again = await signIn("platform@example.com");

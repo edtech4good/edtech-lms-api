@@ -71,9 +71,11 @@ export class AuthBusiness {
     await tb.clearRefreshToken(lmsuserid);
   };
 
-  refreshAuth = async (refreshToken: string) => {
+  refreshAuth = async (refreshToken: string, clientip?: string) => {
     try {
       const tokenbusiness = new TokenBusiness();
+      // Signature and token row are checked HERE, before anything in the token is
+      // read: the route guard checks them too, but this must not depend on it.
       const tokenpayload = await tokenbusiness.verifyToken(
         refreshToken,
         TokenType.REFRESH
@@ -86,33 +88,60 @@ export class AuthBusiness {
         throw new Error('Token payload missing or invalid');
       }
       await this.verifyuser(user);
-      return await tokenbusiness.generateAuthToken(user, {
-        actingorganisationid: await this.stillActingOrganisation(user, refreshToken),
+      const ended = await this.stillActingOrganisation(user, refreshToken);
+      const tokens = await tokenbusiness.generateAuthToken(user, {
+        actingorganisationid: ended.organisationid,
       });
+      if (ended.endedfrom !== null) {
+        // The end of an acting session, in the shape of the switch's line (who, which
+        // organisation it stopped acting as, where it went, why, the client address),
+        // written once, after the new token exists. No token is logged.
+        Logger.info("Platform user's acting session ended", {
+          audit: "organisation-switch-end",
+          lmsuserid: user.lmsuserid,
+          username: user.lmsusername,
+          fromorganisationid: ended.endedfrom,
+          // where the session went: the platform view, or (a user given an organisation) its own
+          toorganisationid: ended.reason === "no-longer-platform" ? user.organisationid ?? null : null,
+          reason: ended.reason,
+          ip: clientip,
+        });
+      }
+      return tokens;
     } catch (error) {
       throw new ApiError(ErrorCode.SIGN_IN_REQUIRED);
     }
   };
 
   /**
-   * The organisation a refresh keeps acting in, or null (the platform view).
-   * The refresh token carries it (`actingorganisationid`, written when the
-   * switcher issued it; the signature was checked before this is called). It is
-   * kept only while the database still agrees: the user is still a platform
+   * The organisation a refresh keeps acting in (`organisationid`, null for the
+   * platform view). The refresh token carries it (`actingorganisationid`, written
+   * when the switcher issued it; the signature was checked before this is called).
+   * It is kept only while the database still agrees: the user is still a platform
    * account (no organisation, Super Admin) and the organisation exists, is not
    * deleted and is not suspended. Otherwise the session returns to the platform
-   * view, exactly as a refresh did before. Sign-in never passes one.
+   * view, exactly as a refresh did before, and `endedfrom` names the organisation
+   * it stopped acting as, with the `reason`, for the audit line. Sign-in never
+   * passes one.
    */
-  private stillActingOrganisation = async (user: lmsusers, refreshToken: string): Promise<string | null> => {
+  private stillActingOrganisation = async (
+    user: lmsusers,
+    refreshToken: string,
+  ): Promise<{ organisationid: string | null; endedfrom: string | null; reason?: "organisation-unavailable" | "no-longer-platform" }> => {
     const claimed = (decode(refreshToken) as { actingorganisationid?: unknown } | null)?.actingorganisationid;
     if (!isUuidShaped(claimed)) {
-      return null;
+      return { organisationid: null, endedfrom: null };
     }
     const roleids = (user.roles ?? []).map((role) => role.roleid);
     if (!organisationClaims(user.organisationid, roleids).isplatform) {
-      return null;
+      // Not (or no longer) a platform account: the claim means nothing. Only a user who
+      // really was acting has one, so this is the end of an acting session.
+      return { organisationid: null, endedfrom: claimed, reason: "no-longer-platform" };
     }
-    return (await new OrganisationBusiness().getactiveorganisation(claimed)) ? claimed : null;
+    if (await new OrganisationBusiness().getactiveorganisation(claimed)) {
+      return { organisationid: claimed, endedfrom: null };
+    }
+    return { organisationid: null, endedfrom: claimed, reason: "organisation-unavailable" };
   };
 
   /**
