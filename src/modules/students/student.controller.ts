@@ -31,6 +31,7 @@ import axios from "axios";
 import { isValid, parse } from "date-fns";
 import FormData from "form-data";
 import { json2csv } from "json-2-csv";
+import { assertEnrolmentFits } from "src/business/content-owner";
 import { SchoolBusiness } from "src/business/school.business";
 import { resolveSchoolRef } from "src/business/school-identity";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
@@ -236,6 +237,9 @@ export class StudentController {
       if (!school) {
         throw new ApiError(ErrorCode.INVALID_INPUT, "That school doesn't exist.", { fields: [{ field: 'schoolid', message: "That school doesn't exist." }] });
       }
+      // Enrolling is a link between the school and each curriculum: refused, before anything is written, when they have different owners
+      // (the school is the row read just above).
+      await assertEnrolmentFits(school.organisationid, _body.curriculumid, tnx);
       result = await new SchoolUserBusiness().createSchoolUser(
         _body.students.map(
           (x) =>

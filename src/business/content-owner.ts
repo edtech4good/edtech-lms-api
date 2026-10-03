@@ -198,6 +198,20 @@ export const assertSameOwner = (a: Owner | undefined, b: Owner | undefined): voi
 export const assertSameOwners = ({ parent, question }: AttachOwners): void => assertSameOwner(parent, question);
 
 /**
+ * A learner enrolled on curriculums is a link between a school and each curriculum: the school's owner and
+ * every curriculum's must agree (see `assertSameOwner` for what an unowned side means; a school with no owner
+ * yet takes any curriculum, so none is read).
+ */
+export const assertEnrolmentFits = async (schoolOwner: Owner | undefined, curriculumids: ReadonlyArray<string>, tx?: Tx): Promise<void> => {
+  if (typeof schoolOwner !== "string") {
+    return;
+  }
+  for (const id of curriculumids) {
+    assertSameOwner(schoolOwner, await ownerOfCurriculum(id, tx));
+  }
+};
+
+/**
  * Tags are stored on a question or document as a list of tag NAMES. A name that
  * matches tag rows is attached to that tag: when every row of that name belongs
  * to another organisation than `owner`, the attach is refused (400, same message

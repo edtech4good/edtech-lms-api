@@ -19,6 +19,9 @@ import { levels } from "src/models/data-models/levels";
 import { questions } from "src/models/data-models/questions";
 import { questiontags } from "src/models/data-models/questiontags";
 import { schools } from "src/models/data-models/school";
+import { schoolusers } from "src/models/data-models/schoolusers";
+import { standards } from "src/models/data-models/standard";
+import { students } from "src/models/data-models/students";
 import { subjects } from "src/models/data-models/subjects";
 import { rowMatches, withPrimaryKey } from "./fakewhere";
 
@@ -64,6 +67,9 @@ const MODELS = {
   feedbacks: [feedbacks, "feedbackid"],
   schools: [schools, "schoolid"],
   countries: [countries, "countryid"],
+  students: [students, "studentid"],
+  schoolusers: [schoolusers, "schooluserid"],
+  standards: [standards, "standardid"],
 } as const;
 
 export type ContentTable = keyof typeof MODELS;

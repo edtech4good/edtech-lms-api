@@ -6,7 +6,9 @@ import { Config, Logger } from "src/config";
 import { ORGANISATION_ADMIN_PERMISSIONS_20261002 } from "src/db/frozen/organisation-admin-20261002";
 import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
 import { Role } from "src/models/enums";
+import { schools } from "src/models/data-models/school";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
+import { dbinstance } from "src/services/dbservice";
 import { ContentFake, ContentTable } from "src/test-support/content-fake";
 import { BaselinequestionController } from "./baselinequestion/baselinequestion.controller";
 import { CurriculumBaseLineController } from "./curriculumbaseline/curriculumbaseline.controller";
@@ -23,6 +25,7 @@ import { LessonQuizQuestionController } from "./lesson/lesson.quiz.questions.con
 import { LevelController } from "./level/level.controller";
 import { LevelQuizQuestionController } from "./level/level.quiz.questions.controller";
 import { QuestionController } from "./question/question.controller";
+import { StudentController } from "./students/student.controller";
 
 /**
  * Attaching refuses a link between two owners that differ. For every attach path,
@@ -61,6 +64,7 @@ const X = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const Y = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const MESSAGE = "These belong to different organisations, so one can't be attached to the other.";
 const db = new ContentFake();
+const transaction = { commit: jest.fn(), rollback: jest.fn(), LOCK: { SHARE: "SHARE", UPDATE: "UPDATE" } };
 
 let counter = 0;
 const uid = () => `00000000-0000-4000-8000-${String(++counter).padStart(12, "0")}`;
@@ -118,7 +122,7 @@ describe("attaching refuses a cross-owner link", () => {
       controllers: [
         LessonPracticeQuestionController, LessonQuizQuestionController, LevelQuizQuestionController, LessonLearningController, LessonPlanController,
         BaselinequestionController, CurriculumBaseLineController, CurriculumController, QuestionController, DocumentController,
-        GradeController, LevelController, LessonController, LessonPracticeController, LessonQuizController,
+        GradeController, LevelController, LessonController, LessonPracticeController, LessonQuizController, StudentController,
       ],
       providers: [JwtAccessStrategy],
     }).compile();
@@ -133,6 +137,7 @@ describe("attaching refuses a cross-owner link", () => {
     jest.spyOn(Logger, "warn").mockImplementation(() => Logger);
     tokenExists.mockResolvedValue(true);
     db.install();
+    jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(transaction as never);
     counter = 0;
     // a second set per owner (the "other" side must be a different row from the parent)
     for (const owner of [X, Y, null]) fx[String(owner)] = makeFixture(owner);
@@ -284,6 +289,25 @@ describe("attaching refuses a cross-owner link", () => {
       expect(res.body.errormessage).toBe(MESSAGE);
       expect(db.snapshot()).toEqual(before);
     });
+
+    const stored = (baseline: string) => db.tables.curriculumbaseline.find((r) => r.curriculumbaselineid === baseline)!;
+
+    it("PUT /curriculumbaseline/update/:id: a baselineid of another owner in the body is not stored; the curriculum's own id is", async () => {
+      const res = await call("put", `/curriculumbaseline/update/${fx[X].baseline}`, { ...body(fx[X]), baselineid: fx[Y].curriculum });
+      expect(res.status).toBe(200);
+      expect(stored(fx[X].baseline).curriculumid).toBe(fx[X].curriculum);
+      expect(stored(fx[X].baseline).baselineid).toBe(fx[X].curriculum);
+      expect(JSON.stringify(stored(fx[X].baseline))).not.toContain(fx[Y].curriculum);
+    });
+
+    it("PUT /curriculumbaseline/update/:id: the body is checked like create's: no curriculumid is a 400 (INVALID_INPUT) and nothing is written", async () => {
+      const { curriculumid, ...withoutCurriculum } = body(fx[X]);
+      expect(curriculumid).toBeDefined();
+      const res = await call("put", `/curriculumbaseline/update/${fx[X].baseline}`, withoutCurriculum);
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("INVALID_INPUT");
+      expect(db.snapshot()).toEqual(before);
+    });
   });
 
   describe("a subtree moved to a new parent: it may only go to a parent of its own owner (the parent id is a body field of the update)", () => {
@@ -341,6 +365,68 @@ describe("attaching refuses a cross-owner link", () => {
       it.each(resend)("%s: 200", async (_name, send) => {
         expect((await send(fx[X])).status).toBe(200);
         expect(db.snapshot()).not.toEqual(before);
+      });
+    });
+  });
+
+  describe("a learner enrolled on a curriculum: the school and the curriculum must have the same owner", () => {
+    const row = (n: number) => ({
+      city: "ភ្នំពេញ", country: "Cambodia", dateofjoin: "01-01-2026", studentfirstname: `សុខា${n}`, genderid: "1", state: "Phnom Penh",
+      schoolusername: `learner${n}`, schooluserpasswordhash: "pass1234",
+    });
+    const importBody = (school: Fx, curriculums: Fx[]) => ({ curriculumid: curriculums.map((c) => c.curriculum), schoolid: school.school, standard: "Class A", students: [row(1)] });
+    matrix("POST /student/create (the import)", "students", (school, curriculum) => call("post", "/student/create", importBody(school, [curriculum])));
+
+    it("a second curriculum of another owner among the first stops the whole import (400), nothing is written", async () => {
+      const refused = await call("post", "/student/create", importBody(fx[X], [fx[X], fx[Y]]));
+      expect(refused.status).toBe(400);
+      expect(refused.body.errormessage).toBe(MESSAGE);
+      expect(db.createdIn("students")).toEqual([]);
+      expect(db.createdIn("schoolusers")).toEqual([]);
+      expect(db.snapshot()).toEqual(before);
+    });
+
+    describe("the CSV update (PUT /student/update), refused before any row is written", () => {
+      const nameOf = (f: Fx) => String(db.tables.curriculums.find((c) => c.curriculumid === f.curriculum)!.curriculumname);
+      const schoolNameOf = (f: Fx) => String(db.tables.schools.find((c) => c.schoolid === f.school)!.schoolname);
+      // a learner in the school of `f`, and the CSV row that names a school and curriculums for it
+      const learner = (f: Fx, n: number) => {
+        const studentid = uid();
+        const schooluserid = uid();
+        db.add("students", { studentid, schooluserid, schoolid: f.school, schooluser: { schooluserid, schoolusername: `learner${n}` }, curriculumids: [] });
+        db.add("schoolusers", { schooluserid, schoolusername: `learner${n}`, schoolid: f.school });
+        return { studentid, schooluserid, n };
+      };
+      const csvRow = (l: { studentid: string; schooluserid: string; n: number }, school: Fx, curriculum: Fx) => ({
+        studentid: l.studentid, schooluserid: l.schooluserid, schoolusername: `learner${l.n}`, schoolname: schoolNameOf(school), standard: "Class A",
+        curriculums: nameOf(curriculum), studentfirstname: `សុខា${l.n}`, genderid: "1", city: "ភ្នំពេញ", country: "Cambodia", state: "Phnom Penh",
+        dateofjoin: "01-01-2026", isactive: 1,
+      });
+      const update = (rows: object[]) => call("put", "/student/update", { students: rows });
+      const storedCurriculums = (l: { studentid: string }) => db.tables.students.find((r) => r.studentid === l.studentid)!.curriculumids;
+      beforeEach(() => {
+        db.add("standards", { standardid: uid(), standardname: "Class A" });
+        // the school is found by its name through `WHERE TRIM(schoolname) = ?`, which the fake does not read
+        jest.spyOn(schools, "findAll").mockImplementation((async (o: { where: { logic: string } }) =>
+          db.tables.schools.filter((r) => String(r.schoolname).trim() === o.where.logic)) as never);
+      });
+
+      it("a curriculum of the school's owner is enrolled, and so is an unowned one", async () => {
+        const own = learner(fx[X], 1);
+        const unowned = learner(fx[X], 2);
+        expect((await update([csvRow(own, fx[X], fx[X]), csvRow(unowned, fx[X], fx.null)])).status).toBe(200);
+        expect(storedCurriculums(own)).toEqual([fx[X].curriculum]);
+        expect(storedCurriculums(unowned)).toEqual([fx.null.curriculum]);
+      });
+
+      it("a curriculum of another owner is refused (400), and the rows before it in the file are not written either", async () => {
+        const first = learner(fx[X], 1);
+        const second = learner(fx[X], 2);
+        const res = await update([csvRow(first, fx[X], fx[X]), csvRow(second, fx[X], fx[Y])]);
+        expect(res.status).toBe(400);
+        expect(res.body.errormessage).toBe(MESSAGE);
+        expect(db.snapshot()).toEqual(before);
+        expect(storedCurriculums(first)).toEqual([]);
       });
     });
   });

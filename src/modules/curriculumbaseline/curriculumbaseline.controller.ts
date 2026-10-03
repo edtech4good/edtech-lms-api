@@ -43,6 +43,7 @@ import {
   activatebaseline,
   createcurriculumbaseline,
   deletecurriculumbaseline,
+  updatecurriculumbaseline,
 } from "./curriculumbaseline.request.validator";
 import {
   CurriculumBaseLineBase,
@@ -182,7 +183,7 @@ export class CurriculumBaseLineController {
     description: "Server error",
   })
   @UseInterceptors(
-    new SchemaValidationInterceptor(deletecurriculumbaseline),
+    new SchemaValidationInterceptor(updatecurriculumbaseline),
     new BusinessValidationInterceptor([DeleteCurriculumBaseLine,CurriculumBaseLineName])
   )
   @RequirePermissions(Permission.UPDATE_BASELINEENDLINE)
@@ -203,7 +204,8 @@ export class CurriculumBaseLineController {
       {
         curriculumbaselineid,
         curriculumid: body.curriculumid,
-        baselineid: body.baselineid,
+        // as on create: the curriculum the baseline is for, never a second id from the body
+        baselineid: body.curriculumid,
         baselinename: body.baselinename,
         baselinetype: body.baselinetype,
         startdate: body.startdate,
