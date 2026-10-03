@@ -1,21 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ValidationError, ValidationErrorItem } from "joi";
 import { SchoolBusiness } from "src/business/school.business";
-import { findSchoolSegment } from "src/business/school-identity";
+import { findOwnedSchool, resolveOwnedSchoolSegment } from "src/business/school-scope";
+import { orgOrServerOf } from "src/decorators/org.decorator";
 import { IRequest } from "src/models/IRequest";
 
-const schoolSegmentInvalid = (): ValidationError => {
-  const error = new ValidationError("Validation", [], {});
-  error.details = [];
-  const erroritem: ValidationErrorItem = {
-    message: "",
-    path: ['schoolname'],
-    type: 'any.invalid',
-  };
-  erroritem.message = "That school doesn't exist.";
-  error.details.push(erroritem);
-  return error;
-};
+/**
+ * The rules below look a school up among the CALLER'S schools (`request.user`:
+ * a staff token, or the application API key, which is served as the platform).
+ * A school that does not exist, is another organisation's, or has none is
+ * reported identically: 404 "That school doesn't exist.", thrown, never a
+ * field error. (A rule sees the path, query and body merged, the body last: the
+ * handler checks the school again from the path itself.)
+ */
 
 /**
  * WRITE routes (`PUT /import/:schoolname/teachers`). The route's `:schoolname`
@@ -26,9 +23,10 @@ export const SchoolExists = async (
   request: IRequest,
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
-  const found = await findSchoolSegment(data.schoolname ?? "");
-  const schoolexists = found ? await new SchoolBusiness().getschoolbyid(found.schoolid) : null;
-  return schoolexists ? [] : [schoolSegmentInvalid()];
+  const org = orgOrServerOf(request.user);
+  const found = await resolveOwnedSchoolSegment(org, data.schoolname ?? "");
+  await findOwnedSchool(org, found.schoolid);
+  return [];
 };
 
 /**
@@ -42,29 +40,15 @@ export const SchoolExistsForRead = async (
   request: IRequest,
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
-  const found = await findSchoolSegment(data.schoolname ?? "", { forRead: true });
-  return found ? [] : [schoolSegmentInvalid()];
+  await resolveOwnedSchoolSegment(orgOrServerOf(request.user), data.schoolname ?? "", { forRead: true });
+  return [];
 };
 
 export const SchoolExistsById = async (
   request: IRequest,
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
-  const schoolexists = await new SchoolBusiness().getschoolbyid(
-    data.schoolid
-  );
-  if (!schoolexists) {
-    const error = new ValidationError("Validation", [], {});
-    error.details = [];
-    const erroritem: ValidationErrorItem = {
-      message: "",
-      path: ['schoolid'],
-      type: 'any.invalid',
-    };
-    erroritem.message = "That school doesn't exist.";
-    error.details.push(erroritem);
-    return [error];
-  }
+  await findOwnedSchool(orgOrServerOf(request.user), data.schoolid);
   return [];
 };
 
@@ -98,19 +82,7 @@ export const EditSchool = async (
   request: IRequest,
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new SchoolBusiness().isexistsschoolID(data.schoolid);
-  if (!tagexists) {
-    const error = new ValidationError("Validation", [], {});
-    error.details = [];
-    const erroritem: ValidationErrorItem = {
-      message: "",
-      path: ['schoolid'],
-      type: 'any.invalid',
-    };
-    erroritem.message = "That school doesn't exist.";
-    error.details.push(erroritem);
-    return [error];
-  }
+  await findOwnedSchool(orgOrServerOf(request.user), data.schoolid);
   const schoolexists = await new SchoolBusiness().getschoolbyname(
     (data.schoolname ?? "").trim()
   );
@@ -137,19 +109,7 @@ export const DeleteSchool = async (
   request: IRequest,
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new SchoolBusiness().isexistsschoolID(data.schoolid);
-  if (!tagexists) {
-    const error = new ValidationError("Validation", [], {});
-    error.details = [];
-    const erroritem: ValidationErrorItem = {
-      message: "",
-      path: ['schoolid'],
-      type: 'any.invalid',
-    };
-    erroritem.message = "That school doesn't exist.";
-    error.details.push(erroritem);
-    return [error];
-  }
+  await findOwnedSchool(orgOrServerOf(request.user), data.schoolid);
   if (await new SchoolBusiness().schoolstudentexists(data.schoolid)) {
     const error = new ValidationError("Validation", [], {});
     error.details = [];

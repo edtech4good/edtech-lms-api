@@ -1,4 +1,4 @@
-import { schools } from "src/models/data-models/school";
+import { ContentFake } from "src/test-support/content-fake";
 import { ExportController } from "src/modules/export/export.controller";
 import { ImportController } from "src/modules/import/import.controller";
 import { SchoolExists, SchoolExistsForRead } from "./school.business.validator";
@@ -7,22 +7,24 @@ import { SchoolExists, SchoolExistsForRead } from "./school.business.validator";
  * A soft-deleted school is still a school: the id is identity, not liveness. The
  * export routes only READ, so they accept a soft-deleted school's id like the
  * reports and the edit export do. The teacher import WRITES, so its validator
- * keeps refusing a school that is gone.
+ * keeps refusing a school that is gone. (Both look the school up among the
+ * caller's schools: here a platform user not acting as an organisation, whose
+ * schools are all of them. The organisation callers are in
+ * people-scope.leak.spec.ts.)
  */
 const LIVE = { schoolid: "11111111-1111-4111-8111-111111111111", schoolname: "Sample School", isdeleted: false };
 const GONE = { schoolid: "22222222-2222-4222-8222-222222222222", schoolname: "Closed Sample School", isdeleted: true };
-const table = [LIVE, GONE];
+const db = new ContentFake();
 
 beforeEach(() => {
-  jest.spyOn(schools, "findAll").mockImplementation((async (opts: { where: { logic: string } }) =>
-    table.filter((s) => s.schoolname.toLowerCase() === String(opts.where.logic).toLowerCase())) as never);
-  // the table honours `isdeleted: false` the way the database does
-  jest.spyOn(schools, "findOne").mockImplementation((async (opts: { where: { schoolid: string; isdeleted?: boolean } }) =>
-    table.find((s) => s.schoolid === opts.where.schoolid && (opts.where.isdeleted === undefined || s.isdeleted === opts.where.isdeleted)) ?? null) as never);
+  db.install();
+  db.add("schools", LIVE);
+  db.add("schools", GONE);
 });
 afterEach(() => jest.restoreAllMocks());
 
-const req = {} as never;
+const req = { user: { lmsuserid: "p", organisationid: null, isplatform: true } } as never;
+const refusal = { code: "NOT_FOUND", message: "That school doesn't exist." };
 
 describe("the read routes' validator (export of a school's learners and teachers)", () => {
   it("accepts a live school by id and by name", async () => {
@@ -35,11 +37,9 @@ describe("the read routes' validator (export of a school's learners and teachers
     expect(await SchoolExistsForRead(req, { schoolname: "Closed Sample School" })).toEqual([]);
   });
 
-  it("refuses a school that does not exist", async () => {
+  it("refuses a school that does not exist with a 404", async () => {
     for (const segment of ["Nowhere", "33333333-3333-4333-8333-333333333333", ""]) {
-      const errors = await SchoolExistsForRead(req, { schoolname: segment });
-      expect(errors).toHaveLength(1);
-      expect(errors[0]?.details[0].message).toBe("That school doesn't exist.");
+      await expect(SchoolExistsForRead(req, { schoolname: segment })).rejects.toMatchObject(refusal);
     }
   });
 });
@@ -50,9 +50,9 @@ describe("the write route's validator (teacher import)", () => {
     expect(await SchoolExists(req, { schoolname: "Sample School" })).toEqual([]);
   });
 
-  it("still refuses a soft-deleted school, by id and by name", async () => {
+  it("still refuses a soft-deleted school, by id and by name, and a school that is not there", async () => {
     for (const segment of [GONE.schoolid, "Closed Sample School", "Nowhere"]) {
-      expect(await SchoolExists(req, { schoolname: segment })).toHaveLength(1);
+      await expect(SchoolExists(req, { schoolname: segment })).rejects.toMatchObject(refusal);
     }
   });
 });

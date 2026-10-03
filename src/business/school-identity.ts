@@ -1,4 +1,4 @@
-import { col, fn, Transaction, where as sqlWhere } from "sequelize";
+import { col, fn, Op, Transaction, where as sqlWhere, WhereOptions } from "sequelize";
 import { schools } from "src/models/data-models/school";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
@@ -89,9 +89,13 @@ const noSuchSchool = (field: string) =>
  * school row). So the school is chosen unlocked and then locked BY PRIMARY
  * KEY, which locks one row.
  */
-async function sameNameCandidates(schoolname: string, transaction?: Transaction): Promise<schools[]> {
+async function sameNameCandidates(schoolname: string, transaction?: Transaction, scopeWhere?: WhereOptions): Promise<schools[]> {
+  const byName = sqlWhere(fn("TRIM", col("schoolname")), schoolname.trim().normalize("NFC"));
   const candidates = await schools.findAll({
-    where: sqlWhere(fn("TRIM", col("schoolname")), schoolname.trim().normalize("NFC")),
+    // `scopeWhere` (the callers in school-scope.ts pass the caller's organisation) is applied BEFORE the
+    // "more than one school" decision, so a namesake in another organisation neither makes the name
+    // ambiguous nor shows that it exists.
+    where: scopeWhere ? { [Op.and]: [byName, scopeWhere] } : byName,
     ...plainRead(transaction),
   });
   return candidates.filter((s) => isSameSchoolName(s.schoolname, schoolname));
@@ -107,11 +111,12 @@ export async function resolveSchoolByName(
   schoolname: string | null | undefined,
   transaction?: Transaction,
   field = "schoolname",
+  scopeWhere?: WhereOptions,
 ): Promise<ResolvedSchool | null> {
   if (typeof schoolname !== "string" || schoolname.trim().length === 0) {
     return null;
   }
-  const same = await sameNameCandidates(schoolname, transaction);
+  const same = await sameNameCandidates(schoolname, transaction, scopeWhere);
   if (same.length > 1) {
     throw ambiguousName(field);
   }
@@ -149,11 +154,12 @@ export async function resolveSchoolByName(
 export async function resolveSchoolByNameForRead(
   schoolname: string | null | undefined,
   field = "schoolname",
+  scopeWhere?: WhereOptions,
 ): Promise<ResolvedSchool | null> {
   if (typeof schoolname !== "string" || schoolname.trim().length === 0) {
     return null;
   }
-  let same = await sameNameCandidates(schoolname);
+  let same = await sameNameCandidates(schoolname, undefined, scopeWhere);
   if (same.length > 1) {
     same = same.filter((s) => !s.isdeleted);
     if (same.length !== 1) {
@@ -167,11 +173,15 @@ export async function resolveSchoolByNameForRead(
 export async function resolveSchoolById(
   schoolid: string | null | undefined,
   transaction?: Transaction,
+  scopeWhere?: WhereOptions,
 ): Promise<ResolvedSchool | null> {
   if (typeof schoolid !== "string" || schoolid.length === 0) {
     return null;
   }
-  const school = await schools.findOne({ where: { schoolid }, ...lockedRead(transaction) });
+  const school = await schools.findOne({
+    where: scopeWhere ? { [Op.and]: [{ schoolid }, scopeWhere] } : { schoolid },
+    ...lockedRead(transaction),
+  });
   return school ? { schoolid: school.schoolid, schoolname: school.schoolname } : null;
 }
 
@@ -255,16 +265,19 @@ export const schoolNotFound = () => new ApiError(ErrorCode.NOT_FOUND, "That scho
 
 const present = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
 
-export async function resolveSchoolRef(ref: { schoolid?: unknown; schoolname?: unknown }): Promise<ResolvedSchool | undefined> {
+export async function resolveSchoolRef(
+  ref: { schoolid?: unknown; schoolname?: unknown },
+  scopeWhere?: WhereOptions,
+): Promise<ResolvedSchool | undefined> {
   if (present(ref.schoolid)) {
-    const school = await resolveSchoolById(ref.schoolid.trim());
+    const school = await resolveSchoolById(ref.schoolid.trim(), undefined, scopeWhere);
     if (!school) {
       throw schoolNotFound();
     }
     return school;
   }
   if (present(ref.schoolname)) {
-    const school = await resolveSchoolByNameForRead(ref.schoolname);
+    const school = await resolveSchoolByNameForRead(ref.schoolname, "schoolname", scopeWhere);
     if (!school) {
       throw schoolNotFound();
     }
@@ -276,6 +289,8 @@ export async function resolveSchoolRef(ref: { schoolid?: unknown; schoolname?: u
 export interface SegmentOptions {
   /** Resolve a name for a read: one live school among several namesakes wins. Writers leave this off. */
   forRead?: boolean;
+  /** Only the schools matching this are candidates (the caller's organisation: see school-scope.ts). */
+  scopeWhere?: WhereOptions;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -290,12 +305,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function findSchoolSegment(segment: string, options: SegmentOptions = {}): Promise<ResolvedSchool | null> {
   const trimmed = (segment ?? "").trim();
   if (UUID.test(trimmed)) {
-    const byId = await resolveSchoolById(trimmed);
+    const byId = await resolveSchoolById(trimmed, undefined, options.scopeWhere);
     if (byId) {
       return byId;
     }
   }
-  return options.forRead ? resolveSchoolByNameForRead(trimmed) : resolveSchoolByName(trimmed);
+  return options.forRead
+    ? resolveSchoolByNameForRead(trimmed, "schoolname", options.scopeWhere)
+    : resolveSchoolByName(trimmed, undefined, "schoolname", options.scopeWhere);
 }
 
 /**
