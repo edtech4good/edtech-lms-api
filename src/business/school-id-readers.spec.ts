@@ -7,6 +7,7 @@ import { grades } from "src/models/data-models/grades";
 import { schools } from "src/models/data-models/school";
 import { schoolusers } from "src/models/data-models/schoolusers";
 import { standards } from "src/models/data-models/standard";
+import { studentappusages } from "src/models/data-models/studentappusage";
 import { students } from "src/models/data-models/students";
 import { CurriculumBusiness } from "src/business/curriculum.business";
 import { FeedbackBusiness } from "src/business/feedback.business";
@@ -297,6 +298,19 @@ describe("reports", () => {
     await new ReportController().getSchoolData("11111111-1111-4111-8111-111111111111");
     expect(whereOf(c).schoolid).toBe("11111111-1111-4111-8111-111111111111");
     await expect(new ReportController().getSchoolData("Nowhere")).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("usage by country finds a country's school logins through the schools' ids", async () => {
+    jest.spyOn(countries, "findAll").mockResolvedValue([{ countryid: "c1", countryname: "Sampleland" }] as never);
+    (schools.findAll as jest.Mock).mockReset();
+    (schools.findAll as jest.Mock).mockResolvedValue([{ schoolid: "id-sample" }, { schoolid: "id-other" }]);
+    const logins = jest.spyOn(schoolusers, "findAll").mockResolvedValue([{ schooluserid: "u1" }] as never);
+    jest.spyOn(studentappusages, "findAll").mockResolvedValue([] as never);
+    count();
+    await new ReportBusiness().getStudentUsage();
+    expect((schools.findAll as jest.Mock).mock.calls[0][0].attributes).toEqual(["schoolid"]);
+    expect(whereOf(logins).schoolid).toEqual({ [Op.in]: ["id-sample", "id-other"] });
+    expect(JSON.stringify(whereOf(logins))).not.toMatch(/schoolname/);
   });
 
   it("the learner status report: a school filter (name or id) becomes the learners' school id", async () => {
