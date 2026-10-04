@@ -5,14 +5,16 @@ import joi from "joi";
  *
  * This is a PORT of the student API's own check, kept here so the payload this API builds is run through the same rules
  * without importing across repositories. Source: edtech-lms-rpi-api, branch `feat/organisations-s3-format3`,
- * `src/modules/import/organisation-content.validator.ts` (`validateOrganisationContent`, `CONTENT_TABLES`; commit 1715f82,
- * unchanged at 60b5aca) and the `organisation` row schema of `src/modules/import/ownership.request.validator.ts`. The
- * same rules, in the same order; the differences are only that problems are returned as a list instead of thrown as a
- * 400, and that the messages are shortened. When the student API's validator changes, change this with it.
+ * `src/modules/import/organisation-content.validator.ts` (`validateOrganisationContent`, `CONTENT_TABLES`) and the
+ * `organisation` row schema of `src/modules/import/ownership.request.validator.ts`, as of commit f7f1bf9. The same
+ * rules, in the same order; the differences are only that problems are returned as a list instead of thrown as a 400,
+ * and that the messages are shortened. When the student API's validator changes, change this with it.
  *
- * One rule here is central's own, agreed with the student API's import (which refuses a list entry owned by another
- * organisation and drops the rest): the lists of ids a row holds (`schools.curriculums`, `curriculumbaselines.schoolid`)
- * name only rows of the payload (`LISTS`; organisation-content-export.ts trims to it).
+ * Two kinds of rule about the lists of ids a row holds (`schools.curriculums`, `curriculumbaselines.schoolid`):
+ *  - the student API's validator only checks that each is a list of ids (the import then refuses an entry owned by
+ *    another organisation and drops the rest);
+ *  - central's own, stricter rule (`LISTS`; organisation-content-export.ts trims to it): the entries name only rows of
+ *    the payload. It is not the student API's rule.
  */
 
 const CONTENT_FORMAT = 3;
@@ -22,6 +24,11 @@ const ID_MAX_LENGTH = 36;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ORGANISATION_CODE = /^[a-z0-9]{2,16}$/;
 const UI_THEMES = ["kids", "corporate"];
+/** Control characters, and the bidirectional controls that reorder displayed text (U+202A to U+202E, U+2066 to U+2069). Zero-width joiners stay: Khmer text uses them. */
+const FORBIDDEN_IN_NAME = /[\p{Cc}\u202A-\u202E\u2066-\u2069]/u;
+const HAS_LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+/** The serialised settings JSON may be at most this many BYTES (not characters: Khmer text is 3 bytes a character). */
+const MAX_SETTINGS_BYTES = 64 * 1024;
 
 export type TableKey =
   | "schools"
@@ -121,6 +128,9 @@ export const TABLE_KEYS = Object.keys(CONTENT_TABLES) as TableKey[];
 export const HEADER_KEYS = ["format", "organisationid", "organisationcode", "scope", "organisations"];
 const ROSTER_KEYS = new Set(["students", "studentusers", "schoolusers", "teachers", "logins", "users", "studentprogress", "studentprogresses", "studentpoints", "tokens"]);
 
+const displayText = (value: string, helpers: joi.CustomHelpers) =>
+  !FORBIDDEN_IN_NAME.test(value) && HAS_LETTER_OR_DIGIT.test(value) ? value : helpers.error("string.pattern.base");
+
 const id = joi.string().pattern(UUID);
 const logourl = joi
   .string()
@@ -130,15 +140,20 @@ const logourl = joi
 const brandingconfig = joi
   .object({
     logourl,
-    displayname: joi.string().min(1).max(250),
+    displayname: joi.string().min(1).max(250).custom(displayText),
     tilecolour: joi.string().pattern(/^#[0-9a-fA-F]{6}$/),
   })
   .allow(null)
   .required();
-const settingsconfig = joi.object().unknown(true).allow(null).required();
+const settingsconfig = joi
+  .object()
+  .unknown(true)
+  .custom((value, helpers) => (Buffer.byteLength(JSON.stringify(value), "utf8") > MAX_SETTINGS_BYTES ? helpers.message({ custom: "settingsconfig is too large" }) : value))
+  .allow(null)
+  .required();
 const organisationRow = joi.object({
   organisationid: id.required(),
-  organisationname: joi.string().min(1).max(250).required(),
+  organisationname: joi.string().min(1).max(250).custom(displayText).required(),
   organisationcode: joi.string().pattern(ORGANISATION_CODE).required(),
   organisationstatus: joi.boolean().strict().required(),
   uitheme: joi
@@ -260,14 +275,18 @@ export function contentProblems(body: unknown): string[] {
     const list = tables[table];
     const targets = idsOf[to];
     if (!list || !targets) continue;
+    let notAList = 0;
     let outside = 0;
     for (const row of list) {
       if (!isRow(row) || row[column] === null || row[column] === undefined) continue;
       const entries = Array.isArray(row[column]) ? (row[column] as unknown[]) : null;
-      if (entries === null) outside += 1;
-      else outside += entries.filter((e) => typeof e !== "string" || !targets.has(lower(e))).length;
+      // the student API's check: a list of ids
+      if (entries === null || entries.some((e) => !isId(e))) notAList += 1;
+      // central's rule: and only rows of the payload
+      if (entries !== null) outside += entries.filter((e) => typeof e !== "string" || !targets.has(lower(e))).length;
     }
-    if (outside) problems.push(`${table}: ${outside} entries of ${column} name a ${to} row that is not in the payload`);
+    if (notAList) problems.push(`${table}: ${notAList} with a ${column} that is not a list of ${to} ids`);
+    if (outside) problems.push(`${table}: ${outside} entries of ${column} name a ${to} row that is not in the payload (central's rule)`);
   }
   return problems;
 }

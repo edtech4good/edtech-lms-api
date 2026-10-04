@@ -350,6 +350,35 @@ describe("the content sync is one organisation's", () => {
       expect(contentProblems(dangling)).not.toEqual([]);
       expect(contentProblems({ ...good, students: [] })).not.toEqual([]);
     });
+
+    it("the check applies the student API's rules for the organisation row: display text, branding and the size of the settings (so these can fail)", async () => {
+      const good = (await download("X's Admin", "/sync/content")).json;
+      const withOrganisation = (change: (row: Row) => void) => {
+        const copy = JSON.parse(JSON.stringify(good));
+        change(copy.organisations[0]);
+        return contentProblems(copy);
+      };
+      expect(withOrganisation(() => undefined)).toEqual([]);
+      // a name with a control character, with a bidirectional control, or with no letter or digit in it
+      for (const name of ["ក\u0007ខ", "ក\u202Eខ", "ក\u2067ខ", "---", "   "]) {
+        expect(withOrganisation((o) => { o.organisationname = name; })).not.toEqual([]);
+      }
+      // a joiner in a Khmer name is fine
+      expect(withOrganisation((o) => { o.organisationname = "ក\u200Dខ"; })).toEqual([]);
+      for (const displayname of ["ក\u0007ខ", "ក\u202Aខ", "..."]) {
+        expect(withOrganisation((o) => { o.brandingconfig = { displayname }; })).not.toEqual([]);
+      }
+      // 64 KB is BYTES of the JSON: 25 000 Khmer characters are under 64 K characters and over 64 KB
+      expect(withOrganisation((o) => { o.settingsconfig = { note: "ក".repeat(25000) }; })).not.toEqual([]);
+      expect(withOrganisation((o) => { o.settingsconfig = { note: "a".repeat(60000) }; })).toEqual([]);
+      expect(withOrganisation((o) => { o.settingsconfig = { note: "a".repeat(70000) }; })).not.toEqual([]);
+      // a list of ids that is not a list of ids
+      const school = JSON.parse(JSON.stringify(good));
+      school.schools[0].curriculums = "not a list";
+      expect(contentProblems(school)).not.toEqual([]);
+      school.schools[0].curriculums = [7];
+      expect(contentProblems(school)).not.toEqual([]);
+    });
   });
 
   // ───────────────────────────── format 2 ─────────────────────────────

@@ -102,7 +102,7 @@ export class SyncController {
   }
 
   @OrgPolicy("owned", {
-    note: "One organisation's content (format 3); a platform user who is not acting as an organisation must name the organisation, and can ask for the whole platform's in format 2.",
+    note: "One organisation's content (format 3); a platform user who is not acting as an organisation must name the organisation, and can ask for the whole platform's in format 2. School-user tokens pass the guards but @Org() answers 401.",
     enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
   })
   @Get("content")
