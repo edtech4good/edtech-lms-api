@@ -2,7 +2,8 @@
 import { ValidationError, ValidationErrorItem } from 'joi';
 import { QuestionBusiness } from 'src/business';
 import { questionsAttributes } from 'src/models/data-models/init-models';
-import { requestScope } from "src/business/content-scope";
+import { nameScope, requestScope } from "src/business/content-scope";
+import { ownerOfQuestion } from "src/business/content-owner";
 import { IRequest } from 'src/models/IRequest';
 
 export const CreateQuestion = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
@@ -37,7 +38,7 @@ export const EditQuestion = async (request: IRequest, data: any): Promise<Array<
     return [error];
   }
   else {
-    const tagexistsnew = await new QuestionBusiness(requestScope(request)).isexistsquestionIdentifier(<questionsAttributes>{
+    const tagexistsnew = await new QuestionBusiness(await nameScope(request, ownerOfQuestion, data.questionid)).isexistsquestionIdentifier(<questionsAttributes>{
       questionidentifier: data.questionidentifier, questionid: data.questionid
     });
     if (tagexistsnew) {

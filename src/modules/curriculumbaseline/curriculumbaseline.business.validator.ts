@@ -2,7 +2,8 @@
 import { ValidationError, ValidationErrorItem } from "joi";
 import { CurriculumBusiness } from "src/business";
 import { CurriculumBaseLineBusiness } from "src/business/curriculumbaseline.business";
-import { requestScope } from "src/business/content-scope";
+import { nameScope, requestScope } from "src/business/content-scope";
+import { ownerOfCurriculum, ownerOfCurriculumBaseline } from "src/business/content-owner";
 import { IRequest } from "src/models/IRequest";
 
 export const CreateCurriculumBaseLine = async (
@@ -70,7 +71,12 @@ export const CurriculumBaseLineName = async (
   if(data.baselinetype === 2) name = 'Midline';
   if(data.baselinetype === 3) name = 'Endline';
   const curriculumbaselineexists =
-    await new CurriculumBaseLineBusiness(requestScope(request)).getCurriculumBaseLineNameExits(
+    await new CurriculumBaseLineBusiness(
+      // (the baseline being renamed, or for a new one the curriculum it is for)
+      data.curriculumbaselineid
+        ? await nameScope(request, ownerOfCurriculumBaseline, data.curriculumbaselineid)
+        : await nameScope(request, ownerOfCurriculum, data.curriculumid),
+    ).getCurriculumBaseLineNameExits(
       data.curriculumbaselineid,
       data.baselinename,
       data.baselinetype,

@@ -229,7 +229,11 @@ export const findOwned = async <K extends ContentKind>(
   id: string,
   options: FindOwnedOptions = {},
 ): Promise<KindRows[K]> => {
-  const { where, notFound, ...rest } = options;
+    const { where, notFound, ...rest } = options;
+  // an id that is not a string names nothing, for the platform too (it must never reach a query as an undefined key)
+  if (typeof id !== "string" || id.length === 0) {
+    throw (notFound ?? missingOf(kind))();
+  }
   await assertInScope(org, kind, id, notFound, rest.transaction ?? undefined);
   const info = KINDS[kind];
   const row = await info.model.findOne({
@@ -351,6 +355,27 @@ export const requestScope = (request: { user?: unknown }): OrgContext | undefine
   return orgOrServerOf(user);
 };
 const contextByUser = new WeakMap<object, OrgContext>();
+
+/**
+ * The caller context a NAME check runs under. Names are unique within an organisation, so the check is made among the
+ * organisation's rows: an organisation caller's own, and for a platform user not acting (who has none) the organisation
+ * that owns the row being renamed (an update) or whose parent the new row goes under. A row with no owner has no
+ * organisation to compare within, so the check is across everything, as it was.
+ */
+export const nameScope = async (
+  request: { user?: unknown },
+  ownerOf: (id: string) => Promise<Owner>,
+  id: unknown,
+): Promise<OrgContext | undefined> => {
+  const org = requestScope(request);
+  if (org !== undefined && scopeOf(org).kind === "platform" && typeof id === "string" && id.length > 0) {
+    const owner = await ownerOf(id);
+    if (owner !== null) {
+      return { organisationid: owner, isplatform: false, permissions: [] };
+    }
+  }
+  return org;
+};
 
 /** The name of the primary key of a kind. */
 export const keyOf = (kind: ContentKind): string => KINDS[kind].key;

@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ValidationError, ValidationErrorItem } from 'joi';
 import { SubjectBusiness } from 'src/business/subject.business';
-import { requestScope } from "src/business/content-scope";
+import { nameScope, requestScope } from "src/business/content-scope";
+import { ownerOfSubject } from "src/business/content-owner";
 import { IRequest } from 'src/models/IRequest';
 
 export const CreateSubject = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
@@ -39,7 +40,7 @@ export const EditSubject = async (request: IRequest, data: any): Promise<Array<V
     error.details.push(erroritem);
     return [error];
   } else {
-    const tagexistsnew = await new SubjectBusiness(requestScope(request)).isexistssubjectName({
+    const tagexistsnew = await new SubjectBusiness(await nameScope(request, ownerOfSubject, data.subjectid)).isexistssubjectName({
       subjectname: data.subjectname,
       subjectid: data.subjectid,
       isdeleted: false,

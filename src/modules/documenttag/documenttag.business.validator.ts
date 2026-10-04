@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ValidationError, ValidationErrorItem } from 'joi';
 import { DocumentTagBusiness } from 'src/business';
-import { requestScope } from "src/business/content-scope";
+import { nameScope, requestScope } from "src/business/content-scope";
+import { ownerOfDocumentTag } from "src/business/content-owner";
 import { IRequest } from 'src/models/IRequest';
 
 export const CreateDocumentTag = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
@@ -39,7 +40,7 @@ export const EditDocumentTag = async (request: IRequest, data: any): Promise<Arr
     error.details.push(erroritem);
     return [error];
   } else {
-    const tagexistsnew = await new DocumentTagBusiness(requestScope(request)).isexistsdocumentTagName({
+    const tagexistsnew = await new DocumentTagBusiness(await nameScope(request, ownerOfDocumentTag, data.documenttagid)).isexistsdocumentTagName({
       documenttagname: data.documenttagname,
       documenttagid: data.documenttagid,
       isdeleted: false,

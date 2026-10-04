@@ -2,7 +2,8 @@
 import { ValidationError, ValidationErrorItem } from 'joi';
 import { CurriculumBusiness } from 'src/business';
 import { SubjectBusiness } from 'src/business/subject.business';
-import { requestScope } from "src/business/content-scope";
+import { nameScope, requestScope } from "src/business/content-scope";
+import { ownerOfCurriculum } from "src/business/content-owner";
 import { IRequest } from 'src/models/IRequest';
 
 export const CreateCurriculum = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
@@ -62,7 +63,7 @@ export const EditCurriculum = async (request: IRequest, data: any): Promise<Arra
     error.details.push(erroritem);
     return [error];
   } else {
-    const curriculumexistsnew = await new CurriculumBusiness(requestScope(request)).isexistsCurriculumName({ curriculumname: data.curriculumname, curriculumid: data.curriculumid, curriculumstatus: false, curriculumdescription: "", isdeleted: false });
+    const curriculumexistsnew = await new CurriculumBusiness(await nameScope(request, ownerOfCurriculum, data.curriculumid)).isexistsCurriculumName({ curriculumname: data.curriculumname, curriculumid: data.curriculumid, curriculumstatus: false, curriculumdescription: "", isdeleted: false });
     if (curriculumexistsnew) {
       const error = new ValidationError('Validation', [], {});
       error.details = [];

@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ValidationError, ValidationErrorItem } from 'joi';
 import { QuestionTagBusiness } from 'src/business';
-import { requestScope } from "src/business/content-scope";
+import { nameScope, requestScope } from "src/business/content-scope";
+import { ownerOfQuestionTag } from "src/business/content-owner";
 import { IRequest } from 'src/models/IRequest';
 
 export const CreateQuestionTag = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
@@ -36,7 +37,7 @@ export const EditQuestionTag = async (request: IRequest, data: any): Promise<Arr
     return [error];
   }
   else {
-    const tagexistsnew = await new QuestionTagBusiness(requestScope(request)).isexistsquestionTagName({ questiontagname: data.questiontagname, questiontagid: data.questiontagid, isdeleted: false });
+    const tagexistsnew = await new QuestionTagBusiness(await nameScope(request, ownerOfQuestionTag, data.questiontagid)).isexistsquestionTagName({ questiontagname: data.questiontagname, questiontagid: data.questiontagid, isdeleted: false });
     if (tagexistsnew) {
       const error = new ValidationError('Validation', [], {});
       error.details = [];
