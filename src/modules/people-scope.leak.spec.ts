@@ -625,6 +625,13 @@ describe("people and schools are confined to the caller's organisation", () => {
     });
   });
 
+  /** The header each call to the student API for last logins carried: an organisation id or `platform`, never none. */
+  const logintimeHeaders = () =>
+    (axios.post as jest.Mock).mock.calls
+      .filter(([url]) => /\/student\/logintime$/.test(url as string))
+      .map(([, , config]) => (config as { headers: Record<string, string> }).headers);
+  const MARKER: Array<[Who, string]> = [...IN_X.map((who): [Who, string] => [who, X]), ...WHOLE_PLATFORM.map((who): [Who, string] => [who, "platform"])];
+
   describe("GET /student/all", () => {
     it.each(IN_X)("%s: lists X's learners, none of Y's or the unowned school's", async (who) => {
       const res = await send(who, "get", "/student/all").expect(200);
@@ -648,6 +655,10 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("POST /student", () => {
+    it.each(MARKER)("%s: the last logins asked of the student API carry the organisation header (%s)", async (who, marker) => {
+      await send(who, "post", "/student", { pageindex: 1, pagesize: 20 }).expect(200);
+      expect(logintimeHeaders()).toEqual([{ Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": marker }]);
+    });
     const list = (who: Who, body: object = { pageindex: 1, pagesize: 50, filter: [] }) => send(who, "post", "/student", body);
     it.each(IN_X)("%s: lists X's learners, none of Y's or the unowned school's, and no password hash", async (who) => {
       const res = await list(who).expect(200);
@@ -741,6 +752,10 @@ describe("people and schools are confined to the caller's organisation", () => {
   });
 
   describe("GET /student/:studentid", () => {
+    it.each(MARKER)("%s: the last login asked of the student API carries the organisation header (%s)", async (who, marker) => {
+      await send(who, "get", `/student/${STU_X}`).expect(200);
+      expect(logintimeHeaders()).toEqual([{ Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": marker }]);
+    });
     it.each(IN_X)("%s: the row in the path is the one checked: Y's learner, with X's own learner named in the request, is the 404 a missing learner gets", async (who) => {
       const { res, none } = await pathRowChecked(who, "get", `/student/${STU_Y}`, `/student/${MISSING}`, { studentid: STU_X });
       expect(res.status).toBe(404);

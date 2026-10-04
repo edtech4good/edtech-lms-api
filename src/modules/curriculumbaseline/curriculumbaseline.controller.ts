@@ -62,6 +62,7 @@ import { Org, OrgContext } from "src/decorators/org.decorator";
 import { assertSameOwner, callerOwner, ownerOfCurriculum, ownerOfCurriculumBaseline, ownerOfSchool } from "src/business/content-owner";
 import { findOwnedBaseline, findOwnedCurriculum } from "src/business/content-scope";
 import { schoolNotFound } from "src/business/school-identity";
+import { organisationHeader } from "src/business/org-scope";
 import { schoolInScope } from "src/business/school-scope";
 
 /**
@@ -538,6 +539,7 @@ export class CurriculumBaseLineController {
       {
         headers: {
           Authorization: Config.fortyk.api.serversynckey,
+          ...organisationHeader(org),
         },
       }
     );
