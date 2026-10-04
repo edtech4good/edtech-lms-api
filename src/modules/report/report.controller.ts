@@ -1,4 +1,5 @@
 import { resolveOwnedSchoolRef, resolveOwnedSchoolSegment } from "src/business/school-scope";
+import { ReportProxy } from "src/business/report-proxy";
 import { Org, OrgContext } from "src/decorators/org.decorator";
 import {
   Body,
@@ -15,11 +16,9 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { ApiTags, ApiBearerAuth, ApiResponse, ApiBody, ApiParam, ApiQuery } from "@nestjs/swagger";
-import axios from "axios";
 import { json2csv } from "json-2-csv";
 import { ReportBusiness } from "src/business/report.business";
 import { ReportDownload } from "src/business/report.download";
-import { Config } from "src/config";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
@@ -636,16 +635,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.ONLINE_VIEW_QUIZ_SCORE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getOnlineStudentsProgress(@Body() body: IMultiPaging): Promise<any> {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentprogress`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    )
+  async getOnlineStudentsProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const response = await new ReportProxy(org).post("studentprogress", body);
     return {
       error: false,
       data: {
@@ -675,16 +666,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.ONLINE_VIEW_QUIZ_SCORE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getOnlineClassProgress(@Body() body: IMultiPaging): Promise<any> {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentprogress/class`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    )
+  async getOnlineClassProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const response = await new ReportProxy(org).post("classprogress", body);
     return {
       error: false,
       data: {
@@ -714,16 +697,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.ONLINE_CURRENT_LEVEL)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getOnlineStudentsLastProgress(@Body() body: IMultiPaging): Promise<any> {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentlastcompletedquiz`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    )
+  async getOnlineStudentsLastProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const response = await new ReportProxy(org).post("lastcompletedquiz", body);
     return {
       error: false,
       data: {
@@ -753,16 +728,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.ONLINE_LEVEL_QUIZ)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getLevelQuizOnline(@Body() body: IMultiPaging): Promise<any> {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentlevelquiz`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    )
+  async getLevelQuizOnline(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const response = await new ReportProxy(org).post("levelquiz", body);
     return {
       error: false,
       data: {
@@ -792,16 +759,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.ONLINE_LEVEL_QUIZ)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getClassLevelQuizOnline(@Body() body: IMultiPaging): Promise<any> {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentlevelquiz/class`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    )
+  async getClassLevelQuizOnline(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const response = await new ReportProxy(org).post("classlevelquiz", body);
     return {
       error: false,
       data: {
@@ -832,6 +791,7 @@ export class ReportController {
   @RequirePermissions(Permission.ONLINE_ACTIVE_STATUS)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getOnlineStudentStatus(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @User() user: LmsUserToken,
   ): Promise<any> {
@@ -841,15 +801,7 @@ export class ReportController {
         value: user?.schools ?? ''
       });
     }
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentstatus`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    )
+    const response = await new ReportProxy(org).post("studentstatus", body);
     return {
       error: false,
       data: {
@@ -879,16 +831,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_ONLINE_REPORT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getOnlineStudentGradeProgress(@Body() body: IMultiPaging): Promise<any> {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/student-grade-progress`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    )
+  async getOnlineStudentGradeProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const response = await new ReportProxy(org).post("gradeprogress", body);
     return {
       error: false,
       data: {
@@ -919,16 +863,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_ONLINE_REPORT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getOnlineStudentLevelProgress(@Body() body: IMultiPaging): Promise<any> {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/student-level-progress`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    )
+  async getOnlineStudentLevelProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const response = await new ReportProxy(org).post("levelprogress", body);
     return {
       error: false,
       data: {
@@ -959,16 +895,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_ONLINE_REPORT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getOnlineStudentLessonProgress(@Body() body: IMultiPaging): Promise<any> {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/student-lesson-progress`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    )
+  async getOnlineStudentLessonProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const response = await new ReportProxy(org).post("lessonprogress", body);
     return {
       error: false,
       data: {
@@ -1065,18 +993,11 @@ export class ReportController {
   @RequirePermissions(Permission.ONLINE_VIEW_QUIZ_SCORE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadOnlineStudentsProgress(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @Response({ passthrough: true }) res: any
   ) {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentprogress/download`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    );
+    const response = await new ReportProxy(org).post("studentprogressDownload", body);
     const formatedData = new ReportDownload().formatQuizzesOnline(response.data.data);
     const csvString = await json2csv(formatedData);
     res.set({
@@ -1105,18 +1026,11 @@ export class ReportController {
   @RequirePermissions(Permission.ONLINE_VIEW_QUIZ_SCORE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadOnlineClassProgress(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @Response({ passthrough: true }) res: any
   ) {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentprogress/class/download`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    );
+    const response = await new ReportProxy(org).post("classprogressDownload", body);
     const formatedData = new ReportDownload().formatQuizzesOfClassOnline(response.data.data);
     const csvString = await json2csv(formatedData);
     res.set({
@@ -1177,18 +1091,11 @@ export class ReportController {
   @RequirePermissions(Permission.ONLINE_CURRENT_LEVEL)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadOnlineCurrentLevel(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @Response({ passthrough: true }) res: any
   ) {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentlastcompletedquiz/download`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    );
+    const response = await new ReportProxy(org).post("lastcompletedquizDownload", body);
     const formatedData = new ReportDownload().formatCurrentLevelOnline(response.data.data);
     const csvString = await json2csv(formatedData);
     res.set({
@@ -1283,18 +1190,11 @@ export class ReportController {
   @RequirePermissions(Permission.ONLINE_LEVEL_QUIZ)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadOnlineStudentsLevelQuiz(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @Response({ passthrough: true }) res: any
   ) {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentlevelquiz/download`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    );
+    const response = await new ReportProxy(org).post("levelquizDownload", body);
     const formatedData = new ReportDownload().formatLevelQuizzesOnline(response.data.data);
     const csvString = await json2csv(formatedData);
     res.set({
@@ -1323,18 +1223,11 @@ export class ReportController {
   @RequirePermissions(Permission.ONLINE_LEVEL_QUIZ)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadOnlineClassLevelQuiz(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @Response({ passthrough: true }) res: any
   ) {
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentlevelquiz/class/download`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    );
+    const response = await new ReportProxy(org).post("classlevelquizDownload", body);
     const formatedData = new ReportDownload().formatLevelQuizzesClassOnline(response.data.data);
     const csvString = await json2csv(formatedData);
     res.set({
@@ -1403,6 +1296,7 @@ export class ReportController {
   @RequirePermissions(Permission.ONLINE_ACTIVE_STATUS)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadOnlineStudentsActivity(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @User() user: LmsUserToken,
     @Response({ passthrough: true }) res: any
@@ -1413,15 +1307,7 @@ export class ReportController {
         value: user?.schools ?? ''
       });
     }
-    const response = await axios.post(
-      `${Config.fortyk.api.rpi.cloud}/report/studentstatus/download`,
-      body,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-        },
-      }
-    );
+    const response = await new ReportProxy(org).post("studentstatusDownload", body);
     const formatedData = new ReportDownload().formatStudentActivityOnline(response.data.data, body?.filter);
     const csvString = await json2csv(formatedData);
     res.set({
