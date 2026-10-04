@@ -32,10 +32,14 @@ import { SetMetadata } from "@nestjs/common";
  *               narrow further to that school. A platform user who is not
  *               acting as an organisation may read and list across
  *               organisations; a create, or an export or push that targets one
- *               organisation, must name the organisation explicitly, never
- *               from a filter or body field. A route that also admits the
- *               application API key is marked as such; that caller is treated
- *               as platform.
+ *               organisation, must have that organisation named explicitly: by
+ *               the organisation the token acts in, or, for a platform user who
+ *               is not acting, by a dedicated `organisationid` field checked
+ *               against live organisations. It is never inferred from a list
+ *               filter or from another row the request names, and a caller
+ *               acting in an organisation cannot name a different one. A route
+ *               that also admits the application API key is marked as such;
+ *               that caller is treated as platform.
  *  - `platform` Must be restricted to platform users as `PlatformGuard`
  *               defines them: organisation management, writes to global
  *               reference data (countries, roles, permissions), and operations
@@ -93,7 +97,7 @@ export const ORG_POLICY_DEFINITIONS: Record<(typeof ORG_POLICIES)[number], strin
   self:
     "Acts only on the account or session named by the token that authenticates the request: an access token, or a refresh, change-password or email-verification token. The token may be checked by a guard or, for named exceptions, in the handler. It never reads or writes another account's data.",
   owned:
-    "Operates on rows that belong to an organisation, directly or through a parent, or on global rows an organisation sees through a link (countries through `organisationcountry`). For an organisation's staff, and for a platform user acting as an organisation, every read, list, write and attach must be limited to that organisation; another organisation's row is not found. For a school-user (teacher) token, the organisation is the one that owns the token's school, and the route may narrow further to that school. A platform user who is not acting as an organisation may read and list across organisations; a create, or an export or push that targets one organisation, must name the organisation explicitly, never from a filter or body field. A route that also admits the application API key is marked as such; that caller is treated as platform.",
+    "Operates on rows that belong to an organisation, directly or through a parent, or on global rows an organisation sees through a link (countries through `organisationcountry`). For an organisation's staff, and for a platform user acting as an organisation, every read, list, write and attach must be limited to that organisation; another organisation's row is not found. For a school-user (teacher) token, the organisation is the one that owns the token's school, and the route may narrow further to that school. A platform user who is not acting as an organisation may read and list across organisations; a create, or an export or push that targets one organisation, must have that organisation named explicitly: by the organisation the token acts in, or, for a platform user who is not acting, by a dedicated `organisationid` field checked against live organisations. It is never inferred from a list filter or from another row the request names, and a caller acting in an organisation cannot name a different one. A route that also admits the application API key is marked as such; that caller is treated as platform.",
   platform:
     "Must be restricted to platform users as `PlatformGuard` defines them: organisation management, writes to global reference data (countries, roles, permissions), and operations that act on every organisation at once with no scope (bulk recomputes, one-off migrations).",
   server:

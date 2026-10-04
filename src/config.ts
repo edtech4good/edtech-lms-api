@@ -151,3 +151,34 @@ const buildLogger = (): winston.Logger => {
 const Logger = buildLogger();
 export { Logger, Config };
 
+
+/**
+ * The content format central sends to the student API, and the format a caller
+ * gets from `GET sync/content` and `POST sync/cloud` when it does not ask for
+ * one: `2` (the whole platform's content, as it always was; the default) or `3`
+ * (one organisation's content). It stays `2` until the student API's 5c import
+ * is deployed on every server central pushes to, because an older student API
+ * would read one organisation's content as the whole platform's and replace
+ * everything it holds. Operators set `SYNC_FORMAT_DEFAULT=3` once it is; a later
+ * change flips the default. While it is `2`, the learner and teacher pushes keep
+ * the shape they had (no school id), and only the platform, not acting as an
+ * organisation, can sync.
+ *
+ * The value is checked once, when this module loads: anything but `2` or `3` (or
+ * nothing at all) refuses to start, like the other settings above, rather than
+ * failing a request after its learners were already saved. A function, like
+ * `isLogImportEnabled`, so the value is read on every request.
+ */
+const syncFormatOf = (value: string | undefined): 2 | 3 => {
+  const text = (value ?? "").trim();
+  if (text === "" || text === "2") {
+    return 2;
+  }
+  if (text === "3") {
+    return 3;
+  }
+  throw new Error(`Refusing to start: SYNC_FORMAT_DEFAULT must be 2 or 3 (got ${JSON.stringify(text.slice(0, 20))}).`);
+};
+syncFormatOf(process.env.SYNC_FORMAT_DEFAULT);
+
+export const defaultSyncFormat = (): 2 | 3 => (process.env.SYNC_FORMAT_DEFAULT ?? "").trim() === "3" ? 3 : 2;

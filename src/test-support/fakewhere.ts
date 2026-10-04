@@ -3,7 +3,7 @@ import { Op } from "sequelize";
 /**
  * Test support: does a row satisfy a Sequelize `where`? Understands the small
  * subset the scoped helpers produce (`{}`; `{ column: value }`; `Op.and` and
- * `Op.or` lists; `Op.in`, `Op.ne`, `Op.not`, `Op.like` with `%`; a key `$alias.column$`
+ * `Op.or` lists; `Op.in`, `Op.ne`, `Op.not`, `Op.is`, `Op.like` with `%`; a key `$alias.column$`
  * read from an included row held under `alias`; the school-name narrowing
  * `where(fn("TRIM", col(c)), text)`, compared without regard to case as MySQL's default
  * collation does), so specs can replace a model with an in-memory table and still see the
@@ -37,6 +37,7 @@ const matchesValue = (actual: unknown, expected: unknown, ignoreCase = false): b
         const operand = (expected as Record<symbol, unknown>)[symbol];
         if (symbol === Op.in) return (operand as unknown[]).some((v) => equal(v, actual, ignoreCase));
         if (symbol === Op.ne || symbol === Op.not) return !equal(operand, actual, ignoreCase);
+        if (symbol === Op.is) return equal(operand, actual, ignoreCase); // `IS NULL`: a missing value is null
         if (symbol === Op.between) {
           const [low, high] = operand as [unknown, unknown];
           return order(actual, low) >= 0 && order(actual, high) <= 0;

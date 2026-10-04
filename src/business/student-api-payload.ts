@@ -12,6 +12,7 @@
  *  - SchoolUserBusiness.getschooluserbyschoolid   (export of a school's learners; cloud sync of a school)
  *  - SchoolUserBusiness.getschooluserbyid         (cloud push of learners just created)
  *  - SchoolUserBusiness.getschoolteachersbyid     (cloud push of teachers just created)
+ *    (these three keep it out unless asked for `{ withSchoolId: true }`: see `studentApiRosterAttributes`)
  *  - SchoolUserBusiness.getschoolusers            (content export and sync/report-data)
  *  - TeacherBusiness.getteacheruserbyschoolid     (export of a school's teachers)
  *
@@ -32,3 +33,19 @@ export const NOT_IN_STUDENT_API = ["schoolid", "organisationid"] as const;
 
 /** `attributes` for a query whose rows go to the student API. */
 export const studentApiAttributes = { exclude: [...NOT_IN_STUDENT_API] };
+
+/**
+ * `attributes` for the one kind of push that names its school: a roster of one
+ * school's learners or teachers, sent as `{ schoolid, studentusers }` or
+ * `{ schoolid, teachers }`. Each row carries its `schoolid`, which the student
+ * API checks against the school the file names. Only `organisationid` stays out.
+ * Used only when the rosters go in that shape (see `defaultSyncFormat`), by the
+ * three getters that take `{ withSchoolId: true }`:
+ *
+ *  - SchoolUserBusiness.getschooluserbyschoolid   (cloud sync of a school's learners)
+ *  - SchoolUserBusiness.getschooluserbyid         (cloud push of learners just created)
+ *  - SchoolUserBusiness.getschoolteachersbyid     (cloud push of teachers just created)
+ *
+ * `school-id-payloads.spec.ts` pins the SQL of each, with and without it.
+ */
+export const studentApiRosterAttributes = { exclude: ["organisationid"] };

@@ -84,6 +84,11 @@ jest.mock("src/business/school-identity", () => ({
   ...jest.requireActual("src/business/school-identity"),
   resolveSchoolSegment: jest.fn(async (segment: string) => ({ schoolid: "school-1", schoolname: segment })),
 }));
+// ...and the cloud push of a school's learners reads the school row (to name its organisation); not under test here.
+jest.mock("src/business/school-scope", () => ({
+  ...jest.requireActual("src/business/school-scope"),
+  findOwnedSchool: jest.fn(async () => ({ schoolid: "school-1", schoolname: "Sample School", organisationid: null })),
+}));
 jest.mock("src/business/country.business", () => ({
   CountryBusiness: jest.fn().mockImplementation(() => ({
     createcountry: mocks.createcountry,
@@ -334,15 +339,16 @@ describe("an Organisation Admin on the platform routes", () => {
       ["POST /sync/cloud", "/sync/cloud"],
       ["POST /sync/cloud/:schoolname/students", "/sync/cloud/Sample%20School/students"],
     ];
+    // an Admin who is a platform user, not acting as an organisation: the caller the whole-platform push (format 2) is for
     const admin = () =>
       bearer({
         lmsuserid: "u-admin",
         lmsuserroles: [Role.admin],
         permissions: ["view_school"],
         organisationid: null,
-        isplatform: false,
+        isplatform: true,
       });
-    const post = (path: string, token: string) => request(app.getHttpServer()).post(path).set("Authorization", token);
+    const post = (path: string, token: string) => request(app.getHttpServer()).post(path).set("Authorization", token).send({ format: 2 });
 
     it.each(SYNC_ROUTES)("%s: refuses an Organisation Admin with 403, and nothing is pushed", async (_label, path) => {
       await post(path, orgAdmin()).expect(403);

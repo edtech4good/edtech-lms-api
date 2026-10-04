@@ -10,7 +10,13 @@ import { students, studentsAttributes } from "src/models/data-models/students";
 import { OrgContext } from "src/decorators/org.decorator";
 import { withSchoolIds } from "./school-identity";
 import { andInOwnedSchools } from "./school-scope";
-import { studentApiAttributes } from "./student-api-payload";
+import { studentApiAttributes, studentApiRosterAttributes } from "./student-api-payload";
+
+/** The rows of a roster push that names its school keep their `schoolid` (see student-api-payload.ts). */
+export interface RosterOptions {
+  withSchoolId?: boolean;
+}
+const rosterAttributes = (options: RosterOptions) => (options.withSchoolId === true ? studentApiRosterAttributes : studentApiAttributes);
 
 export class SchoolUserBusiness {
   // No caller today; kept writing both school columns (see school-identity.ts).
@@ -29,7 +35,7 @@ export class SchoolUserBusiness {
   // ever add an `isdeleted: false` filter here — or make the soft delete also
   // clear `schooluserstatus` — deleted learners drop out of this export, their
   // `isdeleted` never syncs, and the tablet login-block silently stops working.
-  getschooluserbyschoolid = async (schoolid: string, online: boolean = false) => {
+  getschooluserbyschoolid = async (schoolid: string, online: boolean = false, options: RosterOptions = {}) => {
     schoolusers.hasOne(students, {
       foreignKey: "schooluserid",
       sourceKey: "schooluserid",
@@ -48,12 +54,12 @@ export class SchoolUserBusiness {
       where: {
         schooluserstatus: true,
       },
-      attributes: studentApiAttributes,
+      attributes: rosterAttributes(options),
       include: [
         {
           where: schoolwhere,
           model: students,
-          attributes: studentApiAttributes,
+          attributes: rosterAttributes(options),
         },
       ],
       // The rows used to come out in the order MySQL scanned `students` (by learner
@@ -64,7 +70,7 @@ export class SchoolUserBusiness {
     });
   };
 
-  getschooluserbyid = async (schooluserid: Array<string>) => {
+  getschooluserbyid = async (schooluserid: Array<string>, options: RosterOptions = {}) => {
     schoolusers.hasOne(students, {
       foreignKey: "schooluserid",
       sourceKey: "schooluserid",
@@ -80,17 +86,17 @@ export class SchoolUserBusiness {
           [Op.in]: schooluserid,
         },
       },
-      attributes: studentApiAttributes,
+      attributes: rosterAttributes(options),
       include: [
         {
           model: students,
-          attributes: studentApiAttributes,
+          attributes: rosterAttributes(options),
         },
       ],
     });
   };
 
-  getschoolteachersbyid = async (schooluserid: Array<string>) => {
+  getschoolteachersbyid = async (schooluserid: Array<string>, options: RosterOptions = {}) => {
     return schoolusers.findAll({
       where: {
         schooluserstatus: true,
@@ -98,7 +104,7 @@ export class SchoolUserBusiness {
           [Op.in]: schooluserid,
         },
       },
-      attributes: studentApiAttributes,
+      attributes: rosterAttributes(options),
     });
   };
 

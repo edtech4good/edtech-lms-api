@@ -35,6 +35,8 @@ import { StandardBusiness } from "./standard.business";
 import { BaselineQuestionBusiness } from "./baslinequestion.business";
 import { LessonPlanBusiness } from "./lessonplan.business";
 import { SubjectBusiness } from "./subject.business";
+import { organisations } from "src/models/data-models/organisations";
+import { buildOrganisationContent } from "./organisation-content-export";
 
 export class SyncBusiness {
   // old version apk
@@ -82,6 +84,10 @@ export class SyncBusiness {
     };
     return JSON.stringify(syncdata);
   };
+
+  // One organisation's content in the format the student API reads (format 3): see organisation-content-export.ts.
+  syncontentVersion3 = async (organisation: organisations) =>
+    JSON.stringify(await buildOrganisationContent(organisation));
 
   // this function made for new version apk
   syncontentVersion2 = async () => {

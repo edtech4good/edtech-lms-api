@@ -119,8 +119,10 @@ export class QuestionBusiness {
     this.org
       ? findOwnedQuestion(this.org, questionid, { where: { isdeleted: false } })
       : questions.findOne({ where: { questionid, isdeleted: false } });
-  // sync payload (student API): see student-api-payload.ts
-  getquestions = () => questions.findAll({ attributes: studentApiAttributes });
+  // sync payload (student API): see student-api-payload.ts. Limited to the questions in scope when built with a caller's context.
+  getquestions = async () => questions.findAll({ where: await andScope(this.org, "question"), attributes: studentApiAttributes });
+  // The organisation payload (format 3): whole rows, the owner included, for the questions in scope.
+  getquestionsWithOwner = async () => questions.findAll({ where: await andScope(this.org, "question") });
   getquestionall = async (paging: IPaging) => {
     let where: WhereOptions<questionsAttributes> = {
       isdeleted: false,

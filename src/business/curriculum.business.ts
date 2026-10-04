@@ -109,7 +109,7 @@ export class CurriculumBusiness {
     };
     const order = ["curriculumname"];
 
-    return await curriculums.findAll({ where, order, attributes: studentApiAttributes });
+    return await curriculums.findAll({ where: await andScope(this.org, "curriculum", where), order, attributes: studentApiAttributes });
   };
   getCurriculumsWithFilter = async (cur: string, studentid: string, standardid: string, schoolid: string | undefined) => {
     const where: WhereOptions<curriculumsAttributes> = {

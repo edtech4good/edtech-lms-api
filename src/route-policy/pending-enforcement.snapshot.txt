@@ -6,8 +6,4 @@
 # Generated: `npm run routes:policy -- --write`. Checked by route-inventory.spec.ts.
 GET /country/all  owned
 PUT /log/import  owned
-GET /sync  owned
-POST /sync/cloud  owned
-POST /sync/cloud/:schoolname/students  owned
-GET /sync/content  owned
 GET /sync/report-data  server+apikey
