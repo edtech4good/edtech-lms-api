@@ -2,7 +2,7 @@ import axios from "axios";
 import { Config } from "src/config";
 import { OrgContext } from "src/decorators/org.decorator";
 import { IMultiFilter, IMultiPaging } from "src/models/IPaging";
-import { scopeOf } from "./org-scope";
+import { organisationHeader, scopeOf } from "./org-scope";
 import { idsOf, REFERENCE_KEYS, ReferenceKey, idsInScope } from "./report-scope";
 import { schoolNotFound } from "./school-identity";
 import { andSchoolScope, ownedSchoolIds, resolveOwnedSchoolRef } from "./school-scope";
@@ -174,9 +174,6 @@ const emptyAnswer = (report: OnlineReport, body: IMultiPaging | undefined) => ({
   },
 });
 
-/** The value of `X-Organisation-Id` that asks the student API for the platform's unscoped view. */
-const PLATFORM_SCOPE = "platform";
-
 /**
  * The reports the student API answers, asked for on the caller's behalf. For the platform (not acting as an
  * organisation) the body is sent as it came and the request carries `X-Organisation-Id: platform`. For an organisation
@@ -201,7 +198,7 @@ export class ReportProxy {
     return axios.post(`${Config.fortyk.api.rpi.cloud}/report/${report.path}`, send, {
       headers: {
         Authorization: Config.fortyk.api.serversynckey,
-        "X-Organisation-Id": scope.kind === "organisation" ? scope.organisationid : PLATFORM_SCOPE,
+        ...organisationHeader(this.org),
       },
     });
   }

@@ -25,7 +25,7 @@ import { normaliseSchoolName, withSchoolIds } from "./school-identity";
 import { andInOwnedSchools, findOwnedStudent, requireOwnedSchoolByName } from "./school-scope";
 import { OrgContext } from "src/decorators/org.decorator";
 import { schoolScope } from "./school-scope";
-import { scopeOf } from "./org-scope";
+import { organisationHeader, scopeOf } from "./org-scope";
 import { extractSchoolFilters, schoolIdsWhere } from "./school-filter";
 import { hashPassword } from "src/services/password.service";
 import { LmsUserToken } from "src/models/token.model";
@@ -217,7 +217,7 @@ export class StudentBusiness {
     const schoolusersdata: Array<string> = data.rows.map(
       (x: any) => x.schooluserid
     );
-    const accessdata = await this.getstudentaccess(schoolusersdata);
+    const accessdata = await this.getstudentaccess(schoolusersdata, org);
 
     const accessdataentries = Object.fromEntries(
       accessdata.map((x: any) => [x.userid, x.logintime])
@@ -344,7 +344,7 @@ export class StudentBusiness {
       ],
     });
 
-    const accessdata = await this.getstudentaccess([data?.schooluserid || ""]);
+    const accessdata = await this.getstudentaccess([data?.schooluserid || ""], org);
 
     const accessdataentries = Object.fromEntries(
       accessdata.map((x: any) => [x.userid, x.logintime])
@@ -533,7 +533,7 @@ WHERE
     );
   };
 
-  getstudentaccess = async (students: Array<string>) => {
+  getstudentaccess = async (students: Array<string>, org: OrgContext) => {
     // An empty list would build `userid in ()`, which is a MySQL syntax error.
     // The student list is empty on any install that has no students yet, so the
     // Students page fails before it can render its empty state.
@@ -554,6 +554,8 @@ WHERE
     // unset, which leaves it as the "your-cloud-endpoint" placeholder and makes
     // this call throw, so a whole page of students would fail to load over an
     // optional enrichment. Degrade to the local rows instead.
+    // The caller's organisation (or `platform`) goes with the call; a caller with no scope fails here, not in the catch.
+    const organisation = organisationHeader(org);
     let cloudAccess: Array<unknown> = [];
     try {
       const response = await axios.post(
@@ -562,6 +564,7 @@ WHERE
         {
           headers: {
             Authorization: Config.fortyk.api.serversynckey,
+            ...organisation,
           },
         }
       );

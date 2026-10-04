@@ -34,6 +34,18 @@ export const scopeOf = (org: OrgContext | undefined | null): Scope => {
   throw new ApiError(ErrorCode.NOT_ALLOWED);
 };
 
+/** The value of `X-Organisation-Id` that asks the student API for the platform's unscoped view. */
+export const PLATFORM_SCOPE = "platform";
+
+/**
+ * The header every server-key call to the student API carries so that it knows who the call is for: the acting (or
+ * own) organisation's id, or `platform` for the platform not acting. Throws (403) when the caller has no scope.
+ */
+export const organisationHeader = (org: OrgContext | undefined | null): { "X-Organisation-Id": string } => {
+  const scope = scopeOf(org);
+  return { "X-Organisation-Id": scope.kind === "organisation" ? scope.organisationid : PLATFORM_SCOPE };
+};
+
 /** Is the caller's scope the whole platform (not limited to one organisation)? */
 export const isPlatformScope = (org: OrgContext | undefined | null): boolean =>
   scopeOf(org).kind === "platform";

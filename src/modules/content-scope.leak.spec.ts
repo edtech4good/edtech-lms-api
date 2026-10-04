@@ -2667,6 +2667,16 @@ describe("content is confined to the caller's organisation", () => {
       expect((await send(NOT_ACTING, "get", `/curriculumbaseline/${TU.baseline}/download`)).status).toBe(200);
       expect(results).toHaveBeenCalledWith(TU.baseline);
     });
+    it.each(IN_X)("%s: the student API is asked with X's id in X-Organisation-Id", async (who) => {
+      expect((await send(who, "get", `/curriculumbaseline/${TX.baseline}/download`)).status).toBe(200);
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect((axios.get as jest.Mock).mock.calls[0][0]).toMatch(new RegExp(`/curriculum/${TX.baseline}/getstudentresult$`));
+      expect((axios.get as jest.Mock).mock.calls[0][1]).toEqual({ headers: { Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": X } });
+    });
+    it("a platform user not acting: the student API is asked with X-Organisation-Id: platform", async () => {
+      expect((await send(NOT_ACTING, "get", `/curriculumbaseline/${TU.baseline}/download`)).status).toBe(200);
+      expect((axios.get as jest.Mock).mock.calls[0][1]).toEqual({ headers: { Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": "platform" } });
+    });
   });
 
   // ───────────────────────────── baseline questions ─────────────────────────────
