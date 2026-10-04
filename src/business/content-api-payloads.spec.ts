@@ -1,5 +1,6 @@
 import { Sequelize } from "sequelize";
 import { CurriculumBusiness } from "src/business/curriculum.business";
+import { GradeBusiness } from "src/business/grade.business";
 import { DocumentBusiness } from "src/business/document.business";
 import { QuestionBusiness } from "src/business/question.business";
 import { SubjectBusiness } from "src/business/subject.business";
@@ -96,5 +97,44 @@ describe("content payloads for the student API do not select organisationid", ()
       }
     }
     expect(reading(await capture(() => new SyncBusiness().synconline()), "subjects")).toEqual([]);
+  });
+
+  /**
+   * The readers the admin routes use are the ones the payloads use, and content is limited to the caller's
+   * organisation by building the business class with the caller's context (content-scope.ts). A class built without
+   * one is what it was: every reader the payloads call sends the one statement it always did, with no limit on the
+   * rows (no `IN (...)` list of the caller's ids, no read of the ids first). With a context the same reader adds the
+   * limit, so the difference is the context and nothing else.
+   */
+  describe("the payloads' readers are not limited to an organisation", () => {
+    const CONTENT_TABLES = [
+      "curriculums", "grades", "levels", "lessons", "lessonlearnings", "lessonpractices", "lessonpracticequestions",
+      "lessonquizzes", "lessonquizquestions", "levelquizquestions", "lessonplans", "baselinequestion", "questions",
+      "documents", "subjects", "feedbacks",
+    ];
+    const contentReads = (sqls: string[]) => sqls.filter((s) => CONTENT_TABLES.some((t) => new RegExp(`FROM \`${t}\``).test(s)));
+
+    it.each([
+      ["syncontentVersion2 (sync/content, sync/cloud)", () => new SyncBusiness().syncontentVersion2()],
+      ["synconline (sync, old apk)", () => new SyncBusiness().synconline()],
+      ["getreportdata (sync/report-data)", () => new SyncBusiness().getreportdata()],
+    ] as const)("%s reads every content table once, with no limit on the rows", async (_name, run) => {
+      const reads = contentReads(await capture(run));
+      expect(reads.length).toBeGreaterThan(0);
+      for (const table of new Set(reads.map((s) => CONTENT_TABLES.find((t) => new RegExp(`FROM \`${t}\``).test(s))))) {
+        expect(reads.filter((s) => new RegExp(`FROM \`${table}\``).test(s))).toHaveLength(1);
+      }
+      for (const sql of reads) expect(sql).not.toMatch(/ IN \(/);
+    });
+
+    it("the same reader built with a caller's context does add the limit (so the check above can fail)", async () => {
+      const org = { organisationid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", isplatform: false };
+      const unscoped = reading(await capture(() => new GradeBusiness().getGrades()), "grades");
+      expect(unscoped).toHaveLength(1);
+      expect(unscoped[0]).not.toMatch(/ IN \(/);
+      const all = await capture(() => new GradeBusiness(org).getGrades());
+      expect(reading(all, "curriculums").length).toBeGreaterThan(0); // the curriculums the organisation owns, read first
+      expect(reading(all, "grades").some((s) => / IN \(/.test(s))).toBe(true);
+    });
   });
 });

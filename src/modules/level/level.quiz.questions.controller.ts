@@ -62,7 +62,7 @@ import { assertInScope, findOwnedLesson, findOwnedLevel, findOwnedQuestion } fro
 @Controller("level/quiz/question")
 @ApiBearerAuth()
 export class LevelQuizQuestionController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":levelid")
   @ApiResponse({
     status: 200,
@@ -99,7 +99,7 @@ export class LevelQuizQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post(":levelid/:questionid/:levelquizquestionorder")
   @ApiResponse({
     status: 200,
@@ -155,7 +155,7 @@ export class LevelQuizQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:levelquizquestionid")
   @ApiResponse({
     status: 200,
@@ -191,7 +191,7 @@ export class LevelQuizQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:levelquizquestionid")
   @ApiResponse({
     status: 200,
@@ -227,7 +227,7 @@ export class LevelQuizQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("order/:levelquizquestionid/:levelquizquestionorder")
   @ApiResponse({
     status: 200,
@@ -270,7 +270,7 @@ export class LevelQuizQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":levelquizquestionid")
   @ApiResponse({
     status: 200,
@@ -306,7 +306,7 @@ export class LevelQuizQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("setlesson/:levelquizquestionid")
   @ApiResponse({
     status: 200,

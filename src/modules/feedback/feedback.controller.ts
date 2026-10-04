@@ -22,7 +22,7 @@ import { findOwnedCurriculum } from "src/business/content-scope";
 @Controller("feedback")
 @ApiBearerAuth()
 export class FeedbackController {
-    @OrgPolicy("owned")
+    @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
     @Post("create")
     @ApiResponse({
         status: 200,
@@ -55,7 +55,7 @@ export class FeedbackController {
         };
     }
 
-    @OrgPolicy("owned")
+    @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
     @Post("")
     @ApiResponse({
         status: 200,
@@ -92,7 +92,7 @@ export class FeedbackController {
         };
     }
 
-    @OrgPolicy("owned")
+    @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
     @Get(":feedbackid")
     @ApiResponse({
         status: 200,

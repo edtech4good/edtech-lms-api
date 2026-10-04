@@ -32,7 +32,7 @@ import { ownerForNewContent } from "src/business/content-owner";
 @Controller('questiontag')
 @ApiBearerAuth()
 export class QuestionTagController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('create')
   @ApiResponse({
     status: 200,
@@ -70,7 +70,7 @@ export class QuestionTagController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':questiontagid')
   @ApiResponse({
     status: 200,
@@ -103,7 +103,7 @@ export class QuestionTagController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':questiontagid')
   @ApiResponse({
     status: 200,
@@ -131,7 +131,7 @@ export class QuestionTagController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(':questiontagid')
   @ApiResponse({
     status: 200,
@@ -167,7 +167,7 @@ export class QuestionTagController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('')
   @ApiResponse({
     status: 200,

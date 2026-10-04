@@ -70,7 +70,7 @@ import { findOwnedQuestion } from "src/business/content-scope";
 @Controller("question")
 @ApiBearerAuth()
 export class QuestionController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -111,7 +111,7 @@ export class QuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":questionid")
   @ApiResponse({
     status: 200,
@@ -146,7 +146,7 @@ export class QuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":questionid")
   @ApiResponse({
     status: 200,
@@ -198,7 +198,7 @@ export class QuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(":questionid")
   @ApiResponse({
     status: 200,
@@ -248,7 +248,7 @@ export class QuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -285,7 +285,7 @@ export class QuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("/search")
   @ApiResponse({
     status: 200,
@@ -322,7 +322,7 @@ export class QuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete("tag/:questionid/:tag")
   @ApiResponse({
     status: 200,
@@ -356,7 +356,7 @@ export class QuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("tag/:questionid/:tag")
   @ApiResponse({
     status: 200,
@@ -393,7 +393,7 @@ export class QuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:questionid")
   @ApiResponse({
     status: 200,
@@ -427,7 +427,7 @@ export class QuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("/:questionid/questionidentifier/:questionidentifier")
   @ApiResponse({
     status: 200,
@@ -468,7 +468,7 @@ export class QuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:questionid")
   @ApiResponse({
     status: 200,

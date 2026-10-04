@@ -34,7 +34,7 @@ import { Org, OrgContext } from "src/decorators/org.decorator";
 @ApiBearerAuth()
 export class BaselinequestionController {
   
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
       status: 200,
@@ -81,7 +81,7 @@ export class BaselinequestionController {
       };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("clone")
   @ApiResponse({
       status: 200,
@@ -135,7 +135,7 @@ export class BaselinequestionController {
       };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:baselinequestionid")
   @ApiResponse({
     status: 200,
@@ -169,7 +169,7 @@ export class BaselinequestionController {
     }
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:baselinequestionid")
   @ApiResponse({
     status: 200,
@@ -203,7 +203,7 @@ export class BaselinequestionController {
     }
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("order/:baselinequestionid/:baselinequestionorder")
   @ApiResponse({
     status: 200,
@@ -246,7 +246,7 @@ export class BaselinequestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":baselinequestionid")
   @ApiResponse({
     status: 200,
@@ -284,7 +284,7 @@ export class BaselinequestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("getall/:curriculumbaselineid")
   @ApiResponse({
     status: 200,

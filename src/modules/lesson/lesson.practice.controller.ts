@@ -66,7 +66,7 @@ import { assertInScope, findOwnedLesson } from "src/business/content-scope";
 @Controller("lesson/practice")
 @ApiBearerAuth()
 export class LessonPracticeController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":lessonid")
   @ApiResponse({
     status: 200,
@@ -102,7 +102,7 @@ export class LessonPracticeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":lessonid/:lessonpracticeid")
   @ApiResponse({
     status: 200,
@@ -139,7 +139,7 @@ export class LessonPracticeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post(":lessonid")
   @ApiResponse({
     status: 200,
@@ -185,7 +185,7 @@ export class LessonPracticeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:lessonpracticeid")
   @ApiResponse({
     status: 200,
@@ -219,7 +219,7 @@ export class LessonPracticeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:lessonpracticeid")
   @ApiResponse({
     status: 200,
@@ -255,7 +255,7 @@ export class LessonPracticeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("order/:lessonpracticeid/:lessonpracticeorder")
   @ApiResponse({
     status: 200,
@@ -294,7 +294,7 @@ export class LessonPracticeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(":lessonpracticeid")
   @ApiResponse({
     status: 200,
@@ -343,7 +343,7 @@ export class LessonPracticeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":lessonpracticeid")
   @ApiResponse({
     status: 200,

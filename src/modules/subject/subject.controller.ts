@@ -45,7 +45,7 @@ import { ownerForNewContent } from "src/business/content-owner";
 @Controller("subject")
 @ApiBearerAuth()
 export class SubjectController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -87,7 +87,7 @@ export class SubjectController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('')
   @ApiResponse({
     status: 200,
@@ -124,7 +124,7 @@ export class SubjectController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':subjectid')
   @ApiResponse({
     status: 200,
@@ -157,7 +157,7 @@ export class SubjectController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':subjectid')
   @ApiResponse({
     status: 200,
@@ -185,7 +185,7 @@ export class SubjectController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(':subjectid')
   @ApiResponse({
     status: 200,

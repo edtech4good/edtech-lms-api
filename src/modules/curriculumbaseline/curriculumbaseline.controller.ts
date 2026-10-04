@@ -92,7 +92,7 @@ const assertBaselineFits = async (curriculumid: string, schoolid: string | strin
 @Controller("curriculumbaseline")
 @ApiBearerAuth()
 export class CurriculumBaseLineController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -141,7 +141,7 @@ export class CurriculumBaseLineController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":curriculumbaselineid")
   @ApiResponse({
     status: 200,
@@ -181,7 +181,7 @@ export class CurriculumBaseLineController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("update/:curriculumbaselineid")
   @ApiResponse({
     status: 200,
@@ -235,7 +235,7 @@ export class CurriculumBaseLineController {
     }
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:curriculumbaselineid/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -274,7 +274,7 @@ export class CurriculumBaseLineController {
     }
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:curriculumbaselineid")
   @ApiResponse({
     status: 200,
@@ -309,7 +309,7 @@ export class CurriculumBaseLineController {
     }
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("all")
   @ApiResponse({
     status: 200,
@@ -353,7 +353,7 @@ export class CurriculumBaseLineController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("query")
   @ApiResponse({
     status: 200,
@@ -403,7 +403,7 @@ export class CurriculumBaseLineController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("getcurriculumbaseline/:curriculumbaselineid")
   @ApiResponse({
     status: 200,
@@ -451,7 +451,7 @@ export class CurriculumBaseLineController {
     }
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("school/:curriculumbaselineid")
   @ApiResponse({
     status: 200,
@@ -485,7 +485,7 @@ export class CurriculumBaseLineController {
     }
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":curriculumbaselineid/download")
   @ApiResponse({
     status: 200,

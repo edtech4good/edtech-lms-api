@@ -35,7 +35,7 @@ import { Org, OrgContext } from "src/decorators/org.decorator";
 @Controller('lesson/learning')
 @ApiBearerAuth()
 export class LessonLearningController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':lessonid')
   @ApiResponse({
     status: 200,
@@ -63,7 +63,7 @@ export class LessonLearningController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':lessonid/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -92,7 +92,7 @@ export class LessonLearningController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post(':lessonid')
   @ApiResponse({
     status: 200,
@@ -127,7 +127,7 @@ export class LessonLearningController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('activate/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -155,7 +155,7 @@ export class LessonLearningController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('deactivate/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -183,7 +183,7 @@ export class LessonLearningController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('order/:lessonlearningid/:lessonlearningorder')
   @ApiResponse({
     status: 200,
@@ -216,7 +216,7 @@ export class LessonLearningController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(':lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -252,7 +252,7 @@ export class LessonLearningController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':lessonlearningid')
   @ApiResponse({
     status: 200,

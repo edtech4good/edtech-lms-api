@@ -36,7 +36,7 @@ import { assertSameOwner, ownerOfCurriculum, ownerOfGrade } from "src/business/c
 @ApiBearerAuth()
 export class GradeController {
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -77,7 +77,7 @@ export class GradeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('create')
   @ApiResponse({
     status: 200,
@@ -121,7 +121,7 @@ export class GradeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':gradeid')
   @ApiResponse({
     status: 200,
@@ -154,7 +154,7 @@ export class GradeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('deactivate/:gradeid')
   @ApiResponse({
     status: 200,
@@ -184,7 +184,7 @@ export class GradeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('activate/:gradeid')
   @ApiResponse({
     status: 200,
@@ -213,7 +213,7 @@ export class GradeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':gradeid')
   @ApiResponse({
     status: 200,
@@ -241,7 +241,7 @@ export class GradeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get('curriculum/:curriculumid')
   @ApiResponse({
     status: 200,
@@ -269,7 +269,7 @@ export class GradeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(':gradeid')
   @ApiResponse({
     status: 200,
@@ -314,7 +314,7 @@ export class GradeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('')
   @ApiResponse({
     status: 200,

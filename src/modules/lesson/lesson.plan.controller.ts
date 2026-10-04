@@ -38,7 +38,7 @@ import { Org, OrgContext } from "src/decorators/org.decorator";
 @Controller('lesson/plan')
 @ApiBearerAuth()
 export class LessonPlanController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':lessonid')
   @ApiResponse({
     status: 200,
@@ -66,7 +66,7 @@ export class LessonPlanController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':lessonid/:lessonplanid')
   @ApiResponse({
     status: 200,
@@ -95,7 +95,7 @@ export class LessonPlanController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post(':lessonid')
   @ApiResponse({
     status: 200,
@@ -130,7 +130,7 @@ export class LessonPlanController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('activate/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -158,7 +158,7 @@ export class LessonPlanController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('deactivate/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -186,7 +186,7 @@ export class LessonPlanController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('order/:lessonlearningid/:lessonlearningorder')
   @ApiResponse({
     status: 200,
@@ -219,7 +219,7 @@ export class LessonPlanController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(':lessonplanid')
   @ApiResponse({
     status: 200,
@@ -255,7 +255,7 @@ export class LessonPlanController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':lessonplanid')
   @ApiResponse({
     status: 200,

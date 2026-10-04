@@ -30,7 +30,7 @@ import { findOwnedPractice, findOwnedQuestion } from "src/business/content-scope
 @Controller('lesson/practice/question')
 @ApiBearerAuth()
 export class LessonPracticeQuestionController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':lessonpracticeid')
   @ApiResponse({
     status: 200,
@@ -58,7 +58,7 @@ export class LessonPracticeQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post(':lessonpracticeid/:questionid/:lessonpracticequestionorder')
   @ApiResponse({
     status: 200,
@@ -102,7 +102,7 @@ export class LessonPracticeQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('activate/:lessonpracticequestionid')
   @ApiResponse({
     status: 200,
@@ -130,7 +130,7 @@ export class LessonPracticeQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('deactivate/:lessonpracticequestionid')
   @ApiResponse({
     status: 200,
@@ -158,7 +158,7 @@ export class LessonPracticeQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('order/:lessonpracticequestionid/:lessonpracticequestionorder')
   @ApiResponse({
     status: 200,
@@ -192,7 +192,7 @@ export class LessonPracticeQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':lessonpracticequestionid')
   @ApiResponse({
     status: 200,

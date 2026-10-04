@@ -71,7 +71,7 @@ import { Org, OrgContext, OrgOrSchoolUser } from "src/decorators/org.decorator";
 @ApiBearerAuth()
 export class LevelController {
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -103,7 +103,7 @@ export class LevelController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -151,7 +151,7 @@ export class LevelController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":levelid")
   @ApiResponse({
     status: 200,
@@ -186,7 +186,7 @@ export class LevelController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:levelid")
   @ApiResponse({
     status: 200,
@@ -220,7 +220,7 @@ export class LevelController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:levelid")
   @ApiResponse({
     status: 200,
@@ -251,7 +251,7 @@ export class LevelController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":levelid")
   @ApiResponse({
     status: 200,
@@ -282,7 +282,7 @@ export class LevelController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(":levelid")
   @ApiResponse({
     status: 200,
@@ -331,7 +331,7 @@ export class LevelController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,

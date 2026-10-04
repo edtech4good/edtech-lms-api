@@ -95,10 +95,45 @@ const ASSOCS: Record<string, Record<string, Assoc>> = {
   standards: { school: { table: "schools", local: "schoolid", remote: "schoolid" } },
   schoolcontributedata: { school: { table: "schools", local: "schoolid", remote: "schoolid" } },
   schools: { countries: { table: "countries", local: "countryid", remote: "countryid" } },
-  schoolusers: {
+    schoolusers: {
     student: { table: "students", local: "schooluserid", remote: "schooluserid" },
     students: { table: "students", local: "schooluserid", remote: "schooluserid", many: true },
     school: { table: "schools", local: "schoolid", remote: "schoolid" },
+  },
+  // the content tree: what a route reads a row's parent and its document or question through
+  grades: { curriculum: { table: "curriculums", local: "curriculumid", remote: "curriculumid" } },
+  levels: { grade: { table: "grades", local: "gradeid", remote: "gradeid" } },
+  lessons: { level: { table: "levels", local: "levelid", remote: "levelid" } },
+  lessonlearnings: {
+    document: { table: "documents", local: "documentid", remote: "documentid" },
+    lesson: { table: "lessons", local: "lessonid", remote: "lessonid" },
+  },
+  lessonplans: {
+    document: { table: "documents", local: "documentid", remote: "documentid" },
+    lesson: { table: "lessons", local: "lessonid", remote: "lessonid" },
+  },
+  lessonpractices: { lesson: { table: "lessons", local: "lessonid", remote: "lessonid" } },
+  lessonquizzes: { lesson: { table: "lessons", local: "lessonid", remote: "lessonid" } },
+  lessonpracticequestions: {
+    lessonpractice: { table: "lessonpractices", local: "lessonpracticeid", remote: "lessonpracticeid" },
+    question: { table: "questions", local: "questionid", remote: "questionid" },
+  },
+  lessonquizquestions: {
+    lessonquiz: { table: "lessonquizzes", local: "lessonquizid", remote: "lessonquizid" },
+    question: { table: "questions", local: "questionid", remote: "questionid" },
+  },
+  levelquizquestions: {
+    level: { table: "levels", local: "levelid", remote: "levelid" },
+    question: { table: "questions", local: "questionid", remote: "questionid" },
+    lesson: { table: "lessons", local: "lessonid", remote: "lessonid" },
+  },
+  baselinequestion: {
+    curriculumbaseline: { table: "curriculumbaseline", local: "curriculumbaselineid", remote: "curriculumbaselineid" },
+    question: { table: "questions", local: "questionid", remote: "questionid" },
+  },
+  feedbacks: {
+    schooluser: { table: "schoolusers", local: "created_by", remote: "schooluserid" },
+    curriculum: { table: "curriculums", local: "curriculumid", remote: "curriculumid" },
   },
 };
 
@@ -108,6 +143,7 @@ interface IncludeSpec {
   required?: boolean;
   where?: unknown;
   attributes?: unknown;
+  include?: IncludeSpec[];
 }
 interface FindOptions {
   where?: unknown;
@@ -135,7 +171,7 @@ export type ContentTable = keyof typeof MODELS;
 
 const IGNORE_CASE = ["questiontagname", "documenttagname"];
 // what the wrapper adds to a row: never copied back into it
-const INSTANCE_ONLY = new Set(["get", "setDataValue", "save", "reload", "update", "toJSON", "getGrade"]);
+const INSTANCE_ONLY = new Set(["get", "setDataValue", "save", "reload", "update", "destroy", "toJSON", "getGrade"]);
 
 export class ContentFake {
   tables: Record<string, Row[]> = {};
@@ -168,25 +204,33 @@ export class ContentFake {
       (Object.entries(MODELS) as Array<[ContentTable, readonly [object, string]]>).map(([n, [model]]) => [model, n]),
     );
     const out: Array<[Row, Row]> = [];
-    for (const row of this.tables[table]) {
+    // The rows `table`'s `row` joins to through `includes` (an inner join for a required include), each nested include
+    // joined in turn; `null` when a required include finds nothing.
+    const join = (from: ContentTable, row: Row, includes: IncludeSpec[] | undefined): Row | null => {
       const joined: Row = { ...row };
-      let keep = true;
-      for (const inc of o.include ?? []) {
+      for (const inc of includes ?? []) {
         const target = tableOf.get(inc.model);
-        const entry = Object.entries(ASSOCS[table] ?? {}).find(([alias, a]) => (inc.as ? alias === inc.as : a.table === target));
-        if (!entry || !target) throw new Error(`content-fake: no join from ${table} to ${String(target)}`);
+        const entry = Object.entries(ASSOCS[from] ?? {}).find(([alias, a]) => (inc.as ? alias === inc.as : a.table === target));
+        if (!entry || !target) throw new Error(`content-fake: no join from ${from} to ${String(target)}`);
         const [alias, assoc] = entry;
-        const matches = this.tables[assoc.table].filter(
-          (r) => (r[assoc.remote] ?? null) === (row[assoc.local] ?? null) && rowMatches(r, inc.where),
-        );
-        const required = inc.required ?? inc.where !== undefined;
-        if (required && matches.length === 0) {
-          keep = false;
-          break;
+        const matches: Row[] = [];
+        for (const r of this.tables[assoc.table]) {
+          if ((r[assoc.remote] ?? null) !== (row[assoc.local] ?? null) || !rowMatches(r, inc.where)) continue;
+          const nested = join(assoc.table, r, inc.include);
+          if (nested === null) continue;
+          // what the include selects, with the rows it joined in turn held under their aliases
+          const nestedAliases = Object.keys(nested).filter((k) => !(k in r));
+          matches.push({ ...project(nested, inc.attributes), ...Object.fromEntries(nestedAliases.map((a) => [a, nested[a]])) });
         }
-        joined[alias] = assoc.many ? matches.map((r) => project(r, inc.attributes)) : matches[0] ? project(matches[0], inc.attributes) : null;
+        const required = inc.required ?? inc.where !== undefined;
+        if (required && matches.length === 0) return null;
+        joined[alias] = assoc.many ? matches : matches[0] ?? null;
       }
-      if (keep && rowMatches(joined, o.where, IGNORE_CASE)) {
+      return joined;
+    };
+    for (const row of this.tables[table]) {
+      const joined = join(table, row, o.include);
+      if (joined !== null && rowMatches(joined, o.where, IGNORE_CASE)) {
         out.push([row, joined]);
       }
     }
@@ -224,6 +268,10 @@ export class ContentFake {
         Object.assign(instance, values);
         write(instance, o?.fields ?? Object.keys(values));
         return instance;
+      },
+            // removes the row, as the real instance's `destroy()` deletes it
+      destroy: async () => {
+        this.tables[table] = this.tables[table].filter((r) => r !== row);
       },
       toJSON: () => row,
     };

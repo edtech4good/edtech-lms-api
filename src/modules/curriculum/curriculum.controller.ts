@@ -83,7 +83,7 @@ import { notFoundError } from "src/business/org-scope";
 @ApiBearerAuth()
 export class CurriculumController {
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -123,7 +123,7 @@ export class CurriculumController {
     };
   }
   
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -174,7 +174,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":curriculumid")
   @ApiResponse({
     status: 200,
@@ -209,7 +209,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -243,7 +243,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -276,7 +276,7 @@ export class CurriculumController {
       data: true,
     };
   }
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("map")
   @ApiResponse({
     status: 200,
@@ -335,7 +335,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("tree")
   @ApiResponse({
     status: 200,
@@ -406,7 +406,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("tree/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -489,7 +489,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":curriculumid")
   @ApiResponse({
     status: 200,
@@ -523,7 +523,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(":curriculumid")
   @ApiResponse({
     status: 200,
@@ -577,7 +577,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -614,7 +614,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("country/:countryid")
   @ApiResponse({
     status: 200,

@@ -56,7 +56,7 @@ import { findOwnedDocument } from "src/business/content-scope";
 @Controller("document")
 @ApiBearerAuth()
 export class DocumentController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("/upload")
   @ApiResponse({
     status: 200,
@@ -150,7 +150,7 @@ export class DocumentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":documentid")
   @ApiResponse({
     status: 200,
@@ -181,7 +181,7 @@ export class DocumentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -227,7 +227,7 @@ export class DocumentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete("tag/:documentid/:tag")
   @ApiResponse({
     status: 200,
@@ -261,7 +261,7 @@ export class DocumentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("tag/:documentid/:tag")
   @ApiResponse({
     status: 200,
@@ -298,7 +298,7 @@ export class DocumentController {
     };
   }
 
-  @OrgPolicy("owned", { note: "The signed key must be scoped to the caller's organisation." })
+  @OrgPolicy("owned", { note: "The signed key must be scoped to the caller's organisation.", enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("presign/:filename")
   @ApiResponse({
     status: 200,

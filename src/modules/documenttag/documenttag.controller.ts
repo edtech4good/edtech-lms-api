@@ -32,7 +32,7 @@ import { ownerForNewContent } from "src/business/content-owner";
 @Controller('documenttag')
 @ApiBearerAuth()
 export class DocumentTagController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('create')
   @ApiResponse({
     status: 200,
@@ -70,7 +70,7 @@ export class DocumentTagController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':documenttagid')
   @ApiResponse({
     status: 200,
@@ -103,7 +103,7 @@ export class DocumentTagController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':documenttagid')
   @ApiResponse({
     status: 200,
@@ -131,7 +131,7 @@ export class DocumentTagController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(':documenttagid')
   @ApiResponse({
     status: 200,
@@ -167,7 +167,7 @@ export class DocumentTagController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('')
   @ApiResponse({
     status: 200,

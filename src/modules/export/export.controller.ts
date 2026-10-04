@@ -161,7 +161,7 @@ export class ExportController {
     return new StreamableFile(zip.toBuffer());
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("documents/:curriculumid")
   @ApiParam({ name: `curriculumid`, type: "string", required: true })
   @HttpCode(HttpStatus.OK)
