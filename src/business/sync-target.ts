@@ -16,9 +16,10 @@ import { scopeOf } from "./org-scope";
  * other than the one the token acts in is the same 404, never a way into it.
  *
  * The platform, not acting as an organisation, can also ask for the whole
- * platform's content in the older format 2 (`format=2`). Nobody else can, and
+ * platform's content in the older format 2 (`format=2`). Nobody else can.
  * `SYNC_FORMAT_DEFAULT` (see `defaultSyncFormat`) is what a request that does
- * not say gets.
+ * not say gets, and a request for a format higher than it is refused: what this
+ * server pushes (or serves, for upload elsewhere) follows its setting, never the caller.
  */
 export interface SyncRequest {
   organisationid?: unknown;
@@ -80,7 +81,14 @@ export const resolveSyncOrganisation = async (org: OrgContext, named: unknown): 
 export const planContentSync = async (org: OrgContext, request: SyncRequest): Promise<SyncPlan> => {
   const scope = scopeOf(org);
   const asked = parseFormat(request.format);
-  const format = asked ?? defaultSyncFormat();
+  const setting = defaultSyncFormat();
+  // What this server sends, and what it serves for upload elsewhere, follows its setting and never the caller: an older student
+  // API reads one organisation's file as the whole platform's, so a request for a HIGHER format than the setting is refused.
+  if (asked !== undefined && asked > setting) {
+    const message = "This server pushes format 2 until SYNC_FORMAT_DEFAULT is 3.";
+    throw new ApiError(ErrorCode.INVALID_INPUT, message, { fields: [{ field: "format", message }] });
+  }
+  const format = asked ?? setting;
   if (format === 2) {
     if (scope.kind !== "platform") {
       throw new ApiError(

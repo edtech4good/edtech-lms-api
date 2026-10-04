@@ -426,9 +426,39 @@ describe("the content sync is one organisation's", () => {
       }
     });
 
-    it("format 3 is still there when asked for", async () => {
-      expect((await download(NOT_ACTING, `/sync/content?format=3&organisationid=${X}`)).json.format).toBe(3);
+    it("format 3 asked for is refused (400): this server serves format 2 until the setting is 3", async () => {
+      for (const [who, path] of [[NOT_ACTING, `/sync/content?format=3&organisationid=${X}`], ["X's Admin", "/sync/content?format=3"], ["a platform user acting as X", "/sync/content?format=3"]] as Array<[Who, string]>) {
+        const res = await send(who, "get", path);
+        expect(res.status).toBe(400);
+        expect(res.body.errormessage).toBe("This server pushes format 2 until SYNC_FORMAT_DEFAULT is 3.");
+        expect(res.body.fields).toEqual([{ field: "format", message: "This server pushes format 2 until SYNC_FORMAT_DEFAULT is 3." }]);
+      }
+    });
+
+    it("POST /sync/cloud with format 3 in the body is refused (400) for everyone, and nothing is sent", async () => {
+      for (const who of [NOT_ACTING, "X's Admin", "a platform user acting as X"] as Who[]) {
+        const res = await send(who, "post", "/sync/cloud", { format: 3, organisationid: X });
+        expect(res.status).toBe(400);
+        expect(res.body.errormessage).toBe("This server pushes format 2 until SYNC_FORMAT_DEFAULT is 3.");
+      }
+      for (const format of ["3", 3]) expect((await send(NOT_ACTING, "post", "/sync/cloud", { format, organisationid: Y })).status).toBe(400);
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+
+    it("format 2 asked for is what it gives anyway, to the platform not acting", async () => {
+      expect(Object.keys((await download(NOT_ACTING, "/sync/content?format=2")).json)).not.toContain("format");
+      await send(NOT_ACTING, "post", "/sync/cloud", { format: 2 }).expect(200);
+      expect(axios.put).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("while SYNC_FORMAT_DEFAULT is 3", () => {
+    it("format 3 asked for is what it gives, and format 2 stays for the platform not acting only", async () => {
       expect((await download("X's Admin", "/sync/content?format=3")).json.format).toBe(3);
+      await send("X's Admin", "post", "/sync/cloud", { format: 3 }).expect(200);
+      expect(pushed().json.format).toBe(3);
+      expect((await send("X's Admin", "get", "/sync/content?format=2")).status).toBe(400);
+      expect((await download(NOT_ACTING, "/sync/content?format=2")).status).toBe(200);
     });
   });
 
