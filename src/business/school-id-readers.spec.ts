@@ -281,25 +281,25 @@ describe("reports", () => {
 
   it("the reach routes resolve the school once (name or id); an unknown one is a 404", async () => {
     const c = count();
-    await new ReportController().getStudentGender("", "sample school", "");
+    await new ReportController().getStudentGender(PLATFORM, "", "sample school", "");
     expect(whereOf(c, 0).schoolid).toBe("id-sample");
     c.mockClear();
-    await new ReportController().getStudentGender("", "", "id-other");
+    await new ReportController().getStudentGender(PLATFORM, "", "", "id-other");
     expect(whereOf(c, 0).schoolid).toBe("id-other");
-    await expect(new ReportController().getStudentGender("", "Nowhere", "")).rejects.toMatchObject({ code: "NOT_FOUND" });
-    await expect(new ReportController().getStudentGender("", "សាលាគរូ", "")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new ReportController().getStudentGender(PLATFORM, "", "Nowhere", "")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new ReportController().getStudentGender(PLATFORM, "", "សាលាគរូ", "")).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("the school dashboard route takes a name or an id in its path segment", async () => {
     const c = count();
     jest.spyOn(schoolusers, "count").mockResolvedValue(0 as never);
-    await new ReportController().getSchoolData("Sample School");
+    await new ReportController().getSchoolData(PLATFORM, "Sample School");
     expect(whereOf(c).schoolid).toBe("id-sample");
     c.mockClear();
     table = [{ schoolid: "11111111-1111-4111-8111-111111111111", schoolname: "Uuid School", curriculums: [] }, ...table];
-    await new ReportController().getSchoolData("11111111-1111-4111-8111-111111111111");
+    await new ReportController().getSchoolData(PLATFORM, "11111111-1111-4111-8111-111111111111");
     expect(whereOf(c).schoolid).toBe("11111111-1111-4111-8111-111111111111");
-    await expect(new ReportController().getSchoolData("Nowhere")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new ReportController().getSchoolData(PLATFORM, "Nowhere")).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("usage by country finds a country's school logins through the schools' ids", async () => {

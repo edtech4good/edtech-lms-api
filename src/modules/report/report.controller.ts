@@ -1,4 +1,5 @@
-import { resolveSchoolRef, resolveSchoolSegment } from "src/business/school-identity";
+import { resolveOwnedSchoolRef, resolveOwnedSchoolSegment } from "src/business/school-scope";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 import {
   Body,
   Controller,
@@ -57,10 +58,11 @@ export class ReportController {
   @RequirePermissions(Permission.VIEW_PLUS_REACH)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getSchoolsReport(
+    @Org() org: OrgContext,
     @Query("countryid") countryid: string = '',
     @Query("year") year: number = new Date().getFullYear(),
   ): Promise<any> {
-    const data = await new ReportBusiness().getDashboardReport(countryid, year);
+    const data = await new ReportBusiness(org).getDashboardReport(countryid, year);
     return {
         data: data,
         error: false,
@@ -88,13 +90,14 @@ export class ReportController {
   @RequirePermissions(Permission.VIEW_PLUS_REACH, Permission.VIEW_SCHOOL_REACH)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getStudentGender(
+    @Org() org: OrgContext,
     @Query("countryid") countryid: string = '',
     @Query("schoolname") schoolname: string = '',
     @Query("schoolid") schoolid: string = '',
   ): Promise<any> {
     // The school is named by id or by name; resolved once, here (unknown: 404).
-    const school = await resolveSchoolRef({ schoolid, schoolname });
-    const data = await new ReportBusiness().getAllStudentsGender(countryid, school?.schoolid);
+    const school = await resolveOwnedSchoolRef(org, { schoolid, schoolname });
+    const data = await new ReportBusiness(org).getAllStudentsGender(countryid, school?.schoolid);
     return {
         data: data,
         error: false,
@@ -122,13 +125,14 @@ export class ReportController {
   @RequirePermissions(Permission.VIEW_PLUS_REACH, Permission.VIEW_SCHOOL_REACH)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getStudentDisability(
+    @Org() org: OrgContext,
     @Query("countryid") countryid: string = '',
     @Query("schoolname") schoolname: string = '',
     @Query("schoolid") schoolid: string = '',
   ): Promise<any> {
     // The school is named by id or by name; resolved once, here (unknown: 404).
-    const school = await resolveSchoolRef({ schoolid, schoolname });
-    const data = await new ReportBusiness().getAllStudentsDisability(countryid, school?.schoolid);
+    const school = await resolveOwnedSchoolRef(org, { schoolid, schoolname });
+    const data = await new ReportBusiness(org).getAllStudentsDisability(countryid, school?.schoolid);
     return {
         data: data,
         error: false,
@@ -156,12 +160,13 @@ export class ReportController {
   @RequirePermissions(Permission.VIEW_PLUS_REACH, Permission.VIEW_SCHOOL_REACH)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getStudentsOfflineOnline(
+    @Org() org: OrgContext,
     @Query("schoolname") schoolname: string = '',
     @Query("schoolid") schoolid: string = '',
     @Query("countryid") countryid: string = '',
   ): Promise<any> {
     // The school is named by id or by name; resolved once, here (unknown: 404).
-    const school = await resolveSchoolRef({ schoolid, schoolname });
+    const school = await resolveOwnedSchoolRef(org, { schoolid, schoolname });
     // const response = await axios.get(
     //   `${Config.fortyk.api.rpi.cloud}/report/offlineonline?schoolname=${schoolname}&countryid=${countryid}`,
     //   {
@@ -170,9 +175,9 @@ export class ReportController {
     //     },
     //   }
     // )
-    const onlinestudents = await new ReportBusiness().getStudentsOfflineOnline(school?.schoolid, countryid, 'online');
-    const offlinestudents = await new ReportBusiness().getStudentsOfflineOnline(school?.schoolid, countryid, 'offline');
-    const data = new ReportBusiness().formatChartsOfflineOnline(onlinestudents, offlinestudents);
+    const onlinestudents = await new ReportBusiness(org).getStudentsOfflineOnline(school?.schoolid, countryid, 'online');
+    const offlinestudents = await new ReportBusiness(org).getStudentsOfflineOnline(school?.schoolid, countryid, 'offline');
+    const data = new ReportBusiness(org).formatChartsOfflineOnline(onlinestudents, offlinestudents);
     return {
       error: false,
       data: data,
@@ -197,8 +202,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.OFFLINE_VIEW_QUIZ_SCORE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getStudentsProgress(@Body() body: IMultiPaging): Promise<any> {
-    const data = await new ReportBusiness().getStudentsScoresData(body);
+  async getStudentsProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const data = await new ReportBusiness(org).getStudentsScoresData(body);
     return {
       error: false,
       data: {
@@ -228,8 +233,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.OFFLINE_VIEW_QUIZ_SCORE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getClassProgress(@Body() body: IMultiPaging): Promise<any> {
-    const data = await new ReportBusiness().getClassScoresData(body);
+  async getClassProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const data = await new ReportBusiness(org).getClassScoresData(body);
     return {
       error: false,
       data: {
@@ -259,8 +264,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.OFFLINE_CURRENT_LEVEL)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getStudentsLastProgress(@Body() body: IMultiPaging): Promise<any> {
-    const data = await new ReportBusiness().getStudentLastCompletedQuiz(body, false, 2);
+  async getStudentsLastProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const data = await new ReportBusiness(org).getStudentLastCompletedQuiz(body, false, 2);
     return {
       error: false,
       data: {
@@ -290,8 +295,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.OFFLINE_LEVEL_QUIZ)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getLevelQuiz(@Body() body: IMultiPaging): Promise<any> {
-    const data = await new ReportBusiness().getLevelQuizScoresData(body);
+  async getLevelQuiz(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const data = await new ReportBusiness(org).getLevelQuizScoresData(body);
     return {
       error: false,
       data: {
@@ -321,8 +326,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.OFFLINE_LEVEL_QUIZ)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getClassLevelQuiz(@Body() body: IMultiPaging): Promise<any> {
-    const data = await new ReportBusiness().getClassLevelQuizScoresData(body);
+  async getClassLevelQuiz(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const data = await new ReportBusiness(org).getClassLevelQuizScoresData(body);
     return {
       error: false,
       data: {
@@ -353,6 +358,7 @@ export class ReportController {
   @RequirePermissions(Permission.OFFLINE_ACTIVE_STATUS)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getStudentStatus(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @User() user: LmsUserToken,
   ): Promise<any> {
@@ -362,7 +368,7 @@ export class ReportController {
         value: user?.schools ?? ''
       });
     }
-    const data = await new ReportBusiness().getStudentStatus({
+    const data = await new ReportBusiness(org).getStudentStatus({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
@@ -398,10 +404,11 @@ export class ReportController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @UseInterceptors(new SchemaValidationInterceptor(showallsyncrecords))
   async getSyncRecords(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @User() user: LmsUserToken
   ): Promise<any> {
-    const data = await new ReportBusiness().getSyncRecord({
+    const data = await new ReportBusiness(org).getSyncRecord({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
@@ -436,9 +443,10 @@ export class ReportController {
   @RequirePermissions(Permission.VIEW_PLUS_REACH)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getCountryData(
+    @Org() org: OrgContext,
     @Param("countryid") countryid: string,
   ): Promise<any> {
-    const data = await new ReportBusiness().getDashboardByCountry(countryid);
+    const data = await new ReportBusiness(org).getDashboardByCountry(countryid);
     return {
         data: data,
         error: false,
@@ -464,11 +472,12 @@ export class ReportController {
   @RequirePermissions(Permission.VIEW_SCHOOL_REACH)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getSchoolData(
+    @Org() org: OrgContext,
     @Param("schoolname") schoolname: string,
   ): Promise<any> {
     // The segment names the school by NAME (as before) or by id; resolved once, here.
-    const school = await resolveSchoolSegment(schoolname, { forRead: true });
-    const data = await new ReportBusiness().getDashboardBySchool(school.schoolid);
+    const school = await resolveOwnedSchoolSegment(org, schoolname, { forRead: true });
+    const data = await new ReportBusiness(org).getDashboardBySchool(school.schoolid);
     return {
         data: data,
         error: false,
@@ -493,8 +502,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_IMPACT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getStudentUsage(): Promise<any> {
-    const data = await new ReportBusiness().getStudentUsage();
+  async getStudentUsage(@Org() org: OrgContext): Promise<any> {
+    const data = await new ReportBusiness(org).getStudentUsage();
     return {
         data: data,
         error: false,
@@ -519,8 +528,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_OFFLINE_REPORT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getStudentGradeProgress(@Body() body: IMultiPaging): Promise<any> {
-    const data = await new ReportBusiness().getStudentGradeProgress({
+  async getStudentGradeProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const data = await new ReportBusiness(org).getStudentGradeProgress({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
@@ -555,8 +564,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_OFFLINE_REPORT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getStudentLevelProgress(@Body() body: IMultiPaging): Promise<any> {
-    const data = await new ReportBusiness().getStudentLevelProgress({
+  async getStudentLevelProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const data = await new ReportBusiness(org).getStudentLevelProgress({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
@@ -591,8 +600,8 @@ export class ReportController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_OFFLINE_REPORT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getStudentLessonProgress(@Body() body: IMultiPaging): Promise<any> {
-    const data = await new ReportBusiness().getStudentLessonProgress({
+  async getStudentLessonProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const data = await new ReportBusiness(org).getStudentLessonProgress({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
@@ -991,10 +1000,11 @@ export class ReportController {
   @RequirePermissions(Permission.OFFLINE_VIEW_QUIZ_SCORE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadOfflineStudentsQuizzes(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @Response({ passthrough: true }) res: any
   ) {
-    const data = await new ReportBusiness().getStudentsScoresData(body, true);
+    const data = await new ReportBusiness(org).getStudentsScoresData(body, true);
     const formatedData = new ReportDownload().formatQuizzes(data.rows);
     const csvString = await json2csv(formatedData);
     res.set({
@@ -1022,10 +1032,11 @@ export class ReportController {
   @RequirePermissions(Permission.OFFLINE_VIEW_QUIZ_SCORE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadOfflineClassQuizzes(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @Response({ passthrough: true }) res: any
   ) {
-    const data = await new ReportBusiness().getClassScoresData(body, true);
+    const data = await new ReportBusiness(org).getClassScoresData(body, true);
     const formatedData = new ReportDownload().formatQuizzesOfClass(data.rows);
     const csvString = await json2csv(formatedData);
     res.set({
@@ -1134,10 +1145,11 @@ export class ReportController {
   @RequirePermissions(Permission.OFFLINE_CURRENT_LEVEL)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadOfflineCurrentLevel(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @Response({ passthrough: true }) res: any
   ) {
-    const data = await new ReportBusiness().getStudentLastCompletedQuiz(body, true, 2);
+    const data = await new ReportBusiness(org).getStudentLastCompletedQuiz(body, true, 2);
     const formatedData = new ReportDownload().formatCurrentLevel(data.lastcompletedlessonquiz);
     const csvString = await json2csv(formatedData);
     res.set({
@@ -1205,10 +1217,11 @@ export class ReportController {
   @RequirePermissions(Permission.OFFLINE_LEVEL_QUIZ)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadOfflineStudentsLevelQuizzes(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @Response({ passthrough: true }) res: any
   ) {
-    const data = await new ReportBusiness().getLevelQuizScoresData(body, true);
+    const data = await new ReportBusiness(org).getLevelQuizScoresData(body, true);
     const formatedData = new ReportDownload().formatLevelQuizzes(data.rows);
     const csvString = await json2csv(formatedData);
     res.set({
@@ -1237,10 +1250,11 @@ export class ReportController {
   @RequirePermissions(Permission.OFFLINE_LEVEL_QUIZ)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadOfflineClassLevelQuizzes(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @Response({ passthrough: true }) res: any
   ) {
-    const data = await new ReportBusiness().getClassLevelQuizScoresData(body, true);
+    const data = await new ReportBusiness(org).getClassLevelQuizScoresData(body, true);
     const formatedData = new ReportDownload().formatLevelQuizzesClass(data.rows);
     const csvString = await json2csv(formatedData);
     res.set({
@@ -1349,6 +1363,7 @@ export class ReportController {
   @RequirePermissions(Permission.OFFLINE_ACTIVE_STATUS)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async downloadStudentActivity(
+    @Org() org: OrgContext,
     @Body() body: IMultiPaging,
     @User() user: LmsUserToken,
     @Response({ passthrough: true }) res: any
@@ -1359,7 +1374,7 @@ export class ReportController {
         value: user?.schools ?? ''
       });
     }
-    const data = await new ReportBusiness().getStudentStatus(body, true);
+    const data = await new ReportBusiness(org).getStudentStatus(body, true);
     const formatedData = new ReportDownload().formatStudentActivity(data.rows, body?.filter);
     const csvString = await json2csv(formatedData);
     res.set({
@@ -1435,9 +1450,10 @@ export class ReportController {
   @RequirePermissions(Permission.VIEW_TECH_DOWNTIME)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getFeedbackTechDowntime(
+    @Org() org: OrgContext,
     @Body() body: TechDownTime
   ): Promise<any> {
-    const data = await new ReportBusiness().getFeedbackTechDowntime(body);
+    const data = await new ReportBusiness(org).getFeedbackTechDowntime(body);
     return {
         data: data,
         error: false,

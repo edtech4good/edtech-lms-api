@@ -30,6 +30,11 @@ import { IMultiPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
 import { FeedbackData, FeedbackDataContent, TechDowntimeNumbers } from "src/modules/feedback/models/FeedbackBase";
 import { buildCustomWhere, constructWhere } from "src/services/util.service";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope } from "./content-scope";
+import { confineFilters, NO_SUCH_ID } from "./report-scope";
+import { andInOwnedSchools, andLinkedCountries, andSchoolScope, schoolScope } from "./school-scope";
+import { IMultiFilter } from "src/models/IPaging";
 
 export interface ChartItemFormat {
     name: Date | string;
@@ -41,8 +46,39 @@ export interface LineChartFormat {
     series: Array<ChartItemFormat>;
 }
 
+/**
+ * Every report here is confined to the caller's organisation when the class is built with the caller's context: the
+ * learners, logins, classes and schools it counts or lists are the organisation's, the curriculums, grades, levels and
+ * lessons it reads are the organisation's own, a country is one the organisation is linked to, and a learner, class,
+ * curriculum, grade, level, lesson or country named in a request's filter that is not in that scope is treated as one that is
+ * not there (see report-scope.ts). Built without a context it is unscoped, exactly as it was.
+ */
 export class ReportBusiness {
-    getDashboardReport = async (countryid: string, year: number) => {
+    constructor(private readonly org?: OrgContext) {}
+
+    /** `where` AND the learners (and school logins) of the caller's schools; untouched without a context and for the platform. */
+    private learners = async (where: WhereOptions<any>): Promise<WhereOptions<any>> =>
+        this.org ? andInOwnedSchools(where, this.org) : where;
+
+    /** `where` AND the schools of the caller's organisation (on the `schools` table). */
+    private ownSchools = (where: WhereOptions<any>): WhereOptions<any> =>
+        this.org ? andSchoolScope(where, this.org) : where;
+
+    /** `where` AND the curriculums the caller may read. */
+    private curriculumsIn = (where: WhereOptions<any>) => andScope(this.org, "curriculum", where);
+
+    /** The filters of a request, with every reference outside the caller's scope replaced by an id that names no row. */
+    private confine = (filters: IMultiFilter[] | undefined) => confineFilters(this.org, filters);
+
+    /** A country id as the caller may see it: one the organisation is linked to, else an id that names no country. */
+    private visibleCountry = async (countryid: string): Promise<string> => {
+        if (!this.org || !countryid || countryid === 'all') return countryid;
+        const linked = await countries.count({ where: await andLinkedCountries({ countryid }, this.org) });
+        return linked > 0 ? countryid : NO_SUCH_ID;
+    }
+
+    getDashboardReport = async (requestedcountry: string, year: number) => {
+        const countryid = await this.visibleCountry(requestedcountry);
         const months = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
         const lineChartsFormat: Array<LineChartFormat> = [];
         const schoolsFormat: LineChartFormat = {
@@ -77,7 +113,7 @@ export class ReportBusiness {
             };
             if(countryid !== 'all') whereschool.countryid = countryid;
             let numberOfSchools = await schools.count({
-                where: whereschool
+                where: this.ownSchools(whereschool)
             });
             if(month === 0) schoolsFormat.series.push({ name: startOfDay(subDays(theMonth, 1)), value: numberOfSchools}) // add a yesterday date for adjust charts style
             numberOfSchools += i > 0 ? schoolsFormat.series[i].value : 0;
@@ -86,18 +122,18 @@ export class ReportBusiness {
                 [Op.between]: [theMonth, nextMonth]
             };
             let numberOfStudents = await students.count({
-                where: wherestudents,
+                where: await this.learners(wherestudents),
             });
             if(month === 0) studentsFormat.series.push({ name: startOfDay(subDays(theMonth, 1)), value: numberOfStudents}) // add a yesterday date for adjust charts style
             numberOfStudents += i > 0 ? studentsFormat.series[i].value : 0;
             studentsFormat.series.push({name: theMonth, value: numberOfStudents});
             let numberOfTeachers = await schoolusers.count({
-                where: {
+                where: await this.learners({
                     schooluserrole: 3,
                     created_at: {
                         [Op.between]: [theMonth, nextMonth]
                     }
-                },
+                }),
                 include: [
                     {
                         model: schools,
@@ -120,14 +156,14 @@ export class ReportBusiness {
 
     /** Scope a student count to a country and/or school, as the reach charts do. */
     // `schoolid` is already resolved by the route (see resolveSchoolRef); undefined = every school.
-    private studentReachWhere = async (countryid: string, schoolid: string | undefined) => {
+    private studentReachWhere = async (countryid: string, schoolid: string | undefined): Promise<any> => {
         const where: any = {};
         if(countryid && countryid !== 'all') {
-            const country = await countries.findOne({ where: { countryid }});
+            const country = await countries.findOne({ where: this.org ? await andLinkedCountries({ countryid }, this.org) : { countryid }});
             if(country) where.country = country.countryname;
         }
         if(schoolid) where.schoolid = schoolid;
-        return where;
+        return this.learners(where);
     }
 
     getAllStudentsGender = async (countryid: string, schoolid: string | undefined) => {
@@ -192,13 +228,13 @@ export class ReportBusiness {
         if(schoolid) where.schoolid = schoolid;
         if(countryid && countryid !== 'all') {
             const country = await countries.findOne({
-                where: { countryid },
+                where: this.org ? await andLinkedCountries({ countryid }, this.org) : { countryid },
                 attributes: ['countryname']
             });
             where.country = country?.countryname;
         }
         const numberOfOffline = await students.count({
-            where,
+            where: await this.learners(where),
         });
         const chartFormat: Array<ChartItemFormat> = [];
         // chartFormat.push({ name: 'Online', value: numberOfOnline });
@@ -222,6 +258,7 @@ export class ReportBusiness {
         paging: IMultiPaging,
         download: boolean = false
     ) => {
+        const filter = await this.confine(paging.filter);
         // const limit = paging.pagesize || 20;
         // let offset = 0;
         // if ((paging.pageindex || 1) > 1) {
@@ -229,19 +266,19 @@ export class ReportBusiness {
         // }
         const where: any = {};
         const lessonwhere: any = {lessonstatus: true, isdeleted: false};
-        buildCustomWhere(paging.filter ?? [], {fields: 'curriculumid', where: where});
-        buildCustomWhere(paging.filter ?? [], {fields: 'studentid', where: where});
-        buildCustomWhere(paging.filter ?? [], {key: 'gradeid', fields: '$level.grade.gradeid$', where: lessonwhere});
-        buildCustomWhere(paging.filter ?? [], {key: 'levelid', fields: '$level.levelid$', where: lessonwhere});
-        buildCustomWhere(paging.filter ?? [], {fields: 'standard', where: where});
-        buildCustomWhere(paging.filter ?? [], {fields: 'lessonid', where: lessonwhere});
+        buildCustomWhere(filter ?? [], {fields: 'curriculumid', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'studentid', where: where});
+        buildCustomWhere(filter ?? [], {key: 'gradeid', fields: '$level.grade.gradeid$', where: lessonwhere});
+        buildCustomWhere(filter ?? [], {key: 'levelid', fields: '$level.levelid$', where: lessonwhere});
+        buildCustomWhere(filter ?? [], {fields: 'standard', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'lessonid', where: lessonwhere});
         let student: students | null = null;
         if(!where.standard && !where.studentid) {
             student = await students.findOne({
-                where: { 
+                where: await this.learners({
                     studentid: Default_Test_Student_ID,
                     is_teacher_acc: false,
-                },
+                }),
                 include: [
                     {
                         model: schoolusers,
@@ -256,10 +293,10 @@ export class ReportBusiness {
             where.studentid = student.studentid;
         } else if(!where.studentid) {
             student = await students.findOne({
-                where: {
+                where: await this.learners({
                     standard: where.standard,
                     is_teacher_acc: false,
-                },
+                }),
                 include: [
                     {
                         model: schoolusers,
@@ -272,10 +309,10 @@ export class ReportBusiness {
             if(student) where.studentid = student.studentid;
         } else if (where.studentid) {
             student = await students.findOne({
-                where: {
+                where: await this.learners({
                     studentid: where.studentid,
                     is_teacher_acc: false,
-                },
+                }),
                 include: [
                     {
                         model: schoolusers,
@@ -317,7 +354,7 @@ export class ReportBusiness {
                                     model: curriculums,
                                     as: 'curriculum',
                                     required: true,
-                                    where: { curriculumid: (where.curriculumid ? where.curriculumid : student?.curriculumid) },
+                                    where: await this.curriculumsIn({ curriculumid: (where.curriculumid ? where.curriculumid : student?.curriculumid) }),
                                     attributes: ['curriculumname']
                                 }
                             ]
@@ -547,6 +584,7 @@ export class ReportBusiness {
         paging: IMultiPaging,
         download: boolean = false
     ) => {
+        const filter = await this.confine(paging.filter);
         const limit = paging.pagesize || 20;
         let offset = 0;
         if ((paging.pageindex || 1) > 1) {
@@ -556,33 +594,33 @@ export class ReportBusiness {
             is_teacher_acc: false
         };
         const lessonwhere: any = {};
-        buildCustomWhere(paging.filter ?? [], {fields: 'standard', where: where});
-        buildCustomWhere(paging.filter ?? [], {fields: 'lessonid', where: lessonwhere});
+        buildCustomWhere(filter ?? [], {fields: 'standard', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'lessonid', where: lessonwhere});
         // buildCustomWhere(paging.filter ?? [], {fields: 'gradeid', where: lessonwhere});
         // buildCustomWhere(paging.filter ?? [], {fields: 'levelid', where: lessonwhere});
         let student: students | null = null;
         if(!where.standard && !where.studentid) {
             student = await students.findOne({
-                where: { studentid: Default_Test_Student_ID }
+                where: await this.learners({ studentid: Default_Test_Student_ID })
             });
             if(!student) throw new ApiError(ErrorCode.NOT_FOUND, "That school has no students yet.");
             where.standard = student?.standard;
             // where.studentid = student.studentid;
         } else if(!where.studentid) {
             student = await students.findOne({
-                where: { standard: where.standard }
+                where: await this.learners({ standard: where.standard })
             });
             if(student) where.standard = student?.standard;
         } else if (where.studentid) {
             student = await students.findOne({
-                where: { studentid: where.studentid }
+                where: await this.learners({ studentid: where.studentid })
             });
             if(student) where.standard = student?.standard;
         }
         // find a lesson to show
         if(!lessonwhere.lessonid && student?.curriculumid) {
             const curriculum = await curriculums.findOne({
-                where: { curriculumid: student?.curriculumid, curriculumstatus: true, isdeleted: false },
+                where: await this.curriculumsIn({ curriculumid: student?.curriculumid, curriculumstatus: true, isdeleted: false }),
                 attributes: ['curriculumid', 'curriculumname'],
                 include: [
                     {
@@ -650,7 +688,7 @@ export class ReportBusiness {
             ]
         })
         // lessonwhere.curriculumid = student?.curriculumid;
-        const options: any = { where };
+        const options: any = { where: await this.learners(where) };
         if(!download) {
             options.limit = limit;
             options.offset = offset;
@@ -748,7 +786,7 @@ export class ReportBusiness {
         if(!where.studentid && !where.standard) where.studentid = Default_Test_Student_ID;
         const progress = await students.findAndCountAll({
             attributes: ['studentfirstname', 'country', 'standard', 'created_at', 'curriculumid'],
-            where,
+            where: await this.learners(where),
             order: [['created_at', 'DESC']],
             include:[
                 {
@@ -827,7 +865,7 @@ export class ReportBusiness {
             if(student) {
                 curriculum = await curriculums.findOne({
                     attributes: ['curriculumname'],
-                    where: { curriculumid: student.curriculumid },
+                    where: await this.curriculumsIn({ curriculumid: student.curriculumid }),
                 });
             }
         }
@@ -835,6 +873,7 @@ export class ReportBusiness {
     }
 
     getStudentLastCompletedQuiz = async (paging: IMultiPaging, download: boolean = false, type: number) => {
+        const filter = await this.confine(paging.filter);
         const where: WhereOptions<studentsAttributes> = {
             is_teacher_acc: false
         };
@@ -844,17 +883,17 @@ export class ReportBusiness {
         if ((paging.pageindex || 1) > 1) {
             offset = limit * ((paging.pageindex || 1) - 1);
         }
-        buildCustomWhere(paging.filter ?? [], {key: 'curriculumid', fields: '$studentprogresses.lessonquiz.lesson.level.grade.curriculum.curriculumid$', where: where});
-        buildCustomWhere(paging.filter ?? [], {key: 'gradeid', fields: '$studentprogresses.lessonquiz.lesson.level.grade.gradeid$', where: where});
-        buildCustomWhere(paging.filter ?? [], {key: 'levelid', fields: '$studentprogresses.lessonquiz.lesson.level.levelid$', where: where});
-        buildCustomWhere(paging.filter ?? [], {key: 'lessonid', fields: '$studentprogresses.lessonquiz.lesson.lessonid$', where: where});
-        buildCustomWhere(paging.filter ?? [], {key: 'countryid', fields: '$school.countryid$', where: where});
+        buildCustomWhere(filter ?? [], {key: 'curriculumid', fields: '$studentprogresses.lessonquiz.lesson.level.grade.curriculum.curriculumid$', where: where});
+        buildCustomWhere(filter ?? [], {key: 'gradeid', fields: '$studentprogresses.lessonquiz.lesson.level.grade.gradeid$', where: where});
+        buildCustomWhere(filter ?? [], {key: 'levelid', fields: '$studentprogresses.lessonquiz.lesson.level.levelid$', where: where});
+        buildCustomWhere(filter ?? [], {key: 'lessonid', fields: '$studentprogresses.lessonquiz.lesson.lessonid$', where: where});
+        buildCustomWhere(filter ?? [], {key: 'countryid', fields: '$school.countryid$', where: where});
         // A school filter arrives as a name (as the admin UI sends it) or an id; it is
         // resolved once, here (an unknown school is a 404), and the learners are limited by id.
-        const filteredSchool = await resolveSchoolFromFilters(paging.filter);
+        const filteredSchool = await resolveSchoolFromFilters(filter, this.org ? schoolScope(this.org) : undefined);
         if (filteredSchool) where['$school.schoolid$'] = filteredSchool.schoolid;
-        buildCustomWhere(paging.filter ?? [], {fields: 'standard', where: where});
-        buildCustomWhere(paging.filter ?? [], {fields: 'studentid', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'standard', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'studentid', where: where});
         const {progress, curriculum} = await this.getAllStudentsWithProgress(type, {where, order, limit, offset});
         const lastcompletedlessonquiz: Array<students | undefined> = [];
         for (const student of progress.rows) {
@@ -895,6 +934,7 @@ export class ReportBusiness {
         paging: IMultiPaging,
         download: boolean = false,
     ) => {
+        const filter = await this.confine(paging.filter);
         const where: WhereOptions<studentsAttributes> = {
             is_teacher_acc: false,
         };
@@ -904,18 +944,18 @@ export class ReportBusiness {
         if ((paging.pageindex || 1) > 1) {
             offset = limit * ((paging.pageindex || 1) - 1);
         }
-        buildCustomWhere(paging.filter ?? [], {key: 'countryid', fields: '$school.countryid$', where: where});
+        buildCustomWhere(filter ?? [], {key: 'countryid', fields: '$school.countryid$', where: where});
         // A school filter arrives as a name (as the admin UI sends it) or an id; it is
         // resolved once, here, and the learners are limited to that school by id.
-        const filteredSchool = await resolveSchoolFromFilters(paging.filter);
+        const filteredSchool = await resolveSchoolFromFilters(filter, this.org ? schoolScope(this.org) : undefined);
         if (filteredSchool) where['$school.schoolid$'] = filteredSchool.schoolid;
-        buildCustomWhere(paging.filter ?? [], {fields: 'studentid', where: where});
-        buildCustomWhere(paging.filter ?? [], {fields: 'standard', where: where});
-        buildCustomWhere(paging.filter ?? [], {fields: 'startDate', where: whereUsage});
-        buildCustomWhere(paging.filter ?? [], {fields: 'endDate', where: whereUsage});
-        const options: any = { where };
+        buildCustomWhere(filter ?? [], {fields: 'studentid', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'standard', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'startDate', where: whereUsage});
+        buildCustomWhere(filter ?? [], {fields: 'endDate', where: whereUsage});
+        const options: any = { where: await this.learners(where) };
         // check if there no search, download only part of all 
-        if(!download || (download && !paging.filter?.some(f => f.key != 'schoolid' && f.value))) {
+        if(!download || (download && !filter?.some(f => f.key != 'schoolid' && f.value))) {
             options.limit = limit;
             options.offset = offset;
         }
@@ -1008,6 +1048,8 @@ export class ReportBusiness {
                 [Op.in]: user.schools
             }
         }
+        // the schools of the caller's organisation (the whole platform for a platform user who is not acting as one)
+        const schoolsIn = this.ownSchools(whereschool);
         const syncrecords = await syncs.findAndCountAll(
             {
                 where, order, limit, offset,
@@ -1021,7 +1063,7 @@ export class ReportBusiness {
                                 model: schools,
                                 required: true,
                                 attributes: ['schoolid'],
-                                where: whereschool,
+                                where: schoolsIn,
                                 include: [
                                     {
                                         model: countries,
@@ -1039,11 +1081,10 @@ export class ReportBusiness {
         return syncrecords;
     }
 
-    getDashboardByCountry = async (countryid: string) => {
+    getDashboardByCountry = async (requestedcountry: string) => {
+        const countryid = await this.visibleCountry(requestedcountry);
         const numberOfSchools = await schools.count({
-            where: {
-                countryid
-            },
+            where: this.ownSchools({ countryid }),
         });
         const numberOfTeachers = await schoolusers.count({
             where: {
@@ -1053,7 +1094,7 @@ export class ReportBusiness {
                 {
                     model: schools,
                     required: true,
-                    where: { countryid }
+                    where: this.ownSchools({ countryid })
                 }
             ]
         });
@@ -1065,7 +1106,7 @@ export class ReportBusiness {
                 {
                     model: schools,
                     required: true,
-                    where: { countryid }
+                    where: this.ownSchools({ countryid })
                 }
             ]
         });
@@ -1192,8 +1233,9 @@ export class ReportBusiness {
     }
 
     getStudentUsage = async () => {
+        // the countries the caller's organisation is linked to (every country for the platform)
         const allcountries = await countries.findAll({
-            where: { isdeleted: false }
+            where: this.org ? await andLinkedCountries({ isdeleted: false }, this.org) : { isdeleted: false }
         });
         const lineChartsFormat: Array<LineChartFormat> = [];
         const lastonemonth = subMonths(new Date(), 1);
@@ -1210,7 +1252,7 @@ export class ReportBusiness {
             // the same shape as the working aggregate in getStudentStatus above.
             // schoolusers belong to their school by id.
             const countryschools = await schools.findAll({
-                where: { countryid: country.countryid, isdeleted: false },
+                where: this.ownSchools({ countryid: country.countryid, isdeleted: false }),
                 attributes: ['schoolid'],
             });
             const countryschoolusers = await schoolusers.findAll({
@@ -1226,7 +1268,7 @@ export class ReportBusiness {
             });
             const totaltimespent = usages[0]?.time_spent ?? 0;
             const numberofstudents = await students.count({
-                where: { isactive: 1 },
+                where: await this.learners({ isactive: 1 }),
                 include: [
                     {
                         model: schools,
@@ -1251,6 +1293,7 @@ export class ReportBusiness {
     }
 
     getStudentGradeProgress = async (paging: IMultiPaging) => {
+        const filter = await this.confine(paging.filter);
         // levels.hasMany(studentprogress, {
         //     foreignKey: "studentprogressreferenceid",
         //     sourceKey: "levelid",
@@ -1265,30 +1308,30 @@ export class ReportBusiness {
         }
         const where: any = {};
         const gradewhere: any = {};
-        buildCustomWhere(paging.filter ?? [], {fields: 'standard', where: where});
-        buildCustomWhere(paging.filter ?? [], {fields: 'gradeid', where: gradewhere});
+        buildCustomWhere(filter ?? [], {fields: 'standard', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'gradeid', where: gradewhere});
         let student: students | null = null;
         if(!where.standard && !where.studentid) {
             student = await students.findOne({
-                where: { studentid: Default_Test_Student_ID }
+                where: await this.learners({ studentid: Default_Test_Student_ID })
             });
             if(!student) throw new ApiError(ErrorCode.NOT_FOUND, "That school has no students yet.");
             where.standard = student?.standard;
             // where.studentid = student.studentid;
         } else if(!where.studentid) {
             student = await students.findOne({
-                where: { standard: where.standard }
+                where: await this.learners({ standard: where.standard })
             });
             // if(student) where.studentid = student.studentid;
         } else if (where.studentid) {
             student = await students.findOne({
-                where: { studentid: where.studentid }
+                where: await this.learners({ studentid: where.studentid })
             });
         }
         // find a lesson to show
         if(!gradewhere.gradeid && student?.curriculumid) {
             const curriculum = await curriculums.findOne({
-                where: { curriculumid: student?.curriculumid, curriculumstatus: true, isdeleted: false },
+                where: await this.curriculumsIn({ curriculumid: student?.curriculumid, curriculumstatus: true, isdeleted: false }),
                 attributes: ['curriculumid', 'curriculumname'],
                 include: [
                     {
@@ -1322,7 +1365,7 @@ export class ReportBusiness {
             gradewhere.gradeid = bestgrade?.gradeid;
         }
         const stds = await students.findAndCountAll({
-            where, limit, offset,
+            where: await this.learners(where), limit, offset,
             include: [
                 {
                     model: studentgradesprogress,
@@ -1466,6 +1509,7 @@ export class ReportBusiness {
     }
 
     getStudentLevelProgress = async (paging: IMultiPaging) => {
+        const filter = await this.confine(paging.filter);
         const limit = paging.pagesize || 20;
         let offset = 0;
         if ((paging.pageindex || 1) > 1) {
@@ -1473,15 +1517,15 @@ export class ReportBusiness {
         }
         const where:any = {};
         const levelwhere:any = { levelstatus: true, isdeleted: false };
-        buildCustomWhere(paging.filter ?? [], {fields: 'studentid', where: where});
-        buildCustomWhere(paging.filter ?? [], {fields: 'gradeid', where: levelwhere});
+        buildCustomWhere(filter ?? [], {fields: 'studentid', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'gradeid', where: levelwhere});
         if(!where.studentid) {
             where.studentid = Default_Test_Student_ID;
         }
         const student = await students.findOne({
-            where: {
+            where: await this.learners({
                 studentid: where.studentid
-            },
+            }),
             attributes: ['studentfirstname'],
             include: [
                 {
@@ -1510,7 +1554,7 @@ export class ReportBusiness {
                             model: curriculums,
                             as: 'curriculum',
                             required: true,
-                            where: { curriculumid: student.curriculum.curriculumid, curriculumstatus: true, isdeleted: false },
+                            where: await this.curriculumsIn({ curriculumid: student.curriculum.curriculumid, curriculumstatus: true, isdeleted: false }),
                             attributes: ['curriculumid','curriculumname'],
                         },
                     ]
@@ -1529,6 +1573,7 @@ export class ReportBusiness {
     }
 
     getStudentLessonProgress = async (paging: IMultiPaging) => {
+        const filter = await this.confine(paging.filter);
         const limit = paging.pagesize || 20;
         let offset = 0;
         if ((paging.pageindex || 1) > 1) {
@@ -1537,16 +1582,16 @@ export class ReportBusiness {
         const where:any = {};
         const levelwhere:any = { levelstatus: true, isdeleted: false };
         const lessonwhere:any = { lessonstatus: true, isdeleted: false };
-        buildCustomWhere(paging.filter ?? [], {fields: 'studentid', where: where});
-        buildCustomWhere(paging.filter ?? [], {fields: 'gradeid', where: levelwhere});
-        buildCustomWhere(paging.filter ?? [], {fields: 'levelid', where: lessonwhere});
+        buildCustomWhere(filter ?? [], {fields: 'studentid', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'gradeid', where: levelwhere});
+        buildCustomWhere(filter ?? [], {fields: 'levelid', where: lessonwhere});
         if(!where.studentid) {
             where.studentid = Default_Test_Student_ID;
         }
         const student = await students.findOne({
-            where: {
+            where: await this.learners({
                 studentid: where.studentid
-            },
+            }),
             attributes: ['studentfirstname'],
             include: [
                 {
@@ -1582,7 +1627,7 @@ export class ReportBusiness {
                                     model: curriculums,
                                     as: 'curriculum',
                                     required: true,
-                                    where: { curriculumid: student.curriculum.curriculumid, curriculumstatus: true, isdeleted: false },
+                                    where: await this.curriculumsIn({ curriculumid: student.curriculum.curriculumid, curriculumstatus: true, isdeleted: false }),
                                     attributes: ['curriculumid','curriculumname'],
                                 },
                             ]
@@ -1606,6 +1651,7 @@ export class ReportBusiness {
         paging: IMultiPaging,
         download: boolean = false
     ) => {
+        const filter = await this.confine(paging.filter);
         levels.hasMany(studentprogress, {
             foreignKey: "studentprogressreferenceid",
             sourceKey: "levelid",
@@ -1620,14 +1666,14 @@ export class ReportBusiness {
         // }
         const where: any = {};
         const levelwhere: any = {levelstatus: true, isdeleted: false};
-        buildCustomWhere(paging.filter ?? [], {fields: 'curriculumid', where: where});
-        buildCustomWhere(paging.filter ?? [], {fields: 'studentid', where: where});
-        buildCustomWhere(paging.filter ?? [], {key: 'gradeid', fields: '$grade.gradeid$', where: levelwhere});
-        buildCustomWhere(paging.filter ?? [], {fields: 'levelid', where: levelwhere});
+        buildCustomWhere(filter ?? [], {fields: 'curriculumid', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'studentid', where: where});
+        buildCustomWhere(filter ?? [], {key: 'gradeid', fields: '$grade.gradeid$', where: levelwhere});
+        buildCustomWhere(filter ?? [], {fields: 'levelid', where: levelwhere});
         let student: students | null = null;
         if(!where.standard && !where.studentid) {
             student = await students.findOne({
-                where: { studentid: Default_Test_Student_ID },
+                where: await this.learners({ studentid: Default_Test_Student_ID }),
                 include: [
                     {
                         model: schoolusers,
@@ -1642,7 +1688,7 @@ export class ReportBusiness {
             where.studentid = student.studentid;
         } else if(!where.studentid) {
             student = await students.findOne({
-                where: { standard: where.standard },
+                where: await this.learners({ standard: where.standard }),
                 include: [
                     {
                         model: schoolusers,
@@ -1655,7 +1701,7 @@ export class ReportBusiness {
             if(student) where.studentid = student.studentid;
         } else if (where.studentid) {
             student = await students.findOne({
-                where: { studentid: where.studentid },
+                where: await this.learners({ studentid: where.studentid }),
                 include: [
                     {
                         model: schoolusers,
@@ -1691,7 +1737,7 @@ export class ReportBusiness {
                             model: curriculums,
                             as: 'curriculum',
                             required: true,
-                            where: { curriculumid: (where.curriculumid ? where.curriculumid : student?.curriculumid) },
+                            where: await this.curriculumsIn({ curriculumid: (where.curriculumid ? where.curriculumid : student?.curriculumid) }),
                             attributes: ['curriculumname']
                         }
                     ]
@@ -1797,6 +1843,7 @@ export class ReportBusiness {
         paging: IMultiPaging,
         download: boolean = false
     ) => {
+        const filter = await this.confine(paging.filter);
         levels.hasMany(studentprogress, {
             foreignKey: "studentprogressreferenceid",
             sourceKey: "levelid",
@@ -1813,23 +1860,23 @@ export class ReportBusiness {
             is_teacher_acc: false
         };
         const levelwhere: any = {};
-        buildCustomWhere(paging.filter ?? [], {fields: 'standard', where: where});
-        buildCustomWhere(paging.filter ?? [], {fields: 'levelid', where: levelwhere});
+        buildCustomWhere(filter ?? [], {fields: 'standard', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'levelid', where: levelwhere});
         let student: students | null = null;
         if(!where.standard && !where.studentid) {
             student = await students.findOne({
-                where: { studentid: Default_Test_Student_ID },
+                where: await this.learners({ studentid: Default_Test_Student_ID }),
             });
             if(!student) throw new ApiError(ErrorCode.NOT_FOUND, "That school has no students yet.");
             where.standard = student?.standard;
         } else if(!where.studentid) {
             student = await students.findOne({
-                where: { standard: where.standard },
+                where: await this.learners({ standard: where.standard }),
             });
             // if(student) where.studentid = student.studentid;
         } else if (where.studentid) {
             student = await students.findOne({
-                where: { studentid: where.studentid },
+                where: await this.learners({ studentid: where.studentid }),
             });
             if(student) where.standard = student?.standard;
         }
@@ -1837,7 +1884,7 @@ export class ReportBusiness {
         // find a lesson to show
         if(!levelwhere.levelid && student?.curriculumid) {
             const curriculum = await curriculums.findOne({
-                where: { curriculumid: student?.curriculumid, curriculumstatus: true, isdeleted: false },
+                where: await this.curriculumsIn({ curriculumid: student?.curriculumid, curriculumstatus: true, isdeleted: false }),
                 attributes: ['curriculumid', 'curriculumname'],
                 include: [
                     {
@@ -1891,7 +1938,7 @@ export class ReportBusiness {
                 }
             ]
         });
-        const options: any = { where };
+        const options: any = { where: await this.learners(where) };
         if(!download) {
             options.limit = limit;
             options.offset = offset;
@@ -1989,13 +2036,14 @@ export class ReportBusiness {
         if(date && !isNaN(date.getTime())) startDate = startOfMonth(date);
         const enddate = parseISO(body.endDate as string) ?? null;
         if(enddate && !isNaN(enddate.getTime())) endDate = startOfMonth(enddate);
+        // feedback belongs to its curriculum's organisation (content-scope.ts)
         const allfeedbacks = await feedbacks.findAll({
-            where: { 
+            where: await andScope(this.org, "feedback", {
                 isdeleted: false,
                 created_at: {
                     [Op.between]: [startDate, endDate]
                 }
-            }
+            })
         });
         const lineChartsFormat: Array<ChartItemFormat> = [];
         const numberDowntime: TechDowntimeNumbers = {
