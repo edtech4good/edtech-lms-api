@@ -2743,11 +2743,30 @@ describe("content is confined to the caller's organisation", () => {
   });
 
   describe("POST /feedback", () => {
-    const list = (who: Who) => send(who, "post", "/feedback", { pageindex: 1, pagesize: 50, filter: [] });
+        const list = (who: Who, filter: object[] = []) => send(who, "post", "/feedback", { pageindex: 1, pagesize: 50, filter });
     it.each(IN_X)("%s: the feedback about X's curriculums, none about Y's or an unowned one", async (who) => {
       const res = await list(who);
       expect(res.status).toBe(200);
       expect(idsOf(res.body.data.data, "feedbackid")).toEqual([TX.feedback]);
+    });
+            it.each(IN_X)("%s: a filter by X's school is accepted; by another organisation's school, id or name, it is the answer for a school that is not there", async (who) => {
+      // (the rows a filter keeps are chosen by a joined column the fake does not select, so only the answers are compared)
+      expect((await list(who, [{ key: "schoolid", value: TX.school }])).status).toBe(200);
+      expect((await list(who, [{ key: "schoolname", value: "សាលា tagx" }])).status).toBe(200);
+      const absentId = await list(who, [{ key: "schoolid", value: MISSING }]);
+      const absentName = await list(who, [{ key: "schoolname", value: "សាលាដែលមិនមាន" }]);
+      expect(absentId.status).toBe(404);
+      expect(absentName.status).toBe(404);
+      for (const other of [TY.school, TU.school]) {
+        expect(said(await list(who, [{ key: "schoolid", value: other }]))).toEqual(said(absentId));
+      }
+      for (const other of [TY, TU]) {
+        expect(said(await list(who, [{ key: "schoolname", value: `សាលា ${other.tag}` }]))).toEqual(said(absentName));
+      }
+    });
+        it("a platform user not acting: a filter by any organisation's school is accepted", async () => {
+      expect((await list(NOT_ACTING, [{ key: "schoolid", value: TY.school }])).status).toBe(200);
+      expect((await list(NOT_ACTING, [{ key: "schoolname", value: "សាលា tagu" }])).status).toBe(200);
     });
     it("a platform user not acting: every feedback, owned or not", async () => {
       expect(idsOf((await list(NOT_ACTING)).body.data.data, "feedbackid")).toEqual(sorted(TX.feedback, TY.feedback, TU.feedback));

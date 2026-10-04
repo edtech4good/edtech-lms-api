@@ -28,6 +28,7 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedFeedback } from "./content-scope";
+import { schoolScope } from "./school-scope";
 
 interface IFileBuffer {
   filename: string;
@@ -181,7 +182,8 @@ export class FeedbackBusiness {
     buildCustomWhere(paging.filter ?? [], {key: 'countryid', fields: '$schooluser.school.countryid$', where: where});
     // A school filter arrives as a name (as the admin UI sends it) or an id; it is
     // resolved once, here, and the feedback is limited to that school's logins by id.
-    const filteredSchool = await resolveSchoolFromFilters(paging.filter);
+    // (among the caller's schools when the class is scoped: another organisation's school is not found)
+    const filteredSchool = await resolveSchoolFromFilters(paging.filter, this.org ? schoolScope(this.org) : undefined);
     if (filteredSchool) {
       (where as any)['$schooluser.schoolid$'] = filteredSchool.schoolid;
     }

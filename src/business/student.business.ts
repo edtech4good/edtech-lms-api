@@ -25,6 +25,7 @@ import { withSchoolIds } from "./school-identity";
 import { andInOwnedSchools, findOwnedStudent, requireOwnedSchoolByName } from "./school-scope";
 import { OrgContext } from "src/decorators/org.decorator";
 import { schoolScope } from "./school-scope";
+import { scopeOf } from "./org-scope";
 import { extractSchoolFilters, schoolIdsWhere } from "./school-filter";
 import { hashPassword } from "src/services/password.service";
 import { LmsUserToken } from "src/models/token.model";
@@ -32,6 +33,31 @@ import { CountryBusiness } from "./country.business";
 import axios from "axios";
 import { Config } from "src/config";
 import { unionBy } from "lodash";
+/**
+ * The ids of the live curriculums a row of the edit file names, by NAME. Curriculum names are unique within an
+ * organisation, not across them, so a name means the curriculum of the school's owner: only that organisation's
+ * curriculums are looked at (a name only another organisation holds is a name nobody holds). A school with no owner
+ * belongs to the platform: an organisation caller (who cannot reach one) is held to its own organisation, and the
+ * platform not acting reads as before, by name alone. The platform may also name a curriculum that has no owner yet
+ * for a school that has one (see assertSameOwner).
+ */
+const curriculumIdsNamed = async (names: string[], schoolOwner: string | null, org: OrgContext): Promise<string[]> => {
+  const scope = scopeOf(org);
+  const owner = schoolOwner ?? (scope.kind === "organisation" ? scope.organisationid : null);
+  const limit: WhereOptions =
+    owner === null
+      ? {}
+      : scope.kind === "organisation"
+        ? { organisationid: owner }
+        : { [Op.or]: [{ organisationid: owner }, { organisationid: null }] };
+  const found = await curriculums.findAll({
+    where: { [Op.and]: [{ curriculumname: { [Op.in]: names }, isdeleted: false }, limit] },
+    attributes: ['curriculumid'],
+    raw: true,
+  });
+  return found.map((c) => c.curriculumid);
+};
+
 export class StudentBusiness {
   findbystudentid = (studentid: string) =>
     students.findOne({
@@ -680,12 +706,9 @@ WHERE
     for (const [rowindex, x] of studentdata.entries()) {
       await findOwnedStudent(org, { studentid: x.studentid }, transaction);
       const school = await requireOwnedSchoolByName(org, x.schoolname, transaction, `students.${rowindex}.schoolname`);
-      const named = await curriculums.findAll({
-        where: { curriculumname: { [Op.in]: x.curriculums.split('/') } },
-        attributes: ['curriculumid'],
-        raw: true,
-      });
-      await assertEnrolmentFits(await ownerOfSchool(school.schoolid, transaction), named.map((c) => c.curriculumid), transaction);
+      const schoolOwner = await ownerOfSchool(school.schoolid, transaction);
+      const named = await curriculumIdsNamed(x.curriculums.split('/'), schoolOwner, org);
+      await assertEnrolmentFits(schoolOwner, named, transaction);
     }
     for (const [rowindex, x] of studentdata.entries()) {
       const student = await students.findOne({
@@ -721,15 +744,7 @@ WHERE
       if(!standard && parseInt(x.is_teacher_acc ?? '0') !== 1) throw new ApiError(ErrorCode.INVALID_INPUT, "That school or class doesn't exist.", { fields: [{ field: 'standard', message: "That school or class doesn't exist." }] });
       const doj = x.dateofjoin;
       const dob = x.dateofbirth;
-      const currs = await curriculums.findAll({
-        where: {
-          curriculumname: {
-            [Op.in]: x.curriculums.split('/')
-          }
-        },
-        attributes: ['curriculumid'],
-        raw: true,
-      });
+      const currs = await curriculumIdsNamed(x.curriculums.split('/'), await ownerOfSchool(school.schoolid, transaction), org);
       if(!currs || currs.length !== x.curriculums.split('/').length) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
       await students.update(
         {
@@ -761,7 +776,7 @@ WHERE
           updated_at: new Date(),
           updated_by: lmsuser.lmsuserid,
           is_teacher_acc: (parseInt(x.is_teacher_acc ?? '0') === 1) ? true : false,
-          curriculumids: currs.map(cur => cur.curriculumid)
+          curriculumids: currs
         },
         {
           where: { studentid: student.studentid },

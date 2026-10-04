@@ -879,6 +879,26 @@ describe("people and schools are confined to the caller's organisation", () => {
     const ownRow = () => rowFor(STU_X, USR_X, "learnerx", NAME_X, "ភាសាខ្មែរ ក", "ថ្នាក់ទី១");
     const yRow = () => rowFor(STU_Y, USR_Y, "learnery", NAME_Y, "ភាសាខ្មែរ ខ", "ថ្នាក់ទី២");
     const firstName = (id: string) => db.tables.students.find((s) => s.studentid === id)!.studentfirstname;
+        const curriculumsOf = (id: string) => db.tables.students.find((s) => s.studentid === id)!.curriculumids;
+    it.each(IN_X)("%s: a curriculum of Y's with the same name as X's is not X's: the file enrols X's learner on X's, and writes nothing about Y", async (who) => {
+      db.add("curriculums", { curriculumid: uuid(303), curriculumname: "ភាសាខ្មែរ ក", organisationid: Y, curriculumstatus: true });
+      // (and a curriculum of X's that is deleted, of the same name, is not one either)
+      db.add("curriculums", { curriculumid: uuid(304), curriculumname: "ភាសាខ្មែរ ក", organisationid: X, curriculumstatus: true, isdeleted: true });
+      const before = db.snapshot();
+      const res = await send(who, "put", "/student/update", { students: [ownRow()] });
+      expect(res.status).toBe(200);
+      expect(curriculumsOf(STU_X)).toEqual([CUR_X]);
+      const after = db.snapshot();
+      expect(after.students.find((s) => s.studentid === STU_Y)).toEqual(before.students.find((s) => s.studentid === STU_Y));
+      
+    });
+    it.each(IN_X)("%s: a curriculum name only Y holds is the same refusal as a name nobody holds, nothing written", async (who) => {
+      const onlyY = await refuses(who, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ ខ" }] });
+      const nobody = await refuses(who, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាដែលមិនមាន" }] });
+      expect(onlyY.status).toBe(400);
+      expect(said(onlyY)).toEqual(said(nobody));
+      expect(onlyY.body.fields).toEqual([{ field: "curriculums", message: "One or more of those curriculums doesn't exist." }]);
+    });
     it.each(IN_X)("%s: edits X's learner", async (who) => {
       await send(who, "put", "/student/update", { students: [ownRow()] }).expect(200);
       expect(firstName(STU_X)).toBe("ឈ្មោះថ្មី");
