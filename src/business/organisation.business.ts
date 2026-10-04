@@ -236,6 +236,40 @@ export class OrganisationBusiness {
   };
 
   /**
+   * The few fields of an organisation that its own staff may read (`GET
+   * /organisation/mine`): identity, preset, theme, status and the tile colour
+   * from `brandingconfig`, and nothing else (no other branding key, no country
+   * links, no settings). Null when the row is gone.
+   */
+  getmine = async (organisationid: string) => {
+    const row = await organisations.findOne({
+      where: { organisationid, isdeleted: false },
+      attributes: [
+        "organisationid",
+        "organisationname",
+        "organisationshortname",
+        "organisationpreset",
+        "uitheme",
+        "organisationstatus",
+        "brandingconfig",
+      ],
+    });
+    if (!row) {
+      return null;
+    }
+    const tile = (row.brandingconfig as { tilecolour?: unknown } | null)?.tilecolour;
+    return {
+      organisationid: row.organisationid,
+      organisationname: row.organisationname,
+      organisationshortname: row.organisationshortname,
+      organisationpreset: row.organisationpreset,
+      uitheme: row.uitheme,
+      organisationstatus: row.organisationstatus,
+      tilecolour: typeof tile === "string" ? tile : null,
+    };
+  };
+
+  /**
    * The organisation if it exists, is not deleted and is active (not
    * suspended); null otherwise. Callers that must not say WHY an organisation
    * is unusable (the organisation switcher) use this and answer the same for

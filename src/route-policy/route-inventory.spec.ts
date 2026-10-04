@@ -56,10 +56,10 @@ import {
 
 // Pinned on purpose. When you add or remove a route, update these numbers AND
 // run `npm run routes:policy -- --write` to refresh the committed files.
-const EXPECTED_TOTAL = 282;
+const EXPECTED_TOTAL = 283;
 const EXPECTED_BY_POLICY = {
   public: 11,
-  self: 4,
+  self: 5,
   owned: 243,
   platform: 18,
   server: 1,
@@ -68,12 +68,12 @@ const EXPECTED_BY_POLICY = {
 
 // How the routes divide by enforcement, stated explicitly (they sum to the
 // total):
-//  - enforced: by a guard (self 4 + global 5 + platform with PlatformGuard 18
-//    = 27), or, for an owned route, by the spec it names (6, listed below) = 33
+//  - enforced: by a guard (self 5 + global 5 + platform with PlatformGuard 18
+//    = 28), or, for an owned route, by the spec it names (6, listed below) = 34
 //  - not applicable (public): 11
 //  - pending the organisation boundary: owned without a proving spec 237 +
 //    platform without PlatformGuard 0 + server 1 = 238
-const EXPECTED_ENFORCED_BY_GUARD = 27;
+const EXPECTED_ENFORCED_BY_GUARD = 28;
 const EXPECTED_ENFORCED_BY_SPEC = 6;
 const EXPECTED_ENFORCED = EXPECTED_ENFORCED_BY_GUARD + EXPECTED_ENFORCED_BY_SPEC;
 const EXPECTED_NOT_APPLICABLE = 11;
@@ -114,6 +114,7 @@ const EXPECTED_PLATFORM = [
 // The `self` and `global` sets are pinned by name, so moving a route into
 // either one is a conscious edit.
 const EXPECTED_SELF = [
+  "GET /organisation/mine",
   "POST /auth/logout",
   "PUT /auth/changepassword",
   "POST /auth/refreshtoken",
@@ -132,6 +133,11 @@ const EXPECTED_GLOBAL = [
 // grow silently.
 const AUTHENTICATED_IN_HANDLER = ["POST /auth/logout"];
 
+// `self` routes that use the ordinary staff ACCESS token and read nothing but the
+// caller's own token context (`@Org()`): the organisation the token acts in. Named
+// so that no other ACCESS-guarded route can be marked `self` unnoticed.
+const ACCESS_TOKEN_SELF = ["GET /organisation/mine"];
+
 const SNAPSHOT_FILE = join(__dirname, "pending-enforcement.snapshot.txt");
 const DOC_FILE = join(__dirname, "..", "..", INVENTORY_DOC_PATH);
 const DECORATOR_FILE = join(__dirname, "..", "decorators", "orgPolicy.decorator.ts");
@@ -148,7 +154,7 @@ describe("route inventory (real application wiring)", () => {
 
   it("finds routes in the registered controllers, including the organisation routes", () => {
     expect(routes.length).toBeGreaterThan(0);
-    expect(routes.filter((r) => r.controller === "OrganisationController")).toHaveLength(5);
+    expect(routes.filter((r) => r.controller === "OrganisationController")).toHaveLength(6);
   });
 
   it("gives every route an @OrgPolicy", () => {
@@ -172,7 +178,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("pending enforcement", () => {
-    it("divides the routes into 33 enforced (27 by a guard, 6 by a proving spec), 11 not applicable (public) and 238 pending", () => {
+    it("divides the routes into 34 enforced (28 by a guard, 6 by a proving spec), 11 not applicable (public) and 238 pending", () => {
       const count = (state: string) => routes.filter((r) => enforcementState(r) === state).length;
       expect(count("yes")).toBe(EXPECTED_ENFORCED);
       expect(count("n/a")).toBe(EXPECTED_NOT_APPLICABLE);
@@ -281,9 +287,15 @@ describe("route inventory (real application wiring)", () => {
       expect(marked).toHaveLength(routes.filter((r) => r.admitsApiKey && r.policy !== "global").length);
     });
 
-    it("`self` is the four named routes, each using a non-ACCESS token guard or a named exception", () => {
+    it("`self` is the five named routes, each using a non-ACCESS token guard or a named exception", () => {
       expect(routes.filter((r) => r.policy === "self").map(key).sort()).toEqual([...EXPECTED_SELF].sort());
-      expect(selfRouteViolations(routes, AUTHENTICATED_IN_HANDLER)).toEqual([]);
+      expect(selfRouteViolations(routes, AUTHENTICATED_IN_HANDLER, ACCESS_TOKEN_SELF)).toEqual([]);
+      for (const name of ACCESS_TOKEN_SELF) {
+        const r = routes.find((x) => key(x) === name)!;
+        expect(r.tokenTypes).toEqual(["ACCESS"]);
+        expect(r.permissions).toEqual([]);
+        expect(r.hasPlatformGuard).toBe(false);
+      }
     });
 
     it("`global` is the five named role and permission reads, staff access token only", () => {
@@ -420,6 +432,9 @@ describe("route inventory checks (synthetic routes, to prove they can fail)", ()
     expect(selfRouteViolations([route({ policy: "self", tokenTypes: ["ACCESS"] })], [])).toHaveLength(1);
     expect(selfRouteViolations([route({ policy: "self", tokenTypes: [] })], [])).toHaveLength(1);
     expect(selfRouteViolations([route({ policy: "self", tokenTypes: [] })], ["GET /x"])).toEqual([]);
+    // a named own-context read may use the ACCESS token; an unnamed one may not
+    expect(selfRouteViolations([route({ policy: "self", tokenTypes: ["ACCESS"] })], [], ["GET /x"])).toEqual([]);
+    expect(selfRouteViolations([route({ policy: "self", tokenTypes: ["ACCESS"] })], [], ["GET /y"])).toHaveLength(1);
   });
 
   it("refuses to describe a mixin guard that has no ACCESS_GUARD_INFO, and describes an AccessGuard", () => {

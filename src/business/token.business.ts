@@ -376,11 +376,19 @@ export class TokenBusiness {
     await this.clearAccessToken(user.lmsuserid);
     const userdata = await user;
     await this.saveToken(accessid, user.lmsuserid, TokenType.ACCESS);
+    // Where "this session is acting as an organisation" is recorded: in the
+    // signed refresh token (claim `actingorganisationid`), written here for a
+    // platform user who is acting and for nobody else. A refresh reads it back
+    // (AuthBusiness.refreshAuth) and decides again from the database. The claim
+    // is never copied into an access token, so the access token's own claims
+    // stay what they were.
+    const acting = isplatform && organisationid !== null ? organisationid : null;
     const refreshToken = await this.generateMiscToken(
       userdata,
       Config.fortyk.api.refreshexpirationminutes,
       TokenType.REFRESH,
-      TokenType.REFRESH
+      TokenType.REFRESH,
+      acting === null ? {} : { actingorganisationid: acting }
     );
 
     return {
@@ -446,13 +454,14 @@ export class TokenBusiness {
     user: lmsusersAttributes,
     expiry: number,
     tokentype: TokenType,
-    claim: string
+    claim: string,
+    payload: Record<string, unknown> = {}
   ) => {
     const misctokenid = uuidv4();
     const miscToken = this.generateToken(
       user.lmsuserid,
       expiry,
-      {},
+      payload,
       Config.fortyk.api.applicationsecret,
       claim,
       misctokenid

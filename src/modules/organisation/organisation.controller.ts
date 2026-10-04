@@ -24,6 +24,7 @@ import {
 } from "@nestjs/swagger";
 import { OrganisationBusiness } from "src/business/organisation.business";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 import { User } from "src/decorators/user.decorator";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
@@ -112,6 +113,28 @@ export class OrganisationController {
         pageindex: result.pageindex,
         pagesize: result.pagesize,
       },
+    };
+  }
+
+  // Declared before `:organisationid` so that "mine" is not read as an id.
+  @OrgPolicy("self", { note: "Reads only the organisation named by the caller's own token." })
+  @Get("mine")
+  @ApiResponse({
+    status: 200,
+    description:
+      "The caller's own organisation: the one the token acts in (a platform user acting as one gets that one). `data` is null for a platform user who is not acting as an organisation.",
+  })
+  @ApiResponse({ status: 401, description: "Not signed in" })
+  @HttpCode(HttpStatus.OK)
+  // Any valid staff access token; no permission is asked for, so a staff account that holds
+  // none can still see which organisation it works in. A suspended or deleted organisation
+  // never gets here: the per-request token check (JwtAccessStrategy) already refuses a token
+  // that acts in one. The organisation comes from the token, never from the request.
+  @UseGuards(AccessGuard(TokenType.ACCESS))
+  async mine(@Org() org: OrgContext) {
+    return {
+      error: false,
+      data: org.organisationid ? await new OrganisationBusiness().getmine(org.organisationid) : null,
     };
   }
 

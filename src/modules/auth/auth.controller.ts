@@ -314,9 +314,10 @@ export class AuthController {
   @UseGuards(AccessGuard(TokenType.REFRESH))
   @ApiQuery({ name: "refreshtoken", type: "string", required: true })
   async createrefreshtoken(
-    @Query("refreshtoken") REFRESHTOKEN: string
+    @Query("refreshtoken") REFRESHTOKEN: string,
+    @Request() request: IRequest
   ): Promise<LoginResponseModel> {
-    const refreshtoken = await new AuthBusiness().refreshAuth(REFRESHTOKEN);
+    const refreshtoken = await new AuthBusiness().refreshAuth(REFRESHTOKEN, request.ip);
     return {
       data: refreshtoken,
       error: false,

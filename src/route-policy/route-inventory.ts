@@ -681,11 +681,13 @@ export const globalRouteViolations = (routes: RouteRecord[]): string[] =>
  * `self` must not become a place to park routes that need no real check: every
  * `self` route authenticates with a refresh, change-password or email-
  * verification token through its guard, or is a named exception that checks the
- * token in the handler.
+ * token in the handler, or is a named read of the caller's own token context
+ * (`accessTokenSelf`: the ordinary staff ACCESS token, nothing else asked).
  */
 export const selfRouteViolations = (
   routes: RouteRecord[],
   authenticatedInHandler: readonly string[],
+  accessTokenSelf: readonly string[] = [],
 ): string[] =>
   routes
     .filter((r) => r.policy === "self")
@@ -693,7 +695,8 @@ export const selfRouteViolations = (
       (r) =>
         !(
           (r.tokenTypes.length > 0 && r.tokenTypes.every((t) => t !== "ACCESS")) ||
-          authenticatedInHandler.includes(key(r))
+          authenticatedInHandler.includes(key(r)) ||
+          accessTokenSelf.includes(key(r))
         ),
     )
     .map((r) => `${key(r)}: neither a non-ACCESS token guard nor a named handler-authenticated exception`);
