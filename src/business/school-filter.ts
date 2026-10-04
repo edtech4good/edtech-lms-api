@@ -83,6 +83,6 @@ export async function resolveSchoolFromFilters(
   const id = (filters ?? []).find((f) => f.key === "schoolid" && f.value);
   return resolveSchoolRef({
     schoolid: id ? String(Array.isArray(id.value) ? id.value[0] : id.value) : undefined,
-        schoolname: name ? String(Array.isArray(name.value) ? name.value[0] : name.value) : undefined,
+    schoolname: name ? String(Array.isArray(name.value) ? name.value[0] : name.value) : undefined,
   }, scopeWhere);
 }

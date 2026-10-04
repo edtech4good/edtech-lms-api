@@ -229,7 +229,7 @@ export const findOwned = async <K extends ContentKind>(
   id: string,
   options: FindOwnedOptions = {},
 ): Promise<KindRows[K]> => {
-    const { where, notFound, ...rest } = options;
+  const { where, notFound, ...rest } = options;
   // an id that is not a string names nothing, for the platform too (it must never reach a query as an undefined key)
   if (typeof id !== "string" || id.length === 0) {
     throw (notFound ?? missingOf(kind))();

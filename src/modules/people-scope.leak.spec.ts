@@ -179,7 +179,8 @@ describe("people and schools are confined to the caller's organisation", () => {
     }).compile();
     app = moduleRef.createNestApplication();
     app.useGlobalFilters(new GlobalExceptionFilter());
-    await app.init();
+    // listening once for the whole file: a listener opened and closed for each request is what an odd "Parse Error" comes from
+    await app.listen(0);
   });
   afterAll(async () => app.close());
 
@@ -891,6 +892,33 @@ describe("people and schools are confined to the caller's organisation", () => {
       const after = db.snapshot();
       expect(after.students.find((s) => s.studentid === STU_Y)).toEqual(before.students.find((s) => s.studentid === STU_Y));
       
+    });
+        describe("a platform user not acting names curriculums by name for X's school", () => {
+      const NOT_ACTING = "a platform user not acting" as Who;
+      it("an owned curriculum and an unowned namesake: the owner's is the one meant (200), and the learner is enrolled on it alone", async () => {
+        // (listed before the owner's, so that taking the first row found would be the wrong one)
+        db.tables.curriculums.unshift({ curriculumid: uuid(305), curriculumname: "ភាសាខ្មែរ ក", organisationid: null, curriculumstatus: true, isdeleted: false });
+        await send(NOT_ACTING, "put", "/student/update", { students: [ownRow()] }).expect(200);
+        expect(curriculumsOf(STU_X)).toEqual([CUR_X]);
+      });
+      it("a name the owner has not got but an unowned curriculum has: the unowned one (200)", async () => {
+        db.add("curriculums", { curriculumid: uuid(306), curriculumname: "មិនទាន់មានម្ចាស់", organisationid: null, curriculumstatus: true });
+        await send(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "មិនទាន់មានម្ចាស់" }] }).expect(200);
+        expect(curriculumsOf(STU_X)).toEqual([uuid(306)]);
+      });
+      it("both names, one of each kind, and the same name twice: each name is one curriculum", async () => {
+        // (listed before the owner's, so that taking the first row found would be the wrong one)
+        db.tables.curriculums.unshift({ curriculumid: uuid(305), curriculumname: "ភាសាខ្មែរ ក", organisationid: null, curriculumstatus: true, isdeleted: false });
+        db.add("curriculums", { curriculumid: uuid(306), curriculumname: "មិនទាន់មានម្ចាស់", organisationid: null, curriculumstatus: true });
+        await send(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ ក/មិនទាន់មានម្ចាស់" }] }).expect(200);
+        expect([...(curriculumsOf(STU_X) as string[])].sort()).toEqual([CUR_X, uuid(306)].sort());
+      });
+      it("a name neither the owner nor nobody holds (Y's, or no one's) is the same 400, nothing written", async () => {
+        const onlyY = await refuses(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ ខ" }] });
+        const nobody = await refuses(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាដែលមិនមាន" }] });
+        expect(onlyY.status).toBe(400);
+        expect(said(onlyY)).toEqual(said(nobody));
+      });
     });
     it.each(IN_X)("%s: a curriculum name only Y holds is the same refusal as a name nobody holds, nothing written", async (who) => {
       const onlyY = await refuses(who, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ ខ" }] });

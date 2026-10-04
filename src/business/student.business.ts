@@ -39,9 +39,15 @@ import { unionBy } from "lodash";
  * curriculums are looked at (a name only another organisation holds is a name nobody holds). A school with no owner
  * belongs to the platform: an organisation caller (who cannot reach one) is held to its own organisation, and the
  * platform not acting reads as before, by name alone. The platform may also name a curriculum that has no owner yet
- * for a school that has one (see assertSameOwner).
+ * for a school that has one (see assertSameOwner); when the owner and an unowned curriculum both have the name, the
+ * owner's is the one meant. Each name resolves to ONE curriculum, so `complete` says whether every distinct name did.
  */
-const curriculumIdsNamed = async (names: string[], schoolOwner: string | null, org: OrgContext): Promise<string[]> => {
+const curriculumIdsNamed = async (
+  names: string[],
+  schoolOwner: string | null,
+  org: OrgContext,
+  transaction?: Transaction,
+): Promise<{ ids: string[]; complete: boolean }> => {
   const scope = scopeOf(org);
   const owner = schoolOwner ?? (scope.kind === "organisation" ? scope.organisationid : null);
   const limit: WhereOptions =
@@ -52,10 +58,19 @@ const curriculumIdsNamed = async (names: string[], schoolOwner: string | null, o
         : { [Op.or]: [{ organisationid: owner }, { organisationid: null }] };
   const found = await curriculums.findAll({
     where: { [Op.and]: [{ curriculumname: { [Op.in]: names }, isdeleted: false }, limit] },
-    attributes: ['curriculumid'],
+        attributes: ['curriculumid', 'curriculumname', 'organisationid'],
     raw: true,
+    transaction,
   });
-  return found.map((c) => c.curriculumid);
+  const byName = new Map<string, { curriculumid: string; organisationid?: string | null }>();
+  for (const c of found) {
+    const have = byName.get(c.curriculumname);
+    // the owner's curriculum, else the first one found
+    if (!have || (have.organisationid !== owner && c.organisationid === owner)) {
+      byName.set(c.curriculumname, c);
+    }
+  }
+  return { ids: [...byName.values()].map((c) => c.curriculumid), complete: byName.size === new Set(names).size };
 };
 
 export class StudentBusiness {
@@ -707,11 +722,11 @@ WHERE
       const school = await requireOwnedSchoolByName(org, x.schoolname, transaction, `students.${rowindex}.schoolname`);
       const schoolOwner = await ownerOfSchool(school.schoolid, transaction);
       const names = x.curriculums.split('/');
-      const named = await curriculumIdsNamed(names, schoolOwner, org);
+      const named = await curriculumIdsNamed(names, schoolOwner, org, transaction);
       // a name that is not one of the school's owner's curriculums (a name only another organisation holds is one) is the
       // refusal a name nobody holds gets, before any row is written
-      if (named.length !== names.length) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
-      await assertEnrolmentFits(schoolOwner, named, transaction);
+      if (!named.complete) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
+      await assertEnrolmentFits(schoolOwner, named.ids, transaction);
     }
     for (const [rowindex, x] of studentdata.entries()) {
       const student = await students.findOne({
@@ -747,8 +762,9 @@ WHERE
       if(!standard && parseInt(x.is_teacher_acc ?? '0') !== 1) throw new ApiError(ErrorCode.INVALID_INPUT, "That school or class doesn't exist.", { fields: [{ field: 'standard', message: "That school or class doesn't exist." }] });
       const doj = x.dateofjoin;
       const dob = x.dateofbirth;
-      const currs = await curriculumIdsNamed(x.curriculums.split('/'), await ownerOfSchool(school.schoolid, transaction), org);
-      if(!currs || currs.length !== x.curriculums.split('/').length) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
+      const resolved = await curriculumIdsNamed(x.curriculums.split('/'), await ownerOfSchool(school.schoolid, transaction), org, transaction);
+      const currs = resolved.ids;
+      if(!resolved.complete) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
       await students.update(
         {
           city: x.city,
