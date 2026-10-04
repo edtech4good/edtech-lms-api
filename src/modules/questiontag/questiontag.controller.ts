@@ -63,7 +63,7 @@ export class QuestionTagController {
       isdeleted: false
     };
 
-    const data = await new QuestionTagBusiness().createquestionTag(temp, user);
+    const data = await new QuestionTagBusiness(org).createquestionTag(temp, user);
     return {
       error: false,
       data: data
@@ -92,10 +92,11 @@ export class QuestionTagController {
   @ApiParam({ name: `questiontagid`, type: 'string', required: true })
   async delete(
     @Param('questiontagid') questiontagid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
 
-    await new QuestionTagBusiness().deletequestionTag(questiontagid, user);
+    await new QuestionTagBusiness(org).deletequestionTag(questiontagid, user);
     return {
       error: false,
       data: true
@@ -122,8 +123,8 @@ export class QuestionTagController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `questiontagid`, type: 'string', required: true })
-  async get(@Param('questiontagid') questiontagid: string): Promise<QuestionTagCreateResponse> {
-    const data = await new QuestionTagBusiness().getquestionTagbyid(questiontagid);
+  async get(@Param('questiontagid') questiontagid: string, @Org() org: OrgContext): Promise<QuestionTagCreateResponse> {
+    const data = await new QuestionTagBusiness(org).getquestionTagbyid(questiontagid);
     return {
       error: false,
       data: data ? data : undefined
@@ -153,9 +154,10 @@ export class QuestionTagController {
   async update(
     @Param('questiontagid') questiontagid: string,
     @Body() body: QuestionTagRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<QuestionTagCreateResponse> {
-    const data = await new QuestionTagBusiness().updatequestionTagName(<questiontagsAttributes>{
+    const data = await new QuestionTagBusiness(org).updatequestionTagName(<questiontagsAttributes>{
       questiontagid,
       questiontagname: body.questiontagname
     }, user);
@@ -185,8 +187,8 @@ export class QuestionTagController {
   @RequirePermissions(Permission.VIEW_QUESTIONTAG)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IPaging): Promise<QuestionTagGetAllResponse> {
-    const tempresult = await new QuestionTagBusiness().getquestionTagall({
+  async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<QuestionTagGetAllResponse> {
+    const tempresult = await new QuestionTagBusiness(org).getquestionTagall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || []

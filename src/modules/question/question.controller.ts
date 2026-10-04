@@ -59,6 +59,7 @@ import {
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { Org, OrgContext } from "src/decorators/org.decorator";
 import { assertTagsFitOwner, ownerForNewContent, ownerOfQuestion } from "src/business/content-owner";
+import { findOwnedQuestion } from "src/business/content-scope";
 
 @ApiExtraModels(ResponseBoolean)
 @ApiExtraModels(QuestionBase)
@@ -99,7 +100,7 @@ export class QuestionController {
     // The owner is the organisation the caller acts in; tags must not be another organisation's.
     const organisationid = ownerForNewContent(org);
     await assertTagsFitOwner("question", (body.questiontags as unknown as string[] | undefined) ?? [], organisationid);
-    await new QuestionBusiness().createquestion(<questionsAttributes>{
+    await new QuestionBusiness(org).createquestion(<questionsAttributes>{
       ...body,
       organisationid,
     }, user);
@@ -135,9 +136,10 @@ export class QuestionController {
   @ApiParam({ name: `questionid`, type: "string", required: true })
   async delete(
     @Param("questionid") questionid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new QuestionBusiness().deletequestion(questionid, user);
+    await new QuestionBusiness(org).deletequestion(questionid, user);
     return {
       error: false,
       data: true,
@@ -168,9 +170,10 @@ export class QuestionController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `questionid`, type: "string", required: true })
   async get(
-    @Param("questionid") questionid: string
+    @Param("questionid") questionid: string,
+    @Org() org: OrgContext
   ): Promise<QuestionRequestResponse> {
-    const data = await new QuestionBusiness().getquestionbyid(questionid);
+    const data = await new QuestionBusiness(org).getquestionbyid(questionid);
     return {
       error: false,
       data: data
@@ -221,9 +224,10 @@ export class QuestionController {
   async update(
     @Param("questionid") questionid: string,
     @Body() body: Question,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<QuestionCreateResponse> {
-    const data = await new QuestionBusiness().updatequestion(<
+    const data = await new QuestionBusiness(org).updatequestion(<
       questionsAttributes
     >{
       ...body,
@@ -264,8 +268,8 @@ export class QuestionController {
   @RequirePermissions(Permission.VIEW_QUESTION)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IPaging): Promise<QuestionGetAllResponse> {
-    const tempresult = await new QuestionBusiness().getquestionall({
+  async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<QuestionGetAllResponse> {
+    const tempresult = await new QuestionBusiness(org).getquestionall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
@@ -301,8 +305,8 @@ export class QuestionController {
   @RequirePermissions(Permission.VIEW_QUESTION)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getallOR(@Body() body: IPaging): Promise<QuestionGetAllResponse> {
-    const tempresult = await new QuestionBusiness().getquestionallOR({
+  async getallOR(@Body() body: IPaging, @Org() org: OrgContext): Promise<QuestionGetAllResponse> {
+    const tempresult = await new QuestionBusiness(org).getquestionallOR({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
@@ -342,9 +346,10 @@ export class QuestionController {
   async deleteTag(
     @Param("questionid") questionid: string,
     @Param("tag") tag: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new QuestionBusiness().deletequestionTag(questionid, tag, user);
+    await new QuestionBusiness(org).deletequestionTag(questionid, tag, user);
     return {
       error: false,
       data: true,
@@ -375,10 +380,13 @@ export class QuestionController {
   async addTag(
     @Param("questionid") questionid: string,
     @Param("tag") tag: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
+    // the question in the path is the caller's, or not found (before the tag is compared with anything)
+    await findOwnedQuestion(org, questionid, { where: { isdeleted: false } });
     await assertTagsFitOwner("question", [tag], await ownerOfQuestion(questionid));
-    await new QuestionBusiness().addquestionTag(questionid, tag, user);
+    await new QuestionBusiness(org).addquestionTag(questionid, tag, user);
     return {
       error: false,
       data: true,
@@ -409,9 +417,10 @@ export class QuestionController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `questionid`, type: "string", required: true })
   async activate(
-    @Param("questionid") questionid: string
+    @Param("questionid") questionid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new QuestionBusiness().activatequestion(questionid);
+    await new QuestionBusiness(org).activatequestion(questionid);
     return {
       error: false,
       data: true,
@@ -445,9 +454,10 @@ export class QuestionController {
   async updateQuestionIdentifier(
     @Param("questionid") questionid: string,
     @Param("questionidentifier") questionidentifier: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new QuestionBusiness().updatequestionIdentifier(
+    await new QuestionBusiness(org).updatequestionIdentifier(
       questionid,
       questionidentifier,
       user
@@ -482,9 +492,10 @@ export class QuestionController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `questionid`, type: "string", required: true })
   async deactivate(
-    @Param("questionid") questionid: string
+    @Param("questionid") questionid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new QuestionBusiness().deactivatequestion(questionid);
+    await new QuestionBusiness(org).deactivatequestion(questionid);
     return {
       error: false,
       data: true,

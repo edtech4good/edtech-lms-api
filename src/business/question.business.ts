@@ -22,7 +22,17 @@ import {
   questionsAttributes,
 } from "../models/data-models/questions";
 import { studentApiAttributes } from "./student-api-payload";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedQuestion } from "./content-scope";
+
+/**
+ * Built with the caller's context, every read and write here is limited to the questions in scope (a question of
+ * another organisation is reported exactly as an absent one); built without one it is unscoped (the sync payload,
+ * and the readers that assemble a lesson for export).
+ */
 export class QuestionBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   createquestion = async (question: questionsAttributes, user: LmsUserToken) => {
     let tempquestion: any = new Question();
     tempquestion = { ...question };
@@ -106,7 +116,9 @@ export class QuestionBusiness {
     }
   };
   getquestionbyid = (questionid: string) =>
-    questions.findOne({ where: { questionid, isdeleted: false } });
+    this.org
+      ? findOwnedQuestion(this.org, questionid, { where: { isdeleted: false } })
+      : questions.findOne({ where: { questionid, isdeleted: false } });
   // sync payload (student API): see student-api-payload.ts
   getquestions = () => questions.findAll({ attributes: studentApiAttributes });
   getquestionall = async (paging: IPaging) => {
@@ -121,6 +133,7 @@ export class QuestionBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     where = { ...buildWhere<questionsAttributes>(paging, where) };
+    where = await andScope(this.org, "question", where);
 
     return await questions.findAndCountAll({ where, order, limit, offset });
   };
@@ -137,6 +150,7 @@ export class QuestionBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     where = { ...buildWhereOR<questionsAttributes>(paging, where) };
+    where = await andScope(this.org, "question", where);
 
     return await questions.findAndCountAll({ where, order, limit, offset });
   };
@@ -184,7 +198,7 @@ export class QuestionBusiness {
     if ((question.questionid ?? "").trim().length > 0) {
       where.questionid = { [Op.not]: question.questionid };
     }
-    const tempdt = await questions.count({ where });
+    const tempdt = await questions.count({ where: await andScope(this.org, "question", where) });
     return tempdt > 0;
   };
 
@@ -193,7 +207,7 @@ export class QuestionBusiness {
       questionid,
       isdeleted: false,
     };
-    const tempdt = await questions.count({ where });
+    const tempdt = await questions.count({ where: await andScope(this.org, "question", where) });
     return tempdt > 0;
   };
 

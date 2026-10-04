@@ -8,8 +8,16 @@ import {
   questiontags,
   questiontagsAttributes,
 } from "../models/data-models/init-models";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedQuestionTag } from "./content-scope";
 
+/**
+ * Built with the caller's context, every read and write here is limited to the rows in scope (a row of another
+ * organisation is reported exactly as an absent one); built without one it is unscoped (the sync payloads).
+ */
 export class QuestionTagBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   createquestionTag = async (questiontag: questiontagsAttributes, user: LmsUserToken) => {
     questiontag.questiontagid = uuidv4();
     questiontag.isdeleted = false;
@@ -20,7 +28,9 @@ export class QuestionTagBusiness {
     return await questiontags.create(questiontag);
   };
   getquestionTagbyid = (questiontagid: string) =>
-    questiontags.findOne({ where: { questiontagid, isdeleted: false } });
+    this.org
+      ? findOwnedQuestionTag(this.org, questiontagid, { where: { isdeleted: false } })
+      : questiontags.findOne({ where: { questiontagid, isdeleted: false } });
   getquestionTagall = async (paging: IPaging) => {
     let where: WhereOptions<questiontagsAttributes> = {
       isdeleted: false,
@@ -32,6 +42,7 @@ export class QuestionTagBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     where = { ...buildWhere<questiontagsAttributes>(paging, where) };
+    where = await andScope(this.org, "questiontag", where);
 
     return await questiontags.findAndCountAll({ where, order, limit, offset });
   };
@@ -70,7 +81,7 @@ export class QuestionTagBusiness {
     if ((questiontag.questiontagid ?? "").trim().length > 0) {
       where.questiontagid = { [Op.not]: questiontag.questiontagid };
     }
-    const tempdt = await questiontags.count({ where });
+    const tempdt = await questiontags.count({ where: await andScope(this.org, "questiontag", where) });
     return tempdt > 0;
   };
 
@@ -79,7 +90,7 @@ export class QuestionTagBusiness {
       questiontagid,
       isdeleted: false,
     };
-    const tempdt = await questiontags.count({ where });
+    const tempdt = await questiontags.count({ where: await andScope(this.org, "questiontag", where) });
     return tempdt > 0;
   };
 }

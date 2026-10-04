@@ -7,14 +7,26 @@ import { buildWhere } from "src/services/util.service";
 import { v4 as uuidv4 } from 'uuid';
 import { documents, documentsAttributes } from "../models/data-models/documents";
 import { studentApiAttributes } from "./student-api-payload";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedDocument } from "./content-scope";
+
+/**
+ * Built with the caller's context, every read and write here is limited to the documents in scope (a document of
+ * another organisation is reported exactly as an absent one); built without one it is unscoped (the sync payload).
+ */
 export class DocumentBusiness {
+    constructor(private readonly org?: OrgContext) {}
+
     createdocument = async (document: documentsAttributes, user: LmsUserToken) => {
         document.documentid = uuidv4();
         document.isdeleted = false;
         document.created_by = user.lmsuserid;
         return await documents.create(document);
     };
-    getdocumentbyid = (documentid: string) => documents.findOne({ where: { documentid, isdeleted: false } });
+    getdocumentbyid = (documentid: string) =>
+        this.org
+            ? findOwnedDocument(this.org, documentid, { where: { isdeleted: false } })
+            : documents.findOne({ where: { documentid, isdeleted: false } });
     getdocumentall = async (paging: IPaging) => {
         let where: WhereOptions<documentsAttributes> = {
             isdeleted: false,
@@ -27,6 +39,7 @@ export class DocumentBusiness {
         }
 
         where = { ...buildWhere<documentsAttributes>(paging, where) };
+        where = await andScope(this.org, "document", where);
 
         return await documents.findAndCountAll({ where, order, limit, offset });
     };
@@ -90,17 +103,33 @@ export class DocumentBusiness {
                 [Op.not]: document.documentid
             }
         }
+        // A file's name is its key in the one file store every organisation shares, so a name is unique across all of
+        // them (never limited to the caller's documents): a second file of the same name would overwrite the first.
         const tempdt = await documents.count({ where });
         return tempdt > 0;
     };
 
+
+    /**
+     * Does a live document that is not in scope already hold this name? (Always false for the platform, and for a
+     * business class built without a caller.) The name is the document's key in the shared file store.
+     */
+    isNameHeldByAnother = async (documentname: string) => {
+        if (!this.org) {
+            return false;
+        }
+        const where: WhereOptions<documentsAttributes> = { documentname, isdeleted: false };
+        const all = await documents.count({ where });
+        const own = await documents.count({ where: await andScope(this.org, "document", where) });
+        return all > own;
+    };
 
     isexistsdocumentID = async (documentid: string) => {
         const where: WhereOptions<documentsAttributes> = {
             documentid,
             isdeleted: false
         }
-        const tempdt = await documents.count({ where });
+        const tempdt = await documents.count({ where: await andScope(this.org, "document", where) });
         return tempdt > 0;
     };
 
