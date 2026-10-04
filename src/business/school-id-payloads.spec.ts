@@ -99,6 +99,51 @@ describe("roster payload getters keep schoolid out of the login and the included
     expect(sql).toMatch(/`schoolid` = 'school-1'/);
   });
 
+  /**
+   * The one place a roster row carries its school: a push that names the school it is for (`{ schoolid, studentusers }`,
+   * `{ schoolid, teachers }`), which the student API checks row by row. The getters take `{ withSchoolId: true }` for it
+   * (and only then); every other payload above keeps the column out. What is selected must hold `schoolid` on the login and,
+   * where the learner is included, on the learner too, and still no `organisationid`.
+   */
+  describe("a push that names its school keeps schoolid on every row it sends", () => {
+    const selectedOf = (sql: string) => sql.split(" FROM ")[0];
+
+    it("getschooluserbyschoolid (sync/cloud/:schoolname/students) selects schoolid on the login and on the learner", async () => {
+      const selected = selectedOf(await capture((b) => b.getschooluserbyschoolid("school-1", true, { withSchoolId: true })));
+      expect(selected).toMatch(/`schoolusers`\.`schoolid`/);
+      expect(selected).toMatch(/`student`\.`schoolid`/);
+      expect(selected).not.toMatch(/organisationid/);
+      // and the rest of the row is what it was
+      expect(selected).toMatch(/`student`\.`studentid`/);
+      expect(selected).toMatch(/`schoolusers`\.`schoolname`/);
+    });
+
+    it("getschooluserbyid (the learners just created) selects schoolid on the login and on the learner", async () => {
+      const selected = selectedOf(await capture((b) => b.getschooluserbyid(["u1"], { withSchoolId: true })));
+      expect(selected).toMatch(/`schoolusers`\.`schoolid`/);
+      expect(selected).toMatch(/`student`\.`schoolid`/);
+      expect(selected).not.toMatch(/organisationid/);
+    });
+
+    it("getschoolteachersbyid (the teachers just created) selects schoolid", async () => {
+      const selected = selectedOf(await capture((b) => b.getschoolteachersbyid(["t1"], { withSchoolId: true })));
+      expect(selected).toMatch(/`schoolid`/);
+      expect(selected).toMatch(/`schoolname`/);
+      expect(selected).not.toMatch(/organisationid/);
+    });
+
+    it("without it the same getters still keep schoolid out (so the checks above can fail)", async () => {
+      for (const sql of [
+        await capture((b) => b.getschooluserbyschoolid("school-1", true, {})),
+        await capture((b) => b.getschooluserbyid(["u1"], {})),
+        await capture((b) => b.getschoolteachersbyid(["t1"], {})),
+        await capture((b) => b.getschooluserbyschoolid("school-1", true, { withSchoolId: false })),
+      ]) {
+        expect(selectedOf(sql)).not.toMatch(/schoolid/);
+      }
+    });
+  });
+
   it("the admin API's own reads DO carry schoolid (only the student-API payloads hide it)", async () => {
     const sql = await capture(async () => schoolusers.findAll({ where: { schoolname: "x" } }));
     expect(sql.split(" FROM ")[0]).toMatch(/`schoolid`/);

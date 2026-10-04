@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **283** routes, **265** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned route, by the spec it names), **11** are not applicable (public) and **7** are pending.
+Of **283** routes, **269** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned route, by the spec it names), **11** are not applicable (public) and **3** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 243 | 237 | 0 | 6 |
+| owned | 243 | 241 | 0 | 2 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 1 | 0 | 0 | 1 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **283** | **265** | **11** | **7** |
+| **all** | **283** | **269** | **11** | **3** |
 
 ## Policies
 
@@ -338,10 +338,10 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | GET | `/subject/:subjectid` | SubjectController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_subject] |  |
 | PUT | `/subject/:subjectid` | SubjectController.update | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_subject] |  |
 | POST | `/subject/create` | SubjectController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_subject] |  |
-| GET | `/sync` | SyncController.sync | owned | pending |  |  | yes | AccessGuard(ACCESS) | Must export only one organisation's content; a platform caller must name the organisation. |
-| POST | `/sync/cloud` | SyncController.synconline | owned | pending |  |  |  | AccessGuard(ACCESS, Role.admin, Role.superadmin) | Must push only the caller's organisation's content; a platform caller must name the organisation. |
-| POST | `/sync/cloud/:schoolname/students` | SyncController.synconlineschool | owned | pending |  |  |  | AccessGuard(ACCESS, Role.admin, Role.superadmin) | Must push only learners of a school of the caller's organisation; a platform caller must name the organisation. |
-| GET | `/sync/content` | SyncController.syncContent | owned | pending |  |  | yes | AccessGuard(ACCESS) | Must export only one organisation's content; a platform caller must name the organisation. |
+| GET | `/sync` | SyncController.sync | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  | yes | AccessGuard(ACCESS) | One organisation's content in the older shape; a platform user who is not acting as an organisation must name the organisation. |
+| POST | `/sync/cloud` | SyncController.synconline | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.admin, Role.superadmin) | Pushes one organisation's content (format 3) with the organisation named in the request header; a platform user who is not acting as an organisation must name the organisation, and can ask for the whole platform's in format 2. |
+| POST | `/sync/cloud/:schoolname/students` | SyncController.synconlineschool | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.admin, Role.superadmin) | Pushes only the learners of one school of the caller's organisation, with that school's organisation named in the request header. |
+| GET | `/sync/content` | SyncController.syncContent | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  | yes | AccessGuard(ACCESS) | One organisation's content (format 3); a platform user who is not acting as an organisation must name the organisation, and can ask for the whole platform's in format 2. |
 | GET | `/sync/report-data` | SyncController.getReportData | server | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey) | Authenticated only by the application API key; must be served as platform until the key is retired or scoped. |
 | POST | `/teacher` | TeacherController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_teacher] |  |
 | DELETE | `/teacher/:schooluserid` | TeacherController.deleteuser | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_teacher] |  |

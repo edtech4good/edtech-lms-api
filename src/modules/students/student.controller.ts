@@ -26,17 +26,14 @@ import {
   ApiTags,
   getSchemaPath,
 } from "@nestjs/swagger";
-import AdmZip from "adm-zip";
-import axios from "axios";
 import { isValid, parse } from "date-fns";
-import FormData from "form-data";
 import { json2csv } from "json-2-csv";
+import { pushToCloud, rostersNameTheirSchool, studentsFile } from "src/business/cloud-push";
 import { assertEnrolmentFits } from "src/business/content-owner";
 import { findOwnedSchool, findOwnedStandard, findOwnedStudent, resolveOwnedSchoolRef } from "src/business/school-scope";
 import { scopeOf } from "src/business/org-scope";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { StudentBusiness } from "src/business/student.business";
-import { Config } from "src/config";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
 import { Org, OrgContext, OrgOrServer } from "src/decorators/org.decorator";
@@ -240,9 +237,10 @@ export class StudentController {
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
     let result: Array<schoolusers>;
+    let school: Awaited<ReturnType<typeof findOwnedSchool>>;
     try {
       // The school must be one of the caller's (live; unknown or not theirs: 404), before anything is written or pushed.
-      const school = await findOwnedSchool(org, _body.schoolid, { transaction: tnx, field: "schoolid" });
+      school = await findOwnedSchool(org, _body.schoolid, { transaction: tnx, field: "schoolid" });
       // A class the learners are put in must be a class of that school (the platform, not acting as an
       // organisation, is not limited).
       if (_body.standard && scopeOf(org).kind !== "platform") {
@@ -324,45 +322,18 @@ export class StudentController {
     }
     if (cloud) {
       const studentusers = await new SchoolUserBusiness().getschooluserbyid(
-        result.map((x) => x.schooluserid)
+        result.map((x) => x.schooluserid),
+        { withSchoolId: rostersNameTheirSchool() },
       );
       if (studentusers.length <= 0) {
         throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to sync.");
       }
-
-      const zip = new AdmZip();
-      zip.addFile(
+      return pushToCloud(
+        "students",
         "students.ini",
-        Buffer.from(
-          JSON.stringify({
-            studentusers: studentusers ? studentusers.map((x) => x.get({ plain: true })) : []
-          }),
-          "utf8"
-        )
+        JSON.stringify(studentsFile(school.schoolid, studentusers.map((x) => x.get({ plain: true })))),
+        school.organisationid,
       );
-
-      const file = new FormData();
-      file.append("importfile", zip.toBuffer(), "importfile.zip");
-      const response = await axios.put(
-        `${Config.fortyk.api.rpi.cloud}/import/students`,
-        file,
-        {
-          headers: {
-            Authorization: Config.fortyk.api.serversynckey,
-            ...file.getHeaders(),
-          },
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-        }
-      );
-      if (response.status === 200) {
-        return {
-          error: false,
-          data: true,
-        };
-      } else {
-        throw Error(response.data);
-      }
     }
     return {
       error: false,

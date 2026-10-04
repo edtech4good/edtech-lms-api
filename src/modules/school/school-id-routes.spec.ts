@@ -117,10 +117,11 @@ describe("the exports and the cloud sync take the school's name or id in the pat
   });
 
   it("POST /sync/cloud/:schoolname/students: name or id, learners of the school by id (online)", async () => {
-    await expect(new SyncController().synconlineschool("Sample School")).rejects.toMatchObject({ code: "NOT_FOUND" });
-    expect(getschooluserbyschoolid).toHaveBeenCalledWith(SAMPLE.schoolid, true);
+    await expect(new SyncController().synconlineschool("Sample School", PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    // the rows keep their school id: the file names the school it is for
+    expect(getschooluserbyschoolid).toHaveBeenCalledWith(SAMPLE.schoolid, true, { withSchoolId: true });
     getschooluserbyschoolid.mockClear();
-    await expect(new SyncController().synconlineschool("Nowhere")).rejects.toMatchObject({ message: "That school doesn't exist." });
+    await expect(new SyncController().synconlineschool("Nowhere", PLATFORM)).rejects.toMatchObject({ message: "That school doesn't exist." });
     expect(getschooluserbyschoolid).not.toHaveBeenCalled();
   });
 });

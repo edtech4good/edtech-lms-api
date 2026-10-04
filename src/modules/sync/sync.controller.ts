@@ -1,10 +1,12 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
   Param,
   Post,
+  Query,
   Response,
   StreamableFile,
   UseGuards,
@@ -13,15 +15,21 @@ import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { ApiBearerAuth, ApiResponse, ApiTags } from "@nestjs/swagger";
 import AdmZip from "adm-zip";
-import axios from "axios";
-import FormData from "form-data";
+import { pushToCloud, rostersNameTheirSchool, studentsFile } from "src/business/cloud-push";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
-import { resolveSchoolSegment } from "src/business/school-identity";
+import { findOwnedSchool, resolveOwnedSchoolSegment } from "src/business/school-scope";
 import { SyncBusiness } from "src/business/sync.business";
-import { Config } from "src/config";
+import { planContentSync, resolveSyncOrganisation } from "src/business/sync-target";
 import { AccessGuard } from "src/guards/access.guard";
 import { Role, TokenType } from "src/models/enums";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+
+const zipped = (json: string) => {
+  const zip = new AdmZip();
+  zip.addFile("syncfile.ini", Buffer.from(json));
+  return new StreamableFile(zip.toBuffer());
+};
 
 @ApiTags("Sync")
 @Controller("sync")
@@ -57,7 +65,10 @@ export class SyncController {
     return new StreamableFile(zip.toBuffer());
   }
 
-  @OrgPolicy("owned", { note: "Must export only one organisation's content; a platform caller must name the organisation." })
+  @OrgPolicy("owned", {
+    note: "One organisation's content in the older shape; a platform user who is not acting as an organisation must name the organisation.",
+    enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
+  })
   @Get("")
   @ApiResponse({
     status: 200,
@@ -73,20 +84,24 @@ export class SyncController {
   })
   @HttpCode(HttpStatus.OK)
   @UseGuards(AccessGuard(TokenType.ACCESS))
-  async sync(@Response({ passthrough: true }) res: any) {
-    const zip = new AdmZip();
-    zip.addFile(
-      "syncfile.ini",
-      Buffer.from(await new SyncBusiness().synconline())
-    );
+  async sync(
+    @Response({ passthrough: true }) res: any,
+    @Org() org: OrgContext,
+    @Query("organisationid") organisationid?: unknown,
+  ) {
+    const organisation = await resolveSyncOrganisation(org, organisationid);
+    const file = zipped(await new SyncBusiness().synconlineForOrganisation(organisation));
     res.set({
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="sync-data.zip"`,
     });
-    return new StreamableFile(zip.toBuffer());
+    return file;
   }
 
-  @OrgPolicy("owned", { note: "Must export only one organisation's content; a platform caller must name the organisation." })
+  @OrgPolicy("owned", {
+    note: "One organisation's content (format 3); a platform user who is not acting as an organisation must name the organisation, and can ask for the whole platform's in format 2.",
+    enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
+  })
   @Get("content")
   @ApiResponse({
     status: 200,
@@ -102,20 +117,26 @@ export class SyncController {
   })
   @HttpCode(HttpStatus.OK)
   @UseGuards(AccessGuard(TokenType.ACCESS))
-  async syncContent(@Response({ passthrough: true }) res: any) {
-    const zip = new AdmZip();
-    zip.addFile(
-      "syncfile.ini",
-      Buffer.from(await new SyncBusiness().syncontentVersion2())
-    );
+  async syncContent(
+    @Response({ passthrough: true }) res: any,
+    @Org() org: OrgContext,
+    @Query("organisationid") organisationid?: unknown,
+    @Query("format") format?: unknown,
+  ) {
+    const plan = await planContentSync(org, { organisationid, format });
+    const sync = new SyncBusiness();
+    const file = zipped(plan.format === 2 ? await sync.syncontentVersion2() : await sync.syncontentVersion3(plan.organisation));
     res.set({
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="sync-data.zip"`,
     });
-    return new StreamableFile(zip.toBuffer());
+    return file;
   }
 
-  @OrgPolicy("owned", { note: "Must push only the caller's organisation's content; a platform caller must name the organisation." })
+  @OrgPolicy("owned", {
+    note: "Pushes one organisation's content (format 3) with the organisation named in the request header; a platform user who is not acting as an organisation must name the organisation, and can ask for the whole platform's in format 2.",
+    enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
+  })
   @Post("cloud")
   @ApiResponse({
     status: 200,
@@ -129,40 +150,22 @@ export class SyncController {
     status: 500,
     description: "Server error",
   })
-  // Not Role.organisationadmin: this pushes to the cloud server with the server key, for every organisation.
+  // Not Role.organisationadmin: this pushes to the cloud server with the server key.
   @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
   @HttpCode(HttpStatus.OK)
-  async synconline() {
-    const zip = new AdmZip();
-    zip.addFile(
-      "syncfile.ini",
-      Buffer.from(await new SyncBusiness().syncontentVersion2())
-    );
-    const file = new FormData();
-    file.append("importfile", zip.toBuffer(), "importfile.zip");
-    const response = await axios.put(
-      `${Config.fortyk.api.rpi.cloud}/import/master`,
-      file,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-          ...file.getHeaders(),
-        },
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-      }
-    );
-    if (response.status === 200) {
-      return {
-        error: false,
-        data: true,
-      };
-    } else {
-      throw Error(response.data);
+  async synconline(@Org() org: OrgContext, @Body() body?: { organisationid?: unknown; format?: unknown }) {
+    const plan = await planContentSync(org, { organisationid: body?.organisationid, format: body?.format });
+    const sync = new SyncBusiness();
+    if (plan.format === 2) {
+      return pushToCloud("master", "syncfile.ini", await sync.syncontentVersion2());
     }
+    return pushToCloud("master", "syncfile.ini", await sync.syncontentVersion3(plan.organisation), plan.organisation.organisationid);
   }
 
-  @OrgPolicy("owned", { note: "Must push only learners of a school of the caller's organisation; a platform caller must name the organisation." })
+  @OrgPolicy("owned", {
+    note: "Pushes only the learners of one school of the caller's organisation, with that school's organisation named in the request header.",
+    enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
+  })
   @Post("cloud/:schoolname/students")
   @ApiResponse({
     status: 200,
@@ -176,53 +179,24 @@ export class SyncController {
     status: 500,
     description: "Server error",
   })
-  // Not Role.organisationadmin: this pushes to the cloud server with the server key, for every organisation.
+  // Not Role.organisationadmin: this pushes to the cloud server with the server key.
   @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
   @HttpCode(HttpStatus.OK)
-  async synconlineschool(@Param("schoolname") schoolname: string) {
-    // The segment names the school by NAME (as before) or by id; resolved once, here.
-    const school = await resolveSchoolSegment(schoolname, { forRead: true });
-    const studentusers =
-      await new SchoolUserBusiness().getschooluserbyschoolid(
-        school.schoolid,
-        true
-      );
+  async synconlineschool(@Param("schoolname") schoolname: string, @Org() org: OrgContext) {
+    // The segment names the school by NAME (as before) or by id, among the caller's schools; resolved once, here.
+    const found = await resolveOwnedSchoolSegment(org, schoolname, { forRead: true });
+    const school = await findOwnedSchool(org, found.schoolid, { includeDeleted: true });
+    const studentusers = await new SchoolUserBusiness().getschooluserbyschoolid(school.schoolid, true, {
+      withSchoolId: rostersNameTheirSchool(),
+    });
     if (studentusers.length <= 0) {
       throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to sync.");
     }
-
-    const zip = new AdmZip();
-    zip.addFile(
+    return pushToCloud(
+      "students",
       "students.ini",
-      Buffer.from(
-        JSON.stringify({
-          studentusers: studentusers ? studentusers.map((x) => x.get({ plain: true })) : []
-        }),
-        "utf8"
-      )
+      JSON.stringify(studentsFile(school.schoolid, studentusers.map((x) => x.get({ plain: true })))),
+      school.organisationid,
     );
-
-    const file = new FormData();
-    file.append("importfile", zip.toBuffer(), "importfile.zip");
-    const response = await axios.put(
-      `${Config.fortyk.api.rpi.cloud}/import/students`,
-      file,
-      {
-        headers: {
-          Authorization: Config.fortyk.api.serversynckey,
-          ...file.getHeaders(),
-        },
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-      }
-    );
-    if (response.status === 200) {
-      return {
-        error: false,
-        data: true,
-      };
-    } else {
-      throw Error(response.data);
-    }
   }
 }

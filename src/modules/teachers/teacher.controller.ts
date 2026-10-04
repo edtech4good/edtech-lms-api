@@ -21,16 +21,13 @@ import {
   ApiTags,
   getSchemaPath,
 } from "@nestjs/swagger";
-import AdmZip from "adm-zip";
-import axios from "axios";
-import FormData from "form-data";
+import { pushToCloud, rostersNameTheirSchool, teachersFile } from "src/business/cloud-push";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { TeacherBusiness } from "src/business/teacher.business";
-import { Config } from "src/config";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
 import { Org, OrgContext, OrgOrServer } from "src/decorators/org.decorator";
-import { findOwnedTeacher, requireOwnedSchoolByName } from "src/business/school-scope";
+import { findOwnedSchool, findOwnedTeacher, requireOwnedSchoolByName } from "src/business/school-scope";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import {
@@ -131,9 +128,10 @@ export class TeacherController {
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
     let result: Array<schoolusers>;
+    let school: Awaited<ReturnType<typeof requireOwnedSchoolByName>>;
     try {
       // The school is named by NAME, among the caller's schools (none: 404), before anything is written or pushed.
-      const school = await requireOwnedSchoolByName(org, _body.schoolname, tnx);
+      school = await requireOwnedSchoolByName(org, _body.schoolname, tnx);
       result = await new SchoolUserBusiness().createSchoolUser(
         _body.teachers.map(
           (x) =>
@@ -158,45 +156,19 @@ export class TeacherController {
     }
     if (cloud) {
       const teacherusers = await new SchoolUserBusiness().getschoolteachersbyid(
-        result.map((x) => x.schooluserid)
+        result.map((x) => x.schooluserid),
+        { withSchoolId: rostersNameTheirSchool() },
       );
       if (teacherusers.length <= 0) {
         throw new ApiError(ErrorCode.NOT_FOUND, "There are no teachers to sync.");
       }
-
-      const zip = new AdmZip();
-      zip.addFile(
+      return pushToCloud(
+        "teachers",
         "teachers.ini",
-        Buffer.from(
-          JSON.stringify(
-            teacherusers ? teacherusers.map((x) => x.get({ plain: true })) : []
-          ),
-          "utf8"
-        )
+        JSON.stringify(teachersFile(school.schoolid, teacherusers.map((x) => x.get({ plain: true })))),
+        // the organisation the school belongs to (the school was found among the caller's, just above)
+        (await findOwnedSchool(org, school.schoolid, { includeDeleted: true })).organisationid,
       );
-
-      const file = new FormData();
-      file.append("importfile", zip.toBuffer(), "importfile.zip");
-      const response = await axios.put(
-        `${Config.fortyk.api.rpi.cloud}/import/teachers`,
-        file,
-        {
-          headers: {
-            Authorization: Config.fortyk.api.serversynckey,
-            ...file.getHeaders(),
-          },
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-        }
-      );
-      if (response.status === 200) {
-        return {
-          error: false,
-          data: true,
-        };
-      } else {
-        throw Error(response.data);
-      }
     }
     return {
       error: false,
