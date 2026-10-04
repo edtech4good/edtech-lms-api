@@ -1,4 +1,4 @@
-import { resolveSchoolRef } from "src/business/school-identity";
+import { resolveOwnedSchoolRef } from "src/business/school-scope";
 import {
   Body,
   Controller,
@@ -67,8 +67,10 @@ import { CurriculumGetAllResponse } from "./models/CurriculumGetAllResponse";
 import { CurriculumRequest } from "./models/CurriculumRequest";
 import { CurriculumResponse } from "./models/CurriculumResponse";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
-import { Org, OrgContext } from "src/decorators/org.decorator";
+import { Org, OrgContext, OrgOrServer } from "src/decorators/org.decorator";
 import { assertSameOwner, ownerForNewContent, ownerOfCurriculum, ownerOfSubject } from "src/business/content-owner";
+import { assertInScope } from "src/business/content-scope";
+import { notFoundError } from "src/business/org-scope";
 
 @ApiExtraModels(
   CurriculumBase,
@@ -81,7 +83,7 @@ import { assertSameOwner, ownerForNewContent, ownerOfCurriculum, ownerOfSubject 
 @ApiBearerAuth()
 export class CurriculumController {
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -109,17 +111,19 @@ export class CurriculumController {
     @Query("standardid") standardid: string = '',
     @Query("schoolname") schoolname: string = '',
     @Query("schoolid") schoolid: string = '',
+    @OrgOrServer() org: OrgContext,
   ): Promise<any> {
-    // The school is named by id or by name; resolved once, here (unknown: 404).
-    const school = await resolveSchoolRef({ schoolid, schoolname });
-    const data = await new CurriculumBusiness().getCurriculumsWithFilter(cur, studentid, standardid, school?.schoolid);
+    // The school is named by id or by name; resolved once, here, among the caller's schools (unknown, or another
+    // organisation's: the same 404). The server token reads every organisation's.
+    const school = await resolveOwnedSchoolRef(org, { schoolid, schoolname });
+    const data = await new CurriculumBusiness(org).getCurriculumsWithFilter(cur, studentid, standardid, school?.schoolid);
     return {
         data: data,
         error: false,
     };
   }
   
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -170,7 +174,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":curriculumid")
   @ApiResponse({
     status: 200,
@@ -195,16 +199,17 @@ export class CurriculumController {
   @ApiParam({ name: `curriculumid`, type: "string", required: true })
   async delete(
     @Param("curriculumid") curriculumid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new CurriculumBusiness().deleteCurriculum(curriculumid, user);
+    await new CurriculumBusiness(org).deleteCurriculum(curriculumid, user);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -228,16 +233,17 @@ export class CurriculumController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `curriculumid`, type: "string", required: true })
   async deactivate(
-    @Param("curriculumid") curriculumid: string
+    @Param("curriculumid") curriculumid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new CurriculumBusiness().deavtivateCurriculum(curriculumid);
+    await new CurriculumBusiness(org).deavtivateCurriculum(curriculumid);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -261,15 +267,16 @@ export class CurriculumController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `curriculumid`, type: "string", required: true })
   async activate(
-    @Param("curriculumid") curriculumid: string
+    @Param("curriculumid") curriculumid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new CurriculumBusiness().activateCurriculum(curriculumid);
+    await new CurriculumBusiness(org).activateCurriculum(curriculumid);
     return {
       error: false,
       data: true,
     };
   }
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("map")
   @ApiResponse({
     status: 200,
@@ -286,14 +293,14 @@ export class CurriculumController {
   @RequirePermissions(Permission.VIEW_CURRICULUM, Permission.VIEW_LESSON)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async map() {
-    const curriculums = await new CurriculumBusiness().getCurriculums();
-    const grades = await new GradeBusiness().getGrades();
-    const levels = await new LevelBusiness().getLevels();
-    const lessons = await new LessonBusiness().getLessons();
-    const lessonquizzes = await new LessonQuizBusiness().getLessonQuizzes();
+  async map(@Org() org: OrgContext) {
+    const curriculums = await new CurriculumBusiness(org).getCurriculums();
+    const grades = await new GradeBusiness(org).getGrades();
+    const levels = await new LevelBusiness(org).getLevels();
+    const lessons = await new LessonBusiness(org).getLessons();
+    const lessonquizzes = await new LessonQuizBusiness(org).getLessonQuizzes();
     const lessonpractices =
-      await new LessonPracticeBusiness().getLessonPractices();
+      await new LessonPracticeBusiness(org).getLessonPractices();
     /*const data = curriculums.map(curriculum => {
       const tempc: any = { ...curriculum.toJSON() };
       tempc.grades = grades.filter(x => x.curriculumid === curriculum.curriculumid).map(grade => {
@@ -328,7 +335,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("tree")
   @ApiResponse({
     status: 200,
@@ -345,14 +352,14 @@ export class CurriculumController {
   @RequirePermissions(Permission.VIEW_CURRICULUM)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async tree() {
-    const curriculums = await new CurriculumBusiness().getCurriculums();
-    const grades = await new GradeBusiness().getGrades();
-    const levels = await new LevelBusiness().getLevels();
-    const lessons = await new LessonBusiness().getLessons();
-    const lessonquizzes = await new LessonQuizBusiness().getLessonQuizzes();
+  async tree(@Org() org: OrgContext) {
+    const curriculums = await new CurriculumBusiness(org).getCurriculums();
+    const grades = await new GradeBusiness(org).getGrades();
+    const levels = await new LevelBusiness(org).getLevels();
+    const lessons = await new LessonBusiness(org).getLessons();
+    const lessonquizzes = await new LessonQuizBusiness(org).getLessonQuizzes();
     const lessonpractices =
-      await new LessonPracticeBusiness().getLessonPractices();
+      await new LessonPracticeBusiness(org).getLessonPractices();
     const data = curriculums.map((curriculum) => {
       const tempc: any = { ...curriculum.toJSON() };
       tempc.grades = grades
@@ -399,7 +406,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("tree/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -422,15 +429,18 @@ export class CurriculumController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `curriculumid`, type: "string", required: true })
   async getcurriculumtree(
-    @Param("curriculumid") curriculumid: string
+    @Param("curriculumid") curriculumid: string,
+    @Org() org: OrgContext
   ): Promise<any> {
-    const curriculums = await new CurriculumBusiness().getCurriculums();
-    const grades = await new GradeBusiness().getGrades();
-    const levels = await new LevelBusiness().getLevels();
-    const lessons = await new LessonBusiness().getLessons();
-    const lessonquizzes = await new LessonQuizBusiness().getLessonQuizzes();
+    // the path row is checked on its own (a curriculum of another organisation is not found, as an absent one is not)
+    await assertInScope(org, "curriculum", curriculumid);
+    const curriculums = await new CurriculumBusiness(org).getCurriculums();
+    const grades = await new GradeBusiness(org).getGrades();
+    const levels = await new LevelBusiness(org).getLevels();
+    const lessons = await new LessonBusiness(org).getLessons();
+    const lessonquizzes = await new LessonQuizBusiness(org).getLessonQuizzes();
     const lessonpractices =
-      await new LessonPracticeBusiness().getLessonPractices();
+      await new LessonPracticeBusiness(org).getLessonPractices();
     const data = curriculums
       .filter((x) => x.curriculumid === curriculumid)
       .map((curriculum) => {
@@ -479,7 +489,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":curriculumid")
   @ApiResponse({
     status: 200,
@@ -503,16 +513,17 @@ export class CurriculumController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `curriculumid`, type: "string", required: true })
   async get(
-    @Param("curriculumid") curriculumid: string
+    @Param("curriculumid") curriculumid: string,
+    @Org() org: OrgContext
   ): Promise<CurriculumCreateResponse> {
-    const data = await new CurriculumBusiness().getCurriculumbyid(curriculumid);
+    const data = await new CurriculumBusiness(org).getCurriculumbyid(curriculumid);
     return {
       error: false,
       data: data ? data : undefined,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(":curriculumid")
   @ApiResponse({
     status: 200,
@@ -538,13 +549,18 @@ export class CurriculumController {
   async update(
     @Param("curriculumid") curriculumid: string,
     @Body() body: CurriculumRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<CurriculumCreateResponse> {
-    // Never changes the owner; the subject it is given must have the same owner.
+    // The curriculum in the path and the subject in the body are both the caller's, or not found (before anything is
+    // compared, so a row of another organisation is never answered with a refusal of its own). Never changes the
+    // owner; the subject it is given must have the same owner.
+    await assertInScope(org, "curriculum", curriculumid);
     if (body.subjectid) {
+      await assertInScope(org, "subject", body.subjectid, () => notFoundError("That subject doesn't exist."));
       assertSameOwner(await ownerOfCurriculum(curriculumid), await ownerOfSubject(body.subjectid));
     }
-    const data = await new CurriculumBusiness().updateCurriculum(<
+    const data = await new CurriculumBusiness(org).updateCurriculum(<
       curriculumsAttributes
     >{
       curriculumid,
@@ -561,7 +577,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -581,8 +597,8 @@ export class CurriculumController {
   @RequirePermissions(Permission.VIEW_CURRICULUM)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IPaging): Promise<CurriculumGetAllResponse> {
-    const tempresult = await new CurriculumBusiness().getCurriculumall({
+  async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<CurriculumGetAllResponse> {
+    const tempresult = await new CurriculumBusiness(org).getCurriculumall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
@@ -598,7 +614,7 @@ export class CurriculumController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("country/:countryid")
   @ApiResponse({
     status: 200,
@@ -622,9 +638,10 @@ export class CurriculumController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `countryid`, type: "string", required: true })
   async getCurriculumByCountry(
-    @Param("countryid") countryid: string
+    @Param("countryid") countryid: string,
+    @OrgOrServer() org: OrgContext
   ): Promise<CurriculumCountryResponse> {
-    const data = await new CurriculumBusiness().getAllCurriculumbyCountryid(countryid);
+    const data = await new CurriculumBusiness(org).getAllCurriculumbyCountryid(countryid);
     return {
       error: false,
       data: data ? data : undefined,

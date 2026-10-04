@@ -1,5 +1,6 @@
 import { ValidationError, ValidationErrorItem } from "joi";
 import { BaselineQuestionBusiness } from "src/business/baslinequestion.business";
+import { requestScope } from "src/business/content-scope";
 import { IRequest } from "src/models";
 
 export const DeleteBaselineQuestion = async (
@@ -7,7 +8,7 @@ export const DeleteBaselineQuestion = async (
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
   const baselinequestionexit =
-    await new BaselineQuestionBusiness().isBaselineQuestionexit(
+    await new BaselineQuestionBusiness(requestScope(request)).isBaselineQuestionexit(
       data.baselinequestionid
     );
   if (!baselinequestionexit) {
@@ -26,7 +27,7 @@ export const DeleteBaselineQuestion = async (
 };
 
 export const BaselineQuestionExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const baselineexists = await new BaselineQuestionBusiness().isexistsBaselineQuestionAdded(data.curriculumbaselineid, data.questionid, data.baselinequestionid);
+  const baselineexists = await new BaselineQuestionBusiness(requestScope(request)).isexistsBaselineQuestionAdded(data.curriculumbaselineid, data.questionid, data.baselinequestionid);
   if (baselineexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -47,7 +48,7 @@ export const CloneCurriculumBaseLine = async (
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
   const curriculumbaselinequestionexists =
-    await new BaselineQuestionBusiness().getCurriculumBaseLineQuestionDuplicate(
+    await new BaselineQuestionBusiness(requestScope(request)).getCurriculumBaseLineQuestionDuplicate(
       data.clonecurriculumbaselineid
     );
   if (curriculumbaselinequestionexists) {
@@ -64,7 +65,7 @@ export const CloneCurriculumBaseLine = async (
   }
 
   const curriculumbaselinequestionempty =
-  await new BaselineQuestionBusiness().getCurriculumBaseLineQuestionEmpty(
+  await new BaselineQuestionBusiness(requestScope(request)).getCurriculumBaseLineQuestionEmpty(
     data.curriculumbaselineid
   );
 if (!curriculumbaselinequestionempty) {

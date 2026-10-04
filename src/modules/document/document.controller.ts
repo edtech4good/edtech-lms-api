@@ -48,14 +48,15 @@ import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { Permission } from "src/models/enums/permissions.enum";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { Org, OrgContext } from "src/decorators/org.decorator";
-import { assertTagsFitOwner, ownerForNewContent, ownerOfDocument } from "src/business/content-owner";
+import { assertTagsAllowed, ownerForNewContent, ownerOfDocument } from "src/business/content-owner";
+import { findOwnedDocument } from "src/business/content-scope";
 
 @ApiExtraModels(DocumentBase)
 @ApiTags("Document")
 @Controller("document")
 @ApiBearerAuth()
 export class DocumentController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("/upload")
   @ApiResponse({
     status: 200,
@@ -116,7 +117,7 @@ export class DocumentController {
     if (!/^[a-zA-Z0-9_]+$/.test(actualFilename) || actualFilename.length > 25) {
       throw new ApiError(ErrorCode.FILE_REJECTED, "File names can only use letters, numbers and _, up to 25 characters.");
     }
-    const db = new DocumentBusiness();
+    const db = new DocumentBusiness(org);
     const filename = filenameextractor(files[0].originalname);
     if (filename.filetype <= 0) {
       throw new ApiError(ErrorCode.FILE_REJECTED, "That file type isn't supported.");
@@ -149,7 +150,7 @@ export class DocumentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":documentid")
   @ApiResponse({
     status: 200,
@@ -170,16 +171,17 @@ export class DocumentController {
   @ApiParam({ name: `documentid`, type: "string", required: true })
   async delete(
     @Param("documentid") documentid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new DocumentBusiness().deletedocument(documentid, user);
+    await new DocumentBusiness(org).deletedocument(documentid, user);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -199,8 +201,8 @@ export class DocumentController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiBody({ required: false, type: IPaging })
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IPaging): Promise<DocumentGetAllResponse> {
-    const tempresult = await new DocumentBusiness().getdocumentall({
+  async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<DocumentGetAllResponse> {
+    const tempresult = await new DocumentBusiness(org).getdocumentall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
@@ -225,7 +227,7 @@ export class DocumentController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete("tag/:documentid/:tag")
   @ApiResponse({
     status: 200,
@@ -249,16 +251,17 @@ export class DocumentController {
   async deleteTag(
     @Param("documentid") documentid: string,
     @Param("tag") tag: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new DocumentBusiness().deletedocumentTag(documentid, tag, user);
+    await new DocumentBusiness(org).deletedocumentTag(documentid, tag, user);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("tag/:documentid/:tag")
   @ApiResponse({
     status: 200,
@@ -282,17 +285,20 @@ export class DocumentController {
   async addTag(
     @Param("documentid") documentid: string,
     @Param("tag") tag: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await assertTagsFitOwner("document", [tag], await ownerOfDocument(documentid));
-    await new DocumentBusiness().adddocumentTag(documentid, tag, user);
+    // the document in the path is the caller's, or not found (before the tag is compared with anything)
+    await findOwnedDocument(org, documentid, { where: { isdeleted: false } });
+    await assertTagsAllowed(org, "document", [tag], await ownerOfDocument(documentid));
+    await new DocumentBusiness(org).adddocumentTag(documentid, tag, user);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned", { note: "The signed key must be scoped to the caller's organisation." })
+  @OrgPolicy("owned", { note: "The signed key must be scoped to the caller's organisation.", enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("presign/:filename")
   @ApiResponse({
     status: 200,
@@ -313,8 +319,17 @@ export class DocumentController {
   @ApiParam({ name: `filename`, type: "string", required: true })
   @UseInterceptors(new SchemaValidationInterceptor(documenttagOperations))
   async presignedupload(
-    @Param("filename") filename: string
+    @Param("filename") filename: string,
+    @Org() org: OrgContext
   ): Promise<ResponseString> {
+    // The key is a name in the one file store every organisation shares: a name that a document of another
+    // organisation (or one with no owner) already holds is refused, as an upload of an existing name is.
+    if (await new DocumentBusiness(org).isNameHeldByAnother(filename)) {
+      throw new ApiError(
+        ErrorCode.ALREADY_EXISTS,
+        "A file with that name already exists. Delete the old one first.",
+      );
+    }
     return {
       error: false,
       data: await AWSService.preSignURL(filename),

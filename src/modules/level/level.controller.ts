@@ -59,6 +59,8 @@ import { LevelRequest } from "./models/LevelRequest";
 import { LevelResponse } from "./models/LevelResponse";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { assertSameOwner, ownerOfGrade, ownerOfLevel } from "src/business/content-owner";
+import { assertInScope, findOwnedGrade } from "src/business/content-scope";
+import { Org, OrgContext, OrgOrSchoolUser } from "src/decorators/org.decorator";
 
 @ApiExtraModels(LevelBase)
 @ApiExtraModels(LevelCreateResponse)
@@ -69,7 +71,7 @@ import { assertSameOwner, ownerOfGrade, ownerOfLevel } from "src/business/conten
 @ApiBearerAuth()
 export class LevelController {
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -89,16 +91,19 @@ export class LevelController {
   @HttpCode(HttpStatus.OK)
   async getAllLevels(
     @Query("gradeid") gradeid: string = '',
-    @Query("level") levelname: string = ''
+    @Query("level") levelname: string = '',
+    @OrgOrSchoolUser() org: OrgContext | undefined
   ): Promise<any> {
-    const data = await new LevelBusiness().getLevelsWithFilter(gradeid, levelname);
+    // A staff token reads the levels of its organisation; a school-user token has no organisation context and keeps
+    // reading every level.
+    const data = await new LevelBusiness(org).getLevelsWithFilter(gradeid, levelname);
     return {
         data: data,
         error: false,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -123,7 +128,10 @@ export class LevelController {
   async create(
     @Body() body: LevelRequest,
     @Request() payload: IRequest,
+    @Org() org: OrgContext
   ): Promise<LevelCreateResponse> {
+    // the grade it goes under is the caller's, or not found (as one that is not there): nothing is written
+    await findOwnedGrade(org, body.gradeid);
     const temp: levelsAttributes = {
       levelname: body.levelname,
       leveldescription: body.leveldescription,
@@ -143,7 +151,7 @@ export class LevelController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":levelid")
   @ApiResponse({
     status: 200,
@@ -168,16 +176,17 @@ export class LevelController {
   @ApiParam({ name: `levelid`, type: "string", required: true })
   async delete(
     @Param("levelid") levelid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LevelBusiness().deleteLevel(levelid, user);
+    await new LevelBusiness(org).deleteLevel(levelid, user);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:levelid")
   @ApiResponse({
     status: 200,
@@ -201,16 +210,17 @@ export class LevelController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `levelid`, type: "string", required: true })
   async deactivate(
-    @Param("levelid") levelid: string
+    @Param("levelid") levelid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LevelBusiness().deavtivateLevel(levelid);
+    await new LevelBusiness(org).deavtivateLevel(levelid);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:levelid")
   @ApiResponse({
     status: 200,
@@ -233,15 +243,15 @@ export class LevelController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `levelid`, type: "string", required: true })
-  async activate(@Param("levelid") levelid: string): Promise<ResponseBoolean> {
-    await new LevelBusiness().activateLevel(levelid);
+  async activate(@Param("levelid") levelid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
+    await new LevelBusiness(org).activateLevel(levelid);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":levelid")
   @ApiResponse({
     status: 200,
@@ -264,15 +274,15 @@ export class LevelController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `levelid`, type: "string", required: true })
-  async get(@Param("levelid") levelid: string): Promise<LevelGetResponse> {
-    const data = await new LevelBusiness().getLevelbyid(levelid);
+  async get(@Param("levelid") levelid: string, @Org() org: OrgContext): Promise<LevelGetResponse> {
+    const data = await new LevelBusiness(org).getLevelbyid(levelid);
     return {
       error: false,
       data: data ? data : undefined,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(":levelid")
   @ApiResponse({
     status: 200,
@@ -298,11 +308,15 @@ export class LevelController {
   async update(
     @Param("levelid") levelid: string,
     @Body() body: LevelRequest,
-    @Request() payload: IRequest
+    @Request() payload: IRequest,
+    @Org() org: OrgContext
   ): Promise<LevelCreateResponse> {
-    // Moving a level moves everything beneath it: it may only go to a grade with the same owner.
+    // The level in the path and the grade in the body are both the caller's, or not found (before anything is
+    // compared). Moving a level moves everything beneath it: it may only go to a grade with the same owner.
+    await assertInScope(org, "level", levelid);
+    await findOwnedGrade(org, body.gradeid);
     assertSameOwner(await ownerOfLevel(levelid), await ownerOfGrade(body.gradeid));
-    const data = await new LevelBusiness().updateLevel(<levelsAttributes>{
+    const data = await new LevelBusiness(org).updateLevel(<levelsAttributes>{
       levelid,
       levelname: body.levelname,
       leveldescription: body.leveldescription,
@@ -317,7 +331,7 @@ export class LevelController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -337,8 +351,8 @@ export class LevelController {
   @RequirePermissions(Permission.VIEW_LEVEL)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IPaging): Promise<LevelGetAllResponse> {
-    const tempresult = await new LevelBusiness().getLevelall({
+  async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<LevelGetAllResponse> {
+    const tempresult = await new LevelBusiness(org).getLevelall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],

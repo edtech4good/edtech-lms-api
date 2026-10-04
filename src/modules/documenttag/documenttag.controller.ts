@@ -32,7 +32,7 @@ import { ownerForNewContent } from "src/business/content-owner";
 @Controller('documenttag')
 @ApiBearerAuth()
 export class DocumentTagController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('create')
   @ApiResponse({
     status: 200,
@@ -63,14 +63,14 @@ export class DocumentTagController {
       isdeleted: false
     };
 
-    const data = await new DocumentTagBusiness().createdocumentTag(temp, user);
+    const data = await new DocumentTagBusiness(org).createdocumentTag(temp, user);
     return {
       error: false,
       data: data
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':documenttagid')
   @ApiResponse({
     status: 200,
@@ -92,17 +92,18 @@ export class DocumentTagController {
   @ApiParam({ name: `documenttagid`, type: 'string', required: true })
   async delete(
     @Param('documenttagid') documenttagid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
 
-    await new DocumentTagBusiness().deletedocumentTag(documenttagid, user);
+    await new DocumentTagBusiness(org).deletedocumentTag(documenttagid, user);
     return {
       error: false,
       data: true
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':documenttagid')
   @ApiResponse({
     status: 200,
@@ -122,15 +123,15 @@ export class DocumentTagController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `documenttagid`, type: 'string', required: true })
-  async get(@Param('documenttagid') documenttagid: string): Promise<DocumentTagCreateResponse> {
-    const data = await new DocumentTagBusiness().getdocumentTagbyid(documenttagid);
+  async get(@Param('documenttagid') documenttagid: string, @Org() org: OrgContext): Promise<DocumentTagCreateResponse> {
+    const data = await new DocumentTagBusiness(org).getdocumentTagbyid(documenttagid);
     return {
       error: false,
       data: data ? data : undefined
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(':documenttagid')
   @ApiResponse({
     status: 200,
@@ -153,9 +154,10 @@ export class DocumentTagController {
   async update(
     @Param('documenttagid') documenttagid: string,
     @Body() body: DocumentTagRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<DocumentTagCreateResponse> {
-    const data = await new DocumentTagBusiness().updatedocumentTagName(<documenttagsAttributes>{
+    const data = await new DocumentTagBusiness(org).updatedocumentTagName(<documenttagsAttributes>{
       documenttagid,
       documenttagname: body.documenttagname
     }, user);
@@ -165,7 +167,7 @@ export class DocumentTagController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('')
   @ApiResponse({
     status: 200,
@@ -185,8 +187,8 @@ export class DocumentTagController {
   @RequirePermissions(Permission.VIEW_DOCUMENTTAG)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IPaging): Promise<DocumentTagGetAllResponse> {
-    const tempresult = await new DocumentTagBusiness().getdocumentTagall({
+  async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<DocumentTagGetAllResponse> {
+    const tempresult = await new DocumentTagBusiness(org).getdocumentTagall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || []

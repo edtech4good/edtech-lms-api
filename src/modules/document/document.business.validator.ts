@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ValidationError, ValidationErrorItem } from 'joi';
 import { DocumentBusiness } from 'src/business';
+import { requestScope } from "src/business/content-scope";
 import { IRequest } from 'src/models/IRequest';
 
 export const CreateDocument = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new DocumentBusiness().isexistsdocumentName({
+  const tagexists = await new DocumentBusiness(requestScope(request)).isexistsdocumentName({
     documentname: data.documentname,
     documentid: '',
     isdeleted: false,
@@ -27,7 +28,7 @@ export const CreateDocument = async (request: IRequest, data: any): Promise<Arra
 };
 
 export const EditDocument = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new DocumentBusiness().isexistsdocumentID(data.documentid);
+  const tagexists = await new DocumentBusiness(requestScope(request)).isexistsdocumentID(data.documentid);
   if (!tagexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -40,7 +41,7 @@ export const EditDocument = async (request: IRequest, data: any): Promise<Array<
     error.details.push(erroritem);
     return [error];
   } else {
-    const tagexistsnew = await new DocumentBusiness().isexistsdocumentName({
+    const tagexistsnew = await new DocumentBusiness(requestScope(request)).isexistsdocumentName({
       documentname: data.documentname,
       documentid: data.documentid,
       isdeleted: false,
@@ -63,7 +64,7 @@ export const EditDocument = async (request: IRequest, data: any): Promise<Array<
   return [];
 };
 export const DeleteDocument = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new DocumentBusiness().isexistsdocumentID(data.documentid);
+  const tagexists = await new DocumentBusiness(requestScope(request)).isexistsdocumentID(data.documentid);
   if (!tagexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];

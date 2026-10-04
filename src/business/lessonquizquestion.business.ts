@@ -10,7 +10,17 @@ import {
   questions,
 } from "../models/data-models/init-models";
 
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedQuizQuestion, findOwnedQuiz } from "./content-scope";
+
+/**
+ * Built with the caller's context, every read and write here is limited to the rows in scope (a row of another
+ * organisation is reported exactly as an absent one); built without one it is unscoped (the sync payloads, and
+ * the recompute of a lesson's points, which only ever runs on a lesson that was found in scope).
+ */
 export class LessonQuizQuestionBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   createLessonQuizQuestion = async (
     lessonquizquestion: lessonquizquestionsAttributes
   ) => {
@@ -19,6 +29,9 @@ export class LessonQuizQuestionBusiness {
     return await lessonquizquestions.create(lessonquizquestion);
   };
   getLessonQuizQuestionbyid = async (lessonquizquestionid: string) => {
+    if (this.org) {
+      await findOwnedQuizQuestion(this.org, lessonquizquestionid);
+    }
     lessonquizzes.belongsTo(lessonquizquestions, {
       foreignKey: "lessonquizid",
     });
@@ -74,6 +87,9 @@ export class LessonQuizQuestionBusiness {
       : null;
   };
   getLessonQuizQuestionbyLessonid = async (lessonquizid: string) => {
+    if (this.org) {
+      await findOwnedQuiz(this.org, lessonquizid);
+    }
     lessonquizzes.belongsTo(lessonquizquestions, {
       foreignKey: "lessonquizid",
     });
@@ -99,7 +115,7 @@ export class LessonQuizQuestionBusiness {
     });
 
     const data = await lessonquizquestions.findAll({
-      where: { lessonquizid },
+      where: await andScope(this.org, "quizquestion", { lessonquizid }),
       include: [
         {
           model: lessonquizzes,
@@ -133,7 +149,9 @@ export class LessonQuizQuestionBusiness {
       : null;
   };
   getLessonQuizQuestionid = async (lessonquizquestionid: string) =>
-    lessonquizquestions.findOne({
+    this.org
+      ? findOwnedQuizQuestion(this.org, lessonquizquestionid)
+      : lessonquizquestions.findOne({
       where: { lessonquizquestionid },
     });
 
@@ -141,7 +159,7 @@ export class LessonQuizQuestionBusiness {
     const where: WhereOptions<lessonquizquestionsAttributes> = {};
     const order = ["lessonquizquestionorder"];
 
-    return await lessonquizquestions.findAll({ where, order });
+    return await lessonquizquestions.findAll({ where: await andScope(this.org, "quizquestion", where), order });
   };
 
   deleteLessonQuizQuestion = async (lessonquizquestionid: string) => {
@@ -194,7 +212,7 @@ export class LessonQuizQuestionBusiness {
     const where: WhereOptions<lessonquizquestionsAttributes> = {
       lessonquizquestionid,
     };
-    const tempdt = await lessonquizquestions.count({ where });
+    const tempdt = await lessonquizquestions.count({ where: await andScope(this.org, "quizquestion", where) });
     return tempdt > 0;
   };
 
@@ -216,7 +234,7 @@ export class LessonQuizQuestionBusiness {
         },
       };
     }
-    const tempdt = await lessonquizquestions.count({ where });
+    const tempdt = await lessonquizquestions.count({ where: await andScope(this.org, "quizquestion", where) });
     return tempdt > 0;
   };
 }

@@ -13,6 +13,9 @@ import { ResponseBoolean } from 'src/models/ResponseBoolean';
 import { LmsUserToken } from 'src/models/token.model';
 import { GradeBusiness } from '../../business';
 import { resolveSchoolRef } from "src/business/school-identity";
+import { resolveOwnedSchoolRef } from "src/business/school-scope";
+import { Org, OrgContext, OrgOrServer, OrgOrSchoolUser } from "src/decorators/org.decorator";
+import { assertInScope, findOwnedCurriculum } from "src/business/content-scope";
 import { BusinessValidationInterceptor } from '../../interceptors/businessvalidation.interceptor';
 import { CreateGrade, DeleteGrade, EditGrade } from './grade.business.validator';
 import { creategrade, deletegrade, showallgrade, showgrade, showgradebycurriculum, updategrade } from "./grade.request.validator";
@@ -33,7 +36,7 @@ import { assertSameOwner, ownerOfCurriculum, ownerOfGrade } from "src/business/c
 @ApiBearerAuth()
 export class GradeController {
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -62,17 +65,19 @@ export class GradeController {
     @Query("standardid") standardid: string = '',
     @Query("schoolname") schoolname: string = '',
     @Query("schoolid") schoolid: string = '',
+    @OrgOrSchoolUser() org: OrgContext | undefined,
   ): Promise<any> {
-    // The school is named by id or by name; resolved once, here (unknown: 404).
-    const school = await resolveSchoolRef({ schoolid, schoolname });
-    const data = await new GradeBusiness().getGradesWithFilter(gradename, curid, studentid, standardid, school?.schoolid);
+    // The school is named by id or by name; resolved once, here, among the caller's schools (unknown, or another
+    // organisation's: the same 404). A school-user token has no organisation context and keeps reading every one.
+    const school = org ? await resolveOwnedSchoolRef(org, { schoolid, schoolname }) : await resolveSchoolRef({ schoolid, schoolname });
+    const data = await new GradeBusiness(org).getGradesWithFilter(gradename, curid, studentid, standardid, school?.schoolid);
     return {
         data: data,
         error: false,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('create')
   @ApiResponse({
     status: 200,
@@ -93,8 +98,11 @@ export class GradeController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async create(
     @Body() body: GradeRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<GradeCreateResponse> {
+    // the curriculum it goes under is the caller's, or not found (as one that is not there): nothing is written
+    await findOwnedCurriculum(org, body.curriculumid);
     const temp: gradesAttributes = {
       gradename: body.gradename,
       gradedescription: body.gradedescription,
@@ -113,7 +121,7 @@ export class GradeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':gradeid')
   @ApiResponse({
     status: 200,
@@ -135,17 +143,18 @@ export class GradeController {
   @ApiParam({ name: `gradeid`, type: 'string', required: true })
   async delete(
     @Param('gradeid') gradeid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
 
-    await new GradeBusiness().deleteGrade(gradeid, user);
+    await new GradeBusiness(org).deleteGrade(gradeid, user);
     return {
       error: false,
       data: true
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('deactivate/:gradeid')
   @ApiResponse({
     status: 200,
@@ -166,16 +175,16 @@ export class GradeController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(AccessGuard(TokenType.ACCESS))
   @ApiParam({ name: `gradeid`, type: 'string', required: true })
-  async deactivate(@Param('gradeid') gradeid: string): Promise<ResponseBoolean> {
+  async deactivate(@Param('gradeid') gradeid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
 
-    await new GradeBusiness().deavtivateGrade(gradeid);
+    await new GradeBusiness(org).deavtivateGrade(gradeid);
     return {
       error: false,
       data: true
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('activate/:gradeid')
   @ApiResponse({
     status: 200,
@@ -195,16 +204,16 @@ export class GradeController {
   @RequirePermissions(Permission.UPDATE_GRADE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiParam({ name: `gradeid`, type: 'string', required: true })
-  async activate(@Param('gradeid') gradeid: string): Promise<ResponseBoolean> {
+  async activate(@Param('gradeid') gradeid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
 
-    await new GradeBusiness().activateGrade(gradeid);
+    await new GradeBusiness(org).activateGrade(gradeid);
     return {
       error: false,
       data: true
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':gradeid')
   @ApiResponse({
     status: 200,
@@ -224,15 +233,15 @@ export class GradeController {
   @RequirePermissions(Permission.VIEW_GRADE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @ApiParam({ name: `gradeid`, type: 'string', required: true })
-  async get(@Param('gradeid') gradeid: string): Promise<GradeGetResponse> {
-    const data = await new GradeBusiness().getGradebyid(gradeid);
+  async get(@Param('gradeid') gradeid: string, @Org() org: OrgContext): Promise<GradeGetResponse> {
+    const data = await new GradeBusiness(org).getGradebyid(gradeid);
     return {
       error: false,
       data: data ? data : undefined
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get('curriculum/:curriculumid')
   @ApiResponse({
     status: 200,
@@ -252,15 +261,15 @@ export class GradeController {
   // Role.teacher reads: feeds the grade filter on the report screens.
   @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher))
   @ApiParam({ name: `curriculumid`, type: 'string', required: true })
-  async getGradeByCurriculum(@Param('curriculumid') curriculumid: string): Promise<GradeGetAllByCurriculumResponse> {
-    const data = await new GradeBusiness().getGradeByCurriculumid(curriculumid);
+  async getGradeByCurriculum(@Param('curriculumid') curriculumid: string, @OrgOrServer() org: OrgContext): Promise<GradeGetAllByCurriculumResponse> {
+    const data = await new GradeBusiness(org).getGradeByCurriculumid(curriculumid);
     return {
       error: false,
       data: data ? data : undefined
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(':gradeid')
   @ApiResponse({
     status: 200,
@@ -283,11 +292,15 @@ export class GradeController {
   async update(
     @Param('gradeid') gradeid: string,
     @Body() body: GradeRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<GradeCreateResponse> {
-    // Moving a grade moves everything beneath it: it may only go to a curriculum with the same owner.
+    // The grade in the path and the curriculum in the body are both the caller's, or not found (before anything is
+    // compared). Moving a grade moves everything beneath it: it may only go to a curriculum with the same owner.
+    await assertInScope(org, "grade", gradeid);
+    await findOwnedCurriculum(org, body.curriculumid);
     assertSameOwner(await ownerOfGrade(gradeid), await ownerOfCurriculum(body.curriculumid));
-    const data = await new GradeBusiness().updateGrade(<gradesAttributes>{
+    const data = await new GradeBusiness(org).updateGrade(<gradesAttributes>{
       gradeid,
       gradename: body.gradename,
       gradedescription: body.gradedescription,
@@ -301,7 +314,7 @@ export class GradeController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('')
   @ApiResponse({
     status: 200,
@@ -321,8 +334,8 @@ export class GradeController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.VIEW_GRADE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
-  async getall(@Body() body: IPaging): Promise<GradeGetAllResponse> {
-    const tempresult = await new GradeBusiness().getGradeall({
+  async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<GradeGetAllResponse> {
+    const tempresult = await new GradeBusiness(org).getGradeall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || []

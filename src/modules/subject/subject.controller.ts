@@ -45,7 +45,7 @@ import { ownerForNewContent } from "src/business/content-owner";
 @Controller("subject")
 @ApiBearerAuth()
 export class SubjectController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -80,14 +80,14 @@ export class SubjectController {
       isdeleted: false,
     };
 
-    const data = await new SubjectBusiness().createsubject(temp, user);
+    const data = await new SubjectBusiness(org).createsubject(temp, user);
     return {
       error: false,
       data: data,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post('')
   @ApiResponse({
     status: 200,
@@ -107,8 +107,8 @@ export class SubjectController {
   @RequirePermissions(Permission.VIEW_SUBJECT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IMultiPaging): Promise<SubjectGetAllResponse> {
-    const tempresult = await new SubjectBusiness().getsubjectall({
+  async getall(@Body() body: IMultiPaging, @Org() org: OrgContext): Promise<SubjectGetAllResponse> {
+    const tempresult = await new SubjectBusiness(org).getsubjectall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || []
@@ -124,7 +124,7 @@ export class SubjectController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':subjectid')
   @ApiResponse({
     status: 200,
@@ -146,17 +146,18 @@ export class SubjectController {
   @ApiParam({ name: `subjectid`, type: 'string', required: true })
   async delete(
     @Param('subjectid') subjectid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
 
-    await new SubjectBusiness().deletesubject(subjectid, user);
+    await new SubjectBusiness(org).deletesubject(subjectid, user);
     return {
       error: false,
       data: true
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':subjectid')
   @ApiResponse({
     status: 200,
@@ -176,15 +177,15 @@ export class SubjectController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `subjectid`, type: 'string', required: true })
-  async get(@Param('subjectid') subjectid: string): Promise<SubjectCreateResponse> {
-    const data = await new SubjectBusiness().getsubjectbyid(subjectid);
+  async get(@Param('subjectid') subjectid: string, @Org() org: OrgContext): Promise<SubjectCreateResponse> {
+    const data = await new SubjectBusiness(org).getsubjectbyid(subjectid);
     return {
       error: false,
       data: data ? data : undefined
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(':subjectid')
   @ApiResponse({
     status: 200,
@@ -207,9 +208,10 @@ export class SubjectController {
   async update(
     @Param('subjectid') subjectid: string,
     @Body() body: SubjectRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<SubjectCreateResponse> {
-    const data = await new SubjectBusiness().updatesubject(<subjectsAttributes>{
+    const data = await new SubjectBusiness(org).updatesubject(<subjectsAttributes>{
       subjectid,
       subjectname: body.subjectname,
       subjectdescription: body.subjectdescription,

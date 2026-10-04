@@ -21,10 +21,11 @@ import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
 import { assertEnrolmentFits, ownerOfSchool } from "./content-owner";
-import { withSchoolIds } from "./school-identity";
+import { normaliseSchoolName, withSchoolIds } from "./school-identity";
 import { andInOwnedSchools, findOwnedStudent, requireOwnedSchoolByName } from "./school-scope";
 import { OrgContext } from "src/decorators/org.decorator";
 import { schoolScope } from "./school-scope";
+import { scopeOf } from "./org-scope";
 import { extractSchoolFilters, schoolIdsWhere } from "./school-filter";
 import { hashPassword } from "src/services/password.service";
 import { LmsUserToken } from "src/models/token.model";
@@ -32,6 +33,54 @@ import { CountryBusiness } from "./country.business";
 import axios from "axios";
 import { Config } from "src/config";
 import { unionBy } from "lodash";
+/**
+ * The ids of the live curriculums a row of the edit file names, by NAME, resolved name by name. Names are compared as
+ * the project compares text (trim, NFC, lower-case: `normaliseSchoolName`). Curriculum names are unique within an
+ * organisation, not across them, so which curriculums a name may mean depends on whose they are:
+ *  - an organisation caller (or a platform user acting as one): its own organisation's;
+ *  - the platform not acting, for a school that has an owner: the owner's, and those with no owner yet;
+ *  - the platform not acting, for a school with no owner: those with no owner yet, and no organisation's.
+ * A name is the owner's one curriculum if the owner has exactly one of that name (more than one is ambiguous, so
+ * unresolved); otherwise the one unowned curriculum of that name if there is exactly one; otherwise unresolved. The
+ * caller refuses a file with an unresolved name, the same way whatever the reason, so nothing says which organisation
+ * holds a name. `ids` has each resolved curriculum once, in file order.
+ */
+const curriculumIdsNamed = async (
+  names: string[],
+  schoolOwner: string | null,
+  org: OrgContext,
+  transaction?: Transaction,
+): Promise<{ ids: string[]; complete: boolean }> => {
+  const scope = scopeOf(org);
+  const owner = scope.kind === "organisation" ? scope.organisationid : schoolOwner;
+  const withUnowned = scope.kind === "platform";
+  const limit: WhereOptions = owner !== null
+    ? withUnowned
+      ? { [Op.or]: [{ organisationid: owner }, { organisationid: null }] }
+      : { organisationid: owner }
+    : { organisationid: null };
+  const live = await curriculums.findAll({
+    where: { [Op.and]: [{ isdeleted: false }, limit] },
+    attributes: ['curriculumid', 'curriculumname', 'organisationid'],
+    raw: true,
+    transaction,
+  });
+  const ids: string[] = [];
+  let complete = true;
+  for (const name of new Set(names.map(normaliseSchoolName))) {
+    const named = live.filter((c) => normaliseSchoolName(c.curriculumname) === name);
+    const owned = named.filter((c) => owner !== null && c.organisationid === owner);
+    const unowned = named.filter((c) => (c.organisationid ?? null) === null);
+    const one = owned.length > 0 ? (owned.length === 1 ? owned[0] : undefined) : unowned.length === 1 ? unowned[0] : undefined;
+    if (one && one.curriculumid !== undefined) {
+      if (!ids.includes(one.curriculumid)) ids.push(one.curriculumid);
+    } else {
+      complete = false;
+    }
+  }
+  return { ids, complete };
+};
+
 export class StudentBusiness {
   findbystudentid = (studentid: string) =>
     students.findOne({
@@ -675,17 +724,17 @@ WHERE
     org: OrgContext,
   ) => {
     // Before any row is written: every learner a row names, and every school it names, must be the caller's (else 404 and
-    // nothing is written), and the curriculums a row names must have the owner of the school it names. (A curriculum that
-    // is not found is left to the row's own checks below, which report it.)
+    // nothing is written), and the curriculums a row names must be curriculums of the owner of the school it names.
     for (const [rowindex, x] of studentdata.entries()) {
       await findOwnedStudent(org, { studentid: x.studentid }, transaction);
       const school = await requireOwnedSchoolByName(org, x.schoolname, transaction, `students.${rowindex}.schoolname`);
-      const named = await curriculums.findAll({
-        where: { curriculumname: { [Op.in]: x.curriculums.split('/') } },
-        attributes: ['curriculumid'],
-        raw: true,
-      });
-      await assertEnrolmentFits(await ownerOfSchool(school.schoolid, transaction), named.map((c) => c.curriculumid), transaction);
+      const schoolOwner = await ownerOfSchool(school.schoolid, transaction);
+      const names = x.curriculums.split('/');
+      const named = await curriculumIdsNamed(names, schoolOwner, org, transaction);
+      // a name that is not one of the school's owner's curriculums (a name only another organisation holds is one) is the
+      // refusal a name nobody holds gets, before any row is written
+      if (!named.complete) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
+      await assertEnrolmentFits(schoolOwner, named.ids, transaction);
     }
     for (const [rowindex, x] of studentdata.entries()) {
       const student = await students.findOne({
@@ -721,16 +770,9 @@ WHERE
       if(!standard && parseInt(x.is_teacher_acc ?? '0') !== 1) throw new ApiError(ErrorCode.INVALID_INPUT, "That school or class doesn't exist.", { fields: [{ field: 'standard', message: "That school or class doesn't exist." }] });
       const doj = x.dateofjoin;
       const dob = x.dateofbirth;
-      const currs = await curriculums.findAll({
-        where: {
-          curriculumname: {
-            [Op.in]: x.curriculums.split('/')
-          }
-        },
-        attributes: ['curriculumid'],
-        raw: true,
-      });
-      if(!currs || currs.length !== x.curriculums.split('/').length) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
+      const resolved = await curriculumIdsNamed(x.curriculums.split('/'), await ownerOfSchool(school.schoolid, transaction), org, transaction);
+      const currs = resolved.ids;
+      if(!resolved.complete) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
       await students.update(
         {
           city: x.city,
@@ -761,7 +803,7 @@ WHERE
           updated_at: new Date(),
           updated_by: lmsuser.lmsuserid,
           is_teacher_acc: (parseInt(x.is_teacher_acc ?? '0') === 1) ? true : false,
-          curriculumids: currs.map(cur => cur.curriculumid)
+          curriculumids: currs
         },
         {
           where: { studentid: student.studentid },

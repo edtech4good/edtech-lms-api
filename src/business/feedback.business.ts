@@ -26,13 +26,23 @@ import {
   validateFileName,
 } from "src/services/util.service";
 import { v4 as uuidv4 } from "uuid";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedFeedback } from "./content-scope";
+import { schoolScope } from "./school-scope";
 
 interface IFileBuffer {
   filename: string;
   content: Buffer;
 }
 
+/**
+ * Feedback belongs to its curriculum's organisation. Built with the caller's context, every read here is limited
+ * to the feedback in scope (feedback of another organisation is reported exactly as absent feedback); built without
+ * one it is unscoped (the sync payload).
+ */
 export class FeedbackBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   type_errors = ["rpi", "router", "tablet", "content", "app", "general"];
   createfeedback = async (temp: FeedbackRequest, user: LmsUserToken) => {
     const allbuffers: Array<IFileBuffer> = [];
@@ -172,7 +182,8 @@ export class FeedbackBusiness {
     buildCustomWhere(paging.filter ?? [], {key: 'countryid', fields: '$schooluser.school.countryid$', where: where});
     // A school filter arrives as a name (as the admin UI sends it) or an id; it is
     // resolved once, here, and the feedback is limited to that school's logins by id.
-    const filteredSchool = await resolveSchoolFromFilters(paging.filter);
+    // (among the caller's schools when the class is scoped: another organisation's school is not found)
+    const filteredSchool = await resolveSchoolFromFilters(paging.filter, this.org ? schoolScope(this.org) : undefined);
     if (filteredSchool) {
       (where as any)['$schooluser.schoolid$'] = filteredSchool.schoolid;
     }
@@ -185,7 +196,7 @@ export class FeedbackBusiness {
       }
     }
     const allfeedbacks = await feedbacks.findAndCountAll({
-      where,
+      where: await andScope(this.org, "feedback", where),
       order: [["created_at", 'DESC']],
       limit,
       offset,
@@ -220,10 +231,13 @@ export class FeedbackBusiness {
   };
 
   getfeedbackbyid = async (feedbackid: string) => {
-    const fb = await feedbacks.findOne({
+    const options = {
       where: { feedbackid, isdeleted: false },
       attributes: ["feedbackid", "feedback", "teachername"],
-    });
+    };
+    const fb = this.org
+      ? await findOwnedFeedback(this.org, feedbackid, options)
+      : await feedbacks.findOne(options);
     return fb;
   };
 

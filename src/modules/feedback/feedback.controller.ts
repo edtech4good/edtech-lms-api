@@ -14,13 +14,15 @@ import { showfeedback } from './feedback.request.validator';
 import { FeedbackRequest } from './models/FeedbackRequest';
 import { FeedbackCreateResponse, FeedbackGetAllResponse } from './models/FeedbackResponse';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { findOwnedCurriculum } from "src/business/content-scope";
 
 @ApiExtraModels(FeedbackCreateResponse)
 @ApiTags("Feedback")
 @Controller("feedback")
 @ApiBearerAuth()
 export class FeedbackController {
-    @OrgPolicy("owned")
+    @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
     @Post("create")
     @ApiResponse({
         status: 200,
@@ -41,16 +43,19 @@ export class FeedbackController {
     @HttpCode(HttpStatus.OK)
     async create(
         @Body() body: FeedbackRequest,
-        @User() user: LmsUserToken
+        @User() user: LmsUserToken,
+        @Org() org: OrgContext
     ): Promise<any> {
-        const data = await new FeedbackBusiness().createfeedback(body, user);
+        // the curriculum the feedback is about is the caller's, or not found: nothing is written and nothing is uploaded
+        await findOwnedCurriculum(org, body.curriculumid);
+        const data = await new FeedbackBusiness(org).createfeedback(body, user);
         return {
             error: false,
             data: data,
         };
     }
 
-    @OrgPolicy("owned")
+    @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
     @Post("")
     @ApiResponse({
         status: 200,
@@ -70,8 +75,8 @@ export class FeedbackController {
     @RequirePermissions(Permission.VIEW_FEEDBACK)
     @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
     @HttpCode(HttpStatus.OK)
-    async getall(@Body() body: IMultiPaging): Promise<FeedbackGetAllResponse> {
-        const tempresult = await new FeedbackBusiness().getAllFeedbacks({
+    async getall(@Body() body: IMultiPaging, @Org() org: OrgContext): Promise<FeedbackGetAllResponse> {
+        const tempresult = await new FeedbackBusiness(org).getAllFeedbacks({
             pageindex: body?.pageindex || 0,
             pagesize: body?.pagesize || 0,
             filter: body?.filter || [],
@@ -87,7 +92,7 @@ export class FeedbackController {
         };
     }
 
-    @OrgPolicy("owned")
+    @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
     @Get(":feedbackid")
     @ApiResponse({
         status: 200,
@@ -108,9 +113,10 @@ export class FeedbackController {
     @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
     @ApiBearerAuth()
     async get(
-        @Param("feedbackid") feedbackid: string
+        @Param("feedbackid") feedbackid: string,
+        @Org() org: OrgContext
     ): Promise<FeedbackCreateResponse> {
-        const data = await new FeedbackBusiness().getfeedbackbyid(feedbackid);
+        const data = await new FeedbackBusiness(org).getfeedbackbyid(feedbackid);
         return {
             error: false,
             data: data ? data : undefined,

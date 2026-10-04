@@ -3,14 +3,25 @@ import { Op, WhereOptions } from 'sequelize';
 import { LevelQuizQuestionBase } from 'src/modules/level/models/LevelQuizQuestionBase';
 import { v4 as uuidv4 } from 'uuid';
 import { lessons, levelquizquestions, levelquizquestionsAttributes, levels, questions } from '../models/data-models/init-models';
+import { OrgContext } from 'src/decorators/org.decorator';
+import { andScope, findOwnedLevel, findOwnedLevelQuizQuestion } from './content-scope';
 
+/**
+ * Built with the caller's context, every read and write here is limited to the rows in scope (a row of another
+ * organisation is reported exactly as an absent one); built without one it is unscoped (the sync payloads).
+ */
 export class LevelQuizQuestionBusiness {
+    constructor(private readonly org?: OrgContext) {}
+
     createLevelQuizQuestion = async (levelquizquestion: levelquizquestionsAttributes) => {
         levelquizquestion.levelquizquestionid = uuidv4();
         levelquizquestion.levelquizquestionstatus = true;
         return await levelquizquestions.create(levelquizquestion);
     };
     getLevelQuizQuestionbyid = async (levelquizquestionid: string) => {
+        if (this.org) {
+            await findOwnedLevelQuizQuestion(this.org, levelquizquestionid);
+        }
         levels.belongsTo(levelquizquestions, {
             foreignKey: 'levelid',
         });
@@ -52,6 +63,9 @@ export class LevelQuizQuestionBusiness {
         }) : null
     };
     getLevelQuizQuestionbyLevelid = async (levelid: string) => {
+        if (this.org) {
+            await findOwnedLevel(this.org, levelid);
+        }
         levels.belongsTo(levelquizquestions, {
             foreignKey: 'levelid',
         });
@@ -77,7 +91,7 @@ export class LevelQuizQuestionBusiness {
         });
 
         const data = await levelquizquestions.findAll({
-            where: { levelid },
+            where: await andScope(this.org, "levelquizquestion", { levelid }),
             include: [
                 {
                     model: levels,
@@ -105,9 +119,11 @@ export class LevelQuizQuestionBusiness {
             lesson: (x as any).lesson
         })) : null
     };
-    getLevelQuizQuestionid = async (levelquizquestionid: string) => levelquizquestions.findOne({
-        where: { levelquizquestionid }
-    });
+    getLevelQuizQuestionid = async (levelquizquestionid: string) => this.org
+        ? findOwnedLevelQuizQuestion(this.org, levelquizquestionid)
+        : levelquizquestions.findOne({
+            where: { levelquizquestionid }
+        });
 
     getLevelQuizQuestions = async (old: boolean = false) => {
         const option: any = {};
@@ -119,7 +135,7 @@ export class LevelQuizQuestionBusiness {
                 exclude: ['lessonid']
             }
         }
-        option.where = where;
+        option.where = await andScope(this.org, "levelquizquestion", where);
         option.order = order;
         return await levelquizquestions.findAll(option);
     };
@@ -172,7 +188,7 @@ export class LevelQuizQuestionBusiness {
         const where: WhereOptions<levelquizquestionsAttributes> = {
             levelquizquestionid,
         };
-        const tempdt = await levelquizquestions.count({ where });
+        const tempdt = await levelquizquestions.count({ where: await andScope(this.org, "levelquizquestion", where) });
         return tempdt > 0;
     };
 
@@ -188,7 +204,7 @@ export class LevelQuizQuestionBusiness {
                 }
             }
         }
-        const tempdt = await levelquizquestions.count({ where });
+        const tempdt = await levelquizquestions.count({ where: await andScope(this.org, "levelquizquestion", where) });
         return tempdt > 0;
     };
 

@@ -89,3 +89,16 @@ export const OrgOrServer = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): OrgContext =>
     orgOrServerOf(ctx.switchToHttp().getRequest()?.user),
 );
+
+/**
+ * `orgOf` for a route that also admits a school-user (teacher) token: a school-user token has no organisation
+ * context here and keeps its behaviour (`undefined`: no limit), every staff token is read as `orgOf` says. Use it
+ * only on a route whose guards let a school-user token through (the route inventory lists them).
+ */
+export const orgOrSchoolUserOf = (user: unknown): OrgContext | undefined =>
+  hasSchoolUserId(user) ? undefined : orgOf(user);
+
+export const OrgOrSchoolUser = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): OrgContext | undefined =>
+    orgOrSchoolUserOf(ctx.switchToHttp().getRequest()?.user),
+);

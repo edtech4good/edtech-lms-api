@@ -179,7 +179,8 @@ describe("people and schools are confined to the caller's organisation", () => {
     }).compile();
     app = moduleRef.createNestApplication();
     app.useGlobalFilters(new GlobalExceptionFilter());
-    await app.init();
+    // listening once for the whole file: a listener opened and closed for each request is what an odd "Parse Error" comes from
+    await app.listen(0);
   });
   afterAll(async () => app.close());
 
@@ -879,6 +880,92 @@ describe("people and schools are confined to the caller's organisation", () => {
     const ownRow = () => rowFor(STU_X, USR_X, "learnerx", NAME_X, "ភាសាខ្មែរ ក", "ថ្នាក់ទី១");
     const yRow = () => rowFor(STU_Y, USR_Y, "learnery", NAME_Y, "ភាសាខ្មែរ ខ", "ថ្នាក់ទី២");
     const firstName = (id: string) => db.tables.students.find((s) => s.studentid === id)!.studentfirstname;
+        const curriculumsOf = (id: string) => db.tables.students.find((s) => s.studentid === id)!.curriculumids;
+    it.each(IN_X)("%s: a curriculum of Y's with the same name as X's is not X's: the file enrols X's learner on X's, and writes nothing about Y", async (who) => {
+      db.add("curriculums", { curriculumid: uuid(303), curriculumname: "ភាសាខ្មែរ ក", organisationid: Y, curriculumstatus: true });
+      // (and a curriculum of X's that is deleted, of the same name, is not one either)
+      db.add("curriculums", { curriculumid: uuid(304), curriculumname: "ភាសាខ្មែរ ក", organisationid: X, curriculumstatus: true, isdeleted: true });
+      const before = db.snapshot();
+      const res = await send(who, "put", "/student/update", { students: [ownRow()] });
+      expect(res.status).toBe(200);
+      expect(curriculumsOf(STU_X)).toEqual([CUR_X]);
+      const after = db.snapshot();
+      expect(after.students.find((s) => s.studentid === STU_Y)).toEqual(before.students.find((s) => s.studentid === STU_Y));
+      
+    });
+    describe("a platform user not acting names curriculums by name", () => {
+      const NOT_ACTING = "a platform user not acting" as Who;
+      const unowned = (n: number, name: string) =>
+        db.add("curriculums", { curriculumid: uuid(n), curriculumname: name, organisationid: null, curriculumstatus: true });
+      const refusedAs = async (rows: object[]) => {
+        const res = await refuses(NOT_ACTING, "put", "/student/update", { students: rows });
+        const nobody = await refuses(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាដែលមិនមាន" }] });
+        expect(res.status).toBe(400);
+        expect(said(res)).toEqual(said(nobody));
+        expect(res.body.fields).toEqual([{ field: "curriculums", message: "One or more of those curriculums doesn't exist." }]);
+      };
+      it("an owned curriculum and an unowned namesake: the owner's is the one meant (200), and the learner is enrolled on it alone", async () => {
+        // (listed before the owner's, so that taking the first row found would be the wrong one)
+        db.tables.curriculums.unshift({ curriculumid: uuid(305), curriculumname: "ភាសាខ្មែរ ក", organisationid: null, curriculumstatus: true, isdeleted: false });
+        await send(NOT_ACTING, "put", "/student/update", { students: [ownRow()] }).expect(200);
+        expect(curriculumsOf(STU_X)).toEqual([CUR_X]);
+      });
+      it("a name the owner has not got but exactly one unowned curriculum has: the unowned one (200)", async () => {
+        unowned(306, "មិនទាន់មានម្ចាស់");
+        await send(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "មិនទាន់មានម្ចាស់" }] }).expect(200);
+        expect(curriculumsOf(STU_X)).toEqual([uuid(306)]);
+      });
+      it("one name of each kind: both resolve (200), each once", async () => {
+        unowned(306, "មិនទាន់មានម្ចាស់");
+        await send(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ ក/មិនទាន់មានម្ចាស់" }] }).expect(200);
+        expect([...(curriculumsOf(STU_X) as string[])].sort()).toEqual([CUR_X, uuid(306)].sort());
+      });
+      it("the same name twice in one row is one curriculum (200, one id)", async () => {
+        await send(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ ក/ភាសាខ្មែរ ក" }] }).expect(200);
+        expect(curriculumsOf(STU_X)).toEqual([CUR_X]);
+      });
+            it("a name written twice with a different case or spacing is still one curriculum (200, one id)", async () => {
+        db.add("curriculums", { curriculumid: uuid(308), curriculumname: "math", organisationid: X, curriculumstatus: true });
+        await send(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "Math/ MATH " }] }).expect(200);
+        expect(curriculumsOf(STU_X)).toEqual([uuid(308)]);
+      });
+      it("two unowned curriculums of a name the owner has not got: ambiguous, the same 400", async () => {
+        unowned(306, "មិនទាន់មានម្ចាស់");
+        unowned(307, "មិនទាន់មានម្ចាស់");
+        await refusedAs([{ ...ownRow(), curriculums: "មិនទាន់មានម្ចាស់" }]);
+      });
+      it("a school with no owner: a name only X holds is not found (the same 400), and a single unowned one is", async () => {
+        await refusedAs([rowFor(STU_U, USR_U, "learneru", NAME_U, "ភាសាខ្មែរ ក", "ថ្នាក់ទី៣")]);
+        unowned(306, "មិនទាន់មានម្ចាស់");
+        await send(NOT_ACTING, "put", "/student/update", { students: [rowFor(STU_U, USR_U, "learneru", NAME_U, "មិនទាន់មានម្ចាស់", "ថ្នាក់ទី៣")] }).expect(200);
+        expect(curriculumsOf(STU_U)).toEqual([uuid(306)]);
+      });
+      it("names are compared as text is everywhere (trim, NFC, lower-case): the owner's 'math' is the one a file's ' Math ' means, not an unowned 'Math'", async () => {
+        db.add("curriculums", { curriculumid: uuid(308), curriculumname: "math", organisationid: X, curriculumstatus: true });
+        unowned(309, "Math");
+        await send(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: " Math " }] }).expect(200);
+        expect(curriculumsOf(STU_X)).toEqual([uuid(308)]);
+      });
+      it("two of the owner's curriculums differ only in case: ambiguous, the same 400", async () => {
+        db.add("curriculums", { curriculumid: uuid(308), curriculumname: "math", organisationid: X, curriculumstatus: true });
+        db.add("curriculums", { curriculumid: uuid(310), curriculumname: "MATH", organisationid: X, curriculumstatus: true });
+        await refusedAs([{ ...ownRow(), curriculums: "Math" }]);
+      });
+      it("one name that resolves and one that does not: the same 400, and nothing is written", async () => {
+        await refusedAs([{ ...ownRow(), curriculums: "ភាសាខ្មែរ ក/ភាសាដែលមិនមាន" }]);
+        expect(curriculumsOf(STU_X)).toEqual([CUR_X]);
+      });
+      it("a name that neither the owner nor anyone else holds, and one only Y holds, are the same 400, nothing written", async () => {
+        await refusedAs([{ ...ownRow(), curriculums: "ភាសាខ្មែរ ខ" }]);
+      });
+    });
+    it.each(IN_X)("%s: a curriculum name only Y holds is the same refusal as a name nobody holds, nothing written", async (who) => {
+      const onlyY = await refuses(who, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ ខ" }] });
+      const nobody = await refuses(who, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាដែលមិនមាន" }] });
+      expect(onlyY.status).toBe(400);
+      expect(said(onlyY)).toEqual(said(nobody));
+      expect(onlyY.body.fields).toEqual([{ field: "curriculums", message: "One or more of those curriculums doesn't exist." }]);
+    });
     it.each(IN_X)("%s: edits X's learner", async (who) => {
       await send(who, "put", "/student/update", { students: [ownRow()] }).expect(200);
       expect(firstName(STU_X)).toBe("ឈ្មោះថ្មី");

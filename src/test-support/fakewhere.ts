@@ -18,6 +18,10 @@ const equal = (a: unknown, b: unknown, ignoreCase = false) =>
   ignoreCase && typeof a === "string" && typeof b === "string" ? a.toLowerCase() === b.toLowerCase() : (flag(a) ?? null) === (flag(b) ?? null);
 
 const matchesValue = (actual: unknown, expected: unknown, ignoreCase = false): boolean => {
+  // an array is the set the value must be one of, as Sequelize reads `{ column: [..] }`
+  if (Array.isArray(expected)) {
+    return expected.some((v) => equal(v, actual, ignoreCase));
+  }
   if (expected !== null && typeof expected === "object" && !Array.isArray(expected)) {
     const symbols = Object.getOwnPropertySymbols(expected);
     if (symbols.length > 0) {

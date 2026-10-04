@@ -11,8 +11,16 @@ import {
   levelsAttributes,
 } from "../models/data-models/init-models";
 import { buildWhere } from "../services/util.service";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedLevel } from "./content-scope";
 
+/**
+ * Built with the caller's context, every read and write here is limited to the levels in scope (a level of another
+ * organisation is reported exactly as an absent one); built without one it is unscoped (the sync payloads).
+ */
 export class LevelBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   createLevel = async (level: levelsAttributes, user: any) => {
     level.levelid = uuidv4();
     level.isdeleted = false;
@@ -23,6 +31,9 @@ export class LevelBusiness {
     return lvl;
   };
   getLevelbyid = async (levelid: string) => {
+    if (this.org) {
+      await findOwnedLevel(this.org, levelid, { where: { isdeleted: false } });
+    }
     grades.belongsTo(levels, {
       foreignKey: "gradeid",
     });
@@ -57,17 +68,19 @@ export class LevelBusiness {
       : null;
   };
   getLevelid = async (levelid: string) =>
-    levels.findOne({
-      where: { levelid, isdeleted: false },
-    });
+    this.org
+      ? findOwnedLevel(this.org, levelid, { where: { isdeleted: false } })
+      : levels.findOne({
+          where: { levelid, isdeleted: false },
+        });
   getLevelByGradeId = async (grades: Array<string>) =>
     levels.findAll({
-      where: {
+      where: await andScope(this.org, "level", {
         gradeid: {
           [Op.in]: grades,
         },
         isdeleted: false,
-      },
+      }),
     });
   getLevelall = async (paging: IPaging) => {
     grades.belongsTo(levels, {
@@ -87,6 +100,7 @@ export class LevelBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     where = { ...buildWhere<levelsAttributes>(paging, where) };
+    where = await andScope(this.org, "level", where);
     const data = await levels.findAndCountAll({
       where,
       order,
@@ -133,7 +147,7 @@ export class LevelBusiness {
     };
     const order = ["levelname"];
 
-    return await levels.findAll({ where, order });
+    return await levels.findAll({ where: await andScope(this.org, "level", where), order });
   };
   getLevelsWithFilter = async (gradeid: string, levelname: string) => {
     const where: WhereOptions<levelsAttributes> = {
@@ -148,7 +162,7 @@ export class LevelBusiness {
     }  
     const order = ["levelname"];
 
-    return await levels.findAll({ where, order });
+    return await levels.findAll({ where: await andScope(this.org, "level", where), order });
   };
   getLevelname = (levelname: string) =>
     levels.findOne({
@@ -233,7 +247,7 @@ export class LevelBusiness {
         },
       };
     }
-    const tempdt = await levels.count({ where });
+    const tempdt = await levels.count({ where: await andScope(this.org, "level", where) });
     return tempdt > 0;
   };
 
@@ -242,7 +256,7 @@ export class LevelBusiness {
       levelid,
       isdeleted: false,
     };
-    const tempdt = await levels.count({ where });
+    const tempdt = await levels.count({ where: await andScope(this.org, "level", where) });
     return tempdt > 0;
   };
 

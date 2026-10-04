@@ -227,14 +227,14 @@ describe("classes, grades and curricula filtered by school", () => {
   it("grade and curriculum routes resolve a name once, by the same rule", async () => {
     const one = jest.spyOn(students, "findOne").mockResolvedValue(null as never);
     jest.spyOn(grades, "findAll").mockResolvedValue([] as never);
-    await new GradeController().getAllGrades("", "", "student-1", "", "sample school", "");
+    await new GradeController().getAllGrades("", "", "student-1", "", "sample school", "", PLATFORM);
     expect(whereOf(one).schoolid).toBe("id-sample");
-    await expect(new GradeController().getAllGrades("", "", "s", "", "សាលាគរូ", "")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new GradeController().getAllGrades("", "", "s", "", "សាលាគរូ", "", PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
 
     jest.spyOn(curriculums, "findAll").mockResolvedValue([] as never);
-    await new CurriculumController().getAllCurriculums("", "", "", "sample school", "");
+    await new CurriculumController().getAllCurriculums("", "", "", "sample school", "", PLATFORM);
     expect(schools.findOne).toHaveBeenCalledWith(expect.objectContaining({ where: { schoolid: "id-sample" } }));
-    await expect(new CurriculumController().getAllCurriculums("", "", "", "Nowhere", "")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new CurriculumController().getAllCurriculums("", "", "", "Nowhere", "", PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("curricula: the school is looked up by id", async () => {

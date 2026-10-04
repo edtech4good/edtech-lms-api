@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ValidationError, ValidationErrorItem } from 'joi';
 import { QuestionTagBusiness } from 'src/business';
+import { nameScope, requestScope } from "src/business/content-scope";
+import { ownerOfQuestionTag } from "src/business/content-owner";
 import { IRequest } from 'src/models/IRequest';
 
 export const CreateQuestionTag = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new QuestionTagBusiness().isexistsquestionTagName({ questiontagname: data.questiontagname, questiontagid: "", isdeleted: false });
+  const tagexists = await new QuestionTagBusiness(requestScope(request)).isexistsquestionTagName({ questiontagname: data.questiontagname, questiontagid: "", isdeleted: false });
   if (tagexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -21,7 +23,7 @@ export const CreateQuestionTag = async (request: IRequest, data: any): Promise<A
 };
 
 export const EditQuestionTag = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new QuestionTagBusiness().isexistsquestionTagID(data.questiontagid);
+  const tagexists = await new QuestionTagBusiness(requestScope(request)).isexistsquestionTagID(data.questiontagid);
   if (!tagexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -35,7 +37,7 @@ export const EditQuestionTag = async (request: IRequest, data: any): Promise<Arr
     return [error];
   }
   else {
-    const tagexistsnew = await new QuestionTagBusiness().isexistsquestionTagName({ questiontagname: data.questiontagname, questiontagid: data.questiontagid, isdeleted: false });
+    const tagexistsnew = await new QuestionTagBusiness(await nameScope(request, ownerOfQuestionTag, data.questiontagid)).isexistsquestionTagName({ questiontagname: data.questiontagname, questiontagid: data.questiontagid, isdeleted: false });
     if (tagexistsnew) {
       const error = new ValidationError('Validation', [], {});
       error.details = [];
@@ -52,7 +54,7 @@ export const EditQuestionTag = async (request: IRequest, data: any): Promise<Arr
   return [];
 };
 export const DeleteQuestionTag = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new QuestionTagBusiness().isexistsquestionTagID(data.questiontagid);
+  const tagexists = await new QuestionTagBusiness(requestScope(request)).isexistsquestionTagID(data.questiontagid);
   if (!tagexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];

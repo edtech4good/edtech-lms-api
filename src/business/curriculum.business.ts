@@ -23,8 +23,18 @@ import {
 import { buildWhere } from "./../services/util.service";
 import { subjects } from "src/models/data-models/subjects";
 import { studentApiAttributes } from "./student-api-payload";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedCurriculum } from "./content-scope";
+import { andInOwnedSchools } from "./school-scope";
 
+/**
+ * Built with the caller's context, every read and write here is limited to the curriculums in scope (a curriculum
+ * of another organisation is reported exactly as an absent one); built without one it is unscoped, as the sync
+ * payloads and other server-side readers use it.
+ */
 export class CurriculumBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   createCurriculum = async (curriculum: curriculumsAttributes, user: LmsUserToken) => {
     curriculum.curriculumid = uuidv4();
     curriculum.isdeleted = false;
@@ -33,6 +43,10 @@ export class CurriculumBusiness {
     return await curriculums.create(curriculum);
   };
   getCurriculumbyid = async (curriculumid: string) => {
+    if (this.org) {
+      // in scope or the 404 an absent curriculum gets, before anything about it is read
+      await findOwnedCurriculum(this.org, curriculumid, { where: { isdeleted: false } });
+    }
     const curriculumcountries = await curriculumcountry.findAll({
       attributes: ['countryid'],
       where: {
@@ -55,6 +69,7 @@ export class CurriculumBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     where = { ...buildWhere<curriculumsAttributes>(paging, where) };
+    where = await andScope(this.org, "curriculum", where);
     const curs = await curriculums.findAndCountAll({ where, order, limit, offset });
     const curcts = await curriculumcountry.findAll();
     for await (const cur of curs.rows) {
@@ -85,7 +100,7 @@ export class CurriculumBusiness {
     };
     const order = ["curriculumname"];
 
-    return await curriculums.findAll({ where, order });
+    return await curriculums.findAll({ where: await andScope(this.org, "curriculum", where), order });
   };
   /** The same rows for a payload that goes to the student API: without the columns it does not have (see student-api-payload.ts). */
   getCurriculumsForStudentApi = async () => {
@@ -109,7 +124,8 @@ export class CurriculumBusiness {
       if(studentid) wherestd.studentid = studentid;
       if(standardid) wherestd.standard = standardid;
       const std = await students.findOne({
-        where: wherestd, attributes: ['studentid','curriculumids'],
+        // a learner of another organisation is not found, as an absent one is not
+        where: this.org ? await andInOwnedSchools(wherestd, this.org) : wherestd, attributes: ['studentid','curriculumids'],
       });
       if(std) where.curriculumid = {
         [Op.in]: std.curriculumids ?? []
@@ -127,7 +143,7 @@ export class CurriculumBusiness {
     }
     const order = ["curriculumname"];
 
-    return await curriculums.findAll({ where, order });
+    return await curriculums.findAll({ where: await andScope(this.org, "curriculum", where), order });
   };
   getCurriculumname = (curriculumname: string) =>
     curriculums.findOne({ where: { curriculumname, isdeleted: false } });
@@ -200,7 +216,7 @@ export class CurriculumBusiness {
         },
       };
     }
-    const tempdt = await curriculums.count({ where });
+    const tempdt = await curriculums.count({ where: await andScope(this.org, "curriculum", where) });
     return tempdt > 0;
   };
 
@@ -209,7 +225,7 @@ export class CurriculumBusiness {
       curriculumid,
       isdeleted: false,
     };
-    const tempdt = await curriculums.count({ where });
+    const tempdt = await curriculums.count({ where: await andScope(this.org, "curriculum", where) });
     return tempdt > 0;
   };
 
@@ -312,7 +328,7 @@ export class CurriculumBusiness {
     return null;
   };
 
-  getDocuments = async (curriculumid: string) => {
+  async getDocuments(curriculumid: string) {
     const qb = new QuestionBusiness();
     const map: {
       grades: Array<{
@@ -389,7 +405,7 @@ export class CurriculumBusiness {
     await Promise.all(fc);
 
     return uniq(files);
-  };
+  }
 
   createcurriculumcountry = async (countryid: Array<string>, curriculumid: string, curriculumcountryid?: string) => {
     const cts = await countries.findAll({
@@ -447,7 +463,9 @@ export class CurriculumBusiness {
       }
     })
     const curriculumids = curriculumcountries.map(curt => curt.curriculumid);
-    let curs = await curriculums.findAll({ where: { curriculumid: curriculumids, isdeleted: false } });
+    let curs = await curriculums.findAll({
+      where: await andScope(this.org, "curriculum", { curriculumid: curriculumids, isdeleted: false }),
+    });
     if (!getBaseline) {
       curs = curs.filter(cur => !cur.curriculumname.includes('Baseline') && !cur.curriculumname.includes('baseline'))
     }

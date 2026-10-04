@@ -19,8 +19,17 @@ import { LessonLearningBusiness } from "./lessonlearning.business";
 import { LessonPracticeBusiness } from "./lessonpractice.business";
 import { LessonQuizBusiness } from "./lessonquiz.business";
 import { LevelBusiness } from "./level.business";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedLesson } from "./content-scope";
 
+/**
+ * Built with the caller's context, every read and write here is limited to the lessons in scope (a lesson of another
+ * organisation is reported exactly as an absent one); built without one it is unscoped (the sync payloads, and the
+ * recompute of a lesson's points, which only ever runs on a lesson that was found in scope).
+ */
 export class LessonBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   createLesson = async (lesson: lessonsAttributes, user: any) => {
     lesson.lessonid = uuidv4();
     lesson.isdeleted = false;
@@ -31,6 +40,9 @@ export class LessonBusiness {
     return ls;
   };
   getLessonbyid = async (lessonid: string) => {
+    if (this.org) {
+      await findOwnedLesson(this.org, lessonid, { where: { isdeleted: false } });
+    }
     levels.belongsTo(lessons, {
       foreignKey: "levelid",
     });
@@ -66,17 +78,19 @@ export class LessonBusiness {
       : null;
   };
   getLessonid = async (lessonid: string) =>
-    lessons.findOne({
-      where: { lessonid, isdeleted: false },
-    });
+    this.org
+      ? findOwnedLesson(this.org, lessonid, { where: { isdeleted: false } })
+      : lessons.findOne({
+          where: { lessonid, isdeleted: false },
+        });
   getLessonByLevelID = async (levels: Array<string>) =>
     lessons.findAll({
-      where: {
+      where: await andScope(this.org, "lesson", {
         levelid: {
           [Op.in]: levels,
         },
         isdeleted: false,
-      },
+      }),
     });
   getLessonall = async (paging: IPaging) => {
     levels.belongsTo(lessons, {
@@ -96,6 +110,7 @@ export class LessonBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     where = { ...buildWhere<lessonsAttributes>(paging, where) };
+    where = await andScope(this.org, "lesson", where);
     const data = await lessons.findAndCountAll({
       where,
       order,
@@ -143,7 +158,7 @@ export class LessonBusiness {
     };
     const order = ["lessonname"];
 
-    return await lessons.findAll({ where, order });
+    return await lessons.findAll({ where: await andScope(this.org, "lesson", where), order });
   };
   getLessonsWithFilter = async (levelid: string, lessonname: string) => {
     const where: WhereOptions<lessonsAttributes> = {
@@ -158,7 +173,7 @@ export class LessonBusiness {
     }  
     const order = ["lessonname"];
 
-    return await lessons.findAll({ where, order });
+    return await lessons.findAll({ where: await andScope(this.org, "lesson", where), order });
   };
 
   getLessonname = (lessonname: string) =>
@@ -243,7 +258,7 @@ export class LessonBusiness {
         },
       };
     }
-    const tempdt = await lessons.count({ where });
+    const tempdt = await lessons.count({ where: await andScope(this.org, "lesson", where) });
     return tempdt > 0;
   };
 
@@ -252,7 +267,7 @@ export class LessonBusiness {
       lessonid,
       isdeleted: false,
     };
-    const tempdt = await lessons.count({ where });
+    const tempdt = await lessons.count({ where: await andScope(this.org, "lesson", where) });
     return tempdt > 0;
   };
 

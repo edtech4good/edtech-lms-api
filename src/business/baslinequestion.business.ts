@@ -4,8 +4,16 @@ import { baselinequestion, baselinequestionAttributes } from "src/models/data-mo
 import { questions } from "src/models/data-models/questions";
 import { LmsUserToken } from "src/models/token.model";
 import { v4 as uuidv4 } from 'uuid';
+import { OrgContext } from 'src/decorators/org.decorator';
+import { andScope, findOwnedBaselineQuestion } from './content-scope';
 
+/**
+ * Built with the caller's context, every read and write here is limited to the baseline questions in scope (a row
+ * of another organisation is reported exactly as an absent one); built without one it is unscoped (the sync payloads).
+ */
 export class BaselineQuestionBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
 
   async create(baselinequestions: baselinequestionAttributes,user: LmsUserToken ){
     baselinequestions.baselinequestionid = uuidv4();
@@ -20,8 +28,8 @@ export class BaselineQuestionBusiness {
     const where: WhereOptions<baselinequestionAttributes> = {
       isdeleted: false,
     };
-    const order = ['baselinequestionstatus'];
-    return await baselinequestion.findAll({where, order});
+        const order = ['baselinequestionstatus'];
+    return await baselinequestion.findAll({ where: await andScope(this.org, "baselinequestion", where), order });
   }
 
   getCurriculumBaseLineQuestionDuplicate = async (clonecurriculumbaselineid: string) => {
@@ -29,7 +37,7 @@ export class BaselineQuestionBusiness {
       curriculumbaselineid:clonecurriculumbaselineid,
       isdeleted: false,
     };
-    const temp = await baselinequestion.count({where});
+        const temp = await baselinequestion.count({ where: await andScope(this.org, "baselinequestion", where) });
     return temp > 0;
   };
 
@@ -38,7 +46,7 @@ export class BaselineQuestionBusiness {
       curriculumbaselineid:curriculumbaselineid,
       isdeleted: false,
     };
-    const temp = await baselinequestion.count({where});
+        const temp = await baselinequestion.count({ where: await andScope(this.org, "baselinequestion", where) });
     return temp > 0;
   };
 
@@ -48,7 +56,7 @@ export class BaselineQuestionBusiness {
       curriculumbaselineid,
       isdeleted: false,
     }
-    const temps = await baselinequestion.findAll({where})
+    const temps = await baselinequestion.findAll({ where: await andScope(this.org, "baselinequestion", where) })
 
     for(const temp of temps) {
       if(temp){
@@ -66,7 +74,9 @@ export class BaselineQuestionBusiness {
   }
 
   async getBaselineQuestionid(baselinequestionid: string){
-    return await baselinequestion.findOne({where: {baselinequestionid, isdeleted: false}})
+    return this.org
+      ? await findOwnedBaselineQuestion(this.org, baselinequestionid, { where: { isdeleted: false } })
+      : await baselinequestion.findOne({where: {baselinequestionid, isdeleted: false}})
   }
 
   async isBaselineQuestionexit(baselinequestionid: string){
@@ -74,7 +84,7 @@ export class BaselineQuestionBusiness {
       baselinequestionid: baselinequestionid,
       isdeleted: false,
     }
-    const found = await baselinequestion.count({where});
+    const found = await baselinequestion.count({ where: await andScope(this.org, "baselinequestion", where) });
     return found > 0;
   }
 
@@ -90,7 +100,7 @@ export class BaselineQuestionBusiness {
             }
         }
     }
-    const tempdt = await baselinequestion.count({ where });
+    const tempdt = await baselinequestion.count({ where: await andScope(this.org, "baselinequestion", where) });
     return tempdt > 0;
 };
   
@@ -115,7 +125,7 @@ export class BaselineQuestionBusiness {
         sourceKey: 'questionid',
     });
     const data = await baselinequestion.findAll({ 
-      where,
+      where: await andScope(this.org, "baselinequestion", where),
       include: [
         {
           model: curriculumbaseline,
@@ -147,7 +157,9 @@ export class BaselineQuestionBusiness {
       isdeleted: false,
       baselinequestionid,
     }
-    const temp = await baselinequestion.findOne({ where });
+    const temp = this.org
+      ? await findOwnedBaselineQuestion(this.org, baselinequestionid, { where: { isdeleted: false } })
+      : await baselinequestion.findOne({ where });
     if(temp){
       temp.baselinequestionstatus = true;
       await temp.save({
@@ -164,7 +176,9 @@ export class BaselineQuestionBusiness {
       isdeleted: false,
       baselinequestionid,
     }
-    const temp = await baselinequestion.findOne({ where });
+    const temp = this.org
+      ? await findOwnedBaselineQuestion(this.org, baselinequestionid, { where: { isdeleted: false } })
+      : await baselinequestion.findOne({ where });
     if(temp){
       temp.baselinequestionstatus = false;
       await temp.save({
@@ -192,7 +206,9 @@ export class BaselineQuestionBusiness {
       baselinequestionid,
       isdeleted: false
     }
-    const found = await baselinequestion.findOne({where});
+    const found = this.org
+      ? await findOwnedBaselineQuestion(this.org, baselinequestionid, { where: { isdeleted: false } })
+      : await baselinequestion.findOne({where});
     if(found){
       found.isdeleted = true;
       found.deleted_at = new Date;
@@ -209,7 +225,7 @@ export class BaselineQuestionBusiness {
       curriculumbaselineid,
       isdeleted: false,
     }
-    const found = await baselinequestion.findAll({where});
+    const found = await baselinequestion.findAll({ where: await andScope(this.org, "baselinequestion", where) });
     if(found){
       for(const temp of found){
         temp.isdeleted = true;

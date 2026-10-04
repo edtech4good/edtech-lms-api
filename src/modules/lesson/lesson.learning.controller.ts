@@ -24,6 +24,8 @@ import { LessonLearningsUpdate } from "./models/LessonLearningsUpdate";
 import { LessonResponse } from './models/LessonResponse';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { assertSameOwner, ownerOfDocument, ownerOfLearning, ownerOfLesson } from "src/business/content-owner";
+import { assertInScope, findOwnedDocument, findOwnedLesson } from "src/business/content-scope";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -33,7 +35,7 @@ import { assertSameOwner, ownerOfDocument, ownerOfLearning, ownerOfLesson } from
 @Controller('lesson/learning')
 @ApiBearerAuth()
 export class LessonLearningController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':lessonid')
   @ApiResponse({
     status: 200,
@@ -53,15 +55,15 @@ export class LessonLearningController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonid`, type: () => String, required: true })
-  async getlearning(@Param('lessonid') lessonid: string): Promise<LessonLearningsResponse> {
-    const data = await new LessonLearningBusiness().getLessonLearningbyLessonid(lessonid);
+  async getlearning(@Param('lessonid') lessonid: string, @Org() org: OrgContext): Promise<LessonLearningsResponse> {
+    const data = await new LessonLearningBusiness(org).getLessonLearningbyLessonid(lessonid);
     return {
       error: false,
       data: data ? data : undefined,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':lessonid/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -82,15 +84,15 @@ export class LessonLearningController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonid`, type: () => String, required: true })
   @ApiParam({ name: `lessonlearningid`, type: () => String, required: true })
-  async getlearningbyid(@Param('lessonlearningid') lessonlearningid: string): Promise<LessonLearningResponse> {
-    const data = await new LessonLearningBusiness().getLessonLearningbyid(lessonlearningid);
+  async getlearningbyid(@Param('lessonlearningid') lessonlearningid: string, @Org() org: OrgContext): Promise<LessonLearningResponse> {
+    const data = await new LessonLearningBusiness(org).getLessonLearningbyid(lessonlearningid);
     return {
       error: false,
       data: data ? data : undefined,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post(':lessonid')
   @ApiResponse({
     status: 200,
@@ -113,7 +115,10 @@ export class LessonLearningController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonid`, type: () => String, required: true })
-  async addlearning(@Param('lessonid') lessonid: string, @Body() lessonlearning: LessonLearningsCreate): Promise<ResponseBoolean> {
+  async addlearning(@Param('lessonid') lessonid: string, @Body() lessonlearning: LessonLearningsCreate, @Org() org: OrgContext): Promise<ResponseBoolean> {
+    // the lesson in the path and the document in the body are both the caller's, or not found (before anything is compared)
+    await findOwnedLesson(org, lessonid);
+    await findOwnedDocument(org, lessonlearning.documentid);
     assertSameOwner(await ownerOfLesson(lessonid), await ownerOfDocument(lessonlearning.documentid));
     await new LessonLearningBusiness().createLessonLearning({ ...lessonlearning, lessonid, lessonlearningid: "", lessonlearningstatus: true });
     return {
@@ -122,7 +127,7 @@ export class LessonLearningController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('activate/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -142,15 +147,15 @@ export class LessonLearningController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonlearningid`, type: () => String, required: true })
-  async activatelearning(@Param('lessonlearningid') lessonlearningid: string): Promise<ResponseBoolean> {
-    await new LessonLearningBusiness().activateLessonLearning(lessonlearningid);
+  async activatelearning(@Param('lessonlearningid') lessonlearningid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
+    await new LessonLearningBusiness(org).activateLessonLearning(lessonlearningid);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('deactivate/:lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -170,15 +175,15 @@ export class LessonLearningController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonlearningid`, type: () => String, required: true })
-  async deactivatelearning(@Param('lessonlearningid') lessonlearningid: string): Promise<ResponseBoolean> {
-    await new LessonLearningBusiness().deactivateLessonLearning(lessonlearningid);
+  async deactivatelearning(@Param('lessonlearningid') lessonlearningid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
+    await new LessonLearningBusiness(org).deactivateLessonLearning(lessonlearningid);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('order/:lessonlearningid/:lessonlearningorder')
   @ApiResponse({
     status: 200,
@@ -201,16 +206,17 @@ export class LessonLearningController {
   @ApiParam({ name: `lessonlearningorder`, type: () => Number, required: true })
   async orderlearning(
     @Param('lessonlearningid') lessonlearningid: string,
-    @Param('lessonlearningorder') lessonlearningorder: number
+    @Param('lessonlearningorder') lessonlearningorder: number,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonLearningBusiness().updateorderLessonLearning(lessonlearningid, lessonlearningorder);
+    await new LessonLearningBusiness(org).updateorderLessonLearning(lessonlearningid, lessonlearningorder);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(':lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -232,17 +238,21 @@ export class LessonLearningController {
   @ApiParam({ name: `lessonlearningid`, type: () => String, required: true })
   async updatelearning(
     @Param('lessonlearningid') lessonlearningid: string,
-    @Body() lessonlearning: LessonLearningsUpdate
+    @Body() lessonlearning: LessonLearningsUpdate,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
+    // the learning in the path and the document in the body are both the caller's, or not found (before anything is compared)
+    await assertInScope(org, "learning", lessonlearningid);
+    await findOwnedDocument(org, lessonlearning.documentid);
     assertSameOwner(await ownerOfLearning(lessonlearningid), await ownerOfDocument(lessonlearning.documentid));
-    await new LessonLearningBusiness().updateLessonLearning(lessonlearningid, { ...lessonlearning, lessonlearningid, lessonlearningstatus: true, lessonlearningorder: 0 });
+    await new LessonLearningBusiness(org).updateLessonLearning(lessonlearningid, { ...lessonlearning, lessonlearningid, lessonlearningstatus: true, lessonlearningorder: 0 });
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -262,8 +272,8 @@ export class LessonLearningController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonlearningid`, type: () => String, required: true })
-  async deletelearning(@Param('lessonlearningid') lessonlearningid: string): Promise<ResponseBoolean> {
-    await new LessonLearningBusiness().deleteLessonLearning(lessonlearningid);
+  async deletelearning(@Param('lessonlearningid') lessonlearningid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
+    await new LessonLearningBusiness(org).deleteLessonLearning(lessonlearningid);
     return {
       error: false,
       data: true,

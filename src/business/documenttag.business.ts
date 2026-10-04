@@ -8,8 +8,16 @@ import {
   documenttags,
   documenttagsAttributes,
 } from "../models/data-models/init-models";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedDocumentTag } from "./content-scope";
 
+/**
+ * Built with the caller's context, every read and write here is limited to the rows in scope (a row of another
+ * organisation is reported exactly as an absent one); built without one it is unscoped (the sync payloads).
+ */
 export class DocumentTagBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   createdocumentTag = async (documenttag: documenttagsAttributes, user: LmsUserToken) => {
     documenttag.documenttagid = uuidv4();
     documenttag.isdeleted = false;
@@ -20,7 +28,9 @@ export class DocumentTagBusiness {
     return await documenttags.create(documenttag);
   };
   getdocumentTagbyid = (documenttagid: string) =>
-    documenttags.findOne({ where: { documenttagid, isdeleted: false } });
+    this.org
+      ? findOwnedDocumentTag(this.org, documenttagid, { where: { isdeleted: false } })
+      : documenttags.findOne({ where: { documenttagid, isdeleted: false } });
   getdocumentTagall = async (paging: IPaging) => {
     let where: WhereOptions<documenttagsAttributes> = {
       isdeleted: false,
@@ -33,6 +43,7 @@ export class DocumentTagBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     where = { ...buildWhere<documenttagsAttributes>(paging, where) };
+    where = await andScope(this.org, "documenttag", where);
 
     return await documenttags.findAndCountAll({ where, order, limit, offset });
   };
@@ -73,7 +84,7 @@ export class DocumentTagBusiness {
         [Op.not]: documenttag.documenttagid,
       };
     }
-    const tempdt = await documenttags.count({ where });
+    const tempdt = await documenttags.count({ where: await andScope(this.org, "documenttag", where) });
     return tempdt > 0;
   };
 
@@ -82,7 +93,7 @@ export class DocumentTagBusiness {
       documenttagid,
       isdeleted: false,
     };
-    const tempdt = await documenttags.count({ where });
+    const tempdt = await documenttags.count({ where: await andScope(this.org, "documenttag", where) });
     return tempdt > 0;
   };
 }

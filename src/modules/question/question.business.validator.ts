@@ -2,10 +2,12 @@
 import { ValidationError, ValidationErrorItem } from 'joi';
 import { QuestionBusiness } from 'src/business';
 import { questionsAttributes } from 'src/models/data-models/init-models';
+import { nameScope, requestScope } from "src/business/content-scope";
+import { ownerOfQuestion } from "src/business/content-owner";
 import { IRequest } from 'src/models/IRequest';
 
 export const CreateQuestion = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new QuestionBusiness().isexistsquestionIdentifier(<questionsAttributes>{ questionidentifier: data.questionidentifier, questionid: "", isdeleted: false });
+  const tagexists = await new QuestionBusiness(requestScope(request)).isexistsquestionIdentifier(<questionsAttributes>{ questionidentifier: data.questionidentifier, questionid: "", isdeleted: false });
   if (tagexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -22,7 +24,7 @@ export const CreateQuestion = async (request: IRequest, data: any): Promise<Arra
 };
 
 export const EditQuestion = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new QuestionBusiness().isexistsquestionID(data.questionid);
+  const tagexists = await new QuestionBusiness(requestScope(request)).isexistsquestionID(data.questionid);
   if (!tagexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -36,7 +38,7 @@ export const EditQuestion = async (request: IRequest, data: any): Promise<Array<
     return [error];
   }
   else {
-    const tagexistsnew = await new QuestionBusiness().isexistsquestionIdentifier(<questionsAttributes>{
+    const tagexistsnew = await new QuestionBusiness(await nameScope(request, ownerOfQuestion, data.questionid)).isexistsquestionIdentifier(<questionsAttributes>{
       questionidentifier: data.questionidentifier, questionid: data.questionid
     });
     if (tagexistsnew) {
@@ -55,7 +57,7 @@ export const EditQuestion = async (request: IRequest, data: any): Promise<Array<
   return [];
 };
 export const DeleteQuestion = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new QuestionBusiness().isexistsquestionID(data.questionid);
+  const tagexists = await new QuestionBusiness(requestScope(request)).isexistsquestionID(data.questionid);
   if (!tagexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];

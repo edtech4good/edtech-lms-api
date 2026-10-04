@@ -19,6 +19,8 @@ import { LessonQuizQuestionBase, LessonQuizQuestionsResponse } from './models/Le
 import { LessonResponse } from './models/LessonResponse';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { assertSameOwner, ownerOfQuestion, ownerOfQuiz } from "src/business/content-owner";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { findOwnedQuestion, findOwnedQuiz } from "src/business/content-scope";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -28,7 +30,7 @@ import { assertSameOwner, ownerOfQuestion, ownerOfQuiz } from "src/business/cont
 @Controller('lesson/quiz/question')
 @ApiBearerAuth()
 export class LessonQuizQuestionController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(':lessonquizid')
   @ApiResponse({
     status: 200,
@@ -48,15 +50,15 @@ export class LessonQuizQuestionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonquizid`, type: () => String, required: true })
-  async getquizquestion(@Param('lessonquizid') lessonquizid: string): Promise<LessonQuizQuestionsResponse> {
-    const data = await new LessonQuizQuestionBusiness().getLessonQuizQuestionbyLessonid(lessonquizid);
+  async getquizquestion(@Param('lessonquizid') lessonquizid: string, @Org() org: OrgContext): Promise<LessonQuizQuestionsResponse> {
+    const data = await new LessonQuizQuestionBusiness(org).getLessonQuizQuestionbyLessonid(lessonquizid);
     return {
       error: false,
       data: data ? data : undefined
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post(':lessonquizid/:questionid/:lessonquizquestionorder')
   @ApiResponse({
     status: 200,
@@ -80,10 +82,14 @@ export class LessonQuizQuestionController {
   @ApiParam({ name: `lessonquizquestionorder`, type: () => Number, required: true })
   async addquizquestion(@Param('lessonquizid') lessonquizid: string,
     @Param('questionid') questionid: string,
-    @Param('lessonquizquestionorder') lessonquizquestionorder: number
+    @Param('lessonquizquestionorder') lessonquizquestionorder: number,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
+    // the quiz and the question in the path are both the caller's, or not found (before anything is compared)
+    await findOwnedQuiz(org, lessonquizid);
+    await findOwnedQuestion(org, questionid);
     assertSameOwner(await ownerOfQuiz(lessonquizid), await ownerOfQuestion(questionid));
-    await new LessonQuizQuestionBusiness().createLessonQuizQuestion(<lessonquizquestionsAttributes>{
+    await new LessonQuizQuestionBusiness(org).createLessonQuizQuestion(<lessonquizquestionsAttributes>{
       lessonquizid,
       lessonquizquestionstatus: false,
       lessonquizquestionid: "",
@@ -96,7 +102,7 @@ export class LessonQuizQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('activate/:lessonquizquestionid')
   @ApiResponse({
     status: 200,
@@ -116,15 +122,15 @@ export class LessonQuizQuestionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonquizquestionid`, type: () => String, required: true })
-  async activatequizquestion(@Param('lessonquizquestionid') lessonquizquestionid: string): Promise<ResponseBoolean> {
-    await new LessonQuizQuestionBusiness().activateLessonQuizQuestion(lessonquizquestionid);
+  async activatequizquestion(@Param('lessonquizquestionid') lessonquizquestionid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
+    await new LessonQuizQuestionBusiness(org).activateLessonQuizQuestion(lessonquizquestionid);
     return {
       error: false,
       data: true
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('deactivate/:lessonquizquestionid')
   @ApiResponse({
     status: 200,
@@ -144,15 +150,15 @@ export class LessonQuizQuestionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonquizquestionid`, type: () => String, required: true })
-  async deactivatequizquestion(@Param('lessonquizquestionid') lessonquizquestionid: string): Promise<ResponseBoolean> {
-    await new LessonQuizQuestionBusiness().deactivateLessonQuizQuestion(lessonquizquestionid);
+  async deactivatequizquestion(@Param('lessonquizquestionid') lessonquizquestionid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
+    await new LessonQuizQuestionBusiness(org).deactivateLessonQuizQuestion(lessonquizquestionid);
     return {
       error: false,
       data: true
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put('order/:lessonquizquestionid/:lessonquizquestionorder')
   @ApiResponse({
     status: 200,
@@ -174,9 +180,10 @@ export class LessonQuizQuestionController {
   @ApiParam({ name: `lessonquizquestionid`, type: () => String, required: true })
   @ApiParam({ name: `lessonquizquestionorder`, type: () => Number, required: true })
   async orderquizquestion(@Param('lessonquizquestionid') lessonquizquestionid: string,
-    @Param('lessonquizquestionorder') lessonquizquestionorder: number
+    @Param('lessonquizquestionorder') lessonquizquestionorder: number,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonQuizQuestionBusiness().updateorderLessonQuizQuestion(
+    await new LessonQuizQuestionBusiness(org).updateorderLessonQuizQuestion(
       lessonquizquestionid,
       lessonquizquestionorder);
     return {
@@ -185,7 +192,7 @@ export class LessonQuizQuestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(':lessonquizquestionid')
   @ApiResponse({
     status: 200,
@@ -205,8 +212,8 @@ export class LessonQuizQuestionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonquizquestionid`, type: () => String, required: true })
-  async deletequizquestion(@Param('lessonquizquestionid') lessonquizquestionid: string): Promise<ResponseBoolean> {
-    await new LessonQuizQuestionBusiness().deleteLessonQuizQuestion(lessonquizquestionid);
+  async deletequizquestion(@Param('lessonquizquestionid') lessonquizquestionid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
+    await new LessonQuizQuestionBusiness(org).deleteLessonQuizQuestion(lessonquizquestionid);
     return {
       error: false,
       data: true

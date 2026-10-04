@@ -101,11 +101,11 @@ describe("content writers set the owner from the caller's scope", () => {
       await post("/curriculum/create", "X's Admin", body({ organisationid: Y })).expect(400);
       db.nothingCreated();
     });
-    it("a subject of another organisation cannot be attached (400), nothing is written", async () => {
+    it("a subject of another organisation cannot be attached: it is not found (400, as one that is not there), nothing is written", async () => {
       db.tables.subjects.push({ subjectid: "33333333-3333-4333-8333-333333333333", organisationid: Y, isdeleted: false, subjectstatus: true });
       const res = await post("/curriculum/create", "X's Admin", body({ subjectid: "33333333-3333-4333-8333-333333333333" }));
       expect(res.status).toBe(400);
-      expect(res.body.errormessage).toBe("These belong to different organisations, so one can't be attached to the other.");
+      expect(res.body.fields).toEqual([{ field: "subjectid", message: "That subject doesn't exist." }]);
       db.nothingCreated();
     });
   });

@@ -20,7 +20,9 @@ import { Permission } from 'src/models/enums/permissions.enum';
 import { CheckPermissionsGuard } from 'src/guards/checkPermission.guard';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { assertSameOwner, ownerOfCurriculumBaseline, ownerOfQuestion } from "src/business/content-owner";
+import { findOwnedBaseline, findOwnedQuestion } from "src/business/content-scope";
 import { baselinequestion } from "src/models/data-models/baselinequestion";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 
 @ApiExtraModels(ResponseBoolean)
 @ApiExtraModels(BaselineQuestionBase)
@@ -32,7 +34,7 @@ import { baselinequestion } from "src/models/data-models/baselinequestion";
 @ApiBearerAuth()
 export class BaselinequestionController {
   
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
       status: 200,
@@ -57,9 +59,13 @@ export class BaselinequestionController {
   @HttpCode(HttpStatus.OK)
   async create(
       @Body() body: baselinequestionRequest,
-      @User() user: LmsUserToken
+      @User() user: LmsUserToken,
+      @Org() org: OrgContext
   ): Promise<BaselineQuestionCreateResponse> {
-      // The baseline is its curriculum's; the question must have the same owner.
+      // The baseline and the question are both the caller's, or not found (before any owner is compared). The baseline
+      // is its curriculum's; the question must have the same owner.
+      await findOwnedBaseline(org, body.curriculumbaselineid, { where: { isdeleted: false } });
+      await findOwnedQuestion(org, body.questionid);
       assertSameOwner(await ownerOfCurriculumBaseline(body.curriculumbaselineid), await ownerOfQuestion(body.questionid));
       const temp: baselinequestionAttributes = {
           curriculumbaselineid: body.curriculumbaselineid,
@@ -68,14 +74,14 @@ export class BaselinequestionController {
           isdeleted: false,
       };
   
-      const data = await new BaselineQuestionBusiness().create(temp, user);
+      const data = await new BaselineQuestionBusiness(org).create(temp, user);
       return {
           error: false,
           data: data ?? undefined,
       };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("clone")
   @ApiResponse({
       status: 200,
@@ -101,10 +107,14 @@ export class BaselinequestionController {
   @HttpCode(HttpStatus.OK)
   async clone(
       @Body() body: baselinequestioncloneRequest,
-      @User() user: LmsUserToken
+      @User() user: LmsUserToken,
+      @Org() org: OrgContext
   ): Promise<any> {
-      // The clone is the target baseline's: it takes the target curriculum's owner, so the source baseline's
-      // curriculum must have the same owner, and so must every question that is copied across.
+      // Both baselines are the caller's, or not found (before any owner is compared). The clone is the target
+      // baseline's: it takes the target curriculum's owner, so the source baseline's curriculum must have the same
+      // owner, and so must every question that is copied across.
+      await findOwnedBaseline(org, body.curriculumbaselineid, { where: { isdeleted: false } });
+      await findOwnedBaseline(org, body.clonecurriculumbaselineid, { where: { isdeleted: false } });
       const sourceOwner = await ownerOfCurriculumBaseline(body.curriculumbaselineid);
       const targetOwner = await ownerOfCurriculumBaseline(body.clonecurriculumbaselineid);
       assertSameOwner(sourceOwner, targetOwner);
@@ -114,7 +124,7 @@ export class BaselinequestionController {
       })) {
         if (row.questionid) assertSameOwner(targetOwner, await ownerOfQuestion(row.questionid));
       }
-      const data = await new BaselineQuestionBusiness().clone(
+      const data = await new BaselineQuestionBusiness(org).clone(
         body.curriculumbaselineid,
         body.clonecurriculumbaselineid,
         user
@@ -125,7 +135,7 @@ export class BaselinequestionController {
       };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:baselinequestionid")
   @ApiResponse({
     status: 200,
@@ -150,15 +160,16 @@ export class BaselinequestionController {
   @ApiParam({ name: `baselinequestionid`, type: "string", required: true })
   async activate(
     @Param("baselinequestionid") baselinequestionid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new BaselineQuestionBusiness().activate(baselinequestionid);
+    await new BaselineQuestionBusiness(org).activate(baselinequestionid);
     return {
       error: false,
       data: true,
     }
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:baselinequestionid")
   @ApiResponse({
     status: 200,
@@ -183,15 +194,16 @@ export class BaselinequestionController {
   @ApiParam({ name: `baselinequestionid`, type: "string", required: true })
   async deactivate(
     @Param("baselinequestionid") baselinequestionid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new BaselineQuestionBusiness().deactivate(baselinequestionid);
+    await new BaselineQuestionBusiness(org).deactivate(baselinequestionid);
     return {
       error: false,
       data: true,
     }
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("order/:baselinequestionid/:baselinequestionorder")
   @ApiResponse({
     status: 200,
@@ -221,9 +233,10 @@ export class BaselinequestionController {
   })
   async orderquizquestion(
     @Param("baselinequestionid") baselinequestionid: string,
-    @Param("baselinequestionorder") baselinequestionorder: number
+    @Param("baselinequestionorder") baselinequestionorder: number,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new BaselineQuestionBusiness().updateorderBaselineQuizQuestion(
+    await new BaselineQuestionBusiness(org).updateorderBaselineQuizQuestion(
       baselinequestionid,
       baselinequestionorder
     );
@@ -233,7 +246,7 @@ export class BaselinequestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":baselinequestionid")
   @ApiResponse({
     status: 200,
@@ -258,9 +271,10 @@ export class BaselinequestionController {
   @ApiParam({ name: `baselinequestionid`, type: () => String, required: true })
   async deletequizquestion(
     @Param("baselinequestionid") baselinequestionid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new BaselineQuestionBusiness().deleteBaselineQuestion(
+    await new BaselineQuestionBusiness(org).deleteBaselineQuestion(
       baselinequestionid,
       user
     );
@@ -270,7 +284,7 @@ export class BaselinequestionController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get("getall/:curriculumbaselineid")
   @ApiResponse({
     status: 200,
@@ -290,9 +304,12 @@ export class BaselinequestionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   async getall(
-    @Param('curriculumbaselineid') curriculumbaselineid: string
+    @Param('curriculumbaselineid') curriculumbaselineid: string,
+    @Org() org: OrgContext
   ):Promise<any> {
-    const data = await new BaselineQuestionBusiness().getAllBaselineQuestion(curriculumbaselineid);
+    // the baseline in the path is the caller's, or not found
+    await findOwnedBaseline(org, curriculumbaselineid, { where: { isdeleted: false } });
+    const data = await new BaselineQuestionBusiness(org).getAllBaselineQuestion(curriculumbaselineid);
     return {
       error: false,
       data: data ? data : undefined

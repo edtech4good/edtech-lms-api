@@ -59,6 +59,8 @@ import { LessonRequest } from "./models/LessonRequest";
 import { LessonResponse } from "./models/LessonResponse";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { assertSameOwner, ownerOfLesson, ownerOfLevel } from "src/business/content-owner";
+import { assertInScope, findOwnedLevel } from "src/business/content-scope";
+import { Org, OrgContext, OrgOrSchoolUser } from "src/decorators/org.decorator";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -69,7 +71,7 @@ import { assertSameOwner, ownerOfLesson, ownerOfLevel } from "src/business/conte
 @ApiBearerAuth()
 export class LessonController {
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -89,16 +91,19 @@ export class LessonController {
   @HttpCode(HttpStatus.OK)
   async getAllLessons(
     @Query("levelid") levelid: string = '',
-    @Query("lesson") lessonname: string = ''
+    @Query("lesson") lessonname: string = '',
+    @OrgOrSchoolUser() org: OrgContext | undefined
   ): Promise<any> {
-    const data = await new LessonBusiness().getLessonsWithFilter(levelid, lessonname);
+    // A staff token reads the lessons of its organisation; a school-user token has no organisation context and keeps
+    // reading every lesson.
+    const data = await new LessonBusiness(org).getLessonsWithFilter(levelid, lessonname);
     return {
         data: data,
         error: false,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -122,8 +127,11 @@ export class LessonController {
   @HttpCode(HttpStatus.OK)
   async create(
     @Body() body: LessonRequest,
-    @Request() payload: IRequest
+    @Request() payload: IRequest,
+    @Org() org: OrgContext
   ): Promise<LessonCreateResponse> {
+    // the level it goes under is the caller's, or not found (as one that is not there): nothing is written
+    await findOwnedLevel(org, body.levelid);
     const temp: lessonsAttributes = {
       lessonname: body.lessonname,
       lessondescription: body.lessondescription,
@@ -146,7 +154,7 @@ export class LessonController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":lessonid")
   @ApiResponse({
     status: 200,
@@ -171,16 +179,17 @@ export class LessonController {
   @ApiParam({ name: `lessonid`, type: "string", required: true })
   async delete(
     @Param("lessonid") lessonid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonBusiness().deleteLesson(lessonid, user);
+    await new LessonBusiness(org).deleteLesson(lessonid, user);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:lessonid")
   @ApiResponse({
     status: 200,
@@ -204,16 +213,17 @@ export class LessonController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonid`, type: "string", required: true })
   async deactivate(
-    @Param("lessonid") lessonid: string
+    @Param("lessonid") lessonid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonBusiness().deavtivateLesson(lessonid);
+    await new LessonBusiness(org).deavtivateLesson(lessonid);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:lessonid")
   @ApiResponse({
     status: 200,
@@ -237,16 +247,17 @@ export class LessonController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonid`, type: "string", required: true })
   async activate(
-    @Param("lessonid") lessonid: string
+    @Param("lessonid") lessonid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonBusiness().activateLesson(lessonid);
+    await new LessonBusiness(org).activateLesson(lessonid);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":lessonid")
   @ApiResponse({
     status: 200,
@@ -269,15 +280,15 @@ export class LessonController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonid`, type: "string", required: true })
-  async get(@Param("lessonid") lessonid: string): Promise<LessonGetResponse> {
-    const data = await new LessonBusiness().getLessonbyid(lessonid);
+  async get(@Param("lessonid") lessonid: string, @Org() org: OrgContext): Promise<LessonGetResponse> {
+    const data = await new LessonBusiness(org).getLessonbyid(lessonid);
     return {
       error: false,
       data: data ? data : undefined,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(":lessonid")
   @ApiResponse({
     status: 200,
@@ -303,11 +314,15 @@ export class LessonController {
   async update(
     @Param("lessonid") lessonid: string,
     @Body() body: LessonRequest,
-    @Request() payload: IRequest
+    @Request() payload: IRequest,
+    @Org() org: OrgContext
   ): Promise<LessonCreateResponse> {
-    // Moving a lesson moves everything beneath it: it may only go to a level with the same owner.
+    // The lesson in the path and the level in the body are both the caller's, or not found (before anything is
+    // compared). Moving a lesson moves everything beneath it: it may only go to a level with the same owner.
+    await assertInScope(org, "lesson", lessonid);
+    await findOwnedLevel(org, body.levelid);
     assertSameOwner(await ownerOfLesson(lessonid), await ownerOfLevel(body.levelid));
-    const data = await new LessonBusiness().updateLesson(
+    const data = await new LessonBusiness(org).updateLesson(
       <lessonsAttributes>{
         lessonid,
         lessonname: body.lessonname,
@@ -325,7 +340,7 @@ export class LessonController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -345,8 +360,8 @@ export class LessonController {
   @RequirePermissions(Permission.VIEW_LESSON)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IPaging): Promise<LessonGetAllResponse> {
-    const tempresult = await new LessonBusiness().getLessonall({
+  async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<LessonGetAllResponse> {
+    const tempresult = await new LessonBusiness(org).getLessonall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],

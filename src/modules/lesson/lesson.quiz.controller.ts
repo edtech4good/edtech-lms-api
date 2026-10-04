@@ -55,6 +55,8 @@ import { LessonQuizsUpdate } from "./models/LessonQuizUpdate";
 import { LessonResponse } from "./models/LessonResponse";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { assertSameOwner, ownerOfLesson, ownerOfQuiz } from "src/business/content-owner";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { assertInScope, findOwnedLesson } from "src/business/content-scope";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -64,7 +66,7 @@ import { assertSameOwner, ownerOfLesson, ownerOfQuiz } from "src/business/conten
 @Controller("lesson/quiz")
 @ApiBearerAuth()
 export class LessonQuizController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":lessonid")
   @ApiResponse({
     status: 200,
@@ -88,9 +90,10 @@ export class LessonQuizController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonid`, type: () => String, required: true })
   async getquiz(
-    @Param("lessonid") lessonid: string
+    @Param("lessonid") lessonid: string,
+    @Org() org: OrgContext
   ): Promise<LessonQuizsResponse> {
-    const data = await new LessonQuizBusiness().getLessonQuizbyLessonid(
+    const data = await new LessonQuizBusiness(org).getLessonQuizbyLessonid(
       lessonid
     );
     return {
@@ -99,7 +102,7 @@ export class LessonQuizController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Post(":lessonid")
   @ApiResponse({
     status: 200,
@@ -125,9 +128,12 @@ export class LessonQuizController {
   async addquiz(
     @Param("lessonid") lessonid: string,
     @Body() lessonquiz: LessonQuizCreate,
-    @Request() payload: IRequest
+    @Request() payload: IRequest,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonQuizBusiness().createLessonQuiz(
+    // the lesson in the path is the caller's, or not found (as one that is not there): nothing is written
+    await findOwnedLesson(org, lessonid);
+    await new LessonQuizBusiness(org).createLessonQuiz(
       {
         ...lessonquiz,
         lessonid,
@@ -142,7 +148,7 @@ export class LessonQuizController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Get(":lessonid/:lessonquizid")
   @ApiResponse({
     status: 200,
@@ -167,16 +173,17 @@ export class LessonQuizController {
   @ApiParam({ name: `lessonid`, type: () => String, required: true })
   @ApiParam({ name: `lessonquizid`, type: () => String, required: true })
   async getquizbyid(
-    @Param("lessonquizid") lessonquizid: string
+    @Param("lessonquizid") lessonquizid: string,
+    @Org() org: OrgContext
   ): Promise<LessonQuizResponse> {
-    const data = await new LessonQuizBusiness().getLessonQuizbyid(lessonquizid);
+    const data = await new LessonQuizBusiness(org).getLessonQuizbyid(lessonquizid);
     return {
       error: false,
       data: data ? data : undefined,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("activate/:lessonquizid")
   @ApiResponse({
     status: 200,
@@ -200,16 +207,17 @@ export class LessonQuizController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonquizid`, type: () => String, required: true })
   async activatequiz(
-    @Param("lessonquizid") lessonquizid: string
+    @Param("lessonquizid") lessonquizid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonQuizBusiness().activateLessonQuiz(lessonquizid);
+    await new LessonQuizBusiness(org).activateLessonQuiz(lessonquizid);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("deactivate/:lessonquizid")
   @ApiResponse({
     status: 200,
@@ -233,16 +241,17 @@ export class LessonQuizController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonquizid`, type: () => String, required: true })
   async deactivatequiz(
-    @Param("lessonquizid") lessonquizid: string
+    @Param("lessonquizid") lessonquizid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonQuizBusiness().deactivateLessonQuiz(lessonquizid);
+    await new LessonQuizBusiness(org).deactivateLessonQuiz(lessonquizid);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put("order/:lessonquizid/:lessonquizorder")
   @ApiResponse({
     status: 200,
@@ -268,9 +277,10 @@ export class LessonQuizController {
   @ApiParam({ name: `lessonquizorder`, type: () => Number, required: true })
   async orderquiz(
     @Param("lessonquizid") lessonquizid: string,
-    @Param("lessonquizorder") lessonquizorder: number
+    @Param("lessonquizorder") lessonquizorder: number,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonQuizBusiness().updateorderLessonQuiz(
+    await new LessonQuizBusiness(org).updateorderLessonQuiz(
       lessonquizid,
       lessonquizorder
     );
@@ -280,7 +290,7 @@ export class LessonQuizController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(":lessonquizid")
   @ApiResponse({
     status: 200,
@@ -306,11 +316,15 @@ export class LessonQuizController {
   async updatequiz(
     @Param("lessonquizid") lessonquizid: string,
     @Body() lessonquiz: LessonQuizsUpdate,
-    @Request() payload: IRequest
+    @Request() payload: IRequest,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    // Moving a quiz carries its questions with it: it may only go to a lesson with the same owner.
+    // The quiz in the path and the lesson in the body are both the caller's, or not found (before anything is
+    // compared). Moving a quiz carries its questions with it: it may only go to a lesson with the same owner.
+    await assertInScope(org, "quiz", lessonquizid);
+    await findOwnedLesson(org, lessonquiz.lessonid);
     assertSameOwner(await ownerOfQuiz(lessonquizid), await ownerOfLesson(lessonquiz.lessonid));
-    await new LessonQuizBusiness().updateLessonQuiz(
+    await new LessonQuizBusiness(org).updateLessonQuiz(
       lessonquizid,
       {
         ...lessonquiz,
@@ -326,7 +340,7 @@ export class LessonQuizController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Delete(":lessonquizid")
   @ApiResponse({
     status: 200,
@@ -350,9 +364,10 @@ export class LessonQuizController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonquizid`, type: () => String, required: true })
   async deletequiz(
-    @Param("lessonquizid") lessonquizid: string
+    @Param("lessonquizid") lessonquizid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonQuizBusiness().deleteLessonQuiz(lessonquizid);
+    await new LessonQuizBusiness(org).deleteLessonQuiz(lessonquizid);
     return {
       error: false,
       data: true,

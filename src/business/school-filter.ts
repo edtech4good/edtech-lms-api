@@ -74,11 +74,15 @@ export const schoolIdsWhere = (schoolids: string[] | undefined): WhereOptions<an
  * `resolveSchoolRef` (unknown: 404). `undefined` when neither is present. Used by
  * the report and feedback filters, which compare equal, not "contains".
  */
-export async function resolveSchoolFromFilters(filters: SchoolFilterEntry[] | undefined) {
+export async function resolveSchoolFromFilters(
+  filters: SchoolFilterEntry[] | undefined,
+  /** The schools a caller may see (see school-scope.ts); a school outside it is not found, as one that is not there is. */
+  scopeWhere?: WhereOptions,
+) {
   const name = (filters ?? []).find((f) => f.key === "schoolname" && f.value);
   const id = (filters ?? []).find((f) => f.key === "schoolid" && f.value);
   return resolveSchoolRef({
     schoolid: id ? String(Array.isArray(id.value) ? id.value[0] : id.value) : undefined,
     schoolname: name ? String(Array.isArray(name.value) ? name.value[0] : name.value) : undefined,
-  });
+  }, scopeWhere);
 }

@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **283** routes, **85** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned route, by the spec it names), **11** are not applicable (public) and **187** are pending.
+Of **283** routes, **226** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned route, by the spec it names), **11** are not applicable (public) and **46** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 243 | 57 | 0 | 186 |
+| owned | 243 | 198 | 0 | 45 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 1 | 0 | 0 | 1 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **283** | **85** | **11** | **187** |
+| **all** | **283** | **226** | **11** | **46** |
 
 ## Policies
 
@@ -82,13 +82,13 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | PUT | `/auth/sendverificationemail` | AuthController.verifyemail | public | n/a |  |  |  | none |  |
 | POST | `/auth/token/validate/changepassword` | AuthController.changepasswordvalidate | public | n/a |  |  |  | none | The reset token in the query proves the request. |
 | POST | `/auth/verify` | AuthController.verifyuserbyemailtoken | self | yes |  |  |  | AccessGuard(VERIFYEMAIL) | Must act only on the account named by the email-verification token. |
-| DELETE | `/baselinequestion/:baselinequestionid` | BaselinequestionController.deletequizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_baseline-endline] |  |
-| PUT | `/baselinequestion/activate/:baselinequestionid` | BaselinequestionController.activate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
-| POST | `/baselinequestion/clone` | BaselinequestionController.clone | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_baseline-endline] |  |
-| POST | `/baselinequestion/create` | BaselinequestionController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_baseline-endline] |  |
-| PUT | `/baselinequestion/deactivate/:baselinequestionid` | BaselinequestionController.deactivate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
-| GET | `/baselinequestion/getall/:curriculumbaselineid` | BaselinequestionController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
-| PUT | `/baselinequestion/order/:baselinequestionid/:baselinequestionorder` | BaselinequestionController.orderquizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
+| DELETE | `/baselinequestion/:baselinequestionid` | BaselinequestionController.deletequizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_baseline-endline] |  |
+| PUT | `/baselinequestion/activate/:baselinequestionid` | BaselinequestionController.activate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
+| POST | `/baselinequestion/clone` | BaselinequestionController.clone | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_baseline-endline] |  |
+| POST | `/baselinequestion/create` | BaselinequestionController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_baseline-endline] |  |
+| PUT | `/baselinequestion/deactivate/:baselinequestionid` | BaselinequestionController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
+| GET | `/baselinequestion/getall/:curriculumbaselineid` | BaselinequestionController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
+| PUT | `/baselinequestion/order/:baselinequestionid/:baselinequestionorder` | BaselinequestionController.orderquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
 | GET | `/dropdown/templatetype` | CommonController.getTemplateType | public | n/a |  |  |  | none | Returns a static list of template types. |
 | GET | `/country` | CountryController.getAll | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) | Must list only countries linked to the caller's organisation. |
 | POST | `/country` | CountryController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_country] | Must list only countries linked to the caller's organisation. |
@@ -97,124 +97,124 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | PUT | `/country/:countryid` | CountryController.update | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_country] | Writes to global reference data (countries) must be restricted to platform users. |
 | GET | `/country/all` | CountryController.getAllCountries | owned | pending |  |  | yes | AccessGuard(ACCESS) | Must list only countries linked to the caller's organisation. |
 | POST | `/country/create` | CountryController.create | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[create_country] | Writes to global reference data (countries) must be restricted to platform users. |
-| DELETE | `/curriculumbaseline/:curriculumbaselineid` | CurriculumBaseLineController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_baseline-endline] |  |
-| GET | `/curriculumbaseline/:curriculumbaselineid/download` | CurriculumBaseLineController.getStudentBaselineEndlineResults | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_download_student] |  |
-| PUT | `/curriculumbaseline/activate/:curriculumbaselineid/:curriculumid` | CurriculumBaseLineController.activate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
-| GET | `/curriculumbaseline/all` | CurriculumBaseLineController.getAll | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
-| POST | `/curriculumbaseline/create` | CurriculumBaseLineController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_baseline-endline] |  |
-| PUT | `/curriculumbaseline/deactivate/:curriculumbaselineid` | CurriculumBaseLineController.deactivate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
-| GET | `/curriculumbaseline/getcurriculumbaseline/:curriculumbaselineid` | CurriculumBaseLineController.getBaselineId | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
-| GET | `/curriculumbaseline/query` | CurriculumBaseLineController.getQuery | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
-| GET | `/curriculumbaseline/school/:curriculumbaselineid` | CurriculumBaseLineController.getBaselineSchool | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
-| PUT | `/curriculumbaseline/update/:curriculumbaselineid` | CurriculumBaseLineController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
-| POST | `/curriculum` | CurriculumController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
-| DELETE | `/curriculum/:curriculumid` | CurriculumController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_curriculum] |  |
-| GET | `/curriculum/:curriculumid` | CurriculumController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
-| PUT | `/curriculum/:curriculumid` | CurriculumController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_curriculum] |  |
-| PUT | `/curriculum/activate/:curriculumid` | CurriculumController.activate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_curriculum] |  |
-| GET | `/curriculum/all` | CurriculumController.getAllCurriculums | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
-| GET | `/curriculum/country/:countryid` | CurriculumController.getCurriculumByCountry | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
-| POST | `/curriculum/create` | CurriculumController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_curriculum] |  |
-| PUT | `/curriculum/deactivate/:curriculumid` | CurriculumController.deactivate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_curriculum] |  |
-| GET | `/curriculum/map` | CurriculumController.map | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum, view_lesson] |  |
-| GET | `/curriculum/tree` | CurriculumController.tree | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
-| GET | `/curriculum/tree/:curriculumid` | CurriculumController.getcurriculumtree | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
-| POST | `/document` | DocumentController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] |  |
-| DELETE | `/document/:documentid` | DocumentController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_document] |  |
-| GET | `/document/presign/:filename` | DocumentController.presignedupload | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] | The signed key must be scoped to the caller's organisation. |
-| DELETE | `/document/tag/:documentid/:tag` | DocumentController.deleteTag | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_document_tag] |  |
-| GET | `/document/tag/:documentid/:tag` | DocumentController.addTag | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] |  |
-| POST | `/document/upload` | DocumentController.uploadFile | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_document] |  |
-| POST | `/documenttag` | DocumentTagController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_documenttag] |  |
-| DELETE | `/documenttag/:documenttagid` | DocumentTagController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_documenttag] |  |
-| GET | `/documenttag/:documenttagid` | DocumentTagController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_documenttag] |  |
-| PUT | `/documenttag/:documenttagid` | DocumentTagController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_documenttag] |  |
-| POST | `/documenttag/create` | DocumentTagController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_documenttag] |  |
+| DELETE | `/curriculumbaseline/:curriculumbaselineid` | CurriculumBaseLineController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_baseline-endline] |  |
+| GET | `/curriculumbaseline/:curriculumbaselineid/download` | CurriculumBaseLineController.getStudentBaselineEndlineResults | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_download_student] |  |
+| PUT | `/curriculumbaseline/activate/:curriculumbaselineid/:curriculumid` | CurriculumBaseLineController.activate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
+| GET | `/curriculumbaseline/all` | CurriculumBaseLineController.getAll | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
+| POST | `/curriculumbaseline/create` | CurriculumBaseLineController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_baseline-endline] |  |
+| PUT | `/curriculumbaseline/deactivate/:curriculumbaselineid` | CurriculumBaseLineController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
+| GET | `/curriculumbaseline/getcurriculumbaseline/:curriculumbaselineid` | CurriculumBaseLineController.getBaselineId | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
+| GET | `/curriculumbaseline/query` | CurriculumBaseLineController.getQuery | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
+| GET | `/curriculumbaseline/school/:curriculumbaselineid` | CurriculumBaseLineController.getBaselineSchool | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
+| PUT | `/curriculumbaseline/update/:curriculumbaselineid` | CurriculumBaseLineController.update | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
+| POST | `/curriculum` | CurriculumController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
+| DELETE | `/curriculum/:curriculumid` | CurriculumController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_curriculum] |  |
+| GET | `/curriculum/:curriculumid` | CurriculumController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
+| PUT | `/curriculum/:curriculumid` | CurriculumController.update | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_curriculum] |  |
+| PUT | `/curriculum/activate/:curriculumid` | CurriculumController.activate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_curriculum] |  |
+| GET | `/curriculum/all` | CurriculumController.getAllCurriculums | owned | yes | `src/modules/content-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
+| GET | `/curriculum/country/:countryid` | CurriculumController.getCurriculumByCountry | owned | yes | `src/modules/content-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
+| POST | `/curriculum/create` | CurriculumController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_curriculum] |  |
+| PUT | `/curriculum/deactivate/:curriculumid` | CurriculumController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_curriculum] |  |
+| GET | `/curriculum/map` | CurriculumController.map | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum, view_lesson] |  |
+| GET | `/curriculum/tree` | CurriculumController.tree | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
+| GET | `/curriculum/tree/:curriculumid` | CurriculumController.getcurriculumtree | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
+| POST | `/document` | DocumentController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] |  |
+| DELETE | `/document/:documentid` | DocumentController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_document] |  |
+| GET | `/document/presign/:filename` | DocumentController.presignedupload | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] | The signed key must be scoped to the caller's organisation. |
+| DELETE | `/document/tag/:documentid/:tag` | DocumentController.deleteTag | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_document_tag] |  |
+| GET | `/document/tag/:documentid/:tag` | DocumentController.addTag | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] |  |
+| POST | `/document/upload` | DocumentController.uploadFile | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_document] |  |
+| POST | `/documenttag` | DocumentTagController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_documenttag] |  |
+| DELETE | `/documenttag/:documenttagid` | DocumentTagController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_documenttag] |  |
+| GET | `/documenttag/:documenttagid` | DocumentTagController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_documenttag] |  |
+| PUT | `/documenttag/:documenttagid` | DocumentTagController.update | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_documenttag] |  |
+| POST | `/documenttag/create` | DocumentTagController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_documenttag] |  |
 | GET | `/export/:schoolname/students` | ExportController.getstudents | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_download_student] |  |
 | GET | `/export/:schoolname/teachers` | ExportController.getteachers | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_teacher] |  |
-| GET | `/export/documents/:curriculumid` | ExportController.getQuestions | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] |  |
-| POST | `/feedback` | FeedbackController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_feedback] |  |
-| GET | `/feedback/:feedbackid` | FeedbackController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_feedback] |  |
-| POST | `/feedback/create` | FeedbackController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_feedback] |  |
-| POST | `/grade` | GradeController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_grade] |  |
-| DELETE | `/grade/:gradeid` | GradeController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_grade] |  |
-| GET | `/grade/:gradeid` | GradeController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_grade] |  |
-| PUT | `/grade/:gradeid` | GradeController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_grade] |  |
-| PUT | `/grade/activate/:gradeid` | GradeController.activate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_grade] |  |
-| GET | `/grade/all` | GradeController.getAllGrades | owned | pending |  |  | yes | AccessGuard(ACCESS) |  |
-| POST | `/grade/create` | GradeController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_grade] |  |
-| GET | `/grade/curriculum/:curriculumid` | GradeController.getGradeByCurriculum | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
-| PUT | `/grade/deactivate/:gradeid` | GradeController.deactivate | owned | pending |  |  |  | AccessGuard(ACCESS), AccessGuard(ACCESS), CheckPermissionsGuard[update_grade] |  |
+| GET | `/export/documents/:curriculumid` | ExportController.getQuestions | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] |  |
+| POST | `/feedback` | FeedbackController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_feedback] |  |
+| GET | `/feedback/:feedbackid` | FeedbackController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_feedback] |  |
+| POST | `/feedback/create` | FeedbackController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_feedback] |  |
+| POST | `/grade` | GradeController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_grade] |  |
+| DELETE | `/grade/:gradeid` | GradeController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_grade] |  |
+| GET | `/grade/:gradeid` | GradeController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_grade] |  |
+| PUT | `/grade/:gradeid` | GradeController.update | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_grade] |  |
+| PUT | `/grade/activate/:gradeid` | GradeController.activate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_grade] |  |
+| GET | `/grade/all` | GradeController.getAllGrades | owned | yes | `src/modules/content-scope.leak.spec.ts` |  | yes | AccessGuard(ACCESS) |  |
+| POST | `/grade/create` | GradeController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_grade] |  |
+| GET | `/grade/curriculum/:curriculumid` | GradeController.getGradeByCurriculum | owned | yes | `src/modules/content-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
+| PUT | `/grade/deactivate/:gradeid` | GradeController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), AccessGuard(ACCESS), CheckPermissionsGuard[update_grade] |  |
 | PUT | `/import/:schoolname/teachers` | ImportController.putteachers | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_import, update_import] |  |
-| POST | `/lesson` | LessonController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lesson] |  |
-| DELETE | `/lesson/:lessonid` | LessonController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lesson] |  |
-| GET | `/lesson/:lessonid` | LessonController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lesson] |  |
-| PUT | `/lesson/:lessonid` | LessonController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lesson] |  |
-| PUT | `/lesson/activate/:lessonid` | LessonController.activate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lesson] |  |
-| GET | `/lesson/all` | LessonController.getAllLessons | owned | pending |  |  | yes | AccessGuard(ACCESS) |  |
-| POST | `/lesson/create` | LessonController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lesson] |  |
-| PUT | `/lesson/deactivate/:lessonid` | LessonController.deactivate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lesson] |  |
+| POST | `/lesson` | LessonController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lesson] |  |
+| DELETE | `/lesson/:lessonid` | LessonController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lesson] |  |
+| GET | `/lesson/:lessonid` | LessonController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lesson] |  |
+| PUT | `/lesson/:lessonid` | LessonController.update | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lesson] |  |
+| PUT | `/lesson/activate/:lessonid` | LessonController.activate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lesson] |  |
+| GET | `/lesson/all` | LessonController.getAllLessons | owned | yes | `src/modules/content-scope.leak.spec.ts` |  | yes | AccessGuard(ACCESS) |  |
+| POST | `/lesson/create` | LessonController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lesson] |  |
+| PUT | `/lesson/deactivate/:lessonid` | LessonController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lesson] |  |
 | POST | `/lesson/update_reward_points` | LessonController.autoupdatelessonprogresspoints | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_lesson] | Bulk recompute across all organisations; platform only. |
-| GET | `/lesson/learning/:lessonid` | LessonLearningController.getlearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
-| POST | `/lesson/learning/:lessonid` | LessonLearningController.addlearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lessonlearning] |  |
-| GET | `/lesson/learning/:lessonid/:lessonlearningid` | LessonLearningController.getlearningbyid | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
-| DELETE | `/lesson/learning/:lessonlearningid` | LessonLearningController.deletelearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lessonlearning] |  |
-| PUT | `/lesson/learning/:lessonlearningid` | LessonLearningController.updatelearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
-| PUT | `/lesson/learning/activate/:lessonlearningid` | LessonLearningController.activatelearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
-| PUT | `/lesson/learning/deactivate/:lessonlearningid` | LessonLearningController.deactivatelearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
-| PUT | `/lesson/learning/order/:lessonlearningid/:lessonlearningorder` | LessonLearningController.orderlearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
-| GET | `/lesson/plan/:lessonid` | LessonPlanController.getlearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
-| POST | `/lesson/plan/:lessonid` | LessonPlanController.addplan | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lessonlearning] |  |
-| GET | `/lesson/plan/:lessonid/:lessonplanid` | LessonPlanController.getplanbyid | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
-| DELETE | `/lesson/plan/:lessonplanid` | LessonPlanController.deleteplan | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lessonlearning] |  |
-| PUT | `/lesson/plan/:lessonplanid` | LessonPlanController.updatelearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
-| PUT | `/lesson/plan/activate/:lessonlearningid` | LessonPlanController.activatelearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
-| PUT | `/lesson/plan/deactivate/:lessonlearningid` | LessonPlanController.deactivatelearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
-| PUT | `/lesson/plan/order/:lessonlearningid/:lessonlearningorder` | LessonPlanController.orderlearning | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
-| GET | `/lesson/practice/:lessonid` | LessonPracticeController.getpractice | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonpractice] |  |
-| POST | `/lesson/practice/:lessonid` | LessonPracticeController.addpractice | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lessonpractice] |  |
-| GET | `/lesson/practice/:lessonid/:lessonpracticeid` | LessonPracticeController.getpracticebyid | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonpractice] |  |
-| DELETE | `/lesson/practice/:lessonpracticeid` | LessonPracticeController.deletepractice | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lessonpractice] |  |
-| PUT | `/lesson/practice/:lessonpracticeid` | LessonPracticeController.updatepractice | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
-| PUT | `/lesson/practice/activate/:lessonpracticeid` | LessonPracticeController.activatepractice | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
-| PUT | `/lesson/practice/deactivate/:lessonpracticeid` | LessonPracticeController.deactivatepractice | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
-| PUT | `/lesson/practice/order/:lessonpracticeid/:lessonpracticeorder` | LessonPracticeController.orderpractice | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
-| GET | `/lesson/practice/question/:lessonpracticeid` | LessonPracticeQuestionController.getpracticequestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
-| POST | `/lesson/practice/question/:lessonpracticeid/:questionid/:lessonpracticequestionorder` | LessonPracticeQuestionController.addpracticequestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
-| DELETE | `/lesson/practice/question/:lessonpracticequestionid` | LessonPracticeQuestionController.deletepracticequestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
-| PUT | `/lesson/practice/question/activate/:lessonpracticequestionid` | LessonPracticeQuestionController.activatepracticequestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
-| PUT | `/lesson/practice/question/deactivate/:lessonpracticequestionid` | LessonPracticeQuestionController.deactivatepracticequestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
-| PUT | `/lesson/practice/question/order/:lessonpracticequestionid/:lessonpracticequestionorder` | LessonPracticeQuestionController.orderpracticequestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
-| GET | `/lesson/quiz/:lessonid` | LessonQuizController.getquiz | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonquiz] |  |
-| POST | `/lesson/quiz/:lessonid` | LessonQuizController.addquiz | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lessonquiz] |  |
-| GET | `/lesson/quiz/:lessonid/:lessonquizid` | LessonQuizController.getquizbyid | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonquiz] |  |
-| DELETE | `/lesson/quiz/:lessonquizid` | LessonQuizController.deletequiz | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lessonquiz] |  |
-| PUT | `/lesson/quiz/:lessonquizid` | LessonQuizController.updatequiz | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
-| PUT | `/lesson/quiz/activate/:lessonquizid` | LessonQuizController.activatequiz | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
-| PUT | `/lesson/quiz/deactivate/:lessonquizid` | LessonQuizController.deactivatequiz | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
-| PUT | `/lesson/quiz/order/:lessonquizid/:lessonquizorder` | LessonQuizController.orderquiz | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
-| GET | `/lesson/quiz/question/:lessonquizid` | LessonQuizQuestionController.getquizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
-| POST | `/lesson/quiz/question/:lessonquizid/:questionid/:lessonquizquestionorder` | LessonQuizQuestionController.addquizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
-| DELETE | `/lesson/quiz/question/:lessonquizquestionid` | LessonQuizQuestionController.deletequizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
-| PUT | `/lesson/quiz/question/activate/:lessonquizquestionid` | LessonQuizQuestionController.activatequizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
-| PUT | `/lesson/quiz/question/deactivate/:lessonquizquestionid` | LessonQuizQuestionController.deactivatequizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
-| PUT | `/lesson/quiz/question/order/:lessonquizquestionid/:lessonquizquestionorder` | LessonQuizQuestionController.orderquizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
-| POST | `/level` | LevelController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_level] |  |
-| DELETE | `/level/:levelid` | LevelController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_level] |  |
-| GET | `/level/:levelid` | LevelController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_level] |  |
-| PUT | `/level/:levelid` | LevelController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_level] |  |
-| PUT | `/level/activate/:levelid` | LevelController.activate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_level] |  |
-| GET | `/level/all` | LevelController.getAllLevels | owned | pending |  |  | yes | AccessGuard(ACCESS) |  |
-| POST | `/level/create` | LevelController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_level] |  |
-| PUT | `/level/deactivate/:levelid` | LevelController.deactivate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_level] |  |
+| GET | `/lesson/learning/:lessonid` | LessonLearningController.getlearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
+| POST | `/lesson/learning/:lessonid` | LessonLearningController.addlearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lessonlearning] |  |
+| GET | `/lesson/learning/:lessonid/:lessonlearningid` | LessonLearningController.getlearningbyid | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
+| DELETE | `/lesson/learning/:lessonlearningid` | LessonLearningController.deletelearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lessonlearning] |  |
+| PUT | `/lesson/learning/:lessonlearningid` | LessonLearningController.updatelearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
+| PUT | `/lesson/learning/activate/:lessonlearningid` | LessonLearningController.activatelearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
+| PUT | `/lesson/learning/deactivate/:lessonlearningid` | LessonLearningController.deactivatelearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
+| PUT | `/lesson/learning/order/:lessonlearningid/:lessonlearningorder` | LessonLearningController.orderlearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
+| GET | `/lesson/plan/:lessonid` | LessonPlanController.getlearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
+| POST | `/lesson/plan/:lessonid` | LessonPlanController.addplan | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lessonlearning] |  |
+| GET | `/lesson/plan/:lessonid/:lessonplanid` | LessonPlanController.getplanbyid | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
+| DELETE | `/lesson/plan/:lessonplanid` | LessonPlanController.deleteplan | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lessonlearning] |  |
+| PUT | `/lesson/plan/:lessonplanid` | LessonPlanController.updatelearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
+| PUT | `/lesson/plan/activate/:lessonlearningid` | LessonPlanController.activatelearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
+| PUT | `/lesson/plan/deactivate/:lessonlearningid` | LessonPlanController.deactivatelearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
+| PUT | `/lesson/plan/order/:lessonlearningid/:lessonlearningorder` | LessonPlanController.orderlearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
+| GET | `/lesson/practice/:lessonid` | LessonPracticeController.getpractice | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonpractice] |  |
+| POST | `/lesson/practice/:lessonid` | LessonPracticeController.addpractice | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lessonpractice] |  |
+| GET | `/lesson/practice/:lessonid/:lessonpracticeid` | LessonPracticeController.getpracticebyid | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonpractice] |  |
+| DELETE | `/lesson/practice/:lessonpracticeid` | LessonPracticeController.deletepractice | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lessonpractice] |  |
+| PUT | `/lesson/practice/:lessonpracticeid` | LessonPracticeController.updatepractice | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
+| PUT | `/lesson/practice/activate/:lessonpracticeid` | LessonPracticeController.activatepractice | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
+| PUT | `/lesson/practice/deactivate/:lessonpracticeid` | LessonPracticeController.deactivatepractice | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
+| PUT | `/lesson/practice/order/:lessonpracticeid/:lessonpracticeorder` | LessonPracticeController.orderpractice | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
+| GET | `/lesson/practice/question/:lessonpracticeid` | LessonPracticeQuestionController.getpracticequestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
+| POST | `/lesson/practice/question/:lessonpracticeid/:questionid/:lessonpracticequestionorder` | LessonPracticeQuestionController.addpracticequestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
+| DELETE | `/lesson/practice/question/:lessonpracticequestionid` | LessonPracticeQuestionController.deletepracticequestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
+| PUT | `/lesson/practice/question/activate/:lessonpracticequestionid` | LessonPracticeQuestionController.activatepracticequestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
+| PUT | `/lesson/practice/question/deactivate/:lessonpracticequestionid` | LessonPracticeQuestionController.deactivatepracticequestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
+| PUT | `/lesson/practice/question/order/:lessonpracticequestionid/:lessonpracticequestionorder` | LessonPracticeQuestionController.orderpracticequestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
+| GET | `/lesson/quiz/:lessonid` | LessonQuizController.getquiz | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonquiz] |  |
+| POST | `/lesson/quiz/:lessonid` | LessonQuizController.addquiz | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lessonquiz] |  |
+| GET | `/lesson/quiz/:lessonid/:lessonquizid` | LessonQuizController.getquizbyid | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonquiz] |  |
+| DELETE | `/lesson/quiz/:lessonquizid` | LessonQuizController.deletequiz | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lessonquiz] |  |
+| PUT | `/lesson/quiz/:lessonquizid` | LessonQuizController.updatequiz | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
+| PUT | `/lesson/quiz/activate/:lessonquizid` | LessonQuizController.activatequiz | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
+| PUT | `/lesson/quiz/deactivate/:lessonquizid` | LessonQuizController.deactivatequiz | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
+| PUT | `/lesson/quiz/order/:lessonquizid/:lessonquizorder` | LessonQuizController.orderquiz | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
+| GET | `/lesson/quiz/question/:lessonquizid` | LessonQuizQuestionController.getquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
+| POST | `/lesson/quiz/question/:lessonquizid/:questionid/:lessonquizquestionorder` | LessonQuizQuestionController.addquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
+| DELETE | `/lesson/quiz/question/:lessonquizquestionid` | LessonQuizQuestionController.deletequizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
+| PUT | `/lesson/quiz/question/activate/:lessonquizquestionid` | LessonQuizQuestionController.activatequizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
+| PUT | `/lesson/quiz/question/deactivate/:lessonquizquestionid` | LessonQuizQuestionController.deactivatequizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
+| PUT | `/lesson/quiz/question/order/:lessonquizquestionid/:lessonquizquestionorder` | LessonQuizQuestionController.orderquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
+| POST | `/level` | LevelController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_level] |  |
+| DELETE | `/level/:levelid` | LevelController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_level] |  |
+| GET | `/level/:levelid` | LevelController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_level] |  |
+| PUT | `/level/:levelid` | LevelController.update | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_level] |  |
+| PUT | `/level/activate/:levelid` | LevelController.activate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_level] |  |
+| GET | `/level/all` | LevelController.getAllLevels | owned | yes | `src/modules/content-scope.leak.spec.ts` |  | yes | AccessGuard(ACCESS) |  |
+| POST | `/level/create` | LevelController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_level] |  |
+| PUT | `/level/deactivate/:levelid` | LevelController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_level] |  |
 | POST | `/level/update_quiz_points` | LevelController.autoupdatelessonprogresspoints | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_level] | Bulk recompute across all organisations; platform only. |
-| GET | `/level/quiz/question/:levelid` | LevelQuizQuestionController.getquizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_level_quiz] |  |
-| POST | `/level/quiz/question/:levelid/:questionid/:levelquizquestionorder` | LevelQuizQuestionController.addquizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_level_quiz_question] |  |
-| DELETE | `/level/quiz/question/:levelquizquestionid` | LevelQuizQuestionController.deletequizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_level_quiz_question] |  |
-| PUT | `/level/quiz/question/activate/:levelquizquestionid` | LevelQuizQuestionController.activatequizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[deactivate_level_quiz_question] |  |
-| PUT | `/level/quiz/question/deactivate/:levelquizquestionid` | LevelQuizQuestionController.deactivatequizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[deactivate_level_quiz_question] |  |
-| PUT | `/level/quiz/question/order/:levelquizquestionid/:levelquizquestionorder` | LevelQuizQuestionController.orderquizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[reorder_level_quiz_question] |  |
-| PUT | `/level/quiz/question/setlesson/:levelquizquestionid` | LevelQuizQuestionController.setlesson | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[reorder_level_quiz_question] |  |
+| GET | `/level/quiz/question/:levelid` | LevelQuizQuestionController.getquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_level_quiz] |  |
+| POST | `/level/quiz/question/:levelid/:questionid/:levelquizquestionorder` | LevelQuizQuestionController.addquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_level_quiz_question] |  |
+| DELETE | `/level/quiz/question/:levelquizquestionid` | LevelQuizQuestionController.deletequizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_level_quiz_question] |  |
+| PUT | `/level/quiz/question/activate/:levelquizquestionid` | LevelQuizQuestionController.activatequizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[deactivate_level_quiz_question] |  |
+| PUT | `/level/quiz/question/deactivate/:levelquizquestionid` | LevelQuizQuestionController.deactivatequizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[deactivate_level_quiz_question] |  |
+| PUT | `/level/quiz/question/order/:levelquizquestionid/:levelquizquestionorder` | LevelQuizQuestionController.orderquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[reorder_level_quiz_question] |  |
+| PUT | `/level/quiz/question/setlesson/:levelquizquestionid` | LevelQuizQuestionController.setlesson | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[reorder_level_quiz_question] |  |
 | PUT | `/log/import` | LogController.create | owned | pending |  |  | yes | LogImportGuard, AccessGuard(ACCESS), CheckPermissionsGuard | Rows must belong to learners of the uploading teacher's school. |
 | GET | `/organisation` | OrganisationController.getall | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[view_organisation] |  |
 | POST | `/organisation` | OrganisationController.create | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[create_organisation] |  |
@@ -222,22 +222,22 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | GET | `/organisation/:organisationid` | OrganisationController.get | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[view_organisation] |  |
 | PUT | `/organisation/:organisationid` | OrganisationController.update | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_organisation] |  |
 | GET | `/organisation/mine` | OrganisationController.mine | self | yes |  |  | yes | AccessGuard(ACCESS) | Reads only the organisation named by the caller's own token. |
-| POST | `/question` | QuestionController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_question] |  |
-| DELETE | `/question/:questionid` | QuestionController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_question] |  |
-| GET | `/question/:questionid` | QuestionController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_question] |  |
-| PUT | `/question/:questionid` | QuestionController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
-| PUT | `/question/:questionid/questionidentifier/:questionidentifier` | QuestionController.updateQuestionIdentifier | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
-| PUT | `/question/activate/:questionid` | QuestionController.activate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
-| POST | `/question/create` | QuestionController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_question] |  |
-| PUT | `/question/deactivate/:questionid` | QuestionController.deactivate | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
-| POST | `/question/search` | QuestionController.getallOR | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_question] |  |
-| DELETE | `/question/tag/:questionid/:tag` | QuestionController.deleteTag | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
-| GET | `/question/tag/:questionid/:tag` | QuestionController.addTag | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
-| POST | `/questiontag` | QuestionTagController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_questiontag] |  |
-| DELETE | `/questiontag/:questiontagid` | QuestionTagController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_questiontag] |  |
-| GET | `/questiontag/:questiontagid` | QuestionTagController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_questiontag] |  |
-| PUT | `/questiontag/:questiontagid` | QuestionTagController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_questiontag] |  |
-| POST | `/questiontag/create` | QuestionTagController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_questiontag] |  |
+| POST | `/question` | QuestionController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_question] |  |
+| DELETE | `/question/:questionid` | QuestionController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_question] |  |
+| GET | `/question/:questionid` | QuestionController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_question] |  |
+| PUT | `/question/:questionid` | QuestionController.update | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
+| PUT | `/question/:questionid/questionidentifier/:questionidentifier` | QuestionController.updateQuestionIdentifier | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
+| PUT | `/question/activate/:questionid` | QuestionController.activate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
+| POST | `/question/create` | QuestionController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_question] |  |
+| PUT | `/question/deactivate/:questionid` | QuestionController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
+| POST | `/question/search` | QuestionController.getallOR | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_question] |  |
+| DELETE | `/question/tag/:questionid/:tag` | QuestionController.deleteTag | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
+| GET | `/question/tag/:questionid/:tag` | QuestionController.addTag | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_question] |  |
+| POST | `/questiontag` | QuestionTagController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_questiontag] |  |
+| DELETE | `/questiontag/:questiontagid` | QuestionTagController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_questiontag] |  |
+| GET | `/questiontag/:questiontagid` | QuestionTagController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_questiontag] |  |
+| PUT | `/questiontag/:questiontagid` | QuestionTagController.update | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_questiontag] |  |
+| POST | `/questiontag/create` | QuestionTagController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_questiontag] |  |
 | GET | `/report/dashboard` | ReportController.getSchoolsReport | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach] |  |
 | GET | `/report/dashboard/country/:countryid` | ReportController.getCountryData | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach] |  |
 | GET | `/report/dashboard/school/:schoolname` | ReportController.getSchoolData | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_reach_school] |  |
@@ -333,11 +333,11 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | GET | `/student/stats/:studentid/practice` | StudentController.getstudentpracticestats | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | GET | `/student/stats/:studentid/quiz` | StudentController.getstudentquizstats | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | PUT | `/student/update` | StudentController.updateStudents | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
-| POST | `/subject` | SubjectController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_subject] |  |
-| DELETE | `/subject/:subjectid` | SubjectController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_subject] |  |
-| GET | `/subject/:subjectid` | SubjectController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_subject] |  |
-| PUT | `/subject/:subjectid` | SubjectController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_subject] |  |
-| POST | `/subject/create` | SubjectController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_subject] |  |
+| POST | `/subject` | SubjectController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_subject] |  |
+| DELETE | `/subject/:subjectid` | SubjectController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_subject] |  |
+| GET | `/subject/:subjectid` | SubjectController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_subject] |  |
+| PUT | `/subject/:subjectid` | SubjectController.update | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_subject] |  |
+| POST | `/subject/create` | SubjectController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_subject] |  |
 | GET | `/sync` | SyncController.sync | owned | pending |  |  | yes | AccessGuard(ACCESS) | Must export only one organisation's content; a platform caller must name the organisation. |
 | POST | `/sync/cloud` | SyncController.synconline | owned | pending |  |  |  | AccessGuard(ACCESS, Role.admin, Role.superadmin) | Must push only the caller's organisation's content; a platform caller must name the organisation. |
 | POST | `/sync/cloud/:schoolname/students` | SyncController.synconlineschool | owned | pending |  |  |  | AccessGuard(ACCESS, Role.admin, Role.superadmin) | Must push only learners of a school of the caller's organisation; a platform caller must name the organisation. |
