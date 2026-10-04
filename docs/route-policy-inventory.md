@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **282** routes, **84** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned route, by the spec it names), **11** are not applicable (public) and **187** are pending.
+Of **283** routes, **85** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned route, by the spec it names), **11** are not applicable (public) and **187** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
-| self | 4 | 4 | 0 | 0 |
+| self | 5 | 5 | 0 | 0 |
 | owned | 243 | 57 | 0 | 186 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 1 | 0 | 0 | 1 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **282** | **84** | **11** | **187** |
+| **all** | **283** | **85** | **11** | **187** |
 
 ## Policies
 
@@ -62,7 +62,7 @@ A route used by both a user token and the API key is classified by its user path
 - **API key**: `yes` when every `AccessGuard` on the route lists the application API key, so a caller with no user gets through.
 - **School-user token**: `yes` when a school-user (teacher or classroom device) access token gets through every guard on the route, derived from the guard metadata: every `AccessGuard` is the access token type with no role list, there is no `PlatformGuard`, and no permission is required. Feature switches such as `LogImportGuard` aside.
 
-Routes admitting the API key: 13. Routes admitting a school-user token: 7.
+Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 
 ## Routes
 
@@ -221,6 +221,7 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | DELETE | `/organisation/:organisationid` | OrganisationController.delete | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[delete_organisation] |  |
 | GET | `/organisation/:organisationid` | OrganisationController.get | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[view_organisation] |  |
 | PUT | `/organisation/:organisationid` | OrganisationController.update | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_organisation] |  |
+| GET | `/organisation/mine` | OrganisationController.mine | self | yes |  |  | yes | AccessGuard(ACCESS) | Reads only the organisation named by the caller's own token. |
 | POST | `/question` | QuestionController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_question] |  |
 | DELETE | `/question/:questionid` | QuestionController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_question] |  |
 | GET | `/question/:questionid` | QuestionController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_question] |  |
