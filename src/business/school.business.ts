@@ -6,6 +6,7 @@ import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { organisationcountry } from "src/models/data-models/organisationcountry";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import { lockLiveOrganisation, scopeOf } from "./org-scope";
+import { andSchoolScope, findOwnedSchool, inOwnedSchools } from "./school-scope";
 import { countries } from "src/models/data-models/countries";
 import { curriculums } from "src/models/data-models/curriculums";
 import { schools, schoolsAttributes } from "src/models/data-models/school";
@@ -35,8 +36,10 @@ export class SchoolBusiness {
       where: { schoolname, isdeleted: false },
     });
 
-  getallschools = () =>
+  /** The schools that have learners, one row each, among the caller's schools. */
+  getallschools = async (org: OrgContext) =>
     students.findAll({
+      where: await inOwnedSchools(org),
       attributes: [
         [fn("min", col("schooltype")), "schooltype"],
         // one row per school (by id: two schools may share a name); the name is the stored copy
@@ -49,9 +52,16 @@ export class SchoolBusiness {
       group: "schoolid",
     });
 
+  // No caller scope: used where a country is checked for schools of any organisation (a platform action).
   getschoolsbycountry = (countryid: string) =>
     schools.findAll({
       where: { countryid }
+    })
+
+  /** A country's schools among the caller's schools. */
+  getownedschoolsbycountry = (org: OrgContext, countryid: string) =>
+    schools.findAll({
+      where: andSchoolScope({ countryid }, org),
     })
 
   /**
@@ -154,7 +164,7 @@ export class SchoolBusiness {
   };
   getschoolbyid = (schoolid: string) =>
     schools.findOne({ where: { schoolid, isdeleted: false }});
-  getschoolall = async (paging: IMultiPaging) => {
+  getschoolall = async (paging: IMultiPaging, org: OrgContext) => {
     let where: WhereOptions<schoolsAttributes> = {
       isdeleted: false,
     };
@@ -164,7 +174,8 @@ export class SchoolBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
-    where = { ...constructWhere<schoolsAttributes>(paging, where) };
+    // The caller's scope is ANDed on the outside: a filter (which builds its own `Op.and`) cannot replace it.
+    where = andSchoolScope({ ...constructWhere<schoolsAttributes>(paging, where) }, org);
 
     const allschoolscount = await schools.findAndCountAll({ where, order, limit, offset, 
       include:[
@@ -187,7 +198,7 @@ export class SchoolBusiness {
     allschoolscount.rows = filterschools;
     return allschoolscount
   };
-  getSchoolsWithFilter = async (schoolname: string, countryid: string, user?: LmsUserToken) => {
+  getSchoolsWithFilter = async (schoolname: string, countryid: string, user: LmsUserToken | undefined, org: OrgContext) => {
     const where: WhereOptions<schoolsAttributes> = {
       isdeleted: false,
       schoolname: {
@@ -203,8 +214,9 @@ export class SchoolBusiness {
         [Op.in]: user.schools
       }
     }
-    return await schools.findAll({ 
-      where, order,
+    return await schools.findAll({
+      where: andSchoolScope(where, org),
+      order,
     });
   };
   getschoolname = (schoolname: string) =>
@@ -239,15 +251,9 @@ export class SchoolBusiness {
       // name from this read. Read outside, an edit that had read the old name
       // could save it back (every listed field is written) after a rename had
       // committed and cascaded, undoing the cascade for that school.
-      const tempdt = await schools.findOne({
-        where: { schoolid: school.schoolid, isdeleted: false },
-        transaction,
-        lock: Transaction.LOCK.UPDATE,
-      });
-      if (!tempdt) {
-        await transaction.rollback();
-        return null;
-      }
+      // (Among the caller's schools: another organisation's school, and a school with no organisation
+      // for an organisation caller, are not found, like one that does not exist.)
+      const tempdt = await findOwnedSchool(org, school.schoolid, { transaction, lock: Transaction.LOCK.UPDATE });
       // Only a platform caller changes a school's organisation (a different
       // value from anyone else is refused); whatever the organisation ends up
       // being, the country must be one of its countries.
@@ -313,17 +319,13 @@ export class SchoolBusiness {
       throw e;
     }
   };
-  deleteschool = async (schoolid: string, user: LmsUserToken) => {
-    const tempdt = await this.getschoolbyid(schoolid);
-    if (tempdt) {
-      tempdt.isdeleted = true;
-      tempdt.deleted_at = new Date();
-      tempdt.deleted_by = user.lmsuserid;
-      await tempdt.save({ fields: ["isdeleted", "deleted_at", "deleted_by"] });
-      return true;
-    } else {
-      return false;
-    }
+  deleteschool = async (schoolid: string, user: LmsUserToken, org: OrgContext) => {
+    const tempdt = await findOwnedSchool(org, schoolid);
+    tempdt.isdeleted = true;
+    tempdt.deleted_at = new Date();
+    tempdt.deleted_by = user.lmsuserid;
+    await tempdt.save({ fields: ["isdeleted", "deleted_at", "deleted_by"] });
+    return true;
   };
   isexistsschoolName = async (school: schoolsAttributes) => {
     const where: WhereOptions<schoolsAttributes> = {

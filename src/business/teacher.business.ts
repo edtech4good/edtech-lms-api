@@ -9,8 +9,10 @@ import { IPaging } from "src/models/IPaging";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import { buildWhere } from "src/services/util.service";
 import { v4 } from "uuid";
-import { resolveSchoolById, schoolNotFound } from "./school-identity";
+import { OrgContext } from "src/decorators/org.decorator";
+import { requireOwnedSchoolById } from "./school-scope";
 import { extractSchoolFilters, schoolIdsWhere } from "./school-filter";
+import { andInOwnedSchools, schoolScope } from "./school-scope";
 import { studentApiAttributes } from "./student-api-payload";
 
 export class TeacherBusiness {
@@ -39,16 +41,14 @@ export class TeacherBusiness {
     });
   addteacheruserbyschoolid = async (
     teachers: Array<any>,
-    schoolid: string
+    schoolid: string,
+    org: OrgContext,
   ) => {
     const tnx = await dbinstance.getdbinstance().transaction();
     try {
       // The school is read inside the transaction, locked by primary key (shared); its
-      // own stored name is what is written next to the id.
-      const school = await resolveSchoolById(schoolid, tnx);
-      if (!school) {
-        throw schoolNotFound();
-      }
+      // own stored name is what is written next to the id. It must be one of the caller's.
+      const school = await requireOwnedSchoolById(org, schoolid, tnx);
       const su = await schoolusers.bulkCreate(
         teachers.map((x) => ({
           schooluserpasswordhash: hashPassword(x.teacheruserpassword),
@@ -69,7 +69,7 @@ export class TeacherBusiness {
     }
   };
 
-  getAllTeachers = async (paging: IPaging) => {
+  getAllTeachers = async (paging: IPaging, org: OrgContext) => {
     let schooluserwhere: WhereOptions<schoolusersAttributes> = {};
     const limit = paging.pagesize || 20;
     let offset = 0;
@@ -79,7 +79,7 @@ export class TeacherBusiness {
 
     // A search by school name is carried out on the schools and the rows are
     // limited to those schools' ids (see school-filter.ts).
-    const { rest, schoolids } = await extractSchoolFilters(paging.filter);
+    const { rest, schoolids } = await extractSchoolFilters(paging.filter, schoolScope(org));
     schooluserwhere = {
       ...buildWhere<schoolusersAttributes>(
         {
@@ -95,7 +95,8 @@ export class TeacherBusiness {
     };
 
     const data = await schoolusers.findAndCountAll({
-      where: schooluserwhere,
+      // The caller's schools are ANDed on the outside: a filter (which builds its own `Op.and`) cannot replace them.
+      where: await andInOwnedSchools(schooluserwhere, org),
       limit,
       offset,
     });

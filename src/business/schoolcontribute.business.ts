@@ -9,7 +9,8 @@ import { IPaging } from "src/models/IPaging";
 import { buildWhere } from "src/services/util.service";
 import { format } from "date-fns";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
-import { resolveSchoolById } from "./school-identity";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andSchoolScope, findOwnedFeesRow, findOwnedSchool, requireOwnedSchoolById } from "./school-scope";
 
 export interface ChartItemFormat {
     name: Date | string;
@@ -23,7 +24,9 @@ export interface ChartItemFormat {
 
 export class SchoolcontributeBusiness {
 
-    createSchoolContribute = async (schoolContribute: schoolcontributedataAttributes, user: LmsUserToken) => {
+    createSchoolContribute = async (schoolContribute: schoolcontributedataAttributes, user: LmsUserToken, org: OrgContext) => {
+        // The school must be one of the caller's (unknown or not theirs: 404).
+        await findOwnedSchool(org, schoolContribute.schoolid);
         schoolContribute.schoolcontributeid = uuidv4();
         schoolContribute.isdeleted = false;
         schoolContribute.created_at = new Date();
@@ -98,17 +101,18 @@ export class SchoolcontributeBusiness {
         return false;
     };
 
-    getschoolcontributeid = async (schoolcontributeid: string) => {
-        const school = await schoolcontributedata.findOne({
-            where: {
-                schoolcontributeid,
-                isdeleted: false,
-            },
-        });
-        return school;
+    /** A Fees Collection row by id, one of the caller's (unknown or not theirs: 404). */
+    getschoolcontributeid = (schoolcontributeid: string, org: OrgContext) => findOwnedFeesRow(org, schoolcontributeid);
+
+    /** A school's Fees Collection rows. The school must be one of the caller's (unknown or not theirs: 404). */
+    getOwnedSchoolContribute = async (org: OrgContext, schoolid: string, date: string) => {
+        await findOwnedSchool(org, schoolid, { includeDeleted: true });
+        return this.getSchoolContributeById(schoolid, date);
     }
 
-    getSchoolContributeById = async (schoolid: string, date: string) => {
+    // The schools passed here are already the caller's (see getOwnedSchoolContribute and getAllSchoolContribute).
+
+    private getSchoolContributeById = async (schoolid: string, date: string) => {
         const allSchool: any[] =[];
         const where:WhereOptions<schoolsAttributes> = {
             schoolid, 
@@ -167,10 +171,10 @@ export class SchoolcontributeBusiness {
         });
      }
 
-    // `schoolid` is already resolved by the route (see resolveSchoolRef); '' / undefined = every school.
-    getAllSchoolContribute = async (schoolid: string | undefined, countryid: string, date: string) => {
+    // `schoolid` is already resolved by the route (see resolveOwnedSchoolRef); '' / undefined = every school of the caller's.
+    getAllSchoolContribute = async (schoolid: string | undefined, countryid: string, date: string, org: OrgContext) => {
         const getDashboard: any[] = [];
-        const allSchool = await this.getSchoolsWithFilter(schoolid,countryid)
+        const allSchool = await this.getSchoolsWithFilter(schoolid, countryid, org)
         for( const school of allSchool){
             const dashboard = await this.getSchoolContributeById(school.schoolid,date);
             if(dashboard.length > 0 && dashboard != null){
@@ -189,11 +193,10 @@ export class SchoolcontributeBusiness {
      * the request. Rows are saved one after another and awaited; the old code
      * started the saves without waiting for them.
      */
-    updatedSchoolContribute = async (school: schoolcontributedataAttributes, user: LmsUserToken) => {
+    updatedSchoolContribute = async (school: schoolcontributedataAttributes, user: LmsUserToken, org: OrgContext) => {
         const transaction = await dbinstance.getdbinstance().transaction();
         try {
-            const current = await resolveSchoolById(school.schoolid, transaction);
-            if (!current) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
+            const current = await requireOwnedSchoolById(org, school.schoolid, transaction);
             const tempdata = await schoolcontributedata.findAll({
                 where: { schoolid: school.schoolid, isdeleted: false },
                 transaction,
@@ -214,8 +217,8 @@ export class SchoolcontributeBusiness {
         }
     };
 
-    updatedSchoolContributeDashboard = async (school: schoolcontributedataAttributes, user: LmsUserToken) => {
-        const temp = await this.getschoolcontributeid(school.schoolcontributeid ?? '');
+    updatedSchoolContributeDashboard = async (school: schoolcontributedataAttributes, user: LmsUserToken, org: OrgContext) => {
+        const temp = await this.getschoolcontributeid(school.schoolcontributeid ?? '', org);
         if (temp) {
             temp.expected = school.expected;
             temp.actual = school.actual;
@@ -230,7 +233,8 @@ export class SchoolcontributeBusiness {
         }
     };
 
-    deleteSchoolContribute = async (schoolid: string, user: LmsUserToken) => {
+    deleteSchoolContribute = async (schoolid: string, user: LmsUserToken, org: OrgContext) => {
+        await findOwnedSchool(org, schoolid, { includeDeleted: true });
         const tempdata = await this.getschoolById(schoolid);
         for (const temp of tempdata ?? []) {
             if(temp) {
@@ -245,8 +249,8 @@ export class SchoolcontributeBusiness {
         return true;
     }
 
-    deleteSchoolContributeId = async (schoolcontributeid: string, user: LmsUserToken) => {
-        const temp = await this.getschoolcontributeid(schoolcontributeid);
+    deleteSchoolContributeId = async (schoolcontributeid: string, user: LmsUserToken, org: OrgContext) => {
+        const temp = await this.getschoolcontributeid(schoolcontributeid, org);
             if(temp) {
                 temp.isdeleted = true,
                 temp.deleted_at = new Date(),
@@ -258,8 +262,9 @@ export class SchoolcontributeBusiness {
         return true;
     }
 
-    getSchooldashboard = async (schoolid: string) => {
+    getSchooldashboard = async (schoolid: string, org: OrgContext) => {
         const data: Array<LineChartFormat> = [];
+        await findOwnedSchool(org, schoolid, { includeDeleted: true });
         const schools = await this.getSchoolDashboardById(schoolid);
         for (const school of schools) {
             if(school){
@@ -291,9 +296,9 @@ export class SchoolcontributeBusiness {
         return data;
     }
 
-    getAllSchooldashboard = async () => {
+    getAllSchooldashboard = async (org: OrgContext) => {
         const data: Array<LineChartFormat> = [];
-        const school = await this.getAllSchoolContribute('','','');
+        const school = await this.getAllSchoolContribute('','','', org);
             for(const getschool of school){
                 const  item:Array<ChartItemFormat> = [
             {
@@ -309,7 +314,8 @@ export class SchoolcontributeBusiness {
         return data;
     }
 
-    getAllSchoolContributeId = async (paging: IPaging, schoolid: string) => {
+    getAllSchoolContributeId = async (paging: IPaging, schoolid: string, org: OrgContext) => {
+        await findOwnedSchool(org, schoolid, { includeDeleted: true });
         let where: WhereOptions<schoolcontributedataAttributes> = {
             schoolid: schoolid,
             isdeleted: false,
@@ -338,9 +344,9 @@ export class SchoolcontributeBusiness {
           return schoolcontribute;
     }
 
-    getSchoolDashboardCountry = async (schoolid: string | undefined, countryid: string, date: string) =>{
+    getSchoolDashboardCountry = async (schoolid: string | undefined, countryid: string, date: string, org: OrgContext) =>{
         const data: Array<LineChartFormat> = [];
-        const school = await this.getAllSchoolContribute(schoolid, countryid, date);
+        const school = await this.getAllSchoolContribute(schoolid, countryid, date, org);
         for(const getSchool of school){
             const item: Array<ChartItemFormat> = [
                 {
@@ -362,9 +368,9 @@ export class SchoolcontributeBusiness {
 
     }
 
-    reportDownload = async(date: string) => {
+    reportDownload = async(date: string, org: OrgContext) => {
         const report: any[] = [];
-        const school = await this.getAllSchoolContribute('', '',date);
+        const school = await this.getAllSchoolContribute('', '',date, org);
         for(const getschool of school){
             const createTime = new Date(getschool?.created_at ?? '');
             const currentTime = new Date();
@@ -387,7 +393,7 @@ export class SchoolcontributeBusiness {
                 if(createDate === currentDate){
                     report.push(getschool);
                 }else{
-                    const temp = await this.getschoolcontributeid(getschool.schoolcontributeid);
+                    const temp = await this.getschoolcontributeid(getschool.schoolcontributeid, org);
                     if(temp){
                         temp.expected = 0;
                         temp.actual = 0;
@@ -400,7 +406,7 @@ export class SchoolcontributeBusiness {
         return report;
     }
 
-    getSchoolsWithFilter = async (schoolid: string | undefined, countryid: string) => {
+    getSchoolsWithFilter = async (schoolid: string | undefined, countryid: string, org: OrgContext) => {
         const where: WhereOptions<schoolsAttributes> = {
           isdeleted: false,
         };
@@ -411,7 +417,7 @@ export class SchoolcontributeBusiness {
         if(schoolid){
             where.schoolid = schoolid;
         }
-        return await schools.findAll({ where, order });
+        return await schools.findAll({ where: andSchoolScope(where, org), order });
       };
 
 

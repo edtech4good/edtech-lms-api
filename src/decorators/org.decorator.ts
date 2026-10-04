@@ -58,3 +58,34 @@ export const Org = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): OrgContext =>
     orgOf(ctx.switchToHttp().getRequest()?.user),
 );
+
+/**
+ * The application API key carries no user and no organisation. The guard hands
+ * the handler `{ user: "API KEY" }` (and nothing else) when the key was the
+ * credential, on a route that lists the key among its roles.
+ */
+export const isServerCaller = (user: unknown): boolean =>
+  typeof user === "object" &&
+  user !== null &&
+  (user as { user?: unknown }).user === "API KEY" &&
+  Object.keys(user).length === 1;
+
+/** What the application API key is served as until it has an organisation of its own: the platform, not acting as any organisation. */
+export const SERVER_CALLER_CONTEXT: OrgContext = Object.freeze({
+  organisationid: null,
+  isplatform: true,
+  permissions: [],
+});
+
+/**
+ * `orgOf` for a route that also admits the application API key: the key is
+ * served as the platform (see SERVER_CALLER_CONTEXT), every other caller as
+ * `orgOf` says. Use it only on a route whose AccessGuard lists `Role.apikey`.
+ */
+export const orgOrServerOf = (user: unknown): OrgContext =>
+  isServerCaller(user) ? { ...SERVER_CALLER_CONTEXT, permissions: [] } : orgOf(user);
+
+export const OrgOrServer = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): OrgContext =>
+    orgOrServerOf(ctx.switchToHttp().getRequest()?.user),
+);

@@ -30,7 +30,11 @@ export interface SplitFilters<T> {
   schoolids?: string[];
 }
 
-export async function extractSchoolFilters<T extends SchoolFilterEntry>(filters: T[] | undefined): Promise<SplitFilters<T>> {
+export async function extractSchoolFilters<T extends SchoolFilterEntry>(
+  filters: T[] | undefined,
+  /** The schools a caller may see (the caller's organisation: see school-scope.ts); a school outside it is not found. */
+  scopeWhere?: WhereOptions,
+): Promise<SplitFilters<T>> {
   const rest: T[] = [];
   let schoolids: string[] | undefined;
   const narrow = (ids: string[]) => {
@@ -46,11 +50,11 @@ export async function extractSchoolFilters<T extends SchoolFilterEntry>(filters:
       }
       const matching = await schools.findAll({
         attributes: ["schoolid"],
-        where: { [Op.and]: terms.map((term: string) => ({ schoolname: { [Op.like]: `%${term}%` } })) },
+        where: { [Op.and]: [...terms.map((term: string) => ({ schoolname: { [Op.like]: `%${term}%` } })), ...(scopeWhere ? [scopeWhere] : [])] },
       });
       narrow(matching.map((s) => s.schoolid));
     } else if (filter.key === "schoolid" && filter.value) {
-      const school = await resolveSchoolRef({ schoolid: Array.isArray(filter.value) ? filter.value[0] : filter.value });
+      const school = await resolveSchoolRef({ schoolid: Array.isArray(filter.value) ? filter.value[0] : filter.value }, scopeWhere);
       narrow(school ? [school.schoolid] : []);
     } else {
       rest.push(filter);

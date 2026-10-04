@@ -3,6 +3,8 @@ import { ApiBearerAuth, ApiBody, ApiExtraModels, ApiParam, ApiQuery, ApiResponse
 import { CountryBusiness } from 'src/business/country.business';
 import { RequirePermissions } from 'src/decorators/requirePermissions.decorator';
 import { User } from 'src/decorators/user.decorator';
+import { Org, OrgContext, OrgOrServer, orgOf } from 'src/decorators/org.decorator';
+import { hasSchoolUserId } from 'src/services/organisation-claims';
 import { AccessGuard } from 'src/guards/access.guard';
 import { PlatformGuard } from "src/guards/platform.guard";
 import { CheckPermissionsGuard } from 'src/guards/checkPermission.guard';
@@ -48,14 +50,17 @@ export class CountryController {
       @Query("country") countryname: string = '',
       @User() user: LmsUserToken,
     ): Promise<any> {
-      const data = await new CountryBusiness().getCountriesWithFilter(countryname, user);
+      // A staff token reads the countries its organisation is linked to; a school-user (teacher) token has no
+      // organisation context and reads every country, as before.
+      const scope = hasSchoolUserId(user) ? "school-user" : orgOf(user);
+      const data = await new CountryBusiness().getCountriesWithFilter(countryname, user, scope);
       return {
           data: data,
           error: false,
       };
     }
 
-    @OrgPolicy("owned", { note: "Must find only a country linked to the caller's organisation." })
+    @OrgPolicy("owned", { note: "Must find only a country linked to the caller's organisation.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
     @Get(":countryid")
     @ApiResponse({
         status: 200,
@@ -76,16 +81,16 @@ export class CountryController {
     @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
     @ApiBearerAuth()
     async get(
-        @Param("countryid") countryid: string
+        @Param("countryid") countryid: string,
+        @Org() org: OrgContext,
     ): Promise<CountryCreateResponse> {
-        const data = await new CountryBusiness().getcountrybyid(countryid);
         return {
             error: false,
-            data: data ? data : undefined,
+            data: await new CountryBusiness().getOwnedCountry(org, countryid),
         };
     }
 
-    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation." })
+    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
     @Get("")
     @ApiResponse({
         status: 200,
@@ -100,15 +105,15 @@ export class CountryController {
     // Role.teacher reads: feeds the country filter on the report screens.
     @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher))
     @ApiBearerAuth()
-    async getAll(): Promise<CountryAllResponse> {
-        const data = await new CountryBusiness().getAllcountries();
+    async getAll(@OrgOrServer() org: OrgContext): Promise<CountryAllResponse> {
+        const data = await new CountryBusiness().getAllcountries(org);
         return {
             error: false,
             data: data ? data : undefined,
         };
     }
 
-    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation." })
+    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
     @Post("")
     @ApiResponse({
         status: 200,
@@ -128,12 +133,12 @@ export class CountryController {
     @RequirePermissions(Permission.VIEW_COUNTRY)
     @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
     @HttpCode(HttpStatus.OK)
-    async getall(@Body() body: IPaging): Promise<CountryGetAllResponse> {
+    async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<CountryGetAllResponse> {
         const tempresult = await new CountryBusiness().getcountryall({
             pageindex: body?.pageindex || 0,
             pagesize: body?.pagesize || 0,
             filter: body?.filter || [],
-        });
+        }, org);
         return <CountryGetAllResponse>{
             error: false,
             data: {

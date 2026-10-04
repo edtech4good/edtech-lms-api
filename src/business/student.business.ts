@@ -21,7 +21,10 @@ import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
 import { assertEnrolmentFits, ownerOfSchool } from "./content-owner";
-import { requireSchoolByName, resolveSchoolByName, withSchoolIds } from "./school-identity";
+import { withSchoolIds } from "./school-identity";
+import { andInOwnedSchools, findOwnedStudent, requireOwnedSchoolByName } from "./school-scope";
+import { OrgContext } from "src/decorators/org.decorator";
+import { schoolScope } from "./school-scope";
 import { extractSchoolFilters, schoolIdsWhere } from "./school-filter";
 import { hashPassword } from "src/services/password.service";
 import { LmsUserToken } from "src/models/token.model";
@@ -54,7 +57,7 @@ export class StudentBusiness {
     return students.findOne({ where: { schooluserid } });
   };
 
-  getAllStudents = async (paging: IPaging) => {
+  getAllStudents = async (paging: IPaging, org: OrgContext) => {
     curriculums.hasOne(students, {
       foreignKey: "curriculumid",
       sourceKey: "curriculumid",
@@ -82,7 +85,7 @@ export class StudentBusiness {
     }
     // A search by school name is carried out on the schools and the rows are
     // limited to those schools' ids (see school-filter.ts).
-    const { rest: restfilter, schoolids } = await extractSchoolFilters(paging.filter);
+    const { rest: restfilter, schoolids } = await extractSchoolFilters(paging.filter, schoolScope(org));
     studentwhere = {
       ...buildWhere<studentsAttributes>(
         {
@@ -124,7 +127,8 @@ export class StudentBusiness {
     // Soft-deleted learners drop off the active roster. Their rows and progress
     // history stay in the database and in historical reports; this is the list
     // staff manage enrolment from, so it shows the living roster only.
-    studentwhere = { ...studentwhere, isdeleted: false };
+    // The caller's schools are ANDed on the outside: a filter (which builds its own `Op.and`) cannot replace them.
+    studentwhere = await andInOwnedSchools({ ...studentwhere, isdeleted: false }, org);
     const data = await students.findAndCountAll({
       where: studentwhere,
       order,
@@ -215,7 +219,7 @@ export class StudentBusiness {
   };
 
   // `schoolid` is already resolved by the route (see resolveSchoolRef); undefined = every school.
-  getStudentsWithFilter = async (userid: string, schoolid: string | undefined, standard: string, teacher: boolean = false) => {
+  getStudentsWithFilter = async (userid: string, schoolid: string | undefined, standard: string, teacher: boolean, org: OrgContext) => {
     const where: WhereOptions<studentsAttributes> = {
       "$schooluser.schoolusername$": {
         [Op.like]: `%${userid.trim()}%`
@@ -229,7 +233,7 @@ export class StudentBusiness {
     const order = ["created_at"];
 
     const options: any = {
-      where,
+      where: await andInOwnedSchools(where, org),
       order,
       include: [
         {
@@ -244,7 +248,9 @@ export class StudentBusiness {
     return await students.findAll(options);
   };
 
-  getStudent = async (studentid: string) => {
+  getStudent = async (studentid: string, org: OrgContext) => {
+    // 404 for a learner that is not the caller's, like one that does not exist.
+    await findOwnedStudent(org, { studentid });
     curriculums.hasOne(students, {
       foreignKey: "curriculumid",
       sourceKey: "curriculumid",
@@ -319,10 +325,11 @@ export class StudentBusiness {
   getstudentcountbystandard = (standard: string) =>
     students.count({ where: { standard } });
 
-  deletestudent = (
+  deletestudent = async (
     schooluserid: string,
     deletedby: string,
     transaction: Transaction,
+    org: OrgContext,
   ) =>
     students.update(
       {
@@ -331,16 +338,16 @@ export class StudentBusiness {
         deleted_by: deletedby,
       },
       {
-        where: {
-          schooluserid,
-          isdeleted: false,
-        },
+        // Only a learner of one of the caller's schools.
+        where: await andInOwnedSchools({ schooluserid, isdeleted: false }, org, transaction),
         transaction,
       },
     );
 
-  getstudentstats = (studentid: string) =>
-    dbinstance.getdbinstance().query(
+  getstudentstats = async (studentid: string, org: OrgContext) => {
+    // 404 for a learner that is not the caller's, like one that does not exist.
+    await findOwnedStudent(org, { studentid });
+    return dbinstance.getdbinstance().query(
       `SELECT 
       ss.*,
       studentprogress.starttime AS lastlogin,
@@ -382,9 +389,12 @@ WHERE
     ss.studentid = ? LIMIT 1`,
       { type: QueryTypes.SELECT, raw: true, replacements: [studentid] }
     );
+  };
 
-  getstudentquizstats = (studentid: string) =>
-    dbinstance.getdbinstance().query(
+  getstudentquizstats = async (studentid: string, org: OrgContext) => {
+    // 404 for a learner that is not the caller's, like one that does not exist.
+    await findOwnedStudent(org, { studentid });
+    return dbinstance.getdbinstance().query(
       `SELECT 
       sp.*,
       lessonquizzes.lessonquizname as lessonquizname,
@@ -413,9 +423,12 @@ WHERE
           AND sp.progresstype = 2;`,
       { type: QueryTypes.SELECT, raw: true, replacements: [studentid] }
     );
+  };
 
-  getstudentpracticestats = (studentid: string) =>
-    dbinstance.getdbinstance().query(
+  getstudentpracticestats = async (studentid: string, org: OrgContext) => {
+    // 404 for a learner that is not the caller's, like one that does not exist.
+    await findOwnedStudent(org, { studentid });
+    return dbinstance.getdbinstance().query(
       `SELECT 
       sp.*,
       lessonpractices.lessonpracticename as lessonpracticename,
@@ -444,9 +457,12 @@ WHERE
           AND sp.progresstype = 1;`,
       { type: QueryTypes.SELECT, raw: true, replacements: [studentid] }
     );
+  };
 
-  getstudentlevelstats = (studentid: string) =>
-    dbinstance.getdbinstance().query(
+  getstudentlevelstats = async (studentid: string, org: OrgContext) => {
+    // 404 for a learner that is not the caller's, like one that does not exist.
+    await findOwnedStudent(org, { studentid });
+    return dbinstance.getdbinstance().query(
       `SELECT 
       sp.*,
       levels.levelid AS levelid,
@@ -466,6 +482,7 @@ WHERE
           sp.progresstype = 3;`,
       { type: QueryTypes.SELECT, raw: true, replacements: [studentid] }
     );
+  };
 
   getstudentaccess = async (students: Array<string>) => {
     // An empty list would build `userid in ()`, which is a MySQL syntax error.
@@ -544,7 +561,7 @@ WHERE
   }
 
   // `schoolid` is already resolved by the route (an unknown school was a 404 there).
-  getAllStudentsForEdit = async (countryid: string = '', schoolid: string = '', studentid: string = '') => {
+  getAllStudentsForEdit = async (countryid: string = '', schoolid: string = '', studentid: string = '', org: OrgContext) => {
     const countryexists = await new CountryBusiness().getcountrybyid(
       countryid
     );
@@ -559,7 +576,7 @@ WHERE
     if(schoolid) where.schoolid = schoolid;
     if(studentid) where.studentid = studentid;
     const stds = await students.findAll({
-      where,
+      where: await andInOwnedSchools(where, org),
       attributes: [
         'studentid',
         'studentfirstname',
@@ -654,13 +671,15 @@ WHERE
   updateStudents = async (
     studentdata: Array<IStudentImportFormat>,
     lmsuser: LmsUserToken,
-    transaction: Transaction
+    transaction: Transaction,
+    org: OrgContext,
   ) => {
-    // Before any row is written: the curriculums a row names must have the owner of the school it names. (A school or a
-    // curriculum that is not found is left to the row's own checks below, which report it.)
+    // Before any row is written: every learner a row names, and every school it names, must be the caller's (else 404 and
+    // nothing is written), and the curriculums a row names must have the owner of the school it names. (A curriculum that
+    // is not found is left to the row's own checks below, which report it.)
     for (const [rowindex, x] of studentdata.entries()) {
-      const school = await resolveSchoolByName(x.schoolname, transaction, `students.${rowindex}.schoolname`);
-      if (!school) continue;
+      await findOwnedStudent(org, { studentid: x.studentid }, transaction);
+      const school = await requireOwnedSchoolByName(org, x.schoolname, transaction, `students.${rowindex}.schoolname`);
       const named = await curriculums.findAll({
         where: { curriculumname: { [Op.in]: x.curriculums.split('/') } },
         attributes: ['curriculumid'],
@@ -670,7 +689,7 @@ WHERE
     }
     for (const [rowindex, x] of studentdata.entries()) {
       const student = await students.findOne({
-        where: { studentid: x.studentid },
+        where: await andInOwnedSchools({ studentid: x.studentid }, org, transaction),
         include: [
           {
             model: schoolusers,
@@ -686,7 +705,7 @@ WHERE
       // stored name (not the text in the file); a name that matches no school
       // fails the whole update.
       // The error names the row (`students.<i>.schoolname`), so a batch that fails says which learner.
-      const school = await requireSchoolByName(x.schoolname, transaction, `students.${rowindex}.schoolname`);
+      const school = await requireOwnedSchoolByName(org, x.schoolname, transaction, `students.${rowindex}.schoolname`);
       const standard = await standards.findOne({
         where: { standardname: x.standard },
         attributes: ['standardid','standardname'],

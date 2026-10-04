@@ -12,6 +12,8 @@ import { SyncController } from "src/modules/sync/sync.controller";
  * table and the business classes behind each route, so what is asserted is what
  * each route hands down: the id, never the name.
  */
+// A platform user not acting as an organisation: the caller whose reads are not limited to one organisation.
+const PLATFORM = { organisationid: null, isplatform: true, permissions: [] };
 const SAMPLE = { schoolid: "11111111-1111-4111-8111-111111111111", schoolname: "Sample School", uitheme: "corporate", brandingconfig: { logo: "x" }, curriculums: [] };
 const KHMER = { schoolid: "22222222-2222-4222-8222-222222222222", schoolname: "សាលាគំរូ", uitheme: "kids", brandingconfig: null, curriculums: [] }; // has nikahit U+17C6
 const collate = (s: string) => s.replace(/ំ/g, "").replace(/ +$/, "").toLowerCase();
@@ -85,32 +87,32 @@ describe("the exports and the cloud sync take the school's name or id in the pat
   const res = { set: jest.fn() };
 
   it("GET /export/:schoolname/students: a name is resolved, the business layer gets the id", async () => {
-    await expect(new ExportController().getstudents("Sample School", "false", res)).rejects.toMatchObject({ code: "NOT_FOUND" }); // no learners in this fake
+    await expect(new ExportController().getstudents("Sample School", "false", res, PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" }); // no learners in this fake
     expect(getschooluserbyschoolid).toHaveBeenCalledWith(SAMPLE.schoolid, false);
   });
 
   it("GET /export/:schoolname/students: an id works too (online export flag kept)", async () => {
-    await expect(new ExportController().getstudents(SAMPLE.schoolid, "true", res)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new ExportController().getstudents(SAMPLE.schoolid, "true", res, PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(getschooluserbyschoolid).toHaveBeenCalledWith(SAMPLE.schoolid, true);
   });
 
   it("GET /export/:schoolname/students: an unknown school is a 404 and nothing is read", async () => {
-    await expect(new ExportController().getstudents("Nowhere", "false", res)).rejects.toMatchObject({ code: "NOT_FOUND", message: "That school doesn't exist." });
-    await expect(new ExportController().getstudents("សាលាគរូ", "false", res)).rejects.toMatchObject({ message: "That school doesn't exist." });
+    await expect(new ExportController().getstudents("Nowhere", "false", res, PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND", message: "That school doesn't exist." });
+    await expect(new ExportController().getstudents("សាលាគរូ", "false", res, PLATFORM)).rejects.toMatchObject({ message: "That school doesn't exist." });
     expect(getschooluserbyschoolid).not.toHaveBeenCalled();
   });
 
   it("GET /export/:schoolname/teachers: name or id", async () => {
-    await expect(new ExportController().getteachers("sample school", res)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new ExportController().getteachers("sample school", res, PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(getteacheruserbyschoolid).toHaveBeenCalledWith(SAMPLE.schoolid);
     getteacheruserbyschoolid.mockClear();
-    await expect(new ExportController().getteachers(KHMER.schoolid, res)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new ExportController().getteachers(KHMER.schoolid, res, PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(getteacheruserbyschoolid).toHaveBeenCalledWith(KHMER.schoolid);
   });
 
   it("the file name uses the school's own stored name, whichever way it was named", async () => {
     getteacheruserbyschoolid.mockResolvedValue([{ get: () => ({ schooluserid: "t1" }) }]);
-    await new ExportController().getteachers(SAMPLE.schoolid, res);
+    await new ExportController().getteachers(SAMPLE.schoolid, res, PLATFORM);
     expect(res.set).toHaveBeenCalledWith(expect.objectContaining({ "Content-Disposition": expect.stringContaining("teachers-Sample School.zip") }));
   });
 
@@ -127,16 +129,16 @@ describe("PUT /import/:schoolname/teachers", () => {
   const csv = (rows: string) => ({ buffer: Buffer.from(`teacherusername,teacheruserpassword\n${rows}`, "utf8") }) as never;
 
   it("a name or an id: the duplicate check and the insert are by the school's id", async () => {
-    await new ImportController().putteachers("Sample School", csv("t1,pw1"));
+    await new ImportController().putteachers("Sample School", csv("t1,pw1"), PLATFORM);
     expect(getteacherusersbyschoolid).toHaveBeenCalledWith(SAMPLE.schoolid, ["t1"]);
-    expect(addteacheruserbyschoolid).toHaveBeenCalledWith(expect.any(Array), SAMPLE.schoolid);
+    expect(addteacheruserbyschoolid).toHaveBeenCalledWith(expect.any(Array), SAMPLE.schoolid, PLATFORM);
     addteacheruserbyschoolid.mockClear();
-    await new ImportController().putteachers(KHMER.schoolid, csv("t2,pw2"));
-    expect(addteacheruserbyschoolid).toHaveBeenCalledWith(expect.any(Array), KHMER.schoolid);
+    await new ImportController().putteachers(KHMER.schoolid, csv("t2,pw2"), PLATFORM);
+    expect(addteacheruserbyschoolid).toHaveBeenCalledWith(expect.any(Array), KHMER.schoolid, PLATFORM);
   });
 
   it("an unknown school is a 404 and nothing is written", async () => {
-    await expect(new ImportController().putteachers("Nowhere", csv("t1,pw1"))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new ImportController().putteachers("Nowhere", csv("t1,pw1"), PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(addteacheruserbyschoolid).not.toHaveBeenCalled();
   });
 });

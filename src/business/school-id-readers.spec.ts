@@ -36,6 +36,8 @@ import { ReportController } from "src/modules/report/report.controller";
  * (TRIM equality under a collation that ignores case, trailing spaces and the
  * nikahit mark) and the list search (LIKE), `findOne` answers a lookup by id.
  */
+// A platform user not acting as an organisation: the caller whose reads are not limited to one organisation.
+const PLATFORM = { organisationid: null, isplatform: true, permissions: [] };
 const SAMPLE = { schoolid: "id-sample", schoolname: "Sample School", curriculums: [] };
 const KHMER = { schoolid: "id-khmer", schoolname: "សាលាគំរូ", curriculums: [] }; // has nikahit U+17C6
 const OTHER = { schoolid: "id-other", schoolname: "Another School", curriculums: [] };
@@ -70,7 +72,7 @@ describe("the learner list (GET /student/all)", () => {
 
   it("filters on the school id the route resolved, never on the name; no limit when a school is chosen", async () => {
     const f = find();
-    await new StudentBusiness().getStudentsWithFilter("", "id-sample", "", false);
+    await new StudentBusiness().getStudentsWithFilter("", "id-sample", "", false, PLATFORM);
     expect(whereOf(f).schoolid).toBe("id-sample");
     noName(whereOf(f));
     expect((f.mock.calls[0][0] as { limit?: number }).limit).toBeUndefined();
@@ -78,13 +80,13 @@ describe("the learner list (GET /student/all)", () => {
 
   it("without a school it is limited to 50 and filters on no school", async () => {
     const f = find();
-    await new StudentBusiness().getStudentsWithFilter("", undefined, "", false);
+    await new StudentBusiness().getStudentsWithFilter("", undefined, "", false, PLATFORM);
     expect(whereOf(f).schoolid).toBeUndefined();
     expect((f.mock.calls[0][0] as { limit?: number }).limit).toBe(50);
   });
 
   describe("the route", () => {
-    const call = (schoolname: string, schoolid = "") => new StudentController().getAllStudents("", "", schoolname, schoolid, "");
+    const call = (schoolname: string, schoolid = "") => new StudentController().getAllStudents("", "", schoolname, schoolid, "", PLATFORM);
 
     it("a name is resolved to the id once, with the text rule (case and spaces do not matter)", async () => {
       const f = find();
@@ -134,7 +136,7 @@ describe("the learner edit export (GET /student/download-students)", () => {
   it("filters on the school id; the school is no longer looked up by name", async () => {
     jest.spyOn(countries, "findOne").mockResolvedValue(null as never);
     const f = jest.spyOn(students, "findAll").mockResolvedValue([] as never);
-    await new StudentBusiness().getAllStudentsForEdit("", "id-sample", "");
+    await new StudentBusiness().getAllStudentsForEdit("", "id-sample", "", PLATFORM);
     expect(whereOf(f).schoolid).toBe("id-sample");
     noName(whereOf(f));
     expect(schools.findAll).not.toHaveBeenCalled();
@@ -149,7 +151,7 @@ describe("the admin lists search by school name through the schools, then limit 
     jest.spyOn(schoolusers, "hasOne").mockReturnValue(undefined as never);
     jest.spyOn(curriculums, "hasOne").mockReturnValue(undefined as never);
     jest.spyOn(students, "belongsTo").mockReturnValue(undefined as never);
-    await b.getAllStudents({ pageindex: 1, pagesize: 20, filter: [{ key: "schoolname", value: "school" }, { key: "city", value: "x" }] } as never);
+    await b.getAllStudents({ pageindex: 1, pagesize: 20, filter: [{ key: "schoolname", value: "school" }, { key: "city", value: "x" }] } as never, PLATFORM);
     const where = whereOf(f);
     expect(where.schoolid).toEqual({ [Op.in]: ["id-sample", "id-other"] });
     // the other filter is untouched and nothing filters on a name
@@ -164,7 +166,7 @@ describe("the admin lists search by school name through the schools, then limit 
     jest.spyOn(schoolusers, "hasOne").mockReturnValue(undefined as never);
     jest.spyOn(curriculums, "hasOne").mockReturnValue(undefined as never);
     jest.spyOn(students, "belongsTo").mockReturnValue(undefined as never);
-    await b.getAllStudents({ pageindex: 1, pagesize: 20, filter: [{ key: "schoolname", value: "zzz" }] } as never);
+    await b.getAllStudents({ pageindex: 1, pagesize: 20, filter: [{ key: "schoolname", value: "zzz" }] } as never, PLATFORM);
     expect(whereOf(f).schoolid).toEqual({ [Op.in]: [] });
   });
 
@@ -175,15 +177,15 @@ describe("the admin lists search by school name through the schools, then limit 
     jest.spyOn(schoolusers, "hasOne").mockReturnValue(undefined as never);
     jest.spyOn(curriculums, "hasOne").mockReturnValue(undefined as never);
     jest.spyOn(students, "belongsTo").mockReturnValue(undefined as never);
-    await b.getAllStudents({ pageindex: 1, pagesize: 20, filter: [{ key: "schoolid", value: "id-other" }] } as never);
+    await b.getAllStudents({ pageindex: 1, pagesize: 20, filter: [{ key: "schoolid", value: "id-other" }] } as never, PLATFORM);
     expect(whereOf(f).schoolid).toEqual({ [Op.in]: ["id-other"] });
-    await b.getAllStudents({ pageindex: 1, pagesize: 20, filter: [{ key: "schoolname", value: "sample, school" }] } as never);
+    await b.getAllStudents({ pageindex: 1, pagesize: 20, filter: [{ key: "schoolname", value: "sample, school" }] } as never, PLATFORM);
     expect(whereOf(f, 1).schoolid).toEqual({ [Op.in]: ["id-sample"] });
   });
 
   it("teachers: the same, on the logins", async () => {
     const f = jest.spyOn(schoolusers, "findAndCountAll").mockResolvedValue({ count: 0, rows: [] } as never);
-    await new TeacherBusiness().getAllTeachers({ pageindex: 1, pagesize: 20, filter: [{ key: "schoolname", value: "another" }] } as never);
+    await new TeacherBusiness().getAllTeachers({ pageindex: 1, pagesize: 20, filter: [{ key: "schoolname", value: "another" }] } as never, PLATFORM);
     expect(whereOf(f).schoolid).toEqual({ [Op.in]: ["id-other"] });
     expect(JSON.stringify(whereOf(f))).not.toMatch(/schoolname/);
   });
@@ -201,7 +203,7 @@ describe("a school's teachers", () => {
 describe("classes, grades and curricula filtered by school", () => {
   it("classes: where.schoolid, not the joined school's name", async () => {
     const f = jest.spyOn(standards, "findAll").mockResolvedValue([] as never);
-    await new StandardBusiness().getStandardsWithFilter("", "id-sample");
+    await new StandardBusiness().getStandardsWithFilter("", "id-sample", PLATFORM);
     expect(whereOf(f).schoolid).toBe("id-sample");
     expect(JSON.stringify(whereOf(f))).not.toMatch(/schoolname/);
     expect(Object.keys(whereOf(f))).not.toContain("$school.schoolname$");
@@ -209,9 +211,9 @@ describe("classes, grades and curricula filtered by school", () => {
 
   it("the class route resolves a name once; an unknown name is a 404", async () => {
     const f = jest.spyOn(standards, "findAll").mockResolvedValue([] as never);
-    await new StandardController().getAllSchoolsWithFilter("", "another school", "");
+    await new StandardController().getAllSchoolsWithFilter("", "another school", "", PLATFORM);
     expect(whereOf(f).schoolid).toBe("id-other");
-    await expect(new StandardController().getAllSchoolsWithFilter("", "Nowhere", "")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new StandardController().getAllSchoolsWithFilter("", "Nowhere", "", PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("grades: the learner lookup filters on the school id", async () => {
@@ -245,7 +247,7 @@ describe("classes, grades and curricula filtered by school", () => {
 describe("fees collection by school", () => {
   it("the school list the dashboard reads filters on the school id", async () => {
     const f = jest.spyOn(schools, "findAll").mockResolvedValue([] as never);
-    await new SchoolcontributeBusiness().getSchoolsWithFilter("id-sample", "");
+    await new SchoolcontributeBusiness().getSchoolsWithFilter("id-sample", "", PLATFORM);
     expect(whereOf(f).schoolid).toBe("id-sample");
     noName(whereOf(f));
   });
@@ -381,7 +383,7 @@ describe("the school module", () => {
 
   it("the schools-with-learners list groups by school id (two schools may share a name)", async () => {
     const f = jest.spyOn(students, "findAll").mockResolvedValue([] as never);
-    await new SchoolBusiness().getallschools();
+    await new SchoolBusiness().getallschools(PLATFORM);
     expect((f.mock.calls[0][0] as { group: string }).group).toBe("schoolid");
     expect(JSON.stringify((f.mock.calls[0][0] as { attributes: unknown }).attributes)).toMatch(/schoolid/);
   });

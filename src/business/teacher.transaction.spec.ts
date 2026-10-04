@@ -23,6 +23,9 @@ import { dbinstance, rollbackQuietly } from "src/services/dbservice";
  * Rejects on the next macrotask rather than immediately, so a caller that
  * isn't awaiting has already moved on (committed, answered) when it lands.
  */
+// A platform user not acting as an organisation: the caller whose reads are not limited to one organisation.
+const PLATFORM = { organisationid: null, isplatform: true, permissions: [] };
+
 const rejectLater = (message: string) =>
   new Promise((_, reject) => setTimeout(() => reject(new Error(message)), 5));
 
@@ -82,7 +85,7 @@ describe("teacher creation waits for its write and commit", () => {
     const teachers = [{ teacherusername: "teacher9", teacheruserpassword: "pw-9" }];
 
     it("resolves only after the commit has finished", async () => {
-      await new TeacherBusiness().addteacheruserbyschoolid(teachers, "school-a-id");
+      await new TeacherBusiness().addteacheruserbyschoolid(teachers, "school-a-id", PLATFORM);
 
       expect(tnx.committed).toBe(true);
       expect(tnx.rollback).not.toHaveBeenCalled();
@@ -92,7 +95,7 @@ describe("teacher creation waits for its write and commit", () => {
       jest.spyOn(schoolusers, "bulkCreate").mockReturnValue(rejectLater("ER_DUP_ENTRY") as never);
 
       await expect(
-        new TeacherBusiness().addteacheruserbyschoolid(teachers, "school-a-id")
+        new TeacherBusiness().addteacheruserbyschoolid(teachers, "school-a-id", PLATFORM)
       ).rejects.toThrow("ER_DUP_ENTRY");
       expect(tnx.commit).not.toHaveBeenCalled();
       expect(tnx.rolledBack).toBe(true);
@@ -103,7 +106,7 @@ describe("teacher creation waits for its write and commit", () => {
       tnx.rollback.mockRejectedValue(finishedError());
 
       await expect(
-        new TeacherBusiness().addteacheruserbyschoolid(teachers, "school-a-id")
+        new TeacherBusiness().addteacheruserbyschoolid(teachers, "school-a-id", PLATFORM)
       ).rejects.toThrow("commit failed");
     });
   });
@@ -115,7 +118,7 @@ describe("teacher creation waits for its write and commit", () => {
     };
 
     it("resolves only after the commit has finished", async () => {
-      await new TeacherController().createall(body as never, false);
+      await new TeacherController().createall(body as never, false, PLATFORM);
 
       expect(tnx.committed).toBe(true);
     });
@@ -123,7 +126,7 @@ describe("teacher creation waits for its write and commit", () => {
     it("rejects, after rolling back, when the insert fails", async () => {
       jest.spyOn(schoolusers, "bulkCreate").mockReturnValue(rejectLater("ER_DUP_ENTRY") as never);
 
-      await expect(new TeacherController().createall(body as never, false)).rejects.toThrow(
+      await expect(new TeacherController().createall(body as never, false, PLATFORM)).rejects.toThrow(
         "ER_DUP_ENTRY"
       );
       expect(tnx.commit).not.toHaveBeenCalled();
@@ -134,7 +137,7 @@ describe("teacher creation waits for its write and commit", () => {
       tnx.commit.mockReturnValue(rejectLater("commit failed"));
       tnx.rollback.mockRejectedValue(finishedError());
 
-      await expect(new TeacherController().createall(body as never, false)).rejects.toThrow(
+      await expect(new TeacherController().createall(body as never, false, PLATFORM)).rejects.toThrow(
         "commit failed"
       );
     });

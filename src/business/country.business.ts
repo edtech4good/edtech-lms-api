@@ -8,7 +8,11 @@ import {
   countries,
   countriesAttributes,
 } from "../models/data-models/init-models";
+import { OrgContext } from "src/decorators/org.decorator";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { SchoolBusiness } from "./school.business";
+import { andLinkedCountries } from "./school-scope";
 
 export class CountryBusiness {
   createcountry = async (country: countriesAttributes, user: LmsUserToken) => {
@@ -19,7 +23,17 @@ export class CountryBusiness {
   };
   getcountrybyid = (countryid: string) =>
     countries.findOne({ where: { countryid, isdeleted: false } });
-  getcountryall = async (paging: IPaging) => {
+  /** One country the caller's organisation is linked to; unknown or not linked: 404. */
+  getOwnedCountry = async (org: OrgContext, countryid: string) => {
+    const country = await countries.findOne({
+      where: await andLinkedCountries({ countryid, isdeleted: false }, org),
+    });
+    if (!country) {
+      throw new ApiError(ErrorCode.NOT_FOUND, "That country doesn't exist.");
+    }
+    return country;
+  };
+  getcountryall = async (paging: IPaging, org: OrgContext) => {
     let where: WhereOptions<countriesAttributes> = {
       isdeleted: false,
     };
@@ -30,17 +44,24 @@ export class CountryBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
-    where = { ...buildWhere<countriesAttributes>(paging, where) };
+    // The caller's countries are ANDed on the outside: a filter (which builds its own `Op.and`) cannot replace them.
+    where = await andLinkedCountries({ ...buildWhere<countriesAttributes>(paging, where) }, org);
 
     return await countries.findAndCountAll({ where, order, limit, offset });
   };
-  getAllcountries = async () => {
+  /** The countries the caller's organisation is linked to (every country for the platform). */
+  getAllcountries = async (org: OrgContext) => {
     const where: WhereOptions<countriesAttributes> = {
       isdeleted: false,
     };
-    return await countries.findAll({ where });
+    return await countries.findAll({ where: await andLinkedCountries(where, org) });
   }
-  getCountriesWithFilter = async (countryname: string, user: LmsUserToken) => {
+  /**
+   * `scope` is the caller's organisation context for a staff token. A school-user
+   * (teacher) token has none and is passed as "school-user": it still reads every
+   * country, as before.
+   */
+  getCountriesWithFilter = async (countryname: string, user: LmsUserToken, scope: OrgContext | "school-user") => {
     const where: WhereOptions<countriesAttributes> = {
       isdeleted: false,
       countryname: {
@@ -55,7 +76,10 @@ export class CountryBusiness {
       }
     }
 
-    return await countries.findAll({ where, order });
+    return await countries.findAll({
+      where: scope === "school-user" ? where : await andLinkedCountries(where, scope),
+      order,
+    });
   };
   getcountryname = (countryname: string) =>
     countries.findOne({ where: { countryname, isdeleted: false } });

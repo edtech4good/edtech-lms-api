@@ -24,7 +24,8 @@ import {
 } from "@nestjs/swagger";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
-import { Org, OrgContext } from "src/decorators/org.decorator";
+import { Org, OrgContext, OrgOrServer } from "src/decorators/org.decorator";
+import { findOwnedSchool } from "src/business/school-scope";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import {
@@ -123,7 +124,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -147,15 +148,16 @@ export class SchoolController {
     @Query("countryid") countryid: string = '',
     @Query("school") schoolname: string = '',
     @User() user: LmsUserToken,
+    @Org() org: OrgContext,
   ): Promise<any> {
-    const data = await new SchoolBusiness().getSchoolsWithFilter(schoolname, countryid, user);
+    const data = await new SchoolBusiness().getSchoolsWithFilter(schoolname, countryid, user, org);
     return {
         data: data,
         error: false,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("")
   @ApiResponse({
     status: 200,
@@ -169,14 +171,14 @@ export class SchoolController {
   // Role.teacher reads: feeds the school filter on the report screens.
   @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher))
   @HttpCode(HttpStatus.OK)
-  async getAllSchools(): Promise<any> {
+  async getAllSchools(@OrgOrServer() org: OrgContext): Promise<any> {
     return {
       error: false,
-      data: await new SchoolBusiness().getallschools(),
+      data: await new SchoolBusiness().getallschools(org),
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("country/:countryid")
   @ApiResponse({
     status: 200,
@@ -191,16 +193,17 @@ export class SchoolController {
   @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin))
   @HttpCode(HttpStatus.OK)
   async getSchool(
-    @Param("countryid") countryid: string
+    @Param("countryid") countryid: string,
+    @OrgOrServer() org: OrgContext,
   ): Promise<SchoolGetAllByCountry> {
 
     return {
       error: false,
-      data: await new SchoolBusiness().getschoolsbycountry(countryid),
+      data: await new SchoolBusiness().getownedschoolsbycountry(org, countryid),
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("country/:countryid/curriculum/:curriculumid")
   @ApiResponse({
     status: 200,
@@ -221,17 +224,18 @@ export class SchoolController {
   @HttpCode(HttpStatus.OK)
   async getSchoolCurriculum(
     @Param("countryid") countryid: string,
-    @Param("curriculumid") curriculumid: string
+    @Param("curriculumid") curriculumid: string,
+    @OrgOrServer() org: OrgContext,
   ): Promise<SchoolGetAllByCountry> {
     const response = new SchoolGetAllByCountry();
-    const allSchools = await new SchoolBusiness().getschoolsbycountry(countryid);
+    const allSchools = await new SchoolBusiness().getownedschoolsbycountry(org, countryid);
     const filterSchools = allSchools.filter(school => school.curriculums.find(curid => curid === curriculumid));
     filterSchools ? response.data = filterSchools : response.data = [];
     response.error = false;
     return response;
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get('curriculumid')
   @ApiResponse({
     status: 200,
@@ -253,16 +257,17 @@ export class SchoolController {
   async getSchoolsCurriculum(
     @Query("curriculumid") curriculumid: string = '',
     @User() user: LmsUserToken,
+    @Org() org: OrgContext,
   ): Promise<SchoolGetAllByCurriculum> {
     const data = new SchoolGetAllByCurriculum();
-    const allSchool = await new SchoolBusiness().getSchoolsWithFilter('', '', user);
+    const allSchool = await new SchoolBusiness().getSchoolsWithFilter('', '', user, org);
     const filterSchool = allSchool.filter(school => (school.curriculums ?? []).find(curid => curid === curriculumid));
     filterSchool ? data.data = filterSchool : data.data = [];
     data.error = false;
     return data;
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -302,7 +307,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Delete(":schoolid")
   @ApiResponse({
     status: 200,
@@ -323,16 +328,17 @@ export class SchoolController {
   @ApiParam({ name: `schoolid`, type: "string", required: true })
   async delete(
     @Param("schoolid") schoolid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
   ): Promise<ResponseBoolean> {
-    await new SchoolBusiness().deleteschool(schoolid, user);
+    await new SchoolBusiness().deleteschool(schoolid, user, org);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get(":schoolid")
   @ApiResponse({
     status: 200,
@@ -352,16 +358,16 @@ export class SchoolController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `schoolid`, type: "string", required: true })
   async get(
-    @Param("schoolid") schoolid: string
+    @Param("schoolid") schoolid: string,
+    @Org() org: OrgContext,
   ): Promise<SchoolCreateResponse> {
-    const data = await new SchoolBusiness().getschoolbyid(schoolid);
     return {
       error: false,
-      data: data ? data : undefined,
+      data: await findOwnedSchool(org, schoolid),
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Put("update/:schoolid")
   @ApiResponse({
     status: 200,
@@ -401,7 +407,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -416,12 +422,12 @@ export class SchoolController {
   @RequirePermissions(Permission.VIEW_SCHOOL)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IMultiPaging): Promise<any> {
+  async getall(@Body() body: IMultiPaging, @Org() org: OrgContext): Promise<any> {
     const tempresult = await new SchoolBusiness().getschoolall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
-    });
+    }, org);
     return {
       error: false,
       data: {
@@ -433,7 +439,7 @@ export class SchoolController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get(":schoolid/curriculums")
   @ApiResponse({
     status: 200,
@@ -453,17 +459,18 @@ export class SchoolController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `schoolid`, type: "string", required: true })
   async getCurriculums(
-    @Param("schoolid") schoolid: string
+    @Param("schoolid") schoolid: string,
+    @Org() org: OrgContext,
   ): Promise<SchoolCurriculumResponse> {
     const response = new SchoolCurriculumResponse();
     const schoolbusiness = new SchoolBusiness();
-    const school = await schoolbusiness.getschoolbyid(schoolid);
+    const school = await findOwnedSchool(org, schoolid);
     // Was: catch-and-return-200 with `error: true` in the body - the HTTP
     // status never told the truth, so nothing that checks a status code
     // (client interceptors, retries) noticed a failure here. Let the real
     // error reach GlobalExceptionFilter instead (docs/api-errors.md: "the
     // body never contradicts [the HTTP status]").
-    response.data = await schoolbusiness.getschoolcurriculums(schoolid, school?.curriculums as [string]);
+    response.data = await schoolbusiness.getschoolcurriculums(schoolid, school.curriculums as [string]);
     response.error = false;
     return response;
   }

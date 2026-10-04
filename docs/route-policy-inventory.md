@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **283** routes, **34** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned route, by the spec it names), **11** are not applicable (public) and **238** are pending.
+Of **283** routes, **85** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned route, by the spec it names), **11** are not applicable (public) and **187** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 243 | 6 | 0 | 237 |
+| owned | 243 | 57 | 0 | 186 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 1 | 0 | 0 | 1 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **283** | **34** | **11** | **238** |
+| **all** | **283** | **85** | **11** | **187** |
 
 ## Policies
 
@@ -90,10 +90,10 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | GET | `/baselinequestion/getall/:curriculumbaselineid` | BaselinequestionController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
 | PUT | `/baselinequestion/order/:baselinequestionid/:baselinequestionorder` | BaselinequestionController.orderquizquestion | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
 | GET | `/dropdown/templatetype` | CommonController.getTemplateType | public | n/a |  |  |  | none | Returns a static list of template types. |
-| GET | `/country` | CountryController.getAll | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) | Must list only countries linked to the caller's organisation. |
-| POST | `/country` | CountryController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_country] | Must list only countries linked to the caller's organisation. |
+| GET | `/country` | CountryController.getAll | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) | Must list only countries linked to the caller's organisation. |
+| POST | `/country` | CountryController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_country] | Must list only countries linked to the caller's organisation. |
 | DELETE | `/country/:countryid` | CountryController.delete | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[delete_country] | Writes to global reference data (countries) must be restricted to platform users. |
-| GET | `/country/:countryid` | CountryController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_country] | Must find only a country linked to the caller's organisation. |
+| GET | `/country/:countryid` | CountryController.get | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_country] | Must find only a country linked to the caller's organisation. |
 | PUT | `/country/:countryid` | CountryController.update | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_country] | Writes to global reference data (countries) must be restricted to platform users. |
 | GET | `/country/all` | CountryController.getAllCountries | owned | pending |  |  | yes | AccessGuard(ACCESS) | Must list only countries linked to the caller's organisation. |
 | POST | `/country/create` | CountryController.create | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[create_country] | Writes to global reference data (countries) must be restricted to platform users. |
@@ -130,8 +130,8 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | GET | `/documenttag/:documenttagid` | DocumentTagController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_documenttag] |  |
 | PUT | `/documenttag/:documenttagid` | DocumentTagController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_documenttag] |  |
 | POST | `/documenttag/create` | DocumentTagController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_documenttag] |  |
-| GET | `/export/:schoolname/students` | ExportController.getstudents | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_download_student] |  |
-| GET | `/export/:schoolname/teachers` | ExportController.getteachers | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_teacher] |  |
+| GET | `/export/:schoolname/students` | ExportController.getstudents | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_download_student] |  |
+| GET | `/export/:schoolname/teachers` | ExportController.getteachers | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_teacher] |  |
 | GET | `/export/documents/:curriculumid` | ExportController.getQuestions | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] |  |
 | POST | `/feedback` | FeedbackController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_feedback] |  |
 | GET | `/feedback/:feedbackid` | FeedbackController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_feedback] |  |
@@ -145,7 +145,7 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | POST | `/grade/create` | GradeController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_grade] |  |
 | GET | `/grade/curriculum/:curriculumid` | GradeController.getGradeByCurriculum | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
 | PUT | `/grade/deactivate/:gradeid` | GradeController.deactivate | owned | pending |  |  |  | AccessGuard(ACCESS), AccessGuard(ACCESS), CheckPermissionsGuard[update_grade] |  |
-| PUT | `/import/:schoolname/teachers` | ImportController.putteachers | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_import, update_import] |  |
+| PUT | `/import/:schoolname/teachers` | ImportController.putteachers | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_import, update_import] |  |
 | POST | `/lesson` | LessonController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lesson] |  |
 | DELETE | `/lesson/:lessonid` | LessonController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lesson] |  |
 | GET | `/lesson/:lessonid` | LessonController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lesson] |  |
@@ -286,53 +286,53 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | GET | `/roles/node/permissions` | RolePermissionController.getPermsNode | global | yes |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_role] |  |
 | GET | `/roles/permissions` | RolePermissionController.getPerms | global | yes |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_role] |  |
 | POST | `/roles/user-bind-role` | RolePermissionController.binduserrole | owned | yes | `src/modules/user/user.organisation-scope.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_user] | Staff-account administration within the caller's organisation. Super Admin may not be bound to a user who has an organisation. |
-| GET | `/school-contribute/all` | SchoolContributeController.getSchool | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
-| POST | `/school-contribute/create` | SchoolContributeController.createSchoolContribute | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_fees_collection] |  |
-| DELETE | `/school-contribute/deleteschoolcontribute/:schoolid` | SchoolContributeController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_fees_collection] |  |
-| DELETE | `/school-contribute/deleteschoolcontributeid/:schoolcontributeid` | SchoolContributeController.deleteschoolcontribute | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_fees_collection] |  |
-| GET | `/school-contribute/getallschoolcontribute` | SchoolContributeController.getSchoolContribute | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
-| POST | `/school-contribute/getallschoolcontribute/:schoolid` | SchoolContributeController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
-| GET | `/school-contribute/getallschooldashboard` | SchoolContributeController.getAllSchoolsReport | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
-| GET | `/school-contribute/getschoolcontribute/:schoolid` | SchoolContributeController.getSchoolsName | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
-| GET | `/school-contribute/getschooldashboard/schoolcontributeid/:schoolcontributeid` | SchoolContributeController.getSchoolsContributeId | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
-| GET | `/school-contribute/getschooldashboardid/:schoolid` | SchoolContributeController.getSchoolsReport | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
-| POST | `/school-contribute/report/download` | SchoolContributeController.downloadOfflineClassLevelQuizzes | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
-| PUT | `/school-contribute/updateschooldashboard/:schoolcontributeid` | SchoolContributeController.updateschoolcontribute | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_fees_collection] |  |
-| PUT | `/school-contribute/updateschoolname/:schoolid` | SchoolContributeController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_fees_collection] |  |
-| GET | `/school` | SchoolController.getAllSchools | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
-| POST | `/school` | SchoolController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
-| DELETE | `/school/:schoolid` | SchoolController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_school] |  |
-| GET | `/school/:schoolid` | SchoolController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
-| GET | `/school/:schoolid/curriculums` | SchoolController.getCurriculums | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
-| GET | `/school/all` | SchoolController.getAllSchoolsWithFilter | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
+| GET | `/school-contribute/all` | SchoolContributeController.getSchool | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
+| POST | `/school-contribute/create` | SchoolContributeController.createSchoolContribute | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_fees_collection] |  |
+| DELETE | `/school-contribute/deleteschoolcontribute/:schoolid` | SchoolContributeController.delete | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_fees_collection] |  |
+| DELETE | `/school-contribute/deleteschoolcontributeid/:schoolcontributeid` | SchoolContributeController.deleteschoolcontribute | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_fees_collection] |  |
+| GET | `/school-contribute/getallschoolcontribute` | SchoolContributeController.getSchoolContribute | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
+| POST | `/school-contribute/getallschoolcontribute/:schoolid` | SchoolContributeController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
+| GET | `/school-contribute/getallschooldashboard` | SchoolContributeController.getAllSchoolsReport | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
+| GET | `/school-contribute/getschoolcontribute/:schoolid` | SchoolContributeController.getSchoolsName | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
+| GET | `/school-contribute/getschooldashboard/schoolcontributeid/:schoolcontributeid` | SchoolContributeController.getSchoolsContributeId | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
+| GET | `/school-contribute/getschooldashboardid/:schoolid` | SchoolContributeController.getSchoolsReport | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
+| POST | `/school-contribute/report/download` | SchoolContributeController.downloadOfflineClassLevelQuizzes | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school_contribution] |  |
+| PUT | `/school-contribute/updateschooldashboard/:schoolcontributeid` | SchoolContributeController.updateschoolcontribute | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_fees_collection] |  |
+| PUT | `/school-contribute/updateschoolname/:schoolid` | SchoolContributeController.update | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_fees_collection] |  |
+| GET | `/school` | SchoolController.getAllSchools | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
+| POST | `/school` | SchoolController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
+| DELETE | `/school/:schoolid` | SchoolController.delete | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_school] |  |
+| GET | `/school/:schoolid` | SchoolController.get | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
+| GET | `/school/:schoolid/curriculums` | SchoolController.getCurriculums | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
+| GET | `/school/all` | SchoolController.getAllSchoolsWithFilter | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
 | GET | `/school/branding` | SchoolController.getBranding | public | n/a |  |  |  | none | Deliberately published before sign-in: returns only the theme and branding of the named school. |
-| GET | `/school/country/:countryid` | SchoolController.getSchool | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
-| GET | `/school/country/:countryid/curriculum/:curriculumid` | SchoolController.getSchoolCurriculum | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
-| POST | `/school/create` | SchoolController.createschool | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_school] |  |
-| GET | `/school/curriculumid` | SchoolController.getSchoolsCurriculum | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
-| PUT | `/school/update/:schoolid` | SchoolController.update | owned | pending |  |  |  | AccessGuard(ACCESS), AccessGuard(ACCESS), CheckPermissionsGuard[update_school] |  |
-| POST | `/standard` | StandardController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_standard] |  |
-| DELETE | `/standard/:standardid` | StandardController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_standard] |  |
-| GET | `/standard/:standardid` | StandardController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_standard] |  |
-| PUT | `/standard/:standardid` | StandardController.update | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_standard] |  |
-| GET | `/standard/all` | StandardController.getAllSchoolsWithFilter | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
-| POST | `/standard/create` | StandardController.create | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_standard] |  |
+| GET | `/school/country/:countryid` | SchoolController.getSchool | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
+| GET | `/school/country/:countryid/curriculum/:curriculumid` | SchoolController.getSchoolCurriculum | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
+| POST | `/school/create` | SchoolController.createschool | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_school] |  |
+| GET | `/school/curriculumid` | SchoolController.getSchoolsCurriculum | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
+| PUT | `/school/update/:schoolid` | SchoolController.update | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), AccessGuard(ACCESS), CheckPermissionsGuard[update_school] |  |
+| POST | `/standard` | StandardController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_standard] |  |
+| DELETE | `/standard/:standardid` | StandardController.delete | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_standard] |  |
+| GET | `/standard/:standardid` | StandardController.get | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_standard] |  |
+| PUT | `/standard/:standardid` | StandardController.update | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_standard] |  |
+| GET | `/standard/all` | StandardController.getAllSchoolsWithFilter | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
+| POST | `/standard/create` | StandardController.create | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_standard] |  |
 | POST | `/standard/migrate-standardid` | StandardController.migrateStandards | platform | yes |  |  |  | AccessGuard(ACCESS, Role.superadmin), PlatformGuard | One-off migration across all organisations; platform only. |
 | POST | `/standard/remove-standardid` | StandardController.removeStandards | platform | yes |  |  |  | AccessGuard(ACCESS, Role.superadmin), PlatformGuard | One-off migration across all organisations; platform only. |
-| GET | `/standard/school/:schoolid` | StandardController.getSchoolid | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_standard] |  |
-| POST | `/student` | StudentController.getall | owned | pending |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
-| DELETE | `/student/:schooluserid` | StudentController.deleteuser | owned | pending |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[delete_student] |  |
-| GET | `/student/:studentid` | StudentController.getuser | owned | pending |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
-| GET | `/student/all` | StudentController.getAllStudents | owned | pending |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
-| POST | `/student/create` | StudentController.createall | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) | The optional cloud push must send only the learners created by this call. |
-| GET | `/student/download-students` | StudentController.sync | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
+| GET | `/standard/school/:schoolid` | StandardController.getSchoolid | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_standard] |  |
+| POST | `/student` | StudentController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
+| DELETE | `/student/:schooluserid` | StudentController.deleteuser | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[delete_student] |  |
+| GET | `/student/:studentid` | StudentController.getuser | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
+| GET | `/student/all` | StudentController.getAllStudents | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
+| POST | `/student/create` | StudentController.createall | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) | The optional cloud push must send only the learners created by this call. |
+| GET | `/student/download-students` | StudentController.sync | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
 | POST | `/student/migrate-standardid` | StudentController.migrateStandards | platform | yes |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.superadmin), PlatformGuard | One-off migration across all organisations; platform only. |
 | POST | `/student/migrate-subject-curriculum` | StudentController.migrateSubjectCurriculum | platform | yes |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.superadmin), PlatformGuard | One-off migration across all organisations; platform only. |
-| GET | `/student/stats/:studentid` | StudentController.getstudentstats | owned | pending |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
-| GET | `/student/stats/:studentid/level` | StudentController.getstudentlevelstats | owned | pending |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
-| GET | `/student/stats/:studentid/practice` | StudentController.getstudentpracticestats | owned | pending |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
-| GET | `/student/stats/:studentid/quiz` | StudentController.getstudentquizstats | owned | pending |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
-| PUT | `/student/update` | StudentController.updateStudents | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
+| GET | `/student/stats/:studentid` | StudentController.getstudentstats | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
+| GET | `/student/stats/:studentid/level` | StudentController.getstudentlevelstats | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
+| GET | `/student/stats/:studentid/practice` | StudentController.getstudentpracticestats | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
+| GET | `/student/stats/:studentid/quiz` | StudentController.getstudentquizstats | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
+| PUT | `/student/update` | StudentController.updateStudents | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
 | POST | `/subject` | SubjectController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_subject] |  |
 | DELETE | `/subject/:subjectid` | SubjectController.delete | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_subject] |  |
 | GET | `/subject/:subjectid` | SubjectController.get | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_subject] |  |
@@ -343,9 +343,9 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | POST | `/sync/cloud/:schoolname/students` | SyncController.synconlineschool | owned | pending |  |  |  | AccessGuard(ACCESS, Role.admin, Role.superadmin) | Must push only learners of a school of the caller's organisation; a platform caller must name the organisation. |
 | GET | `/sync/content` | SyncController.syncContent | owned | pending |  |  | yes | AccessGuard(ACCESS) | Must export only one organisation's content; a platform caller must name the organisation. |
 | GET | `/sync/report-data` | SyncController.getReportData | server | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey) | Authenticated only by the application API key; must be served as platform until the key is retired or scoped. |
-| POST | `/teacher` | TeacherController.getall | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_teacher] |  |
-| DELETE | `/teacher/:schooluserid` | TeacherController.deleteuser | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_teacher] |  |
-| POST | `/teacher/create` | TeacherController.createall | owned | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) | The optional cloud push must send only the teachers created by this call. |
+| POST | `/teacher` | TeacherController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_teacher] |  |
+| DELETE | `/teacher/:schooluserid` | TeacherController.deleteuser | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_teacher] |  |
+| POST | `/teacher/create` | TeacherController.createall | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) | The optional cloud push must send only the teachers created by this call. |
 | POST | `/user` | UserController.getall | owned | yes | `src/modules/user/user.organisation-scope.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_user] |  |
 | DELETE | `/user/:lmsuserid` | UserController.deleteuser | owned | yes | `src/modules/user/user.organisation-scope.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_user] |  |
 | GET | `/user/:lmsuserid` | UserController.get | owned | yes | `src/modules/user/user.organisation-scope.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_user] |  |

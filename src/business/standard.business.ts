@@ -1,5 +1,3 @@
-import { ApiError } from "src/models/ApiError";
-import { ErrorCode } from "src/models/enums/errorcode.enum";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Op, WhereOptions } from "sequelize";
 import { LmsUserToken } from "src/models/token.model";
@@ -14,21 +12,22 @@ import { StudentBusiness } from "./student.business";
 import { schools } from '../models/data-models/school';
 import { IMultiPaging } from '../models/IPaging';
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
-import { resolveSchoolById } from "./school-identity";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andInOwnedSchools, findOwnedSchool, findOwnedStandard, requireOwnedSchoolById } from "./school-scope";
 
 export class StandardBusiness {
   // A class carries a copy of its school's name. The school is read inside the
   // transaction under a shared lock (see school-identity.ts), so a rename of the
   // school cannot commit between this read and the insert, and the class stores
   // the school's own current name.
-  createstandard = async (standard: standardsAttributes, user: LmsUserToken) => {
+  createstandard = async (standard: standardsAttributes, user: LmsUserToken, org: OrgContext) => {
     standard.standardid = uuidv4();
     standard.isdeleted = false;
     standard.created_by = user.lmsuserid;
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
-      const school = await resolveSchoolById(standard.schoolid, transaction);
-      if(!school) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
+      // The school must be one of the caller's (unknown or not theirs: 404).
+      const school = await requireOwnedSchoolById(org, standard.schoolid, transaction);
       standard.schoolname = school.schoolname;
       const created = await standards.create(standard, { transaction });
       await transaction.commit();
@@ -39,15 +38,9 @@ export class StandardBusiness {
     }
   };
   getstandardbyid = (standardid: string) =>
-    standards.findOne({ where: { standardid, isdeleted: false },
-      // include:[{        
-      //   model: schools,
-      //   required: false,
-      //   attributes: ["schoolname"],
-      // }] 
-    });
+    standards.findOne({ where: { standardid, isdeleted: false } });
 
-  getstandardall = async (paging: IMultiPaging) => {
+  getstandardall = async (paging: IMultiPaging, org: OrgContext) => {
     let where: WhereOptions<standardsAttributes> = {
       isdeleted: false,
     };
@@ -58,7 +51,8 @@ export class StandardBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
-    where = { ...constructWhere<standardsAttributes>(paging, where) };
+    // The caller's schools are ANDed on the outside: a filter (which builds its own `Op.and`) cannot replace them.
+    where = await andInOwnedSchools({ ...constructWhere<standardsAttributes>(paging, where) }, org);
 
     return await standards.findAndCountAll({ where, order, limit, offset,
       include: [
@@ -72,41 +66,32 @@ export class StandardBusiness {
   };
   getstandardname = (standardname: string) =>
     standards.findOne({ where: { standardname, isdeleted: false } });
-  updatestandardName = async (standard: standardsAttributes, user: LmsUserToken) => {
-    const tempdt = await this.getstandardbyid(standard.standardid);
-    if (tempdt) {
-      tempdt.standardname = standard.standardname;
-      tempdt.schoolid = standard.schoolid;
-      tempdt.updated_at = new Date();
-      tempdt.updated_by = user.lmsuserid;
-      const transaction = await dbinstance.getdbinstance().transaction();
-      try {
-        const school = await resolveSchoolById(standard.schoolid, transaction);
-        if(!school) throw new ApiError(ErrorCode.NOT_FOUND, "That school doesn't exist.");
-        tempdt.schoolname = school.schoolname;
-        await tempdt.save({ fields: ["standardname", "updated_at", "updated_by", "schoolid", "schoolname"], transaction });
-        await transaction.commit();
-      } catch (e) {
-        await rollbackQuietly(transaction);
-        throw e;
-      }
-      //await tempdt.reload();
-      return tempdt;
-    } else {
-      return null;
+  updatestandardName = async (standard: standardsAttributes, user: LmsUserToken, org: OrgContext) => {
+    // The class must be one of the caller's, and so must the school it is moved to (404 otherwise).
+    const tempdt = await findOwnedStandard(org, standard.standardid);
+    tempdt.standardname = standard.standardname;
+    tempdt.schoolid = standard.schoolid;
+    tempdt.updated_at = new Date();
+    tempdt.updated_by = user.lmsuserid;
+    const transaction = await dbinstance.getdbinstance().transaction();
+    try {
+      const school = await requireOwnedSchoolById(org, standard.schoolid, transaction);
+      tempdt.schoolname = school.schoolname;
+      await tempdt.save({ fields: ["standardname", "updated_at", "updated_by", "schoolid", "schoolname"], transaction });
+      await transaction.commit();
+    } catch (e) {
+      await rollbackQuietly(transaction);
+      throw e;
     }
+    return tempdt;
   };
-  deletestandard = async (standardid: string, user: LmsUserToken) => {
-    const tempdt = await this.getstandardbyid(standardid);
-    if (tempdt) {
-      tempdt.isdeleted = true;
-      tempdt.deleted_at = new Date();
-      tempdt.deleted_by = user.lmsuserid;
-      await tempdt.save({ fields: ["isdeleted", "deleted_at", "deleted_by"] });
-      return true;
-    } else {
-      return false;
-    }
+  deletestandard = async (standardid: string, user: LmsUserToken, org: OrgContext) => {
+    const tempdt = await findOwnedStandard(org, standardid);
+    tempdt.isdeleted = true;
+    tempdt.deleted_at = new Date();
+    tempdt.deleted_by = user.lmsuserid;
+    await tempdt.save({ fields: ["isdeleted", "deleted_at", "deleted_by"] });
+    return true;
   };
   isexistsstandardName = async (standard: standardsAttributes) => {
     const where: WhereOptions<standardsAttributes> = {
@@ -180,14 +165,17 @@ export class StandardBusiness {
     }
     return alloldstandards;
   }
-  getSchoolidStandard = (schoolid: string) =>
-    standards.findAll({where: { schoolid: schoolid, isdeleted: false },
+  /** A school's classes. The school must be one of the caller's (unknown or not theirs: 404). */
+  getSchoolidStandard = async (schoolid: string, org: OrgContext) => {
+    await findOwnedSchool(org, schoolid, { includeDeleted: true });
+    return standards.findAll({where: { schoolid: schoolid, isdeleted: false },
       include:[{
         model: schools,
         required: true,
         attributes: ["schoolname"],
       }]
     });
+  };
 
   getStandards = async () => {
     const where: WhereOptions<standardsAttributes> = {
@@ -199,7 +187,7 @@ export class StandardBusiness {
   };
 
   // `schoolid` is already resolved by the route (see resolveSchoolRef); undefined = every school.
-  getStandardsWithFilter = async (standardname: string, schoolid: string | undefined) => {
+  getStandardsWithFilter = async (standardname: string, schoolid: string | undefined, org: OrgContext) => {
     const where: WhereOptions<standardsAttributes> = {
       standardname: {
         [Op.like]: `%${standardname.trim()}%`
@@ -209,7 +197,7 @@ export class StandardBusiness {
 
     return await standards.findAll(
       {
-        where,
+        where: await andInOwnedSchools(where, org),
         attributes: ['standardid','standardname'],
         include: [
           {

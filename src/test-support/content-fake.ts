@@ -16,6 +16,9 @@ import { lessonquizzes } from "src/models/data-models/lessonquizzes";
 import { lessons } from "src/models/data-models/lessons";
 import { levelquizquestions } from "src/models/data-models/levelquizquestions";
 import { levels } from "src/models/data-models/levels";
+import { organisationcountry } from "src/models/data-models/organisationcountry";
+import { organisations } from "src/models/data-models/organisations";
+import { schoolcontributedata } from "src/models/data-models/schoolcontributedata";
 import { questions } from "src/models/data-models/questions";
 import { questiontags } from "src/models/data-models/questiontags";
 import { schools } from "src/models/data-models/school";
@@ -71,7 +74,62 @@ const MODELS = {
   students: [students, "studentid"],
   schoolusers: [schoolusers, "schooluserid"],
   standards: [standards, "standardid"],
+  schoolcontributedata: [schoolcontributedata, "schoolcontributeid"],
+  organisationcountry: [organisationcountry, "organisationcountryid"],
+  organisations: [organisations, "organisationid"],
 } as const;
+
+/**
+ * The joins a route's `include` can ask for: for each table, the alias, the table
+ * it reaches, the column here and the column there. (The first alias that reaches a
+ * table is the one an include without `as` means.)
+ */
+type Assoc = { table: keyof typeof MODELS; local: string; remote: string; many?: boolean };
+const ASSOCS: Record<string, Record<string, Assoc>> = {
+  students: {
+    schooluser: { table: "schoolusers", local: "schooluserid", remote: "schooluserid" },
+    school: { table: "schools", local: "schoolid", remote: "schoolid" },
+    class: { table: "standards", local: "standard", remote: "standardid" },
+    curriculum: { table: "curriculums", local: "curriculumid", remote: "curriculumid" },
+  },
+  standards: { school: { table: "schools", local: "schoolid", remote: "schoolid" } },
+  schoolcontributedata: { school: { table: "schools", local: "schoolid", remote: "schoolid" } },
+  schools: { countries: { table: "countries", local: "countryid", remote: "countryid" } },
+  schoolusers: {
+    student: { table: "students", local: "schooluserid", remote: "schooluserid" },
+    students: { table: "students", local: "schooluserid", remote: "schooluserid", many: true },
+    school: { table: "schools", local: "schoolid", remote: "schoolid" },
+  },
+};
+
+interface IncludeSpec {
+  model: object;
+  as?: string;
+  required?: boolean;
+  where?: unknown;
+  attributes?: unknown;
+}
+interface FindOptions {
+  where?: unknown;
+  include?: IncludeSpec[];
+  attributes?: unknown;
+  group?: string;
+  limit?: number;
+  offset?: number;
+  raw?: boolean;
+}
+
+/** `attributes` as Sequelize reads it: a list of columns, or `{ exclude }`; anything fancier (an aggregate) leaves the row whole. */
+const project = (row: Row, attributes: unknown): Row => {
+  if (Array.isArray(attributes) && attributes.every((a) => typeof a === "string")) {
+    return Object.fromEntries(Object.entries(row).filter(([k]) => (attributes as string[]).includes(k)));
+  }
+  const exclude = (attributes as { exclude?: string[] } | undefined)?.exclude;
+  if (exclude) {
+    return Object.fromEntries(Object.entries(row).filter(([k]) => !exclude.includes(k)));
+  }
+  return { ...row };
+};
 
 export type ContentTable = keyof typeof MODELS;
 
@@ -104,16 +162,52 @@ export class ContentFake {
     return this.created.filter((c) => c.table === table).map((c) => c.row);
   }
 
-  private wrap(table: ContentTable, row: Row) {
+  /** The rows of `table` matching `o.where`, with the `include`s joined (an inner join for a required include), as instances. */
+  private find(table: ContentTable, o: FindOptions) {
+    const tableOf = new Map<object, ContentTable>(
+      (Object.entries(MODELS) as Array<[ContentTable, readonly [object, string]]>).map(([n, [model]]) => [model, n]),
+    );
+    const out: Array<[Row, Row]> = [];
+    for (const row of this.tables[table]) {
+      const joined: Row = { ...row };
+      let keep = true;
+      for (const inc of o.include ?? []) {
+        const target = tableOf.get(inc.model);
+        const entry = Object.entries(ASSOCS[table] ?? {}).find(([alias, a]) => (inc.as ? alias === inc.as : a.table === target));
+        if (!entry || !target) throw new Error(`content-fake: no join from ${table} to ${String(target)}`);
+        const [alias, assoc] = entry;
+        const matches = this.tables[assoc.table].filter(
+          (r) => (r[assoc.remote] ?? null) === (row[assoc.local] ?? null) && rowMatches(r, inc.where),
+        );
+        const required = inc.required ?? inc.where !== undefined;
+        if (required && matches.length === 0) {
+          keep = false;
+          break;
+        }
+        joined[alias] = assoc.many ? matches.map((r) => project(r, inc.attributes)) : matches[0] ? project(matches[0], inc.attributes) : null;
+      }
+      if (keep && rowMatches(joined, o.where, IGNORE_CASE)) {
+        out.push([row, joined]);
+      }
+    }
+    return out.map(([row, joined]) => {
+      // the included rows are held on the instance under their alias, as Sequelize does
+      const aliases = Object.keys(joined).filter((k) => !(k in row));
+      return this.wrap(table, row, project(row, o.attributes), Object.fromEntries(aliases.map((a) => [a, joined[a]])));
+    });
+  }
+
+  private wrap(table: ContentTable, row: Row, shown: Row = { ...row }, included: Row = {}) {
     const write = (instance: Row, fields?: ReadonlyArray<string>) => {
       for (const key of fields ?? Object.keys(instance)) {
         if (!INSTANCE_ONLY.has(key) && key in instance) row[key] = instance[key];
       }
     };
     const instance: Row = {
-      ...row,
+      ...shown,
+      ...included,
       // what the instance holds now (the stored row with this instance's changes), as Sequelize's `get()` does
-      get: () => Object.fromEntries([...Object.entries(row), ...Object.entries(instance).filter(([k]) => !INSTANCE_ONLY.has(k))]),
+      get: () => Object.fromEntries([...Object.entries(shown), ...Object.entries(instance).filter(([k]) => !INSTANCE_ONLY.has(k))]),
       // sets the value on the instance only: nothing reaches the row until `save()`
       setDataValue: (k: string, v: unknown) => {
         instance[k] = v;
@@ -150,14 +244,24 @@ export class ContentFake {
       const m = model as unknown as Record<string, unknown>;
       const rows = () => this.tables[name];
       const match = (where: unknown) => rows().filter((r) => rowMatches(r, where, IGNORE_CASE));
-      jest.spyOn(m, "findOne" as never).mockImplementation((async (o?: { where?: unknown }) => {
-        const found = match(o?.where)[0];
-        return found ? this.wrap(name, found) : null;
+      // a route's own `hasOne`/`belongsTo` calls (made on every request) have nothing to attach to here
+      for (const associate of ["hasOne", "belongsTo", "hasMany"]) {
+        jest.spyOn(m, associate as never).mockImplementation((() => undefined) as never);
+      }
+      const find = (o: FindOptions = {}) => this.find(name, o);
+      jest.spyOn(m, "findOne" as never).mockImplementation((async (o?: FindOptions) => find(o)[0] ?? null) as never);
+      jest.spyOn(m, "findAll" as never).mockImplementation((async (o?: FindOptions) => {
+        let found = find(o);
+        if (o?.group) {
+          const seen = new Set<unknown>();
+          found = found.filter((r) => (seen.has(r[o.group as string]) ? false : seen.add(r[o.group as string])));
+        }
+        return o?.limit === undefined ? found : found.slice(o.offset ?? 0, (o.offset ?? 0) + o.limit);
       }) as never);
-      jest.spyOn(m, "findAll" as never).mockImplementation((async (o?: { where?: unknown }) => match(o?.where).map((r) => this.wrap(name, r))) as never);
-      jest.spyOn(m, "findAndCountAll" as never).mockImplementation((async (o?: { where?: unknown }) => {
-        const found = match(o?.where);
-        return { rows: found.map((r) => this.wrap(name, r)), count: found.length };
+      jest.spyOn(m, "findAndCountAll" as never).mockImplementation((async (o?: FindOptions) => {
+        const found = find(o);
+        const page = o?.limit === undefined ? found : found.slice(o.offset ?? 0, (o.offset ?? 0) + o.limit);
+        return { rows: page, count: found.length };
       }) as never);
       jest.spyOn(m, "count" as never).mockImplementation((async (o?: { where?: unknown }) => match(o?.where).length) as never);
       jest.spyOn(m, "create" as never).mockImplementation((async (attrs: Row) => {

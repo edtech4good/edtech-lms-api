@@ -1,4 +1,5 @@
-import { resolveSchoolRef } from "src/business/school-identity";
+import { resolveOwnedSchoolRef } from "src/business/school-scope";
+import { Org, OrgContext } from "src/decorators/org.decorator";
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Response, StreamableFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import {schoolcontributedataAttributes} from "../../models/data-models/schoolcontributedata";
 import { ApiBearerAuth, ApiBody, ApiExtraModels, ApiParam, ApiQuery, ApiResponse, ApiTags, getSchemaPath } from "@nestjs/swagger";
@@ -8,7 +9,7 @@ import { SchoolContributeRequest, SchoolContributeUpdateDashboardRequest, School
 import { SchoolContributeBase, SchoolContributeCreateMultiResponse, SchoolContributeCreateResponse } from "./models/SchoolContributeBase";
 import {BusinessValidationInterceptor, SchemaValidationInterceptor} from "../../interceptors";
 import {SchoolcontributeBusiness} from "../../business/schoolcontribute.business";
-import { CreateSchoolContribute, DeleteSchoolContribute, DeleteSchoolContributeId, EditSchoolContribute } from "./school-contribute.business.validator";
+import { CreateSchoolContribute, DeleteSchoolContribute, DeleteSchoolContributeId, EditSchoolContribute, EditSchoolContributeRow } from "./school-contribute.business.validator";
 import { createschoolcontribute, deleteschoolcontribute, getschooldashboardbyid, updateschoolcontribute, updateschooldashboard, showscholcontribute, schoolcontributeid } from './school-contribute.request.validator';
 import { AccessGuard } from "../../guards/access.guard";
 import { TokenType } from "../../models/enums";
@@ -29,7 +30,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiBearerAuth()
 export class SchoolContributeController {
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Post("create")
 @ApiResponse({
     status: 200,
@@ -50,7 +51,8 @@ export class SchoolContributeController {
 @HttpCode(HttpStatus.OK)
 async createSchoolContribute(
     @Body() body: SchoolContributeRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
 ): Promise<SchoolContributeCreateResponse> {
     const temp: schoolcontributedataAttributes = {
         schoolname: body.schoolname,
@@ -62,14 +64,14 @@ async createSchoolContribute(
         isdeleted: false,
     };
 
-    const data = await new SchoolcontributeBusiness().createSchoolContribute(temp, user);
+    const data = await new SchoolcontributeBusiness().createSchoolContribute(temp, user, org);
     return {
         error: false,
         data: data ?? undefined,
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Post("getallschoolcontribute/:schoolid")
 @ApiResponse({
     status: 200,
@@ -94,13 +96,14 @@ async createSchoolContribute(
 @HttpCode(HttpStatus.OK)
 async getall(
     @Param('schoolid') schoolid: string,
-    @Body() body: IPaging
+    @Body() body: IPaging,
+    @Org() org: OrgContext,
 ): Promise<SchoolContributeGetAllResponse> {
     const tempresult = await new SchoolcontributeBusiness().getAllSchoolContributeId({
         pageindex: body?.pageindex || 0,
         pagesize: body?.pagesize || 0,
         filter: body?.filter || [],
-    },schoolid);
+    }, schoolid, org);
     return {
         error: false,
         data: {
@@ -112,7 +115,7 @@ async getall(
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Put("updateschoolname/:schoolid")
 @ApiResponse({
     status: 200,
@@ -134,20 +137,21 @@ async getall(
 async update(
     @Param("schoolid") schoolid: string,
     @Body() body: SchoolContributeUpdateRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
 ): Promise<SchoolContributeCreateMultiResponse> {
     const data = await new SchoolcontributeBusiness().updatedSchoolContribute(<schoolcontributedataAttributes>{
     schoolid: schoolid,
     schoolname: body.schoolname,
     countryid: body.countryid,
-    }, user);
+    }, user, org);
     return {
     error: false,
     data: data ? data : undefined,
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Put("updateschooldashboard/:schoolcontributeid")
 @ApiResponse({
     status: 200,
@@ -160,7 +164,7 @@ async update(
 })
 @UseInterceptors(
     new SchemaValidationInterceptor(updateschooldashboard),
-    new BusinessValidationInterceptor([EditSchoolContribute])
+    new BusinessValidationInterceptor([EditSchoolContributeRow])
 )
 @RequirePermissions(Permission.UPDATE_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
@@ -169,20 +173,21 @@ async update(
 async updateschoolcontribute(
     @Param("schoolcontributeid") schoolcontributeid: string,
     @Body() body: SchoolContributeUpdateDashboardRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
 ): Promise<SchoolContributeCreateResponse> {
     const data = await new SchoolcontributeBusiness().updatedSchoolContributeDashboard(<schoolcontributedataAttributes>{
     schoolcontributeid: schoolcontributeid,
     expected: body.expected,
     actual: body.actual,
-    }, user);
+    }, user, org);
     return {
     error: false,
     data: data ? data : undefined,
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Delete("deleteschoolcontribute/:schoolid")
 @ApiResponse({
   status: 200,
@@ -203,16 +208,17 @@ async updateschoolcontribute(
 @ApiParam({ name: `schoolid`, type: "string", required: true })
 async delete(
   @Param("schoolid") schoolid: string,
-  @User() user: LmsUserToken
+  @User() user: LmsUserToken,
+  @Org() org: OrgContext,
 ): Promise<ResponseBoolean> {
-  await new SchoolcontributeBusiness().deleteSchoolContribute(schoolid, user);
+  await new SchoolcontributeBusiness().deleteSchoolContribute(schoolid, user, org);
   return {
     error: false,
     data: true,
   };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Delete("deleteschoolcontributeid/:schoolcontributeid")
 @ApiResponse({
   status: 200,
@@ -233,16 +239,17 @@ async delete(
 @ApiParam({ name: `schoolcontributeid`, type: "string", required: true })
 async deleteschoolcontribute(
   @Param("schoolcontributeid") schoolcontributeid: string,
-  @User() user: LmsUserToken
+  @User() user: LmsUserToken,
+  @Org() org: OrgContext,
 ): Promise<ResponseBoolean> {
-  await new SchoolcontributeBusiness().deleteSchoolContributeId(schoolcontributeid, user);
+  await new SchoolcontributeBusiness().deleteSchoolContributeId(schoolcontributeid, user, org);
   return {
     error: false,
     data: true,
   };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get('getschooldashboard/schoolcontributeid/:schoolcontributeid')
 @ApiResponse({
     status: 200,
@@ -265,15 +272,15 @@ async deleteschoolcontribute(
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
 @ApiParam({ name: `schoolcontributeid`, type: "string", required: true })
-async getSchoolsContributeId(@Param('schoolcontributeid') schoolcontributeid: string): Promise<any> {
-    const data = await new SchoolcontributeBusiness().getschoolcontributeid(schoolcontributeid);
+async getSchoolsContributeId(@Param('schoolcontributeid') schoolcontributeid: string, @Org() org: OrgContext): Promise<any> {
+    const data = await new SchoolcontributeBusiness().getschoolcontributeid(schoolcontributeid, org);
     return {
     data: data,
     error: false,
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get('getschooldashboardid/:schoolid')
 @ApiResponse({
     status: 200,
@@ -296,15 +303,15 @@ async getSchoolsContributeId(@Param('schoolcontributeid') schoolcontributeid: st
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
 @ApiParam({ name: `schoolid`, type: "string", required: true })
-async getSchoolsReport(@Param('schoolid') schoolid: string): Promise<any> {
-    const data = await new SchoolcontributeBusiness().getSchooldashboard(schoolid);
+async getSchoolsReport(@Param('schoolid') schoolid: string, @Org() org: OrgContext): Promise<any> {
+    const data = await new SchoolcontributeBusiness().getSchooldashboard(schoolid, org);
     return {
     data: data,
     error: false,
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get('getallschooldashboard')
 @ApiResponse({
     status: 200,
@@ -323,15 +330,15 @@ async getSchoolsReport(@Param('schoolid') schoolid: string): Promise<any> {
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
-async getAllSchoolsReport(): Promise<any> {
-    const data = await new SchoolcontributeBusiness().getAllSchooldashboard();
+async getAllSchoolsReport(@Org() org: OrgContext): Promise<any> {
+    const data = await new SchoolcontributeBusiness().getAllSchooldashboard(org);
     return {
     data: data,
     error: false,
     };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get('getschoolcontribute/:schoolid')
 @ApiResponse({
   status: 200,
@@ -350,15 +357,15 @@ async getAllSchoolsReport(): Promise<any> {
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
-async getSchoolsName(@Param('schoolid') schoolid: string): Promise<any> {
-  const data = await new SchoolcontributeBusiness().getSchoolContributeById(schoolid,'');
+async getSchoolsName(@Param('schoolid') schoolid: string, @Org() org: OrgContext): Promise<any> {
+  const data = await new SchoolcontributeBusiness().getOwnedSchoolContribute(org, schoolid, '');
   return {
     error: false,
     data: data,
   };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get("getallschoolcontribute")
 @ApiResponse({
     status: 200,
@@ -373,11 +380,11 @@ async getSchoolsName(@Param('schoolid') schoolid: string): Promise<any> {
 @RequirePermissions(Permission.VIEW_FEES_COLLECTION)
 @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
 @HttpCode(HttpStatus.OK)
-async getSchoolContribute(): Promise<any> {
-    return new SchoolcontributeBusiness().getAllSchoolContribute('','','');
+async getSchoolContribute(@Org() org: OrgContext): Promise<any> {
+    return new SchoolcontributeBusiness().getAllSchoolContribute('','','', org);
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Get("all")
 @ApiResponse({
     status: 200,
@@ -401,17 +408,18 @@ async getSchool(
     @Query("schoolname") schoolname: string = '',
     @Query("schoolid") schoolid: string = '',
     @Query("date") date: string = '',
+    @Org() org: OrgContext,
 ): Promise<any> {
-    // The school is named by id or by name; resolved once, here (unknown: 404).
-    const school = await resolveSchoolRef({ schoolid, schoolname });
-    const data = await  new SchoolcontributeBusiness().getSchoolDashboardCountry(school?.schoolid, countryid, date);
+    // The school is named by id or by name; resolved once, here, among the caller's schools (unknown or not theirs: 404).
+    const school = await resolveOwnedSchoolRef(org, { schoolid, schoolname });
+    const data = await  new SchoolcontributeBusiness().getSchoolDashboardCountry(school?.schoolid, countryid, date, org);
     return {
         error: false,
         data: data,
       };
 }
 
-@OrgPolicy("owned")
+@OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
 @Post("report/download")
 @ApiResponse({
   status: 200,
@@ -435,8 +443,9 @@ async getSchool(
 async downloadOfflineClassLevelQuizzes(
   @Body("date") date: string,
   @Response({ passthrough: true }) res: any,
+  @Org() org: OrgContext,
 ):Promise<any> {
-  const data = await new SchoolcontributeBusiness().reportDownload(date);
+  const data = await new SchoolcontributeBusiness().reportDownload(date, org);
   const formatedData = new ReportDownload().formatSchoolcontribute(data);
   const csvString = await json2csv(formatedData);
   res.set({

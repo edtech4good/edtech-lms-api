@@ -69,23 +69,74 @@ const EXPECTED_BY_POLICY = {
 // How the routes divide by enforcement, stated explicitly (they sum to the
 // total):
 //  - enforced: by a guard (self 5 + global 5 + platform with PlatformGuard 18
-//    = 28), or, for an owned route, by the spec it names (6, listed below) = 34
+//    = 28), or, for an owned route, by the spec it names (57, listed below) = 85
 //  - not applicable (public): 11
-//  - pending the organisation boundary: owned without a proving spec 237 +
-//    platform without PlatformGuard 0 + server 1 = 238
+//  - pending the organisation boundary: owned without a proving spec 186 +
+//    platform without PlatformGuard 0 + server 1 = 187
 const EXPECTED_ENFORCED_BY_GUARD = 28;
-const EXPECTED_ENFORCED_BY_SPEC = 6;
+const EXPECTED_ENFORCED_BY_SPEC = 57;
 const EXPECTED_ENFORCED = EXPECTED_ENFORCED_BY_GUARD + EXPECTED_ENFORCED_BY_SPEC;
 const EXPECTED_NOT_APPLICABLE = 11;
-const EXPECTED_PENDING = 238;
+const EXPECTED_PENDING = 187;
 // The owned routes that name a spec proving them, pinned by name so adding or
 // removing one is a conscious edit.
 const EXPECTED_OWNED_ENFORCED = [
+  "DELETE /school-contribute/deleteschoolcontribute/:schoolid",
+  "DELETE /school-contribute/deleteschoolcontributeid/:schoolcontributeid",
+  "DELETE /school/:schoolid",
+  "DELETE /standard/:standardid",
+  "DELETE /student/:schooluserid",
+  "DELETE /teacher/:schooluserid",
   "DELETE /user/:lmsuserid",
+  "GET /country",
+  "GET /country/:countryid",
+  "GET /export/:schoolname/students",
+  "GET /export/:schoolname/teachers",
+  "GET /school",
+  "GET /school-contribute/all",
+  "GET /school-contribute/getallschoolcontribute",
+  "GET /school-contribute/getallschooldashboard",
+  "GET /school-contribute/getschoolcontribute/:schoolid",
+  "GET /school-contribute/getschooldashboard/schoolcontributeid/:schoolcontributeid",
+  "GET /school-contribute/getschooldashboardid/:schoolid",
+  "GET /school/:schoolid",
+  "GET /school/:schoolid/curriculums",
+  "GET /school/all",
+  "GET /school/country/:countryid",
+  "GET /school/country/:countryid/curriculum/:curriculumid",
+  "GET /school/curriculumid",
+  "GET /standard/:standardid",
+  "GET /standard/all",
+  "GET /standard/school/:schoolid",
+  "GET /student/:studentid",
+  "GET /student/all",
+  "GET /student/download-students",
+  "GET /student/stats/:studentid",
+  "GET /student/stats/:studentid/level",
+  "GET /student/stats/:studentid/practice",
+  "GET /student/stats/:studentid/quiz",
   "GET /user/:lmsuserid",
+  "POST /country",
   "POST /roles/user-bind-role",
+  "POST /school",
+  "POST /school-contribute/create",
+  "POST /school-contribute/getallschoolcontribute/:schoolid",
+  "POST /school-contribute/report/download",
+  "POST /school/create",
+  "POST /standard",
+  "POST /standard/create",
+  "POST /student",
+  "POST /student/create",
+  "POST /teacher",
+  "POST /teacher/create",
   "POST /user",
   "POST /user/create",
+  "PUT /import/:schoolname/teachers",
+  "PUT /school-contribute/updateschooldashboard/:schoolcontributeid",
+  "PUT /school-contribute/updateschoolname/:schoolid",
+  "PUT /school/update/:schoolid",
+  "PUT /standard/:standardid",
+  "PUT /student/update",
   "PUT /user/:lmsuserid",
 ];
 // Every `platform` route has PlatformGuard (18 routes), pinned by name so
@@ -178,7 +229,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("pending enforcement", () => {
-    it("divides the routes into 34 enforced (28 by a guard, 6 by a proving spec), 11 not applicable (public) and 238 pending", () => {
+    it("divides the routes into 85 enforced (28 by a guard, 57 by a proving spec), 11 not applicable (public) and 187 pending", () => {
       const count = (state: string) => routes.filter((r) => enforcementState(r) === state).length;
       expect(count("yes")).toBe(EXPECTED_ENFORCED);
       expect(count("n/a")).toBe(EXPECTED_NOT_APPLICABLE);
@@ -210,7 +261,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("owned routes proved by a spec", () => {
-    it("the enforced owned routes are exactly the six named ones", () => {
+    it("the enforced owned routes are exactly the 57 named ones", () => {
       const enforced = routes.filter((r) => r.policy === "owned" && enforcementState(r) === "yes");
       expect(enforced.map(key).sort()).toEqual([...EXPECTED_OWNED_ENFORCED].sort());
       expect(enforced).toHaveLength(EXPECTED_ENFORCED_BY_SPEC);
@@ -229,7 +280,7 @@ describe("route inventory (real application wiring)", () => {
     it("the enforced routes are not in the pending snapshot, and the other owned routes still are", () => {
       const pending = new Set(pendingEnforcementLines(routes).map((l) => l.split("  ")[0]));
       for (const name of EXPECTED_OWNED_ENFORCED) expect(pending.has(name)).toBe(false);
-      expect(pending.has("GET /school/all")).toBe(true);
+      expect(pending.has("GET /report/dashboard")).toBe(true);
     });
   });
 
@@ -284,7 +335,8 @@ describe("route inventory (real application wiring)", () => {
       );
       expect(wrong.map(key)).toEqual([]);
       const marked = pendingEnforcementLines(routes).filter((l) => l.endsWith("+apikey"));
-      expect(marked).toHaveLength(routes.filter((r) => r.admitsApiKey && r.policy !== "global").length);
+      // (the snapshot lists the routes still pending; an enforced route that admits the key is not in it)
+      expect(marked).toHaveLength(routes.filter((r) => r.admitsApiKey && r.policy !== "global" && enforcementState(r) === "pending").length);
     });
 
     it("`self` is the five named routes, each using a non-ACCESS token guard or a named exception", () => {

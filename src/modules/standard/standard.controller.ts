@@ -23,7 +23,8 @@ import {
   getSchemaPath,
 } from "@nestjs/swagger";
 import { StandardBusiness } from "src/business/standard.business";
-import { resolveSchoolRef } from "src/business/school-identity";
+import { findOwnedStandard, resolveOwnedSchoolRef } from "src/business/school-scope";
+import { Org, OrgContext, OrgOrServer } from "src/decorators/org.decorator";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
 import { AccessGuard } from "src/guards/access.guard";
@@ -66,7 +67,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiBearerAuth()
 export class StandardController {
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get('all')
   @ApiResponse({
     status: 200,
@@ -89,18 +90,19 @@ export class StandardController {
   async getAllSchoolsWithFilter(
     @Query("standardname") standardname: string = '',
     @Query("schoolname") schoolname: string = '',
-    @Query("schoolid") schoolid: string = ''
+    @Query("schoolid") schoolid: string = '',
+    @OrgOrServer() org: OrgContext,
   ): Promise<any> {
-    // The school is named by id or by name; resolved once, here (unknown: 404).
-    const school = await resolveSchoolRef({ schoolid, schoolname });
-    const data = await new StandardBusiness().getStandardsWithFilter(standardname, school?.schoolid);
+    // The school is named by id or by name; resolved once, here, among the caller's schools (unknown or not theirs: 404).
+    const school = await resolveOwnedSchoolRef(org, { schoolid, schoolname });
+    const data = await new StandardBusiness().getStandardsWithFilter(standardname, school?.schoolid, org);
     return {
         data: data,
         error: false,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -124,7 +126,8 @@ export class StandardController {
   @HttpCode(HttpStatus.OK)
   async create(
     @Body() body: StandardRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
   ): Promise<StandardCreateResponse> {
     const temp: standardsAttributes = {
       standardname: body.standardname,
@@ -134,14 +137,14 @@ export class StandardController {
       isdeleted: false,
     };
 
-    const data = await new StandardBusiness().createstandard(temp, user);
+    const data = await new StandardBusiness().createstandard(temp, user, org);
     return {
       error: false,
       data: data,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Delete(":standardid")
   @ApiResponse({
     status: 200,
@@ -166,16 +169,17 @@ export class StandardController {
   @ApiParam({ name: `standardid`, type: "string", required: true })
   async delete(
     @Param("standardid") standardid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
   ): Promise<ResponseBoolean> {
-    await new StandardBusiness().deletestandard(standardid, user);
+    await new StandardBusiness().deletestandard(standardid, user, org);
     return {
       error: false,
       data: true,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get(":standardid")
   @ApiResponse({
     status: 200,
@@ -198,16 +202,16 @@ export class StandardController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `standardid`, type: "string", required: true })
   async get(
-    @Param("standardid") standardid: string
+    @Param("standardid") standardid: string,
+    @Org() org: OrgContext,
   ): Promise<StandardCreateResponse> {
-    const data = await new StandardBusiness().getstandardbyid(standardid);
     return {
       error: false,
-      data: data ? data : undefined,
+      data: await findOwnedStandard(org, standardid),
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Put(":standardid")
   @ApiResponse({
     status: 200,
@@ -233,21 +237,22 @@ export class StandardController {
   async update(
     @Param("standardid") standardid: string,
     @Body() body: StandardRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
   ): Promise<StandardCreateResponse> {
     const data = await new StandardBusiness().updatestandardName(<standardsAttributes>{
       standardid: standardid,
       standardname: body.standardname,
       schoolid: body.schoolid,
       schoolname: '',
-    }, user);
+    }, user, org);
     return {
       error: false,
       data: data ? data : undefined,
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -267,12 +272,12 @@ export class StandardController {
   @RequirePermissions(Permission.VIEW_STANDARD)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IMultiPaging): Promise<StandardGetAllResponse> {
+  async getall(@Body() body: IMultiPaging, @Org() org: OrgContext): Promise<StandardGetAllResponse> {
     const tempresult = await new StandardBusiness().getstandardall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
-    });
+    }, org);
     return <StandardGetAllResponse>{
       error: false,
       data: {
@@ -330,7 +335,7 @@ export class StandardController {
     }
   }
   
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Get("school/:schoolid")
   @ApiResponse({
     status: 200,
@@ -353,9 +358,10 @@ export class StandardController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `schoolid`, type: "string", required: true })
   async getSchoolid(
-    @Param("schoolid") schoolid: string
+    @Param("schoolid") schoolid: string,
+    @Org() org: OrgContext,
   ): Promise <CreateResponseSchoolStandard> {
-    const data = await new StandardBusiness().getSchoolidStandard(schoolid);
+    const data = await new StandardBusiness().getSchoolidStandard(schoolid, org);
     return {
       error: false,
       data: data ? data : undefined,

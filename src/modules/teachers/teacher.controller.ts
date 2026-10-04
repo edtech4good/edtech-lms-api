@@ -29,6 +29,8 @@ import { TeacherBusiness } from "src/business/teacher.business";
 import { Config } from "src/config";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { User } from "src/decorators/user.decorator";
+import { Org, OrgContext, OrgOrServer } from "src/decorators/org.decorator";
+import { findOwnedTeacher, requireOwnedSchoolByName } from "src/business/school-scope";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import {
@@ -66,7 +68,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
   description: "Server error",
 })
 export class TeacherController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("")
   @ApiResponse({
     status: 200,
@@ -81,12 +83,12 @@ export class TeacherController {
   @RequirePermissions(Permission.VIEW_TEACHER)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IPaging): Promise<any> {
+  async getall(@Body() body: IPaging, @Org() org: OrgContext): Promise<any> {
     const tempresult = await new TeacherBusiness().getAllTeachers({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || [],
-    });
+    }, org);
     return {
       error: false,
       data: {
@@ -98,7 +100,7 @@ export class TeacherController {
     };
   }
 
-  @OrgPolicy("owned", { note: "The optional cloud push must send only the teachers created by this call." })
+  @OrgPolicy("owned", { note: "The optional cloud push must send only the teachers created by this call.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Post("create")
   @ApiResponse({
     status: 200,
@@ -124,11 +126,14 @@ export class TeacherController {
   @HttpCode(HttpStatus.OK)
   async createall(
     @Body() _body: TeacherImportBody,
-    @Query("cloud") cloud: boolean = false
+    @Query("cloud") cloud: boolean = false,
+    @OrgOrServer() org: OrgContext,
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
     let result: Array<schoolusers>;
     try {
+      // The school is named by NAME, among the caller's schools (none: 404), before anything is written or pushed.
+      const school = await requireOwnedSchoolByName(org, _body.schoolname, tnx);
       result = await new SchoolUserBusiness().createSchoolUser(
         _body.teachers.map(
           (x) =>
@@ -139,7 +144,8 @@ export class TeacherController {
               schooluserrole: SchoolRole.TEACHER,
               schooluserstatus: 1,
               schooluserid: uuidv4(),
-              schoolname: _body.schoolname,
+              schoolid: school.schoolid,
+              schoolname: school.schoolname,
             }
         ),
         tnx
@@ -198,7 +204,7 @@ export class TeacherController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
   @Delete(":schooluserid")
   @ApiResponse({
     status: 200,
@@ -220,15 +226,19 @@ export class TeacherController {
   async deleteuser(
     @Param("schooluserid") schooluserid: string,
     @User() user: LmsUserToken,
+    @Org() org: OrgContext,
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
     try {
+      // 404 for a teacher that is not the caller's, like one that does not exist.
+      await findOwnedTeacher(org, schooluserid, tnx);
       // 0 rows updated means the teacher was already soft-deleted (stale list /
       // retry); report that rather than a false success. See the student delete.
       const [teacherDeleted] = await new SchoolUserBusiness().deleteschooluser(
         schooluserid,
         user.lmsuserid,
         tnx,
+        org,
       );
       if (!teacherDeleted) {
         throw new ApiError(ErrorCode.NOT_FOUND, "That teacher doesn't exist. It may have already been removed.");
