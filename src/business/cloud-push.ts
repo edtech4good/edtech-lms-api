@@ -36,7 +36,7 @@ export const pushToCloud = async (kind: CloudImport, entry: string, json: string
 
 /**
  * Do the rosters go to the student API in the shape that names their school (`{ schoolid, ... }`, every row carrying its
- * `schoolid`)? Yes, unless `SYNC_FORMAT_DEFAULT` says the student API in service does not read that yet.
+ * `schoolid`)? Only when `SYNC_FORMAT_DEFAULT` is 3, i.e. the student API in service reads it; until then the rosters go as they did.
  */
 export const rostersNameTheirSchool = (): boolean => defaultSyncFormat() === 3;
 

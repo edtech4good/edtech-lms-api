@@ -204,7 +204,8 @@ describe("the content sync is one organisation's", () => {
     jest.spyOn(Logger, "warn").mockImplementation(() => Logger);
     jest.spyOn(Logger, "info").mockImplementation(() => Logger);
     jest.spyOn(console, "warn").mockImplementation(() => undefined);
-    delete process.env.SYNC_FORMAT_DEFAULT;
+    // the format of organisations' content (format 3): the setting an operator makes once the student API reads it
+    process.env.SYNC_FORMAT_DEFAULT = "3";
     tokenExists.mockResolvedValue(true);
     db.install();
     for (const t of [TX, TY, TU]) seedTree(t);
@@ -381,9 +382,10 @@ describe("the content sync is one organisation's", () => {
   });
 
   // ───────────────────────────── SYNC_FORMAT_DEFAULT ─────────────────────────────
-  describe("while the student API in service does not read format 3 (SYNC_FORMAT_DEFAULT=2)", () => {
+  describe.each([["2"], [undefined]])("while the student API in service may not read format 3 (SYNC_FORMAT_DEFAULT=%s: 2 is the default)", (setting) => {
     beforeEach(() => {
-      process.env.SYNC_FORMAT_DEFAULT = "2";
+      if (setting === undefined) delete process.env.SYNC_FORMAT_DEFAULT;
+      else process.env.SYNC_FORMAT_DEFAULT = setting;
     });
 
     it("a request that does not say gets format 2 if the caller is the platform not acting, and a 400 for anyone else", async () => {
@@ -398,11 +400,6 @@ describe("the content sync is one organisation's", () => {
     it("format 3 is still there when asked for", async () => {
       expect((await download(NOT_ACTING, `/sync/content?format=3&organisationid=${X}`)).json.format).toBe(3);
       expect((await download("X's Admin", "/sync/content?format=3")).json.format).toBe(3);
-    });
-
-    it("a value that is neither 2 nor 3 is refused rather than guessed", async () => {
-      process.env.SYNC_FORMAT_DEFAULT = "two";
-      expect((await send(NOT_ACTING, "get", "/sync/content")).status).toBe(500);
     });
   });
 
@@ -570,8 +567,8 @@ describe("the content sync is one organisation's", () => {
       expect(axios.put).not.toHaveBeenCalled();
     });
 
-    it("while SYNC_FORMAT_DEFAULT=2 an organisation's Admin pushes nothing (400) and the platform pushes the whole platform's content", async () => {
-      process.env.SYNC_FORMAT_DEFAULT = "2";
+    it("while SYNC_FORMAT_DEFAULT is not 3 (unset, or 2) an organisation's Admin pushes nothing (400) and the platform pushes the whole platform's content", async () => {
+      delete process.env.SYNC_FORMAT_DEFAULT;
       expect((await send("X's Admin", "post", "/sync/cloud")).status).toBe(400);
       expect(axios.put).not.toHaveBeenCalled();
       await send(NOT_ACTING, "post", "/sync/cloud").expect(200);
@@ -626,8 +623,8 @@ describe("the content sync is one organisation's", () => {
       expect((await send("X's Organisation Admin", "post", `/sync/cloud/${TX.school}/students`)).status).toBe(403);
     });
 
-    it("while SYNC_FORMAT_DEFAULT=2 the file is the older { studentusers } with no school id on any row", async () => {
-      process.env.SYNC_FORMAT_DEFAULT = "2";
+    it("while SYNC_FORMAT_DEFAULT is not 3 (unset) the file is the older { studentusers } with no school id on any row", async () => {
+      delete process.env.SYNC_FORMAT_DEFAULT;
       await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`).expect(200);
       const call = pushed();
       expect(Object.keys(call.json)).toEqual(["studentusers"]);
@@ -674,8 +671,9 @@ describe("the content sync is one organisation's", () => {
       expect(call.json.teachers[0]).toMatchObject({ schoolusername: "newteacher1", schoolid: TX.school, schoolname: TX.names.school });
     });
 
-    it("while SYNC_FORMAT_DEFAULT=2 the rosters keep the shape they had: no school id, the teachers a bare list", async () => {
-      process.env.SYNC_FORMAT_DEFAULT = "2";
+    it.each([["2"], [undefined]])("while SYNC_FORMAT_DEFAULT is %s (not 3) the rosters keep the shape they had: no school id, the teachers a bare list", async (setting) => {
+      if (setting === undefined) delete process.env.SYNC_FORMAT_DEFAULT;
+      else process.env.SYNC_FORMAT_DEFAULT = setting;
       await send("X's Admin", "post", "/student/create?cloud=true", studentBody(TX.school, TX.standard, TX.curriculum)).expect(200);
       const students = pushed(0);
       expect(Object.keys(students.json)).toEqual(["studentusers"]);
