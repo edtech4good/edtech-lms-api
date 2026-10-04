@@ -80,7 +80,7 @@ export class SubjectController {
       isdeleted: false,
     };
 
-    const data = await new SubjectBusiness().createsubject(temp, user);
+    const data = await new SubjectBusiness(org).createsubject(temp, user);
     return {
       error: false,
       data: data,
@@ -107,8 +107,8 @@ export class SubjectController {
   @RequirePermissions(Permission.VIEW_SUBJECT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getall(@Body() body: IMultiPaging): Promise<SubjectGetAllResponse> {
-    const tempresult = await new SubjectBusiness().getsubjectall({
+  async getall(@Body() body: IMultiPaging, @Org() org: OrgContext): Promise<SubjectGetAllResponse> {
+    const tempresult = await new SubjectBusiness(org).getsubjectall({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
       filter: body?.filter || []
@@ -146,10 +146,11 @@ export class SubjectController {
   @ApiParam({ name: `subjectid`, type: 'string', required: true })
   async delete(
     @Param('subjectid') subjectid: string,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
 
-    await new SubjectBusiness().deletesubject(subjectid, user);
+    await new SubjectBusiness(org).deletesubject(subjectid, user);
     return {
       error: false,
       data: true
@@ -176,8 +177,8 @@ export class SubjectController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `subjectid`, type: 'string', required: true })
-  async get(@Param('subjectid') subjectid: string): Promise<SubjectCreateResponse> {
-    const data = await new SubjectBusiness().getsubjectbyid(subjectid);
+  async get(@Param('subjectid') subjectid: string, @Org() org: OrgContext): Promise<SubjectCreateResponse> {
+    const data = await new SubjectBusiness(org).getsubjectbyid(subjectid);
     return {
       error: false,
       data: data ? data : undefined
@@ -207,9 +208,10 @@ export class SubjectController {
   async update(
     @Param('subjectid') subjectid: string,
     @Body() body: SubjectRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<SubjectCreateResponse> {
-    const data = await new SubjectBusiness().updatesubject(<subjectsAttributes>{
+    const data = await new SubjectBusiness(org).updatesubject(<subjectsAttributes>{
       subjectid,
       subjectname: body.subjectname,
       subjectdescription: body.subjectdescription,

@@ -11,8 +11,17 @@ import {
   students,
 } from "../models/data-models/init-models";
 import { buildWhere } from "../services/util.service";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedGrade } from "./content-scope";
+import { andInOwnedSchools } from "./school-scope";
 
+/**
+ * Built with the caller's context, every read and write here is limited to the grades in scope (a grade of another
+ * organisation is reported exactly as an absent one); built without one it is unscoped (the sync payloads).
+ */
 export class GradeBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   createGrade = async (grade: gradesAttributes, user: LmsUserToken) => {
     grade.gradeid = uuidv4();
     grade.isdeleted = false;
@@ -21,6 +30,9 @@ export class GradeBusiness {
     return await grades.create(grade);
   };
   getGradebyid = async (gradeid: string) => {
+    if (this.org) {
+      await findOwnedGrade(this.org, gradeid, { where: { isdeleted: false } });
+    }
     curriculums.belongsTo(grades, {
       foreignKey: "curriculumid",
     });
@@ -55,13 +67,15 @@ export class GradeBusiness {
       : null;
   };
   getGradeid = (gradeid: string) =>
-    grades.findOne({
-      where: { gradeid, isdeleted: false },
-    });
+    this.org
+      ? findOwnedGrade(this.org, gradeid, { where: { isdeleted: false } })
+      : grades.findOne({
+          where: { gradeid, isdeleted: false },
+        });
 
   getGradeByCurriculumid = async (curriculumid: string) => {
     const data = await grades.findAll({
-      where: { curriculumid, isdeleted: false },
+      where: await andScope(this.org, "grade", { curriculumid, isdeleted: false }),
       include: [
         {
           model: curriculums,
@@ -106,6 +120,7 @@ export class GradeBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     where = { ...buildWhere<gradesAttributes>(paging, where) };
+    where = await andScope(this.org, "grade", where);
     const data = await grades.findAndCountAll({
       where,
       order,
@@ -161,7 +176,8 @@ export class GradeBusiness {
       if(standardid) wherestd.standard = standardid;
       if(schoolid) wherestd.schoolid = schoolid;
       const std = await students.findOne({
-        where: wherestd, attributes: [],
+        // a learner of another organisation is not found, as an absent one is not
+        where: this.org ? await andInOwnedSchools(wherestd, this.org) : wherestd, attributes: [],
         include: [
           {
             model: curriculums,
@@ -174,7 +190,7 @@ export class GradeBusiness {
     }
     const order = ["gradename"];
 
-    return await grades.findAll({ where, order });
+    return await grades.findAll({ where: await andScope(this.org, "grade", where), order });
   };
   getGrades = async () => {
     const where: WhereOptions<gradesAttributes> = {
@@ -182,7 +198,7 @@ export class GradeBusiness {
     };
     const order = ["gradename"];
 
-    return await grades.findAll({ where, order });
+    return await grades.findAll({ where: await andScope(this.org, "grade", where), order });
   };
   getGradename = (gradename: string) =>
     grades.findOne({
@@ -255,7 +271,7 @@ export class GradeBusiness {
         },
       };
     }
-    const tempdt = await grades.count({ where });
+    const tempdt = await grades.count({ where: await andScope(this.org, "grade", where) });
     return tempdt > 0;
   };
 
@@ -264,7 +280,7 @@ export class GradeBusiness {
       gradeid,
       isdeleted: false,
     };
-    const tempdt = await grades.count({ where });
+    const tempdt = await grades.count({ where: await andScope(this.org, "grade", where) });
     return tempdt > 0;
   };
 }

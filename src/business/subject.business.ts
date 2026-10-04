@@ -11,8 +11,13 @@ import {
 } from "../models/data-models/init-models";
 import { subjects, subjectsAttributes } from "src/models/data-models/subjects";
 import { studentApiAttributes } from "./student-api-payload";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedSubject } from "./content-scope";
 
+/** Built with the caller's context it is limited to the subjects in scope; built without one it is unscoped (the sync payload). */
 export class SubjectBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   createsubject = async (subject: subjectsAttributes, user: LmsUserToken) => {
     subject.subjectid = uuidv4();
     subject.isdeleted = false;
@@ -21,7 +26,9 @@ export class SubjectBusiness {
     return await subjects.create(subject);
   };
   getsubjectbyid = (subjectid: string) =>
-    subjects.findOne({ where: { subjectid, isdeleted: false } });
+    this.org
+      ? findOwnedSubject(this.org, subjectid, { where: { isdeleted: false } })
+      : subjects.findOne({ where: { subjectid, isdeleted: false } });
   getsubjectall = async (paging: IMultiPaging) => {
     let where: WhereOptions<subjectsAttributes> = {
       isdeleted: false,
@@ -34,6 +41,7 @@ export class SubjectBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     where = { ...constructWhere<subjectsAttributes>(paging, where) };
+    where = await andScope(this.org, "subject", where);
 
     return await subjects.findAndCountAll({ where, order, limit, offset });
   };
@@ -80,7 +88,7 @@ export class SubjectBusiness {
         [Op.not]: subject.subjectid,
       };
     }
-    const tempdt = await subjects.count({ where });
+    const tempdt = await subjects.count({ where: await andScope(this.org, "subject", where) });
     return tempdt > 0;
   };
 
@@ -89,7 +97,7 @@ export class SubjectBusiness {
       subjectid,
       isdeleted: false,
     };
-    const tempdt = await subjects.count({ where });
+    const tempdt = await subjects.count({ where: await andScope(this.org, "subject", where) });
     return tempdt > 0;
   };
   getSubjects = async () => {
@@ -108,6 +116,6 @@ export class SubjectBusiness {
       subjectid
     };
 
-    return await curriculums.findOne({ where });
+    return await curriculums.findOne({ where: await andScope(this.org, "curriculum", where) });
   }
 }

@@ -232,9 +232,9 @@ describe("classes, grades and curricula filtered by school", () => {
     await expect(new GradeController().getAllGrades("", "", "s", "", "សាលាគរូ", "")).rejects.toMatchObject({ code: "NOT_FOUND" });
 
     jest.spyOn(curriculums, "findAll").mockResolvedValue([] as never);
-    await new CurriculumController().getAllCurriculums("", "", "", "sample school", "");
+    await new CurriculumController().getAllCurriculums("", "", "", "sample school", "", PLATFORM);
     expect(schools.findOne).toHaveBeenCalledWith(expect.objectContaining({ where: { schoolid: "id-sample" } }));
-    await expect(new CurriculumController().getAllCurriculums("", "", "", "Nowhere", "")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(new CurriculumController().getAllCurriculums("", "", "", "Nowhere", "", PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("curricula: the school is looked up by id", async () => {

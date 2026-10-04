@@ -148,7 +148,7 @@ describe("attaching refuses a cross-owner link", () => {
 
   /** Every table as it stood when the last request was sent (after the spec set its rows up). */
   let before: ReturnType<ContentFake["snapshot"]>;
-  const call = (method: "post" | "put" | "get", path: string, body?: object, token = asX) => {
+  const call = (method: "post" | "put" | "get", path: string, body?: object, token = asPlatform) => {
     before = db.snapshot();
     const req = request(app.getHttpServer())[method](path).set("Authorization", token);
     return body ? req.send(body) : req;
@@ -261,8 +261,8 @@ describe("attaching refuses a cross-owner link", () => {
 
     it("POST /question/create with tags: X's question takes X's tag and a name nobody has, not Y's tag", async () => {
       const body = (tags: string[]) => ({ questionidentifier: `new-${tags.join("-")}`, questiontext: "សួស្តី", templatetypeid: 1, questioncorrectvalue: 1, questiontags: tags });
-      expect((await call("post", "/question/create", body([fx[X].qtag, "brandnew"]))).status).toBe(200);
-      const refused = await call("post", "/question/create", body([fx[Y].qtag]));
+      expect((await call("post", "/question/create", body([fx[X].qtag, "brandnew"]), asX)).status).toBe(200);
+      const refused = await call("post", "/question/create", body([fx[Y].qtag]), asX);
       expect(refused.status).toBe(400);
       expect(refused.body.errormessage).toBe(MESSAGE);
       expect(db.createdIn("questions")).toHaveLength(1);
@@ -282,13 +282,12 @@ describe("attaching refuses a cross-owner link", () => {
       startdate: "2026-01-01", enddate: "2026-12-31", schoolid: schools.map((s) => s.school),
     });
     it("X's Organisation Admin may make a baseline for a curriculum of X and for an unowned one, not for one of Y (400, nothing written)", async () => {
-      expect((await call("post", "/curriculumbaseline/create", body(fx[X]))).status).toBe(200);
-      expect((await call("post", "/curriculumbaseline/create", body(fx.null))).status).toBe(200);
+      expect((await call("post", "/curriculumbaseline/create", body(fx[X]), asX)).status).toBe(200);
+      expect((await call("post", "/curriculumbaseline/create", body(fx.null), asX)).status).toBe(200);
       db.created.length = 0;
-      const refused = await call("post", "/curriculumbaseline/create", body(fx[Y]));
+      const refused = await call("post", "/curriculumbaseline/create", body(fx[Y]), asX);
       expect(refused.status).toBe(400);
       expect(refused.body.errormessage).toBe(MESSAGE);
-      expect(db.createdIn("curriculumbaseline")).toEqual([]);
       expect(db.snapshot()).toEqual(before);
     });
 
@@ -384,7 +383,7 @@ describe("attaching refuses a cross-owner link", () => {
       });
     });
     it("PUT /curriculumbaseline/update/:id: X's Organisation Admin cannot move a baseline of Y onto a curriculum of X (its own curriculum is judged too)", async () => {
-      const res = await baselineUpdate(fx[Y], fx[X]);
+      const res = await baselineUpdate(fx[Y], fx[X], asX);
       expect(res.status).toBe(400);
       expect(res.body.errormessage).toBe(MESSAGE);
       expect(db.snapshot()).toEqual(before);

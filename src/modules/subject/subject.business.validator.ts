@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ValidationError, ValidationErrorItem } from 'joi';
 import { SubjectBusiness } from 'src/business/subject.business';
+import { requestScope } from "src/business/content-scope";
 import { IRequest } from 'src/models/IRequest';
 
 export const CreateSubject = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new SubjectBusiness().isexistssubjectName({
+  const tagexists = await new SubjectBusiness(requestScope(request)).isexistssubjectName({
     subjectname: data.subjectname,
     subjectid: '',
     isdeleted: false,
@@ -25,7 +26,7 @@ export const CreateSubject = async (request: IRequest, data: any): Promise<Array
 };
 
 export const EditSubject = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new SubjectBusiness().isexistssubjectID(data.subjectid);
+  const tagexists = await new SubjectBusiness(requestScope(request)).isexistssubjectID(data.subjectid);
   if (!tagexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -38,7 +39,7 @@ export const EditSubject = async (request: IRequest, data: any): Promise<Array<V
     error.details.push(erroritem);
     return [error];
   } else {
-    const tagexistsnew = await new SubjectBusiness().isexistssubjectName({
+    const tagexistsnew = await new SubjectBusiness(requestScope(request)).isexistssubjectName({
       subjectname: data.subjectname,
       subjectid: data.subjectid,
       isdeleted: false,
@@ -59,7 +60,7 @@ export const EditSubject = async (request: IRequest, data: any): Promise<Array<V
   return [];
 };
 export const DeleteSubject = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const tagexists = await new SubjectBusiness().isexistssubjectID(data.subjectid);
+  const tagexists = await new SubjectBusiness(requestScope(request)).isexistssubjectID(data.subjectid);
   if (!tagexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -72,7 +73,7 @@ export const DeleteSubject = async (request: IRequest, data: any): Promise<Array
     error.details.push(erroritem);
     return [error];
   }
-  const curriculumbinded = await new SubjectBusiness().subjectbindtocurriculum(data.subjectid);
+  const curriculumbinded = await new SubjectBusiness(requestScope(request)).subjectbindtocurriculum(data.subjectid);
   if (curriculumbinded) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
