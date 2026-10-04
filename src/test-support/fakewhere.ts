@@ -17,6 +17,14 @@ const flag = (v: unknown) => (typeof v === "boolean" ? Number(v) : v);
 const equal = (a: unknown, b: unknown, ignoreCase = false) =>
   ignoreCase && typeof a === "string" && typeof b === "string" ? a.toLowerCase() === b.toLowerCase() : (flag(a) ?? null) === (flag(b) ?? null);
 
+// a date and a number compare as time, text as text; a missing value is below everything
+const order = (a: unknown, b: unknown): number => {
+  if (a === null || a === undefined) return -1;
+  const x = a instanceof Date ? a.getTime() : (a as number | string);
+  const y = b instanceof Date ? b.getTime() : (b as number | string);
+  return x < y ? -1 : x > y ? 1 : 0;
+};
+
 const matchesValue = (actual: unknown, expected: unknown, ignoreCase = false): boolean => {
   // an array is the set the value must be one of, as Sequelize reads `{ column: [..] }`
   if (Array.isArray(expected)) {
@@ -29,6 +37,14 @@ const matchesValue = (actual: unknown, expected: unknown, ignoreCase = false): b
         const operand = (expected as Record<symbol, unknown>)[symbol];
         if (symbol === Op.in) return (operand as unknown[]).some((v) => equal(v, actual, ignoreCase));
         if (symbol === Op.ne || symbol === Op.not) return !equal(operand, actual, ignoreCase);
+        if (symbol === Op.between) {
+          const [low, high] = operand as [unknown, unknown];
+          return order(actual, low) >= 0 && order(actual, high) <= 0;
+        }
+        if (symbol === Op.gte) return order(actual, operand) >= 0;
+        if (symbol === Op.gt) return order(actual, operand) > 0;
+        if (symbol === Op.lte) return order(actual, operand) <= 0;
+        if (symbol === Op.lt) return order(actual, operand) < 0;
         if (symbol === Op.like) {
           const pattern = new RegExp(
             "^" + String(operand).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*") + "$",
@@ -50,12 +66,20 @@ const isTrimWhere = (where: unknown): where is { attribute: { fn: string; args: 
   (where as { constructor: { name: string } }).constructor.name === "Where" &&
   (where as { attribute?: { fn?: string } }).attribute?.fn === "TRIM";
 
+// a joined row holds what its include selected, and the whole stored row behind it (`__row`, not enumerable)
+const column = (from: unknown, part: string): unknown => {
+  if (from === null || typeof from !== "object") return undefined;
+  const o = from as Row;
+  return part in o ? o[part] : (o.__row as Row | undefined)?.[part];
+};
+
 const read = (row: Row, key: string): unknown => {
   const path = /^\$(.+)\$$/.exec(key);
   if (!path) return row[key];
   let value: unknown = row;
   for (const part of path[1].split(".")) {
-    value = value !== null && typeof value === "object" ? (value as Row)[part] : undefined;
+    // a joined list (a learner's progress rows) is read through to each of its rows: the value is then every one of them
+    value = Array.isArray(value) ? value.map((v) => column(v, part)) : column(value, part);
   }
   return value;
 };
@@ -74,8 +98,15 @@ export const rowMatches = (row: Row, where: unknown, ignoreCase: ReadonlyArray<s
       if (!(value as unknown[]).some((part) => rowMatches(row, part, ignoreCase))) return false;
     } else if (typeof key === "symbol") {
       throw new Error(`fakewhere: unsupported operator ${String(key.description)}`);
-    } else if (!matchesValue(read(row, key), value, ignoreCase.includes(key))) {
-      return false;
+    } else {
+      // Sequelize refuses a condition on `undefined` rather than reading it as "no condition"
+      if (value === undefined) throw new Error(`WHERE parameter "${key}" has invalid "undefined" value`);
+      const actual = read(row, key);
+      // the key reads through a joined list: the row matches when any of its rows does (as an inner join finds it)
+      const matched = /^\$.+\$$/.test(key) && Array.isArray(actual)
+        ? actual.some((a) => matchesValue(a, value, ignoreCase.includes(key)))
+        : matchesValue(actual, value, ignoreCase.includes(key));
+      if (!matched) return false;
     }
   }
   return true;

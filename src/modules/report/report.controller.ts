@@ -37,7 +37,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiBearerAuth()
 // @UseGuards(AccessGuard(TokenType.ACCESS))
 export class ReportController {
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Get('dashboard')
   @ApiResponse({
     status: 200,
@@ -68,7 +68,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Get('gender')
   @ApiResponse({
     status: 200,
@@ -103,7 +103,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Get('disability')
   @ApiResponse({
     status: 200,
@@ -138,7 +138,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Get('offlineonline')
   @ApiResponse({
     status: 200,
@@ -183,7 +183,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('studentprogress')
   @ApiResponse({
     status: 200,
@@ -214,7 +214,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('studentprogress/class')
   @ApiResponse({
     status: 200,
@@ -245,7 +245,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('studentlastcompletedquiz')
   @ApiResponse({
     status: 200,
@@ -276,7 +276,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('studentlevelquiz')
   @ApiResponse({
     status: 200,
@@ -307,7 +307,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('studentlevelquiz/class')
   @ApiResponse({
     status: 200,
@@ -338,7 +338,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('studentstatus')
   @ApiResponse({
     status: 200,
@@ -383,7 +383,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('syncrecords')
   @ApiResponse({
     status: 200,
@@ -423,7 +423,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Get('dashboard/country/:countryid')
   @ApiResponse({
     status: 200,
@@ -452,7 +452,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Get('dashboard/school/:schoolname')
   @ApiResponse({
     status: 200,
@@ -484,7 +484,7 @@ export class ReportController {
   }
 
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Get('studentusage')
   @ApiResponse({
     status: 200,
@@ -509,7 +509,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('student-grade-progress')
   @ApiResponse({
     status: 200,
@@ -545,7 +545,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('student-level-progress')
   @ApiResponse({
     status: 200,
@@ -581,7 +581,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('student-lesson-progress')
   @ApiResponse({
     status: 200,
@@ -617,7 +617,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('online/studentprogress')
   @ApiResponse({
     status: 200,
@@ -648,7 +648,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('online/studentprogress/class')
   @ApiResponse({
     status: 200,
@@ -679,7 +679,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('online/studentlastcompletedquiz')
   @ApiResponse({
     status: 200,
@@ -710,7 +710,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('studentlevelquiz/online')
   @ApiResponse({
     status: 200,
@@ -741,7 +741,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('online/studentlevelquiz/class')
   @ApiResponse({
     status: 200,
@@ -772,7 +772,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('online/studentstatus')
   @ApiResponse({
     status: 200,
@@ -813,7 +813,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('online/student-grade-progress')
   @ApiResponse({
     status: 200,
@@ -845,7 +845,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('online/student-level-progress')
   @ApiResponse({
     status: 200,
@@ -877,7 +877,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('online/student-lesson-progress')
   @ApiResponse({
     status: 200,
@@ -909,7 +909,7 @@ export class ReportController {
     };
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("studentprogress/download")
   @ApiResponse({
     status: 200,
@@ -941,7 +941,7 @@ export class ReportController {
     });
     return new StreamableFile(Buffer.from(csvString));
   }
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("studentprogress/class/download")
   @ApiResponse({
     status: 200,
@@ -974,7 +974,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("online/studentprogress/download")
   @ApiResponse({
     status: 200,
@@ -1007,7 +1007,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("online/studentprogress/class/download")
   @ApiResponse({
     status: 200,
@@ -1040,7 +1040,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("studentlastcompletedquiz/download")
   @ApiResponse({
     status: 200,
@@ -1072,7 +1072,7 @@ export class ReportController {
     });
     return new StreamableFile(Buffer.from(csvString));
   }
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("online/studentlastcompletedquiz/download")
   @ApiResponse({
     status: 200,
@@ -1105,7 +1105,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("studentlevelquiz/download")
   @ApiResponse({
     status: 200,
@@ -1138,7 +1138,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
   
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("studentlevelquiz/class/download")
   @ApiResponse({
     status: 200,
@@ -1171,7 +1171,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("online/studentlevelquiz/download")
   @ApiResponse({
     status: 200,
@@ -1204,7 +1204,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("online/studentlevelquiz/class/download")
   @ApiResponse({
     status: 200,
@@ -1237,7 +1237,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("studentstatus/download")
   @ApiResponse({
     status: 200,
@@ -1277,7 +1277,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post("online/studentstatus/download")
   @ApiResponse({
     status: 200,
@@ -1317,7 +1317,7 @@ export class ReportController {
     return new StreamableFile(Buffer.from(csvString));
   }
 
-  @OrgPolicy("owned")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('techdowntime')
   @ApiResponse({
     status: 200,
