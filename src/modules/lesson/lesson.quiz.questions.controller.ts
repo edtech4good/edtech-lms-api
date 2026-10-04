@@ -18,6 +18,7 @@ import { LessonGetAllResponse } from './models/LessonGetAllResponse';
 import { LessonQuizQuestionBase, LessonQuizQuestionsResponse } from './models/LessonQuizQuestionBase';
 import { LessonResponse } from './models/LessonResponse';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { assertSameOwner, ownerOfQuestion, ownerOfQuiz } from "src/business/content-owner";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -81,6 +82,7 @@ export class LessonQuizQuestionController {
     @Param('questionid') questionid: string,
     @Param('lessonquizquestionorder') lessonquizquestionorder: number
   ): Promise<ResponseBoolean> {
+    assertSameOwner(await ownerOfQuiz(lessonquizid), await ownerOfQuestion(questionid));
     await new LessonQuizQuestionBusiness().createLessonQuizQuestion(<lessonquizquestionsAttributes>{
       lessonquizid,
       lessonquizquestionstatus: false,

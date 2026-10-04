@@ -20,7 +20,8 @@ import { WG_DOMAIN_COLUMNS } from "src/models/enums";
 import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
-import { requireSchoolByName, withSchoolIds } from "./school-identity";
+import { assertEnrolmentFits, ownerOfSchool } from "./content-owner";
+import { requireSchoolByName, resolveSchoolByName, withSchoolIds } from "./school-identity";
 import { extractSchoolFilters, schoolIdsWhere } from "./school-filter";
 import { hashPassword } from "src/services/password.service";
 import { LmsUserToken } from "src/models/token.model";
@@ -655,6 +656,18 @@ WHERE
     lmsuser: LmsUserToken,
     transaction: Transaction
   ) => {
+    // Before any row is written: the curriculums a row names must have the owner of the school it names. (A school or a
+    // curriculum that is not found is left to the row's own checks below, which report it.)
+    for (const [rowindex, x] of studentdata.entries()) {
+      const school = await resolveSchoolByName(x.schoolname, transaction, `students.${rowindex}.schoolname`);
+      if (!school) continue;
+      const named = await curriculums.findAll({
+        where: { curriculumname: { [Op.in]: x.curriculums.split('/') } },
+        attributes: ['curriculumid'],
+        raw: true,
+      });
+      await assertEnrolmentFits(await ownerOfSchool(school.schoolid, transaction), named.map((c) => c.curriculumid), transaction);
+    }
     for (const [rowindex, x] of studentdata.entries()) {
       const student = await students.findOne({
         where: { studentid: x.studentid },

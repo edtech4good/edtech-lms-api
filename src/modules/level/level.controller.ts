@@ -58,6 +58,7 @@ import {
 import { LevelRequest } from "./models/LevelRequest";
 import { LevelResponse } from "./models/LevelResponse";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { assertSameOwner, ownerOfGrade, ownerOfLevel } from "src/business/content-owner";
 
 @ApiExtraModels(LevelBase)
 @ApiExtraModels(LevelCreateResponse)
@@ -299,6 +300,8 @@ export class LevelController {
     @Body() body: LevelRequest,
     @Request() payload: IRequest
   ): Promise<LevelCreateResponse> {
+    // Moving a level moves everything beneath it: it may only go to a grade with the same owner.
+    assertSameOwner(await ownerOfLevel(levelid), await ownerOfGrade(body.gradeid));
     const data = await new LevelBusiness().updateLevel(<levelsAttributes>{
       levelid,
       levelname: body.levelname,

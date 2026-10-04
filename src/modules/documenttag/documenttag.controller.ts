@@ -20,6 +20,8 @@ import { DocumentTagGetAllResponse } from './models/DocumentTagGetAllResponse';
 import { DocumentTagRequest } from './models/DocumentTagRequest';
 import { DocumentTagResponse } from './models/DocumentTagResponse';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { ownerForNewContent } from "src/business/content-owner";
 
 
 @ApiExtraModels(DocumentTagBase)
@@ -51,9 +53,11 @@ export class DocumentTagController {
   @HttpCode(HttpStatus.OK)
   async create(
     @Body() body: DocumentTagRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<DocumentTagCreateResponse> {
     const temp: documenttagsAttributes = {
+      organisationid: ownerForNewContent(org),
       documenttagname: body.documenttagname,
       documenttagid: "",
       isdeleted: false

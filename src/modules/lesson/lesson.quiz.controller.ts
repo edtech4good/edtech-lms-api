@@ -54,6 +54,7 @@ import {
 import { LessonQuizsUpdate } from "./models/LessonQuizUpdate";
 import { LessonResponse } from "./models/LessonResponse";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { assertSameOwner, ownerOfLesson, ownerOfQuiz } from "src/business/content-owner";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -307,6 +308,8 @@ export class LessonQuizController {
     @Body() lessonquiz: LessonQuizsUpdate,
     @Request() payload: IRequest
   ): Promise<ResponseBoolean> {
+    // Moving a quiz carries its questions with it: it may only go to a lesson with the same owner.
+    assertSameOwner(await ownerOfQuiz(lessonquizid), await ownerOfLesson(lessonquiz.lessonid));
     await new LessonQuizBusiness().updateLessonQuiz(
       lessonquizid,
       {

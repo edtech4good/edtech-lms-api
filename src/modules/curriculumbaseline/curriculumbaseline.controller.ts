@@ -43,6 +43,7 @@ import {
   activatebaseline,
   createcurriculumbaseline,
   deletecurriculumbaseline,
+  updatecurriculumbaseline,
 } from "./curriculumbaseline.request.validator";
 import {
   CurriculumBaseLineBase,
@@ -57,6 +58,20 @@ import { json2csv } from "json-2-csv";
 import axios from "axios";
 import { Config } from "src/config";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { assertSameOwner, callerOwner, ownerOfCurriculum, ownerOfCurriculumBaseline, ownerOfSchool } from "src/business/content-owner";
+
+/**
+ * A baseline has no owner of its own: its curriculum's. It may only be made for a curriculum the caller's
+ * organisation owns, and only for a school of the curriculum's owner.
+ */
+const assertBaselineFits = async (curriculumid: string, schoolid: string | string[] | undefined, org: OrgContext) => {
+  const curriculumOwner = await ownerOfCurriculum(curriculumid);
+  assertSameOwner(callerOwner(org), curriculumOwner);
+  for (const id of Array.isArray(schoolid) ? schoolid : schoolid ? [schoolid] : []) {
+    assertSameOwner(curriculumOwner, await ownerOfSchool(id));
+  }
+};
 // import { schoolsAttributes } from "src/models/data-models/school";
 
 @ApiExtraModels(CurriculumBaseLineBase)
@@ -90,8 +105,10 @@ export class CurriculumBaseLineController {
   @HttpCode(HttpStatus.OK)
   async create(
     @Body() body: CurriculumBaseLineBase,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<CurriculumBaseLineCreateResponse> {
+    await assertBaselineFits(body.curriculumid, body.schoolid, org);
     const temp: curriculumbaselineAttributes = {
       baselineid: body.curriculumid,
       baselinename: body.baselinename,
@@ -166,7 +183,7 @@ export class CurriculumBaseLineController {
     description: "Server error",
   })
   @UseInterceptors(
-    new SchemaValidationInterceptor(deletecurriculumbaseline),
+    new SchemaValidationInterceptor(updatecurriculumbaseline),
     new BusinessValidationInterceptor([DeleteCurriculumBaseLine,CurriculumBaseLineName])
   )
   @RequirePermissions(Permission.UPDATE_BASELINEENDLINE)
@@ -176,13 +193,19 @@ export class CurriculumBaseLineController {
   async update(
     @Param("curriculumbaselineid") curriculumbaselineid: string,
     @Body("") body: CurriculumBaseLineRequest,
-    @User("") user: LmsUserToken
+    @User("") user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<CurriculumBaseLineCreateResponse> {
+    await assertBaselineFits(body.curriculumid, body.schoolid, org);
+    // Moving a baseline moves its questions with it: it may only go to a curriculum with the same owner as its current one
+    // (a platform user who is not acting is judged by this alone).
+    assertSameOwner(await ownerOfCurriculumBaseline(curriculumbaselineid), await ownerOfCurriculum(body.curriculumid));
     const data =  await new CurriculumBaseLineBusiness().updateCurriculumBaseLine(<curriculumbaselineAttributes>
       {
         curriculumbaselineid,
         curriculumid: body.curriculumid,
-        baselineid: body.baselineid,
+        // as on create: the curriculum the baseline is for, never a second id from the body
+        baselineid: body.curriculumid,
         baselinename: body.baselinename,
         baselinetype: body.baselinetype,
         startdate: body.startdate,

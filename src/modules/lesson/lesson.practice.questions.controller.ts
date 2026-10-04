@@ -18,6 +18,7 @@ import { LessonGetAllResponse } from './models/LessonGetAllResponse';
 import { LessonPracticeQuestionBase, LessonPracticeQuestionsResponse } from './models/LessonPracticeQuestionBase';
 import { LessonResponse } from './models/LessonResponse';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { assertSameOwner, ownerOfPractice, ownerOfQuestion } from "src/business/content-owner";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -81,6 +82,7 @@ export class LessonPracticeQuestionController {
     @Param('questionid') questionid: string,
     @Param('lessonpracticequestionorder') lessonpracticequestionorder: number
   ): Promise<ResponseBoolean> {
+    assertSameOwner(await ownerOfPractice(lessonpracticeid), await ownerOfQuestion(questionid));
     await new LessonPracticeQuestionBusiness().createLessonPracticeQuestion(<lessonpracticequestionsAttributes>{
       lessonpracticeid,
       lessonpracticequestionstatus: false,

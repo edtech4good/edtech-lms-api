@@ -54,6 +54,7 @@ import {
 import { LessonPracticesUpdate } from "./models/LessonPracticesUpdate";
 import { LessonResponse } from "./models/LessonResponse";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { assertSameOwner, ownerOfLesson, ownerOfPractice } from "src/business/content-owner";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -314,6 +315,8 @@ export class LessonPracticeController {
     @Body() lessonpractice: LessonPracticesUpdate,
     @Request() payload: IRequest
   ): Promise<ResponseBoolean> {
+    // Moving a practice carries its questions with it: it may only go to a lesson with the same owner.
+    assertSameOwner(await ownerOfPractice(lessonpracticeid), await ownerOfLesson(lessonpractice.lessonid));
     await new LessonPracticeBusiness().updateLessonPractice(lessonpracticeid, {
       ...lessonpractice,
       lessonpracticeid,

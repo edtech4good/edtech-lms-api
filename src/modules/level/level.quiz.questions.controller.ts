@@ -50,6 +50,7 @@ import {
 import { LevelResponse } from "./models/LevelResponse";
 import { LevelQuizSetLesson } from "./models/LevelRequest";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { assertSameOwner, ownerOfLesson, ownerOfLevel, ownerOfQuestion, ownersOfLevelQuizQuestion } from "src/business/content-owner";
 
 @ApiExtraModels(LevelBase)
 @ApiExtraModels(LevelCreateResponse)
@@ -133,6 +134,7 @@ export class LevelQuizQuestionController {
     @Param("questionid") questionid: string,
     @Param("levelquizquestionorder") levelquizquestionorder: number
   ): Promise<ResponseBoolean> {
+    assertSameOwner(await ownerOfLevel(levelid), await ownerOfQuestion(questionid));
     await new LevelQuizQuestionBusiness().createLevelQuizQuestion(<
       levelquizquestionsAttributes
     >{
@@ -325,6 +327,11 @@ export class LevelQuizQuestionController {
     @Param("levelquizquestionid") levelquizquestionid: string,
     @Body() body: LevelQuizSetLesson
   ): Promise<ResponseBoolean> {
+    // The lesson must belong to the same owner as both ends of the row it is set on (its level and its question).
+    const ends = await ownersOfLevelQuizQuestion(levelquizquestionid);
+    const lessonOwner = await ownerOfLesson(body.lessonid);
+    assertSameOwner(lessonOwner, ends.parent);
+    assertSameOwner(lessonOwner, ends.question);
     await new LevelQuizQuestionBusiness().setlesson(
       levelquizquestionid,
       body.lessonid

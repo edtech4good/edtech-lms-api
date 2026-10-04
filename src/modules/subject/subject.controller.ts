@@ -38,6 +38,8 @@ import { SubjectGetAllResponse } from "./models/SubjectGetAllResponse";
 import { IMultiPaging } from "src/models/IPaging";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { ownerForNewContent } from "src/business/content-owner";
 
 @ApiTags("Subjects")
 @Controller("subject")
@@ -67,9 +69,11 @@ export class SubjectController {
   @HttpCode(HttpStatus.OK)
   async create(
     @Body() body: SubjectRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<SubjectCreateResponse> {
     const temp: subjectsAttributes = {
+      organisationid: ownerForNewContent(org),
       subjectid: "",
       subjectname: body.subjectname,
       subjectdescription: body.subjectdescription,

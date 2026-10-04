@@ -6,6 +6,7 @@ import { LmsUserToken } from "src/models/token.model";
 import { buildWhere } from "src/services/util.service";
 import { v4 as uuidv4 } from 'uuid';
 import { documents, documentsAttributes } from "../models/data-models/documents";
+import { studentApiAttributes } from "./student-api-payload";
 export class DocumentBusiness {
     createdocument = async (document: documentsAttributes, user: LmsUserToken) => {
         document.documentid = uuidv4();
@@ -30,7 +31,8 @@ export class DocumentBusiness {
         return await documents.findAndCountAll({ where, order, limit, offset });
     };
     getdocumentname = (documentname: string) => documents.findOne({ where: { documentname, isdeleted: false } });
-    getdocuments = () => documents.findAll({});
+    // sync payload (student API): see student-api-payload.ts
+    getdocuments = () => documents.findAll({ attributes: studentApiAttributes });
     deletedocument = async (documentid: string, user: LmsUserToken) => {
         const tempdt = await this.getdocumentbyid(documentid);
         if (tempdt) {

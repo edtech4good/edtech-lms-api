@@ -67,6 +67,8 @@ import { CurriculumGetAllResponse } from "./models/CurriculumGetAllResponse";
 import { CurriculumRequest } from "./models/CurriculumRequest";
 import { CurriculumResponse } from "./models/CurriculumResponse";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { assertSameOwner, ownerForNewContent, ownerOfCurriculum, ownerOfSubject } from "src/business/content-owner";
 
 @ApiExtraModels(
   CurriculumBase,
@@ -141,9 +143,17 @@ export class CurriculumController {
   @HttpCode(HttpStatus.OK)
   async create(
     @Body() body: CurriculumRequest,
-    @User() user: LmsUserToken
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<CurriculumCreateResponse> {
+    // The owner is the organisation the caller acts in (never from the request); a
+    // subject of another organisation cannot be attached to it.
+    const organisationid = ownerForNewContent(org);
+    if (body.subjectid) {
+      assertSameOwner(organisationid, await ownerOfSubject(body.subjectid));
+    }
     const temp: curriculumsAttributes = {
+      organisationid,
       curriculumname: body.curriculumname,
       curriculumdescription: body.curriculumdescription,
       subjectid: body.subjectid,
@@ -530,6 +540,10 @@ export class CurriculumController {
     @Body() body: CurriculumRequest,
     @User() user: LmsUserToken
   ): Promise<CurriculumCreateResponse> {
+    // Never changes the owner; the subject it is given must have the same owner.
+    if (body.subjectid) {
+      assertSameOwner(await ownerOfCurriculum(curriculumid), await ownerOfSubject(body.subjectid));
+    }
     const data = await new CurriculumBusiness().updateCurriculum(<
       curriculumsAttributes
     >{

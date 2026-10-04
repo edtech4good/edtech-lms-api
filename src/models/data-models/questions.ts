@@ -22,6 +22,7 @@ export interface questionsAttributes {
   questioncorrectvalue: number;
   created_at?: Date;
   created_by?: string;
+  organisationid?: string | null;
   updated_at?: Date;
   updated_by?: string;
   deleted_at?: Date;
@@ -30,7 +31,7 @@ export interface questionsAttributes {
 
 export type questionsPk = "questionid";
 export type questionsId = questions[questionsPk];
-export type questionsOptionalAttributes = "questionid" | "questionheading" | "questionoptions" | "questiontext" | "questiondistractors" | "questionfile" | "questionfeedback" | "isdeleted" | "questionstatus" | "questiontags" | "lastupdated";
+export type questionsOptionalAttributes = "questionid" | "questionheading" | "questionoptions" | "questiontext" | "questiondistractors" | "questionfile" | "questionfeedback" | "isdeleted" | "questionstatus" | "questiontags" | "lastupdated" | "organisationid";
 export type questionsCreationAttributes = Optional<questionsAttributes, questionsOptionalAttributes>;
 
 export class questions extends Model<questionsAttributes, questionsCreationAttributes> implements questionsAttributes {
@@ -50,6 +51,7 @@ export class questions extends Model<questionsAttributes, questionsCreationAttri
   questioncorrectvalue!: number;
   created_at!: Date;
   created_by!: string;
+  organisationid?: string | null;
   updated_at!: Date;
   updated_by!: string;
   deleted_at!: Date;
@@ -158,6 +160,14 @@ export class questions extends Model<questionsAttributes, questionsCreationAttri
         type: 'TIMESTAMP',
         defaultValue: Sequelize.Sequelize.literal('CURRENT_TIMESTAMP'),
         allowNull: true
+      },
+      organisationid: {
+        type: DataTypes.STRING(36),
+        allowNull: true,
+        references: {
+          model: 'organisations',
+          key: 'organisationid'
+        }
       },
       created_by: {
         type: DataTypes.STRING(36),

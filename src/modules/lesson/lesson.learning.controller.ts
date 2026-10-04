@@ -23,6 +23,7 @@ import { LessonLearningBase, LessonLearningResponse, LessonLearningsResponse } f
 import { LessonLearningsUpdate } from "./models/LessonLearningsUpdate";
 import { LessonResponse } from './models/LessonResponse';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { assertSameOwner, ownerOfDocument, ownerOfLearning, ownerOfLesson } from "src/business/content-owner";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -113,6 +114,7 @@ export class LessonLearningController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonid`, type: () => String, required: true })
   async addlearning(@Param('lessonid') lessonid: string, @Body() lessonlearning: LessonLearningsCreate): Promise<ResponseBoolean> {
+    assertSameOwner(await ownerOfLesson(lessonid), await ownerOfDocument(lessonlearning.documentid));
     await new LessonLearningBusiness().createLessonLearning({ ...lessonlearning, lessonid, lessonlearningid: "", lessonlearningstatus: true });
     return {
       error: false,
@@ -232,6 +234,7 @@ export class LessonLearningController {
     @Param('lessonlearningid') lessonlearningid: string,
     @Body() lessonlearning: LessonLearningsUpdate
   ): Promise<ResponseBoolean> {
+    assertSameOwner(await ownerOfLearning(lessonlearningid), await ownerOfDocument(lessonlearning.documentid));
     await new LessonLearningBusiness().updateLessonLearning(lessonlearningid, { ...lessonlearning, lessonlearningid, lessonlearningstatus: true, lessonlearningorder: 0 });
     return {
       error: false,
