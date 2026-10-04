@@ -445,6 +445,33 @@ describe("the content sync is one organisation's", () => {
       expect(contentProblems(json)).toEqual([]);
     });
 
+    it("the lists of ids a school and a baseline hold are trimmed to the rows of the payload (another organisation's, unknown, and the organisation's own stay as they should)", async () => {
+      // X's school lists its curriculum, Y's curriculum, an unowned one and one that is not there; X's baseline lists X's school, Y's, and one that is not there
+      db.tables.schools.find((r) => r.schoolid === TX.school)!.curriculums = [TX.curriculum, TY.curriculum, TU.curriculum, MISSING];
+      db.tables.schools.find((r) => r.schoolid === TX.school2)!.curriculums = JSON.stringify([TX.curriculum, TY.curriculum]);
+      db.tables.curriculumbaseline.find((r) => r.curriculumbaselineid === TX.baseline)!.schoolid = [TX.school, TY.school, MISSING, TX.school2];
+      const { status, json, raw } = await download("X's Admin", "/sync/content");
+      expect(status).toBe(200);
+      const school = (id: string) => (json.schools as Row[]).find((r) => r.schoolid === id)!;
+      expect(school(TX.school).curriculums).toEqual([TX.curriculum]);
+      expect(school(TX.school2).curriculums).toEqual([TX.curriculum]);
+      expect((json.curriculumbaselines as Row[])[0].schoolid).toEqual([TX.school, TX.school2]);
+      expect(contentProblems(json)).toEqual([]);
+      for (const id of [...everyIdOf(TY), ...everyIdOf(TU), MISSING]) expect(raw).not.toContain(id);
+      // what the database holds is not changed by the export
+      expect(db.tables.schools.find((r) => r.schoolid === TX.school)!.curriculums).toEqual([TX.curriculum, TY.curriculum, TU.curriculum, MISSING]);
+    });
+
+    it("the student API's check (with the rule on the lists) rejects a list that names a row outside the payload", async () => {
+      const good = (await download("X's Admin", "/sync/content")).json;
+      const school = JSON.parse(JSON.stringify(good));
+      school.schools[0].curriculums = [TY.curriculum];
+      expect(contentProblems(school)).not.toEqual([]);
+      const baseline = JSON.parse(JSON.stringify(good));
+      baseline.curriculumbaselines[0].schoolid = [TY.school];
+      expect(contentProblems(baseline)).not.toEqual([]);
+    });
+
     it("an organisation with no content exports empty tables, every key present", async () => {
       const Z = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
       db.add("organisations", { ...ORGANISATION_ROW(Y), organisationid: Z, organisationcode: "zorg" });

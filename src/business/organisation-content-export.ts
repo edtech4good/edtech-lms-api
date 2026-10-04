@@ -53,7 +53,9 @@ import { SubjectBusiness } from "./subject.business";
  * question, document, subject, country and lesson a row names is in it too. A row
  * that names something that is not the organisation's (another organisation's, or
  * nobody's) stops the export: that is content the organisation cannot take with it,
- * and the answer says which table and how many rows, not which ones.
+ * and the answer says which table and how many rows, not which ones. The two lists of
+ * ids a row can hold (a school's curricula, the schools of a baseline) are trimmed to
+ * the rows of the payload instead (ID_LISTS), since central keeps them as typed in.
  */
 
 type Row = Record<string, unknown>;
@@ -135,6 +137,31 @@ const SHAPE: Record<ContentTableKey, Shape> = {
       { fk: "lessonid", to: "lessons", optional: true },
     ],
   },
+};
+
+/**
+ * The columns that hold a LIST of ids of rows of the payload: a school's curricula, and the schools a baseline is for.
+ * Central keeps these lists as typed in, so they can name a curriculum of another organisation (from before enrolment was
+ * limited to one owner), an id that no longer exists, or a school outside the organisation. What is sent is trimmed to the
+ * entries that are rows of the payload; the student API reads the rest as refused or dropped, and the two sides must agree
+ * on that (student-api-content-contract.ts has the same rule).
+ */
+const ID_LISTS: Partial<Record<ContentTableKey, Array<{ column: string; to: ContentTableKey }>>> = {
+  schools: [{ column: "curriculums", to: "curriculums" }],
+  curriculumbaselines: [{ column: "schoolid", to: "schools" }],
+};
+
+const listOf = (value: unknown): unknown[] | null => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 };
 
 const NOUN: Record<ContentTableKey, string> = {
@@ -260,6 +287,30 @@ export const confine = (given: Partial<Record<ContentTableKey, Row[]>>): Partial
       `This organisation's content names rows that are not its own, so it cannot be exported. ${problems.map((p) => p.message).join(" ")}`,
       { fields: problems },
     );
+  }
+
+  // The lists of ids are trimmed to what is in the payload (see ID_LISTS); a count per column is logged, never the ids.
+  const trimmed: string[] = [];
+  for (const key of CONTENT_TABLE_KEYS) {
+    for (const { column, to } of ID_LISTS[key] ?? []) {
+      const targets = idsIn(to);
+      if (tables[key] === undefined || targets === undefined) continue;
+      let left = 0;
+      tables[key] = (tables[key] as Row[]).map((row) => {
+        if (row[column] === null || row[column] === undefined) return row;
+        const entries = listOf(row[column]);
+        const kept = (entries ?? []).filter((entry) => {
+          const id = keyOf(entry);
+          return id !== null && targets.has(id);
+        });
+        left += entries === null ? 1 : entries.length - kept.length;
+        return { ...row, [column]: kept };
+      });
+      if (left > 0) trimmed.push(`${key}.${column}: ${left}`);
+    }
+  }
+  if (trimmed.length > 0) {
+    Logger.info(`organisation content export: list entries left out because they name a row that is not in the payload (${trimmed.join(", ")})`);
   }
   return tables;
 };

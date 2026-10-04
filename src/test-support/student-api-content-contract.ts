@@ -9,6 +9,10 @@ import joi from "joi";
  * unchanged at 60b5aca) and the `organisation` row schema of `src/modules/import/ownership.request.validator.ts`. The
  * same rules, in the same order; the differences are only that problems are returned as a list instead of thrown as a
  * 400, and that the messages are shortened. When the student API's validator changes, change this with it.
+ *
+ * One rule here is central's own, agreed with the student API's import (which refuses a list entry owned by another
+ * organisation and drops the rest): the lists of ids a row holds (`schools.curriculums`, `curriculumbaselines.schoolid`)
+ * name only rows of the payload (`LISTS`; organisation-content-export.ts trims to it).
  */
 
 const CONTENT_FORMAT = 3;
@@ -106,6 +110,12 @@ export const CONTENT_TABLES: Record<TableKey, TableSpec> = {
     ],
   },
 };
+
+/** Columns that hold a list of ids of rows of the payload (central's rule: see the top of this file). */
+const LISTS: Array<{ table: TableKey; column: string; to: TableKey }> = [
+  { table: "schools", column: "curriculums", to: "curriculums" },
+  { table: "curriculumbaselines", column: "schoolid", to: "schools" },
+];
 
 export const TABLE_KEYS = Object.keys(CONTENT_TABLES) as TableKey[];
 export const HEADER_KEYS = ["format", "organisationid", "organisationcode", "scope", "organisations"];
@@ -244,6 +254,20 @@ export function contentProblems(body: unknown): string[] {
       }
       if (missing) problems.push(`${key}: ${missing} ${ref.parent ? "hang from" : "point at"} a ${ref.to} row (${ref.fk}) that is not in the payload`);
     }
+  }
+
+  for (const { table, column, to } of LISTS) {
+    const list = tables[table];
+    const targets = idsOf[to];
+    if (!list || !targets) continue;
+    let outside = 0;
+    for (const row of list) {
+      if (!isRow(row) || row[column] === null || row[column] === undefined) continue;
+      const entries = Array.isArray(row[column]) ? (row[column] as unknown[]) : null;
+      if (entries === null) outside += 1;
+      else outside += entries.filter((e) => typeof e !== "string" || !targets.has(lower(e))).length;
+    }
+    if (outside) problems.push(`${table}: ${outside} entries of ${column} name a ${to} row that is not in the payload`);
   }
   return problems;
 }
