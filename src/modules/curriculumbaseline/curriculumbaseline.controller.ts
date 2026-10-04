@@ -60,15 +60,26 @@ import { Config } from "src/config";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { Org, OrgContext } from "src/decorators/org.decorator";
 import { assertSameOwner, callerOwner, ownerOfCurriculum, ownerOfCurriculumBaseline, ownerOfSchool } from "src/business/content-owner";
+import { findOwnedBaseline, findOwnedCurriculum } from "src/business/content-scope";
+import { schoolNotFound } from "src/business/school-identity";
+import { schoolInScope } from "src/business/school-scope";
 
 /**
  * A baseline has no owner of its own: its curriculum's. It may only be made for a curriculum the caller's
  * organisation owns, and only for a school of the curriculum's owner.
  */
 const assertBaselineFits = async (curriculumid: string, schoolid: string | string[] | undefined, org: OrgContext) => {
+  // the curriculum and every school named are the caller's, or not found (before any owner is compared)
+  await findOwnedCurriculum(org, curriculumid);
+  const schoolids = Array.isArray(schoolid) ? schoolid : schoolid ? [schoolid] : [];
+  for (const id of schoolids) {
+    if (!(await schoolInScope(org, id))) {
+      throw schoolNotFound();
+    }
+  }
   const curriculumOwner = await ownerOfCurriculum(curriculumid);
   assertSameOwner(callerOwner(org), curriculumOwner);
-  for (const id of Array.isArray(schoolid) ? schoolid : schoolid ? [schoolid] : []) {
+  for (const id of schoolids) {
     assertSameOwner(curriculumOwner, await ownerOfSchool(id));
   }
 };
@@ -123,7 +134,7 @@ export class CurriculumBaseLineController {
     };
 
     const data =
-      await new CurriculumBaseLineBusiness().createCurriculumBaseLine(temp,user);
+      await new CurriculumBaseLineBusiness(org).createCurriculumBaseLine(temp,user);
     return {
       error: false,
       data: data,
@@ -155,9 +166,12 @@ export class CurriculumBaseLineController {
   @ApiParam({ name: `curriculumbaselineid`, type: "string", required: true })
   async delete(
     @Param("curriculumbaselineid") curriculumbaselineid: string,
-    @User("") user: LmsUserToken
+    @User("") user: LmsUserToken,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new CurriculumBaseLineBusiness().deleteCurriculumBaseLine(
+    // the baseline in the path is the caller's, or not found
+    await findOwnedBaseline(org, curriculumbaselineid, { where: { isdeleted: false } });
+    await new CurriculumBaseLineBusiness(org).deleteCurriculumBaseLine(
       curriculumbaselineid,
       user
     );
@@ -196,11 +210,13 @@ export class CurriculumBaseLineController {
     @User("") user: LmsUserToken,
     @Org() org: OrgContext
   ): Promise<CurriculumBaseLineCreateResponse> {
+    // the baseline in the path is the caller's, or not found; so are the curriculum and the schools in the body
+    await findOwnedBaseline(org, curriculumbaselineid, { where: { isdeleted: false } });
     await assertBaselineFits(body.curriculumid, body.schoolid, org);
     // Moving a baseline moves its questions with it: it may only go to a curriculum with the same owner as its current one
     // (a platform user who is not acting is judged by this alone).
     assertSameOwner(await ownerOfCurriculumBaseline(curriculumbaselineid), await ownerOfCurriculum(body.curriculumid));
-    const data =  await new CurriculumBaseLineBusiness().updateCurriculumBaseLine(<curriculumbaselineAttributes>
+    const data =  await new CurriculumBaseLineBusiness(org).updateCurriculumBaseLine(<curriculumbaselineAttributes>
       {
         curriculumbaselineid,
         curriculumid: body.curriculumid,
@@ -246,8 +262,12 @@ export class CurriculumBaseLineController {
   async activate(
     @Param("curriculumbaselineid") curriculumbaselineid: string,
     @Param("curriculumid") curriculumid: string,
+    @Org() org: OrgContext
   ): Promise<any> {
-    const data  = await new CurriculumBaseLineBusiness().activateByCurriculumid(curriculumbaselineid, curriculumid);
+    // the baseline and the curriculum in the path are both the caller's, or not found
+    await findOwnedBaseline(org, curriculumbaselineid, { where: { isdeleted: false } });
+    await findOwnedCurriculum(org, curriculumid);
+    const data  = await new CurriculumBaseLineBusiness(org).activateByCurriculumid(curriculumbaselineid, curriculumid);
     return {
       error: false,
       data: data ? data : undefined,
@@ -279,8 +299,10 @@ export class CurriculumBaseLineController {
   @ApiParam({ name: `curriculumbaselineid`, type: "string", required: true })
   async deactivate(
     @Param("curriculumbaselineid") curriculumbaselineid: string,
+    @Org() org: OrgContext
   ): Promise<any> {
-    await new CurriculumBaseLineBusiness().deactivate(curriculumbaselineid);
+    await findOwnedBaseline(org, curriculumbaselineid, { where: { isdeleted: false } });
+    await new CurriculumBaseLineBusiness(org).deactivate(curriculumbaselineid);
     return {
       error: false,
       data: true,
@@ -305,9 +327,9 @@ export class CurriculumBaseLineController {
   @RequirePermissions(Permission.VIEW_BASELINEENDLINE)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  async getAll(): Promise<CurriculumBaseLineGetResponse> {
+  async getAll(@Org() org: OrgContext): Promise<CurriculumBaseLineGetResponse> {
     const data =
-      await new CurriculumBaseLineBusiness().getAllCurriculumBaseLines();
+      await new CurriculumBaseLineBusiness(org).getAllCurriculumBaseLines();
     return {
       error: false,
       data: data
@@ -354,9 +376,10 @@ export class CurriculumBaseLineController {
   async getQuery(
     @Query("baselinename") baselinename: string = '',
     @Query("baselinetype") baselinetype: number,
+    @Org() org: OrgContext
   ): Promise<CurriculumBaseLineGetResponse> {
     const data =
-      await new CurriculumBaseLineBusiness().getAllCurriculumBaseLinesQuery(baselinename,baselinetype);
+      await new CurriculumBaseLineBusiness(org).getAllCurriculumBaseLinesQuery(baselinename,baselinetype);
     return {
       error: false,
       data: data
@@ -404,8 +427,10 @@ export class CurriculumBaseLineController {
   @ApiParam({ name: `curriculumbaselineid`, type: "string", required: true })
   async getBaselineId(
     @Param('curriculumbaselineid') curriculumbaselineid: string,
+    @Org() org: OrgContext
   ):Promise<any>{
-    const data = await new CurriculumBaseLineBusiness().getAllCurriculumBaseLinesid(curriculumbaselineid);
+    await findOwnedBaseline(org, curriculumbaselineid, { where: { isdeleted: false } });
+    const data = await new CurriculumBaseLineBusiness(org).getAllCurriculumBaseLinesid(curriculumbaselineid);
     return {
       error: false,
       data: data ? 
@@ -450,8 +475,10 @@ export class CurriculumBaseLineController {
   @ApiParam({ name: `curriculumbaselineid`, type: "string", required: true })
   async getBaselineSchool(
     @Param('curriculumbaselineid') curriculumbaselineid: string,
+    @Org() org: OrgContext
   ):Promise<any>{
-    const data = await new CurriculumBaseLineBusiness().getSchoolBaseline(curriculumbaselineid);
+    await findOwnedBaseline(org, curriculumbaselineid, { where: { isdeleted: false } });
+    const data = await new CurriculumBaseLineBusiness(org).getSchoolBaseline(curriculumbaselineid);
     return {
       error: false,
       data: data ? data : undefined,
@@ -499,9 +526,12 @@ export class CurriculumBaseLineController {
   @HttpCode(HttpStatus.OK)
   async getStudentBaselineEndlineResults(
     @Param("curriculumbaselineid") curriculumbaselineid: string,
-    @Response({ passthrough: true }) res: any
+    @Response({ passthrough: true }) res: any,
+    @Org() org: OrgContext
   ): Promise<any> {
-    const curbaseline = new CurriculumBaseLineBusiness();
+    // the baseline in the path is the caller's, or not found (before the cloud server is asked for anything)
+    await findOwnedBaseline(org, curriculumbaselineid, { where: { isdeleted: false } });
+    const curbaseline = new CurriculumBaseLineBusiness(org);
     const studentresults = await curbaseline.getStudentBaselineEndlineResults(curriculumbaselineid);
     const response = await axios.get(
       `${Config.fortyk.api.rpi.cloud}/curriculum/${curriculumbaselineid}/getstudentresult`,

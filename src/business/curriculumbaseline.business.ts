@@ -13,7 +13,17 @@ import { LmsUserToken } from "src/models/token.model";
 import { BaselineQuestionBusiness } from "./baslinequestion.business";
 import { baselinequestion, baselinequestionAttributes } from "src/models/data-models/baselinequestion";
 import { IStudentBaselineResult } from "src/modules/curriculumbaseline/models/StudentResult";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope } from "./content-scope";
+import { andSchoolScope } from "./school-scope";
+
+/**
+ * Built with the caller's context, every read and write here is limited to the baselines in scope (a baseline of
+ * another organisation is found as an absent one is, and not changed); built without one it is unscoped.
+ */
 export class CurriculumBaseLineBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   getCurriculumBaseLines = (old: boolean = false) => {
     const option: any = {};
     const where: WhereOptions<curriculumbaselineAttributes> = {
@@ -24,15 +34,20 @@ export class CurriculumBaseLineBusiness {
       option.attributes = ['curriculumbaselineid', 'curriculumid', 'baselineid'];
     }
     option.where = where;
+    return this.scopedFindAll(option);
+  };
+
+  private scopedFindAll = async (option: any) => {
+    option.where = await andScope(this.org, "baseline", option.where);
     return curriculumbaseline.findAll(option);
   };
 
-  getCurriculumBaseLineByID = (curriculumbaselineid: string) => {
+  getCurriculumBaseLineByID = async (curriculumbaselineid: string) => {
     const where: WhereOptions<curriculumbaselineAttributes> = {
       curriculumbaselineid,
       isdeleted: false,
     };
-    return curriculumbaseline.findOne({ where });
+    return curriculumbaseline.findOne({ where: await andScope(this.org, "baseline", where) });
   };
 
   getBaselineQuestionExits = async (curriculumbaselineid: string) => {
@@ -40,7 +55,7 @@ export class CurriculumBaseLineBusiness {
       curriculumbaselineid,
       isdeleted: false,
     }
-    const temp = await baselinequestion.count({where});
+    const temp = await baselinequestion.count({ where: await andScope(this.org, "baselinequestion", where) });
     return temp > 0;
   }
 
@@ -55,7 +70,7 @@ export class CurriculumBaseLineBusiness {
         [Op.not]: curriculumbaselineid,
       };
     }
-    const tempdt = await curriculumbaseline.count({ where });
+    const tempdt = await curriculumbaseline.count({ where: await andScope(this.org, "baseline", where) });
     return tempdt > 0;
 
   };
@@ -71,7 +86,7 @@ export class CurriculumBaseLineBusiness {
       isdeleted: false,
     };
     const curs = await curriculumbaseline.findAll({ 
-      where: where,
+      where: await andScope(this.org, "baseline", where),
       limit:3,
       order: [['created_at','DESC']]
     });
@@ -156,7 +171,7 @@ export class CurriculumBaseLineBusiness {
       baselinestatus : true,
       isdeleted: false,
     };
-    const tempCurriculumbaseline = await curriculumbaseline.findOne({where:whereAll});
+    const tempCurriculumbaseline = await curriculumbaseline.findOne({ where: await andScope(this.org, "baseline", whereAll) });
     if(tempCurriculumbaseline){
         tempCurriculumbaseline.baselinestatus = false;
         await tempCurriculumbaseline.save({fields: ["baselinestatus"]});
@@ -186,8 +201,12 @@ export class CurriculumBaseLineBusiness {
 
   deleteCurriculumBaseLine = async (curriculumbaselineid: string, user: LmsUserToken) => {
     const tempCurriculumbaseline = await this.getCurriculumBaseLineByID(curriculumbaselineid);
-    const tempBaselineQuestion = await new BaselineQuestionBusiness().deleteBaselineQuestionCurriculum(curriculumbaselineid,user);
+    // its questions go with it, and only when the baseline itself is found (and in scope)
+    const tempBaselineQuestion = tempCurriculumbaseline
+      ? await new BaselineQuestionBusiness(this.org).deleteBaselineQuestionCurriculum(curriculumbaselineid,user)
+      : false;
     if(tempCurriculumbaseline){
+      
       
       tempCurriculumbaseline.isdeleted = true;
       tempCurriculumbaseline.deleted_at = new Date();
@@ -207,14 +226,14 @@ export class CurriculumBaseLineBusiness {
   }
 
   getAllCurriculumBaseLines = async () => {
-    const allcurriculums = await new CurriculumBusiness().getCurriculums();
+    const allcurriculums = await new CurriculumBusiness(this.org).getCurriculums();
     const curriculumentries = Object.fromEntries(
       allcurriculums.map((x) => [x.curriculumid, x.get({ plain: true })])
     );
     const allcurriculumbaseline = await curriculumbaseline.findAll({
-      where: {
+      where: await andScope(this.org, "baseline", {
         isdeleted: false,
-      },
+      }),
       order:[['created_at', 'DESC']],
     });
     
@@ -236,7 +255,7 @@ export class CurriculumBaseLineBusiness {
   };
 
     getAllCurriculumBaseLinesQuery = async (baselinename: string,baselinetype: number) => {
-    const allcurriculums = await new CurriculumBusiness().getCurriculums();
+    const allcurriculums = await new CurriculumBusiness(this.org).getCurriculums();
     const curriculumentries = Object.fromEntries(
       allcurriculums.map((x) => [x.curriculumid, x.get({ plain: true })])
     );
@@ -255,7 +274,7 @@ export class CurriculumBaseLineBusiness {
       where.baselinetype = baselinetype;
     }
     const allcurriculumbaseline = await curriculumbaseline.findAll({
-      where,
+      where: await andScope(this.org, "baseline", where),
       order:[['created_at', 'DESC']],
     });
     
@@ -277,15 +296,15 @@ export class CurriculumBaseLineBusiness {
   };
 
   getAllCurriculumBaseLinesid = async (curriculumbaselineid: string) => {
-    const allcurriculums = await new CurriculumBusiness().getCurriculums();
+    const allcurriculums = await new CurriculumBusiness(this.org).getCurriculums();
     const curriculumentries = Object.fromEntries(
       allcurriculums.map((x) => [x.curriculumid, x.get({ plain: true })])
     );
     const getcurriculumbaseline = await curriculumbaseline.findOne({
-      where: {
+      where: await andScope(this.org, "baseline", {
         curriculumbaselineid,
         isdeleted: false
-      },
+      }),
       order:[['created_at', 'DESC']],
     });
     
@@ -310,18 +329,22 @@ export class CurriculumBaseLineBusiness {
       curriculumbaselineid,
       isdeleted: false,
     };
-    const schoolbaseline = await curriculumbaseline.findOne({where});
+    const schoolbaseline = await curriculumbaseline.findOne({ where: await andScope(this.org, "baseline", where) });
     const school = await schools.findAll({ 
-      where:{
+      // a school of another organisation is not listed, even when a baseline names it
+      where: this.org ? andSchoolScope({ isdeleted: false }, this.org) : {
         isdeleted: false,
-      }, 
+      },  
       order:["schoolname"],
     });
 
     schoolbaseline?.schoolid.map(
       (schoolid: string) => {
         const getSchooldata = school.find((data: any) => data.schoolid === schoolid);
-        schooldata.push(getSchooldata);
+        // a school that is not there, or not in scope, is left out
+        if (getSchooldata) {
+          schooldata.push(getSchooldata);
+        }
       }
     )
 

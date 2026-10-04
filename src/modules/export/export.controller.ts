@@ -30,6 +30,7 @@ import { Permission } from "src/models/enums/permissions.enum";
 import { SchoolExistsForRead } from "../school/school.business.validator";
 import { resolveOwnedSchoolSegment } from "src/business/school-scope";
 import { Org, OrgContext } from "src/decorators/org.decorator";
+import { findOwnedCurriculum } from "src/business/content-scope";
 import { getschoolstudents } from "../school/school.request.validator";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { attachmentDisposition } from "src/services/content-disposition";
@@ -167,8 +168,11 @@ export class ExportController {
   @RequirePermissions(Permission.VIEW_DOCUMENT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getQuestions(
-    @Param("curriculumid") curriculumid: string
+    @Param("curriculumid") curriculumid: string,
+    @Org() org: OrgContext
   ): Promise<any> {
-    return await new CurriculumBusiness().getDocuments(curriculumid);
+    // the curriculum in the path is the caller's, or not found (before anything is assembled from it)
+    await findOwnedCurriculum(org, curriculumid, { where: { isdeleted: false } });
+    return await new CurriculumBusiness(org).getDocuments(curriculumid);
   }
 }

@@ -2,6 +2,7 @@
 import { ValidationError, ValidationErrorItem } from "joi";
 import { CurriculumBusiness } from "src/business";
 import { CurriculumBaseLineBusiness } from "src/business/curriculumbaseline.business";
+import { requestScope } from "src/business/content-scope";
 import { IRequest } from "src/models/IRequest";
 
 export const CreateCurriculumBaseLine = async (
@@ -11,9 +12,7 @@ export const CreateCurriculumBaseLine = async (
   let name = 'Baseline';
   if(data.baselinetype === 2) name = 'Midline';
   if(data.baselinetype === 3) name = 'Endline';
-  const curriculumexists = await new CurriculumBusiness().getCurriculumbyid(
-    data.curriculumid
-  );
+  const curriculumexists = await new CurriculumBusiness(requestScope(request)).isexistsCurriculumID(data.curriculumid);
   if (!curriculumexists) {
     const error = new ValidationError("Validation", [], {});
     error.details = [];
@@ -28,7 +27,7 @@ export const CreateCurriculumBaseLine = async (
   }
 
   const curriculumbaselineexists =
-    await new CurriculumBusiness().getCurriculumbyid(data.curriculumid);
+    await new CurriculumBusiness(requestScope(request)).isexistsCurriculumID(data.curriculumid);
   if (!curriculumbaselineexists) {
     const error = new ValidationError("Validation", [], {});
     error.details = [];
@@ -43,7 +42,7 @@ export const CreateCurriculumBaseLine = async (
   }
 
   const curriculumbaselineduplicate =
-    await new CurriculumBaseLineBusiness().getCurriculumBaseLineValidationYear(
+    await new CurriculumBaseLineBusiness(requestScope(request)).getCurriculumBaseLineValidationYear(
       data.curriculumid,
       data.baselineid,
       data.baselinetype
@@ -71,7 +70,7 @@ export const CurriculumBaseLineName = async (
   if(data.baselinetype === 2) name = 'Midline';
   if(data.baselinetype === 3) name = 'Endline';
   const curriculumbaselineexists =
-    await new CurriculumBaseLineBusiness().getCurriculumBaseLineNameExits(
+    await new CurriculumBaseLineBusiness(requestScope(request)).getCurriculumBaseLineNameExits(
       data.curriculumbaselineid,
       data.baselinename,
       data.baselinetype,
@@ -99,7 +98,7 @@ export const DeleteCurriculumBaseLine = async (
   if(data.baselinetype === 2) name = 'Midline';
   if(data.baselinetype === 3) name = 'Endline';
   const curriculumbaselineexists =
-    await new CurriculumBaseLineBusiness().getCurriculumBaseLineByID(
+    await new CurriculumBaseLineBusiness(requestScope(request)).getCurriculumBaseLineByID(
       data.curriculumbaselineid
     );
   if (!curriculumbaselineexists) {
@@ -122,7 +121,7 @@ export const ActivateCurriculumBaseLine = async (
   data: any
 ): Promise<Array<ValidationError | null | undefined>> => {
   const curriculumbaselinequestionexists =
-    await new CurriculumBaseLineBusiness().getBaselineQuestionExits(
+    await new CurriculumBaseLineBusiness(requestScope(request)).getBaselineQuestionExits(
       data.curriculumbaselineid
     );
   if (!curriculumbaselinequestionexists) {

@@ -281,13 +281,15 @@ describe("attaching refuses a cross-owner link", () => {
       baselineid: curriculum.curriculum, curriculumid: curriculum.curriculum, baselinename: `Baseline ${++named}`, baselinetype: 2,
       startdate: "2026-01-01", enddate: "2026-12-31", schoolid: schools.map((s) => s.school),
     });
-    it("X's Organisation Admin may make a baseline for a curriculum of X and for an unowned one, not for one of Y (400, nothing written)", async () => {
+    it("X's Organisation Admin may make a baseline for a curriculum of X, not for one of Y or an unowned one (400 as for one that is not there, nothing written)", async () => {
       expect((await call("post", "/curriculumbaseline/create", body(fx[X]), asX)).status).toBe(200);
-      expect((await call("post", "/curriculumbaseline/create", body(fx.null), asX)).status).toBe(200);
       db.created.length = 0;
-      const refused = await call("post", "/curriculumbaseline/create", body(fx[Y]), asX);
-      expect(refused.status).toBe(400);
-      expect(refused.body.errormessage).toBe(MESSAGE);
+      for (const other of [fx[Y], fx.null]) {
+        const refused = await call("post", "/curriculumbaseline/create", body(other), asX);
+        expect(refused.status).toBe(400);
+        expect(refused.body.fields).toEqual([{ field: "curriculumid", message: "That curriculum doesn't exist." }]);
+      }
+      expect(db.createdIn("curriculumbaseline")).toEqual([]);
       expect(db.snapshot()).toEqual(before);
     });
 
@@ -382,10 +384,10 @@ describe("attaching refuses a cross-owner link", () => {
         }
       });
     });
-    it("PUT /curriculumbaseline/update/:id: X's Organisation Admin cannot move a baseline of Y onto a curriculum of X (its own curriculum is judged too)", async () => {
+    it("PUT /curriculumbaseline/update/:id: X's Organisation Admin cannot move a baseline of Y onto a curriculum of X: the baseline is not found (400, as one that is not there)", async () => {
       const res = await baselineUpdate(fx[Y], fx[X], asX);
       expect(res.status).toBe(400);
-      expect(res.body.errormessage).toBe(MESSAGE);
+      expect(res.body.fields).toEqual([{ field: "curriculumbaselineid", message: "That midline curriculum doesn't exist." }]);
       expect(db.snapshot()).toEqual(before);
     });
 
