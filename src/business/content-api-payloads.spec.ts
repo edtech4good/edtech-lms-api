@@ -5,6 +5,7 @@ import { DocumentBusiness } from "src/business/document.business";
 import { QuestionBusiness } from "src/business/question.business";
 import { SubjectBusiness } from "src/business/subject.business";
 import { SyncBusiness } from "src/business/sync.business";
+import { buildOrganisationContent } from "src/business/organisation-content-export";
 import { initModels } from "src/models/data-models/init-models";
 
 /**
@@ -135,6 +136,42 @@ describe("content payloads for the student API do not select organisationid", ()
       const all = await capture(() => new GradeBusiness(org).getGrades());
       expect(reading(all, "curriculums").length).toBeGreaterThan(0); // the curriculums the organisation owns, read first
       expect(reading(all, "grades").some((s) => / IN \(/.test(s))).toBe(true);
+    });
+  });
+  /**
+   * One organisation's payload (format 3) is read through business classes built with the organisation's context, so every
+   * statement against a content table carries the limit: the owner for the tables that have one, the ids of the parents in
+   * scope for the rest. Pinned on the SQL, so a reader that loses its limit fails here (the HTTP spec, sync-scope.leak.spec.ts,
+   * shows the rows).
+   */
+  describe("the organisation payload (format 3) reads every table with the organisation's limit", () => {
+    const X = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const organisation = { organisationid: X, organisationname: "X", organisationcode: "xorg", organisationstatus: true, uitheme: "kids", brandingconfig: null, settingsconfig: null, isdeleted: false };
+    const OWNED = ["schools", "curriculums", "questions", "documents", "subjects"];
+    const INHERITED = [
+      "standards", "curriculumbaseline", "baselinequestion", "grades", "levels", "lessons", "lessonlearnings", "lessonplans",
+      "lessonpractices", "lessonquizzes", "lessonpracticequestions", "lessonquizquestions", "levelquizquestions",
+    ];
+
+    it.each(OWNED)("%s is read by `organisationid`, and the rows come out with it", async (table) => {
+      const sqls = reading(await capture(() => buildOrganisationContent(organisation as never)), table);
+      expect(sqls.length).toBeGreaterThan(0);
+      // every statement is limited to the organisation (the one that reads the ids of the owned rows as well as the one that reads the rows)
+      for (const sql of sqls) expect(sql.split(" FROM ")[1]).toMatch(new RegExp(`WHERE.*\`organisationid\` = '${X}'`));
+      // and the rows are read whole, the owner included
+      expect(sqls.some((sql) => /organisationid/.test(selectList(sql)))).toBe(true);
+    });
+
+    it.each(INHERITED)("%s is read only among the rows under the parents in scope", async (table) => {
+      const sqls = reading(await capture(() => buildOrganisationContent(organisation as never)), table);
+      expect(sqls.length).toBeGreaterThan(0);
+      for (const sql of sqls) expect(sql.split(" FROM ")[1]).toMatch(/WHERE.* IN \(/);
+    });
+
+    it("the organisation's country links are read by organisationid", async () => {
+      const sqls = reading(await capture(() => buildOrganisationContent(organisation as never)), "organisationcountry");
+      expect(sqls).toHaveLength(1);
+      expect(sqls[0]).toMatch(new RegExp(`WHERE.*\`organisationid\` = '${X}'`));
     });
   });
 });

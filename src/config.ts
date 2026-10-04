@@ -151,3 +151,27 @@ const buildLogger = (): winston.Logger => {
 const Logger = buildLogger();
 export { Logger, Config };
 
+
+/**
+ * The content format central sends to the student API, and the format a caller
+ * gets from `GET sync/content` and `POST sync/cloud` when it does not ask for
+ * one: `3` (one organisation's content, the default) or `2` (the whole
+ * platform's content, as it was). It is set to `2` only while a student API
+ * that does not read format 3 is still in service, because that API would read
+ * one organisation's content as the whole platform's. While it is `2`, the
+ * learner and teacher pushes keep the shape they had (no school id), and only
+ * the platform, not acting as an organisation, can sync.
+ *
+ * A function, like `isLogImportEnabled`, so the value is read on every request.
+ * Any value other than `2` or `3` is refused rather than guessed.
+ */
+export const defaultSyncFormat = (): 2 | 3 => {
+  const value = (process.env.SYNC_FORMAT_DEFAULT ?? "").trim();
+  if (value === "" || value === "3") {
+    return 3;
+  }
+  if (value === "2") {
+    return 2;
+  }
+  throw new Error("SYNC_FORMAT_DEFAULT must be 2 or 3");
+};

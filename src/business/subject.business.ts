@@ -107,8 +107,11 @@ export class SubjectBusiness {
     const order = ["subjectname"];
 
     // only the sync payload (student API) reads this: see student-api-payload.ts
-    return await subjects.findAll({ where, order, attributes: studentApiAttributes });
+    return await subjects.findAll({ where: await andScope(this.org, "subject", where), order, attributes: studentApiAttributes });
   };
+  // The organisation payload (format 3): whole rows, the owner included, for the subjects in scope.
+  getSubjectsWithOwner = async () =>
+    subjects.findAll({ where: await andScope(this.org, "subject"), order: ["subjectname"] });
   subjectbindtocurriculum = async (subjectid: string) => {
     const where: WhereOptions<curriculumsAttributes> = {
       isdeleted: false,

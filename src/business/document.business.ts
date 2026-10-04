@@ -45,7 +45,10 @@ export class DocumentBusiness {
     };
     getdocumentname = (documentname: string) => documents.findOne({ where: { documentname, isdeleted: false } });
     // sync payload (student API): see student-api-payload.ts
-    getdocuments = () => documents.findAll({ attributes: studentApiAttributes });
+    // Limited to the documents in scope when built with a caller's context.
+    getdocuments = async () => documents.findAll({ where: await andScope(this.org, "document"), attributes: studentApiAttributes });
+    // The organisation payload (format 3): whole rows, the owner included, for the documents in scope.
+    getdocumentsWithOwner = async () => documents.findAll({ where: await andScope(this.org, "document") });
     deletedocument = async (documentid: string, user: LmsUserToken) => {
         const tempdt = await this.getdocumentbyid(documentid);
         if (tempdt) {
