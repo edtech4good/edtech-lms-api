@@ -957,6 +957,17 @@ describe("reports are confined to the caller's organisation", () => {
       const byName = await asAbsent(who, "post", asking(path, "schoolname", inClass), [TY.schoolname, TU.schoolname], MISSING_NAME);
       expect(byName).toEqual(byId);
     });
+    it.each(IN_X)("%s: a school of another organisation named anywhere in the filter, beside X's own, is the 404 of an unknown school", async (who) => {
+      const own = TX.school;
+      const absent = said(await send(who, "post", path, page([{ key: "schoolid", value: own }, { key: "schoolid", value: MISSING }])));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school, TY.schoolname]) {
+        const entry = foreign === TY.schoolname ? "schoolname" : "schoolid";
+        expect(said(await send(who, "post", path, page([{ key: "schoolid", value: own }, { key: entry, value: foreign }])))).toEqual(absent);
+        expect(said(await send(who, "post", path, page([{ key: entry, value: foreign }, { key: "schoolid", value: own }])))).toEqual(absent);
+        expect(said(await send(who, "post", path, page([{ key: "schoolid", value: [own, foreign] }])))).toEqual(entry === "schoolid" ? absent : said(await send(who, "post", path, page([{ key: "schoolid", value: [own, MISSING] }]))));
+      }
+    });
     it.each(IN_X)("%s: another organisation's class, learner, curriculum, grade, level, lesson and country, and the unowned ones, answer as ones that are not there", async (who) => {
       await asAbsent(who, "post", asking(path, "standard"), [TY.klass, TU.klass]);
       await asAbsent(who, "post", asking(path, "studentid"), [TY.learners[0].id, TU.learners[0].id]);
@@ -1047,6 +1058,17 @@ describe("reports are confined to the caller's organisation", () => {
       expect(byId.status).toBe(404);
       const byName = await asAbsent(who, "post", asking(path, "schoolname"), [TY.schoolname, TU.schoolname], MISSING_NAME);
       expect(byName).toEqual(byId);
+    });
+    it.each(IN_X)("%s: a school of another organisation named anywhere in the filter, beside X's own, is the 404 of an unknown school", async (who) => {
+      const own = TX.school;
+      const absent = said(await send(who, "post", path, page([{ key: "schoolid", value: own }, { key: "schoolid", value: MISSING }])));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school, TY.schoolname]) {
+        const entry = foreign === TY.schoolname ? "schoolname" : "schoolid";
+        expect(said(await send(who, "post", path, page([{ key: "schoolid", value: own }, { key: entry, value: foreign }])))).toEqual(absent);
+        expect(said(await send(who, "post", path, page([{ key: entry, value: foreign }, { key: "schoolid", value: own }])))).toEqual(absent);
+        expect(said(await send(who, "post", path, page([{ key: "schoolid", value: [own, foreign] }])))).toEqual(entry === "schoolid" ? absent : said(await send(who, "post", path, page([{ key: "schoolid", value: [own, MISSING] }]))));
+      }
     });
     it.each(IN_X)("%s: another organisation's class, learner and country, and the unowned ones, answer as ones that are not there", async (who) => {
       const klass = await asAbsent(who, "post", asking(path, "standard"), [TY.klass, TU.klass]);
@@ -1204,6 +1226,15 @@ describe("reports are confined to the caller's organisation", () => {
       expect(second.status).toBe(404);
       expect(axios.post).not.toHaveBeenCalled();
     });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
       const none = await noRows();
       const named: Array<[string, (t: Tree) => string]> = [
@@ -1318,6 +1349,15 @@ describe("reports are confined to the caller's organisation", () => {
       expect(second.status).toBe(404);
       expect(axios.post).not.toHaveBeenCalled();
     });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
       const none = await noRows();
       const named: Array<[string, (t: Tree) => string]> = [
@@ -1424,6 +1464,15 @@ describe("reports are confined to the caller's organisation", () => {
       // every school the body names is checked, whichever entry it is in
       const second = await sameAsAbsent((id) => answerFor(who, page([{ key: "schoolid", value: TX.school }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(second.status).toBe(404);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
       expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
@@ -1541,6 +1590,15 @@ describe("reports are confined to the caller's organisation", () => {
       expect(second.status).toBe(404);
       expect(axios.post).not.toHaveBeenCalled();
     });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
       const none = await noRows();
       const named: Array<[string, (t: Tree) => string]> = [
@@ -1650,6 +1708,15 @@ describe("reports are confined to the caller's organisation", () => {
       expect(second.status).toBe(404);
       expect(axios.post).not.toHaveBeenCalled();
     });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
       const none = await noRows();
       const named: Array<[string, (t: Tree) => string]> = [
@@ -1754,6 +1821,15 @@ describe("reports are confined to the caller's organisation", () => {
       // every school the body names is checked, whichever entry it is in
       const second = await sameAsAbsent((id) => answerFor(who, page([{ key: "schoolid", value: TX.school }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(second.status).toBe(404);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
       expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
@@ -1861,6 +1937,15 @@ describe("reports are confined to the caller's organisation", () => {
       // every school the body names is checked, whichever entry it is in
       const second = await sameAsAbsent((id) => answerFor(who, page([{ key: "schoolid", value: TX.school }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(second.status).toBe(404);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
       expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
@@ -1971,6 +2056,15 @@ describe("reports are confined to the caller's organisation", () => {
       expect(second.status).toBe(404);
       expect(axios.post).not.toHaveBeenCalled();
     });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
       const none = await noRows();
       const named: Array<[string, (t: Tree) => string]> = [
@@ -2077,6 +2171,15 @@ describe("reports are confined to the caller's organisation", () => {
       // every school the body names is checked, whichever entry it is in
       const second = await sameAsAbsent((id) => answerFor(who, page([{ key: "schoolid", value: TX.school }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(second.status).toBe(404);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
       expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
@@ -2188,6 +2291,15 @@ describe("reports are confined to the caller's organisation", () => {
       expect(second.status).toBe(404);
       expect(axios.post).not.toHaveBeenCalled();
     });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
       const none = await noRows();
       const named: Array<[string, (t: Tree) => string]> = [
@@ -2295,6 +2407,15 @@ describe("reports are confined to the caller's organisation", () => {
       // every school the body names is checked, whichever entry it is in
       const second = await sameAsAbsent((id) => answerFor(who, page([{ key: "schoolid", value: TX.school }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(second.status).toBe(404);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
       expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
@@ -2417,6 +2538,15 @@ describe("reports are confined to the caller's organisation", () => {
       // every school the body names is checked, whichever entry it is in
       const second = await sameAsAbsent((id) => answerFor(who, page([{ key: "schoolid", value: TX.school }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(second.status).toBe(404);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
       expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
@@ -2542,6 +2672,15 @@ describe("reports are confined to the caller's organisation", () => {
       expect(second.status).toBe(404);
       expect(axios.post).not.toHaveBeenCalled();
     });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
       const none = await noRows();
       const named: Array<[string, (t: Tree) => string]> = [
@@ -2650,6 +2789,15 @@ describe("reports are confined to the caller's organisation", () => {
       expect(second.status).toBe(404);
       expect(axios.post).not.toHaveBeenCalled();
     });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
       const none = await noRows();
       const named: Array<[string, (t: Tree) => string]> = [
@@ -2756,6 +2904,15 @@ describe("reports are confined to the caller's organisation", () => {
       // every school the body names is checked, whichever entry it is in
       const second = await sameAsAbsent((id) => answerFor(who, page([{ key: "schoolid", value: TX.school }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(second.status).toBe(404);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
       expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {

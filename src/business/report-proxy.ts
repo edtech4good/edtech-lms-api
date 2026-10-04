@@ -3,9 +3,11 @@ import { Config } from "src/config";
 import { OrgContext } from "src/decorators/org.decorator";
 import { IMultiFilter, IMultiPaging } from "src/models/IPaging";
 import { scopeOf } from "./org-scope";
-import { idsOf, REFERENCE_KEYS, ReferenceKey, referenceInScope } from "./report-scope";
+import { idsOf, REFERENCE_KEYS, ReferenceKey, idsInScope } from "./report-scope";
 import { schoolNotFound } from "./school-identity";
-import { ownedSchoolIds, resolveOwnedSchoolRef } from "./school-scope";
+import { andSchoolScope, ownedSchoolIds, resolveOwnedSchoolRef } from "./school-scope";
+import { schools } from "src/models/data-models/school";
+import { Op } from "sequelize";
 
 /**
  * What the student API's report routes take in their `filter` list, as read from its report business: only the
@@ -58,12 +60,28 @@ export type OnlineReportName = keyof typeof ONLINE_REPORTS;
  * that is not text, is the 404 an unknown school gets; a blank text names no school (as everywhere else).
  */
 const schoolsNamedBy = async (org: OrgContext, key: "schoolid" | "schoolname", value: unknown): Promise<string[]> => {
-  const ids: string[] = [];
-  for (const one of Array.isArray(value) ? value : [value]) {
-    if (typeof one !== "string" && typeof one !== "number") {
+  const given = Array.isArray(value) ? value : [value];
+  if (given.some((one) => typeof one !== "string" && typeof one !== "number")) {
+    throw schoolNotFound();
+  }
+  const texts = given.map((one) => String(one)).filter((one) => one.trim().length > 0);
+  if (key === "schoolid") {
+    // one read for every id the entry names; one that is not the caller's is the 404 of an unknown school
+    const ids = [...new Set(texts.map((one) => one.trim()))];
+    if (ids.length === 0) {
+      return [];
+    }
+    const found = await schools.findAll({ attributes: ["schoolid"], where: andSchoolScope({ schoolid: { [Op.in]: ids } }, org) });
+    const have = new Map(found.map((r) => [r.schoolid.toLowerCase(), r.schoolid]));
+    if (ids.some((id) => !have.has(id.toLowerCase()))) {
       throw schoolNotFound();
     }
-    const school = await resolveOwnedSchoolRef(org, { [key]: String(one) });
+    // in the order the entry named them
+    return ids.map((id) => have.get(id.toLowerCase())!);
+  }
+  const ids: string[] = [];
+  for (const name of texts) {
+    const school = await resolveOwnedSchoolRef(org, { schoolname: name });
     if (school !== undefined) {
       ids.push(school.schoolid);
     }
@@ -116,10 +134,9 @@ export const confineOnlineBody = async (
       if (ids === undefined) {
         return undefined;
       }
-      for (const id of ids) {
-        if (!(await referenceInScope(org, entry.key as ReferenceKey, id))) {
-          return undefined;
-        }
+      const inside = await idsInScope(org, entry.key as ReferenceKey, ids);
+      if (ids.some((id) => !inside.has(id))) {
+        return undefined;
       }
       // only a key this report reads names a learner; an empty list names none
       names = names || (report.names.some((k) => k === entry.key) && ids.length > 0);

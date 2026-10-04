@@ -1,9 +1,10 @@
+import { Op } from "sequelize";
 import { OrgContext } from "src/decorators/org.decorator";
 import { countries } from "src/models/data-models/countries";
 import { standards } from "src/models/data-models/standard";
 import { students } from "src/models/data-models/students";
 import { IMultiFilter } from "src/models/IPaging";
-import { inScope } from "./content-scope";
+import { ownedIds } from "./content-scope";
 import { scopeOf } from "./org-scope";
 import { andInOwnedSchools, andLinkedCountries } from "./school-scope";
 
@@ -40,25 +41,35 @@ export const REFERENCE_KEYS: ReadonlySet<string> = new Set<ReferenceKey>([
   "countryid",
 ]);
 
-/** Is this one id, of the kind the filter key names, in the caller's scope? (Only asked of an organisation caller.) */
-export const referenceInScope = async (org: OrgContext, key: ReferenceKey, id: string): Promise<boolean> => {
+/**
+ * Which of these ids, of the kind the filter key names, are in the caller's scope: one read per key, however many ids
+ * the request names. (Only asked of an organisation caller.) Ids are compared as the database compares them, so
+ * letter case does not matter.
+ */
+export const idsInScope = async (org: OrgContext, key: ReferenceKey, ids: string[]): Promise<Set<string>> => {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) {
+    return new Set();
+  }
+  let found: string[];
   switch (key) {
     case "studentid":
-      return (await students.count({ where: await andInOwnedSchools({ studentid: id }, org) })) > 0;
+      found = (await students.findAll({ attributes: ["studentid"], where: await andInOwnedSchools({ studentid: { [Op.in]: unique } }, org) })).map((r) => r.studentid);
+      break;
     case "standard":
-      return (await standards.count({ where: await andInOwnedSchools({ standardid: id }, org) })) > 0;
-    case "curriculumid":
-      return inScope(org, "curriculum", id);
-    case "gradeid":
-      return inScope(org, "grade", id);
-    case "levelid":
-      return inScope(org, "level", id);
-    case "lessonid":
-      return inScope(org, "lesson", id);
+      found = (await standards.findAll({ attributes: ["standardid"], where: await andInOwnedSchools({ standardid: { [Op.in]: unique } }, org) })).map((r) => r.standardid);
+      break;
     case "countryid":
-      return (await countries.count({ where: await andLinkedCountries({ countryid: id }, org) })) > 0;
+      found = (await countries.findAll({ attributes: ["countryid"], where: await andLinkedCountries({ countryid: { [Op.in]: unique } }, org) })).map((r) => r.countryid);
+      break;
+    default:
+      // the rows of a content kind in scope are read once per request (content-scope.ts)
+      found = (await ownedIds(org, KIND_OF[key])) ?? unique;
   }
+  const have = new Set(found.map((id) => id.toLowerCase()));
+  return new Set(unique.filter((id) => have.has(id.toLowerCase())));
 };
+const KIND_OF = { curriculumid: "curriculum", gradeid: "grade", levelid: "level", lessonid: "lesson" } as const;
 
 /** The ids a filter's value names: a string, or a list of strings; `undefined` for a value that is neither. */
 export const idsOf = (value: unknown): string[] | undefined => {
@@ -90,10 +101,8 @@ export const confineFilters = async (
       continue;
     }
     const ids = idsOf(filter.value);
-    const checked: string[] = [];
-    for (const id of ids ?? [NO_SUCH_ID]) {
-      checked.push((await referenceInScope(org, filter.key as ReferenceKey, id)) ? id : NO_SUCH_ID);
-    }
+    const inside = await idsInScope(org, filter.key as ReferenceKey, ids ?? []);
+    const checked = (ids ?? [NO_SUCH_ID]).map((id) => (inside.has(id) ? id : NO_SUCH_ID));
     confined.push({ ...filter, value: typeof filter.value === "string" ? checked[0] : checked });
   }
   return confined;

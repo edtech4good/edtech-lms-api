@@ -79,6 +79,17 @@ export async function resolveSchoolFromFilters(
   /** The schools a caller may see (see school-scope.ts); a school outside it is not found, as one that is not there is. */
   scopeWhere?: WhereOptions,
 ) {
+  if (scopeWhere) {
+    // a scoped caller: EVERY school the filters name (any entry, any element of a list) must be in scope, wherever it
+    // stands; one that is not is the 404 of an unknown school
+    for (const f of filters ?? []) {
+      if ((f.key === "schoolname" || f.key === "schoolid") && f.value) {
+        for (const one of Array.isArray(f.value) ? f.value : [f.value]) {
+          await resolveSchoolRef(f.key === "schoolid" ? { schoolid: String(one) } : { schoolname: String(one) }, scopeWhere);
+        }
+      }
+    }
+  }
   const name = (filters ?? []).find((f) => f.key === "schoolname" && f.value);
   const id = (filters ?? []).find((f) => f.key === "schoolid" && f.value);
   return resolveSchoolRef({
