@@ -23,9 +23,16 @@ import { questions } from "src/models/data-models/questions";
 import { questiontags } from "src/models/data-models/questiontags";
 import { schools } from "src/models/data-models/school";
 import { schoolusers } from "src/models/data-models/schoolusers";
+import { rpiuseraccess } from "src/models/data-models/rpiuseraccess";
 import { standards } from "src/models/data-models/standard";
+import { studentappusages } from "src/models/data-models/studentappusage";
+import { studentgradesprogress } from "src/models/data-models/studentgradesprogress";
+import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
+import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
+import { studentprogress } from "src/models/data-models/studentprogress";
 import { students } from "src/models/data-models/students";
 import { subjects } from "src/models/data-models/subjects";
+import { syncs } from "src/models/data-models/syncrecord";
 import { rowMatches, withPrimaryKey } from "./fakewhere";
 
 /**
@@ -77,6 +84,14 @@ const MODELS = {
   schoolcontributedata: [schoolcontributedata, "schoolcontributeid"],
   organisationcountry: [organisationcountry, "organisationcountryid"],
   organisations: [organisations, "organisationid"],
+  // what the reports read
+  studentprogress: [studentprogress, "studentprogressid"],
+  studentlessonsprogress: [studentlessonsprogress, "studentlessonprogressid"],
+  studentlevelsprogress: [studentlevelsprogress, "studentlevelprogressid"],
+  studentgradesprogress: [studentgradesprogress, "studentgradeprogressid"],
+  rpiuseraccess: [rpiuseraccess, "rpiuseraccessid"],
+  studentappusages: [studentappusages, "studentappusageid"],
+  syncs: [syncs, "syncid"],
 } as const;
 
 /**
@@ -91,7 +106,18 @@ const ASSOCS: Record<string, Record<string, Assoc>> = {
     school: { table: "schools", local: "schoolid", remote: "schoolid" },
     class: { table: "standards", local: "standard", remote: "standardid" },
     curriculum: { table: "curriculums", local: "curriculumid", remote: "curriculumid" },
+    // the progress the reports list a learner's rows through (Sequelize names a hasMany by the plural of the model)
+    studentlessonsprogresses: { table: "studentlessonsprogress", local: "studentid", remote: "studentid", many: true },
+    studentlevelsprogresses: { table: "studentlevelsprogress", local: "studentid", remote: "studentid", many: true },
+    studentgradesprogresses: { table: "studentgradesprogress", local: "studentid", remote: "studentid", many: true },
+    studentprogresses: { table: "studentprogress", local: "studentid", remote: "studentid", many: true },
   },
+  studentprogress: {
+    lessonquiz: { table: "lessonquizzes", local: "studentprogressreferenceid", remote: "lessonquizid" },
+    level: { table: "levels", local: "studentprogressreferenceid", remote: "levelid" },
+  },
+  syncs: { schooluser: { table: "schoolusers", local: "created_by", remote: "schooluserid" } },
+  curriculums: { grades: { table: "grades", local: "curriculumid", remote: "curriculumid", many: true } },
   standards: { school: { table: "schools", local: "schoolid", remote: "schoolid" } },
   schoolcontributedata: { school: { table: "schools", local: "schoolid", remote: "schoolid" } },
   schools: { countries: { table: "countries", local: "countryid", remote: "countryid" } },
@@ -101,9 +127,20 @@ const ASSOCS: Record<string, Record<string, Assoc>> = {
     school: { table: "schools", local: "schoolid", remote: "schoolid" },
   },
   // the content tree: what a route reads a row's parent and its document or question through
-  grades: { curriculum: { table: "curriculums", local: "curriculumid", remote: "curriculumid" } },
-  levels: { grade: { table: "grades", local: "gradeid", remote: "gradeid" } },
-  lessons: { level: { table: "levels", local: "levelid", remote: "levelid" } },
+  grades: {
+    curriculum: { table: "curriculums", local: "curriculumid", remote: "curriculumid" },
+    levels: { table: "levels", local: "gradeid", remote: "gradeid", many: true },
+    studentgradesprogresses: { table: "studentgradesprogress", local: "gradeid", remote: "gradeid", many: true },
+  },
+  levels: {
+    grade: { table: "grades", local: "gradeid", remote: "gradeid" },
+    lessons: { table: "lessons", local: "levelid", remote: "levelid", many: true },
+    studentlevelsprogresses: { table: "studentlevelsprogress", local: "levelid", remote: "levelid", many: true },
+  },
+  lessons: {
+    level: { table: "levels", local: "levelid", remote: "levelid" },
+    studentlessonsprogresses: { table: "studentlessonsprogress", local: "lessonid", remote: "lessonid", many: true },
+  },
   lessonlearnings: {
     document: { table: "documents", local: "documentid", remote: "documentid" },
     lesson: { table: "lessons", local: "lessonid", remote: "lessonid" },
@@ -171,7 +208,7 @@ export type ContentTable = keyof typeof MODELS;
 
 const IGNORE_CASE = ["questiontagname", "documenttagname"];
 // what the wrapper adds to a row: never copied back into it
-const INSTANCE_ONLY = new Set(["get", "setDataValue", "save", "reload", "update", "destroy", "toJSON", "getGrade"]);
+const INSTANCE_ONLY = new Set(["get", "getDataValue", "setDataValue", "save", "reload", "update", "destroy", "toJSON", "getGrade"]);
 
 export class ContentFake {
   tables: Record<string, Row[]> = {};
@@ -220,7 +257,10 @@ export class ContentFake {
           if (nested === null) continue;
           // what the include selects, with the rows it joined in turn held under their aliases
           const nestedAliases = Object.keys(nested).filter((k) => !(k in r));
-          matches.push({ ...project(nested, inc.attributes), ...Object.fromEntries(nestedAliases.map((a) => [a, nested[a]])) });
+          const shown: Row = { ...project(nested, inc.attributes), ...Object.fromEntries(nestedAliases.map((a) => [a, nested[a]])) };
+          // a `where` on `$alias.column$` reads the column whether or not the include selects it (as the database does)
+          Object.defineProperty(shown, "__row", { value: r });
+          matches.push(shown);
         }
         const required = inc.required ?? inc.where !== undefined;
         if (required && matches.length === 0) return null;
@@ -247,6 +287,8 @@ export class ContentFake {
         if (!INSTANCE_ONLY.has(key) && key in instance) row[key] = instance[key];
       }
     };
+    // what `setDataValue` put on the instance: it is part of the instance's JSON, as Sequelize's is
+    const assigned: Row = {};
     const instance: Row = {
       ...shown,
       ...included,
@@ -255,7 +297,9 @@ export class ContentFake {
       // sets the value on the instance only: nothing reaches the row until `save()`
       setDataValue: (k: string, v: unknown) => {
         instance[k] = v;
+        assigned[k] = v;
       },
+      getDataValue: (k: string) => instance[k],
       save: async (o?: { fields?: ReadonlyArray<string> }) => {
         write(instance, o?.fields);
         return instance;
@@ -273,7 +317,7 @@ export class ContentFake {
       destroy: async () => {
         this.tables[table] = this.tables[table].filter((r) => r !== row);
       },
-      toJSON: () => row,
+      toJSON: () => (Object.keys(assigned).length === 0 ? row : { ...row, ...assigned }),
     };
     // the association accessor a level's points recompute reads its grade through
     if (table === "levels") {
@@ -300,6 +344,14 @@ export class ContentFake {
       jest.spyOn(m, "findOne" as never).mockImplementation((async (o?: FindOptions) => find(o)[0] ?? null) as never);
       jest.spyOn(m, "findAll" as never).mockImplementation((async (o?: FindOptions) => {
         let found = find(o);
+        // `attributes: [[fn("sum", col(c)), alias]]` is one row holding the total (null when there is nothing to add up)
+        const total = (Array.isArray(o?.attributes) ? (o!.attributes as unknown[]) : []).find(
+          (a): a is [{ fn: string; args: Array<{ col: string }> }, string] => Array.isArray(a) && (a[0] as { fn?: string })?.fn === "sum",
+        );
+        if (total && !o?.group) {
+          const column = total[0].args[0].col;
+          return [{ [total[1]]: found.length === 0 ? null : found.reduce((sum, r) => sum + Number(r[column] ?? 0), 0) }];
+        }
         if (o?.group) {
           const seen = new Set<unknown>();
           found = found.filter((r) => (seen.has(r[o.group as string]) ? false : seen.add(r[o.group as string])));
@@ -311,7 +363,7 @@ export class ContentFake {
         const page = o?.limit === undefined ? found : found.slice(o.offset ?? 0, (o.offset ?? 0) + o.limit);
         return { rows: page, count: found.length };
       }) as never);
-      jest.spyOn(m, "count" as never).mockImplementation((async (o?: { where?: unknown }) => match(o?.where).length) as never);
+      jest.spyOn(m, "count" as never).mockImplementation((async (o?: FindOptions) => (o?.include ? find(o).length : match(o?.where).length)) as never);
       jest.spyOn(m, "create" as never).mockImplementation((async (attrs: Row) => {
         const row = { ...attrs };
         this.created.push({ table: name, row });

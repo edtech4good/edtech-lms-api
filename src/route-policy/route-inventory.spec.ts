@@ -69,15 +69,15 @@ const EXPECTED_BY_POLICY = {
 // How the routes divide by enforcement, stated explicitly (they sum to the
 // total):
 //  - enforced: by a guard (self 5 + global 5 + platform with PlatformGuard 18
-//    = 28), or, for an owned route, by the spec it names (198, listed below) = 226
+//    = 28), or, for an owned route, by the spec it names (237, listed below) = 265
 //  - not applicable (public): 11
-//  - pending the organisation boundary: owned without a proving spec 45 +
-//    platform without PlatformGuard 0 + server 1 = 46
+//  - pending the organisation boundary: owned without a proving spec 6 +
+//    platform without PlatformGuard 0 + server 1 = 7
 const EXPECTED_ENFORCED_BY_GUARD = 28;
-const EXPECTED_ENFORCED_BY_SPEC = 198;
+const EXPECTED_ENFORCED_BY_SPEC = 237;
 const EXPECTED_ENFORCED = EXPECTED_ENFORCED_BY_GUARD + EXPECTED_ENFORCED_BY_SPEC;
 const EXPECTED_NOT_APPLICABLE = 11;
-const EXPECTED_PENDING = 46;
+const EXPECTED_PENDING = 7;
 // The owned routes that name a spec proving them, pinned by name so adding or
 // removing one is a conscious edit.
 const EXPECTED_OWNED_ENFORCED = [
@@ -150,6 +150,13 @@ const EXPECTED_OWNED_ENFORCED = [
   "GET /question/:questionid",
   "GET /question/tag/:questionid/:tag",
   "GET /questiontag/:questiontagid",
+  "GET /report/dashboard",
+  "GET /report/dashboard/country/:countryid",
+  "GET /report/dashboard/school/:schoolname",
+  "GET /report/disability",
+  "GET /report/gender",
+  "GET /report/offlineonline",
+  "GET /report/studentusage",
   "GET /school",
   "GET /school-contribute/all",
   "GET /school-contribute/getallschoolcontribute",
@@ -205,6 +212,38 @@ const EXPECTED_OWNED_ENFORCED = [
   "POST /question/search",
   "POST /questiontag",
   "POST /questiontag/create",
+  "POST /report/online/student-grade-progress",
+  "POST /report/online/student-lesson-progress",
+  "POST /report/online/student-level-progress",
+  "POST /report/online/studentlastcompletedquiz",
+  "POST /report/online/studentlastcompletedquiz/download",
+  "POST /report/online/studentlevelquiz/class",
+  "POST /report/online/studentlevelquiz/class/download",
+  "POST /report/online/studentlevelquiz/download",
+  "POST /report/online/studentprogress",
+  "POST /report/online/studentprogress/class",
+  "POST /report/online/studentprogress/class/download",
+  "POST /report/online/studentprogress/download",
+  "POST /report/online/studentstatus",
+  "POST /report/online/studentstatus/download",
+  "POST /report/student-grade-progress",
+  "POST /report/student-lesson-progress",
+  "POST /report/student-level-progress",
+  "POST /report/studentlastcompletedquiz",
+  "POST /report/studentlastcompletedquiz/download",
+  "POST /report/studentlevelquiz",
+  "POST /report/studentlevelquiz/class",
+  "POST /report/studentlevelquiz/class/download",
+  "POST /report/studentlevelquiz/download",
+  "POST /report/studentlevelquiz/online",
+  "POST /report/studentprogress",
+  "POST /report/studentprogress/class",
+  "POST /report/studentprogress/class/download",
+  "POST /report/studentprogress/download",
+  "POST /report/studentstatus",
+  "POST /report/studentstatus/download",
+  "POST /report/syncrecords",
+  "POST /report/techdowntime",
   "POST /roles/user-bind-role",
   "POST /school",
   "POST /school-contribute/create",
@@ -370,7 +409,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("pending enforcement", () => {
-    it("divides the routes into 226 enforced (28 by a guard, 198 by a proving spec), 11 not applicable (public) and 46 pending", () => {
+    it("divides the routes into 265 enforced (28 by a guard, 237 by a proving spec), 11 not applicable (public) and 7 pending", () => {
       const count = (state: string) => routes.filter((r) => enforcementState(r) === state).length;
       expect(count("yes")).toBe(EXPECTED_ENFORCED);
       expect(count("n/a")).toBe(EXPECTED_NOT_APPLICABLE);
@@ -402,7 +441,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("owned routes proved by a spec", () => {
-    it("the enforced owned routes are exactly the 198 named ones", () => {
+    it("the enforced owned routes are exactly the 237 named ones", () => {
       const enforced = routes.filter((r) => r.policy === "owned" && enforcementState(r) === "yes");
       expect(enforced.map(key).sort()).toEqual([...EXPECTED_OWNED_ENFORCED].sort());
       expect(enforced).toHaveLength(EXPECTED_ENFORCED_BY_SPEC);
@@ -421,7 +460,7 @@ describe("route inventory (real application wiring)", () => {
     it("the enforced routes are not in the pending snapshot, and the other owned routes still are", () => {
       const pending = new Set(pendingEnforcementLines(routes).map((l) => l.split("  ")[0]));
       for (const name of EXPECTED_OWNED_ENFORCED) expect(pending.has(name)).toBe(false);
-      expect(pending.has("GET /report/dashboard")).toBe(true);
+      expect(pending.has("GET /sync/content")).toBe(true);
     });
   });
 

@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **283** routes, **226** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned route, by the spec it names), **11** are not applicable (public) and **46** are pending.
+Of **283** routes, **265** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned route, by the spec it names), **11** are not applicable (public) and **7** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 243 | 198 | 0 | 45 |
+| owned | 243 | 237 | 0 | 6 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 1 | 0 | 0 | 1 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **283** | **226** | **11** | **46** |
+| **all** | **283** | **265** | **11** | **7** |
 
 ## Policies
 
@@ -238,45 +238,45 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | GET | `/questiontag/:questiontagid` | QuestionTagController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_questiontag] |  |
 | PUT | `/questiontag/:questiontagid` | QuestionTagController.update | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_questiontag] |  |
 | POST | `/questiontag/create` | QuestionTagController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_questiontag] |  |
-| GET | `/report/dashboard` | ReportController.getSchoolsReport | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach] |  |
-| GET | `/report/dashboard/country/:countryid` | ReportController.getCountryData | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach] |  |
-| GET | `/report/dashboard/school/:schoolname` | ReportController.getSchoolData | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_reach_school] |  |
-| GET | `/report/disability` | ReportController.getStudentDisability | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach, view_reach_school] |  |
-| GET | `/report/gender` | ReportController.getStudentGender | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach, view_reach_school] |  |
-| GET | `/report/offlineonline` | ReportController.getStudentsOfflineOnline | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach, view_reach_school] |  |
-| POST | `/report/online/student-grade-progress` | ReportController.getOnlineStudentGradeProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_report] |  |
-| POST | `/report/online/student-lesson-progress` | ReportController.getOnlineStudentLessonProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_report] |  |
-| POST | `/report/online/student-level-progress` | ReportController.getOnlineStudentLevelProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_report] |  |
-| POST | `/report/online/studentlastcompletedquiz` | ReportController.getOnlineStudentsLastProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_current_level] |  |
-| POST | `/report/online/studentlastcompletedquiz/download` | ReportController.downloadOnlineCurrentLevel | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_current_level] |  |
-| POST | `/report/online/studentlevelquiz/class` | ReportController.getClassLevelQuizOnline | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_student_level_quiz] |  |
-| POST | `/report/online/studentlevelquiz/class/download` | ReportController.downloadOnlineClassLevelQuiz | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_student_level_quiz] |  |
-| POST | `/report/online/studentlevelquiz/download` | ReportController.downloadOnlineStudentsLevelQuiz | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_student_level_quiz] |  |
-| POST | `/report/online/studentprogress` | ReportController.getOnlineStudentsProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_quiz_score] |  |
-| POST | `/report/online/studentprogress/class` | ReportController.getOnlineClassProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_quiz_score] |  |
-| POST | `/report/online/studentprogress/class/download` | ReportController.downloadOnlineClassProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_quiz_score] |  |
-| POST | `/report/online/studentprogress/download` | ReportController.downloadOnlineStudentsProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_quiz_score] |  |
-| POST | `/report/online/studentstatus` | ReportController.getOnlineStudentStatus | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_active_status] |  |
-| POST | `/report/online/studentstatus/download` | ReportController.downloadOnlineStudentsActivity | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_active_status] |  |
-| POST | `/report/student-grade-progress` | ReportController.getStudentGradeProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_report] |  |
-| POST | `/report/student-lesson-progress` | ReportController.getStudentLessonProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_report] |  |
-| POST | `/report/student-level-progress` | ReportController.getStudentLevelProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_report] |  |
-| POST | `/report/studentlastcompletedquiz` | ReportController.getStudentsLastProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_current_level] |  |
-| POST | `/report/studentlastcompletedquiz/download` | ReportController.downloadOfflineCurrentLevel | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_current_level] |  |
-| POST | `/report/studentlevelquiz` | ReportController.getLevelQuiz | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_student_level_quiz] |  |
-| POST | `/report/studentlevelquiz/class` | ReportController.getClassLevelQuiz | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_student_level_quiz] |  |
-| POST | `/report/studentlevelquiz/class/download` | ReportController.downloadOfflineClassLevelQuizzes | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_student_level_quiz] |  |
-| POST | `/report/studentlevelquiz/download` | ReportController.downloadOfflineStudentsLevelQuizzes | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_student_level_quiz] |  |
-| POST | `/report/studentlevelquiz/online` | ReportController.getLevelQuizOnline | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_student_level_quiz] |  |
-| POST | `/report/studentprogress` | ReportController.getStudentsProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_quiz_score] |  |
-| POST | `/report/studentprogress/class` | ReportController.getClassProgress | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_quiz_score] |  |
-| POST | `/report/studentprogress/class/download` | ReportController.downloadOfflineClassQuizzes | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_quiz_score] |  |
-| POST | `/report/studentprogress/download` | ReportController.downloadOfflineStudentsQuizzes | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_quiz_score] |  |
-| POST | `/report/studentstatus` | ReportController.getStudentStatus | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_active_status] |  |
-| POST | `/report/studentstatus/download` | ReportController.downloadStudentActivity | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_active_status] |  |
-| GET | `/report/studentusage` | ReportController.getStudentUsage | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_impact] |  |
-| POST | `/report/syncrecords` | ReportController.getSyncRecords | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_sync_record] |  |
-| POST | `/report/techdowntime` | ReportController.getFeedbackTechDowntime | owned | pending |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_tech_downtime] |  |
+| GET | `/report/dashboard` | ReportController.getSchoolsReport | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach] |  |
+| GET | `/report/dashboard/country/:countryid` | ReportController.getCountryData | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach] |  |
+| GET | `/report/dashboard/school/:schoolname` | ReportController.getSchoolData | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_reach_school] |  |
+| GET | `/report/disability` | ReportController.getStudentDisability | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach, view_reach_school] |  |
+| GET | `/report/gender` | ReportController.getStudentGender | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach, view_reach_school] |  |
+| GET | `/report/offlineonline` | ReportController.getStudentsOfflineOnline | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach, view_reach_school] |  |
+| POST | `/report/online/student-grade-progress` | ReportController.getOnlineStudentGradeProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_report] |  |
+| POST | `/report/online/student-lesson-progress` | ReportController.getOnlineStudentLessonProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_report] |  |
+| POST | `/report/online/student-level-progress` | ReportController.getOnlineStudentLevelProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_report] |  |
+| POST | `/report/online/studentlastcompletedquiz` | ReportController.getOnlineStudentsLastProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_current_level] |  |
+| POST | `/report/online/studentlastcompletedquiz/download` | ReportController.downloadOnlineCurrentLevel | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_current_level] |  |
+| POST | `/report/online/studentlevelquiz/class` | ReportController.getClassLevelQuizOnline | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_student_level_quiz] |  |
+| POST | `/report/online/studentlevelquiz/class/download` | ReportController.downloadOnlineClassLevelQuiz | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_student_level_quiz] |  |
+| POST | `/report/online/studentlevelquiz/download` | ReportController.downloadOnlineStudentsLevelQuiz | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_student_level_quiz] |  |
+| POST | `/report/online/studentprogress` | ReportController.getOnlineStudentsProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_quiz_score] |  |
+| POST | `/report/online/studentprogress/class` | ReportController.getOnlineClassProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_quiz_score] |  |
+| POST | `/report/online/studentprogress/class/download` | ReportController.downloadOnlineClassProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_quiz_score] |  |
+| POST | `/report/online/studentprogress/download` | ReportController.downloadOnlineStudentsProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_quiz_score] |  |
+| POST | `/report/online/studentstatus` | ReportController.getOnlineStudentStatus | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_active_status] |  |
+| POST | `/report/online/studentstatus/download` | ReportController.downloadOnlineStudentsActivity | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_active_status] |  |
+| POST | `/report/student-grade-progress` | ReportController.getStudentGradeProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_report] |  |
+| POST | `/report/student-lesson-progress` | ReportController.getStudentLessonProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_report] |  |
+| POST | `/report/student-level-progress` | ReportController.getStudentLevelProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_report] |  |
+| POST | `/report/studentlastcompletedquiz` | ReportController.getStudentsLastProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_current_level] |  |
+| POST | `/report/studentlastcompletedquiz/download` | ReportController.downloadOfflineCurrentLevel | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_current_level] |  |
+| POST | `/report/studentlevelquiz` | ReportController.getLevelQuiz | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_student_level_quiz] |  |
+| POST | `/report/studentlevelquiz/class` | ReportController.getClassLevelQuiz | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_student_level_quiz] |  |
+| POST | `/report/studentlevelquiz/class/download` | ReportController.downloadOfflineClassLevelQuizzes | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_student_level_quiz] |  |
+| POST | `/report/studentlevelquiz/download` | ReportController.downloadOfflineStudentsLevelQuizzes | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_student_level_quiz] |  |
+| POST | `/report/studentlevelquiz/online` | ReportController.getLevelQuizOnline | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_student_level_quiz] |  |
+| POST | `/report/studentprogress` | ReportController.getStudentsProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_quiz_score] |  |
+| POST | `/report/studentprogress/class` | ReportController.getClassProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_quiz_score] |  |
+| POST | `/report/studentprogress/class/download` | ReportController.downloadOfflineClassQuizzes | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_quiz_score] |  |
+| POST | `/report/studentprogress/download` | ReportController.downloadOfflineStudentsQuizzes | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_offline_quiz_score] |  |
+| POST | `/report/studentstatus` | ReportController.getStudentStatus | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_active_status] |  |
+| POST | `/report/studentstatus/download` | ReportController.downloadStudentActivity | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_active_status] |  |
+| GET | `/report/studentusage` | ReportController.getStudentUsage | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_impact] |  |
+| POST | `/report/syncrecords` | ReportController.getSyncRecords | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_sync_record] |  |
+| POST | `/report/techdowntime` | ReportController.getFeedbackTechDowntime | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_tech_downtime] |  |
 | GET | `/roles` | RolePermissionController.getAllRoles | global | yes |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_role] |  |
 | POST | `/roles` | RolePermissionController.getall | global | yes |  |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_role] |  |
 | DELETE | `/roles/:roleid` | RolePermissionController.delete | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[delete_role] | Must be restricted to platform users: roles and permissions are global. |
