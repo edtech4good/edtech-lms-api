@@ -51,6 +51,8 @@ import { LevelResponse } from "./models/LevelResponse";
 import { LevelQuizSetLesson } from "./models/LevelRequest";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { assertSameOwner, ownerOfLesson, ownerOfLevel, ownerOfQuestion, ownersOfLevelQuizQuestion } from "src/business/content-owner";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { assertInScope, findOwnedLesson, findOwnedLevel, findOwnedQuestion } from "src/business/content-scope";
 
 @ApiExtraModels(LevelBase)
 @ApiExtraModels(LevelCreateResponse)
@@ -84,10 +86,11 @@ export class LevelQuizQuestionController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `levelid`, type: () => String, required: true })
   async getquizquestion(
-    @Param("levelid") levelid: string
+    @Param("levelid") levelid: string,
+    @Org() org: OrgContext
   ): Promise<LevelQuizQuestionsResponse> {
     const data =
-      await new LevelQuizQuestionBusiness().getLevelQuizQuestionbyLevelid(
+      await new LevelQuizQuestionBusiness(org).getLevelQuizQuestionbyLevelid(
         levelid
       );
     return {
@@ -132,10 +135,14 @@ export class LevelQuizQuestionController {
   async addquizquestion(
     @Param("levelid") levelid: string,
     @Param("questionid") questionid: string,
-    @Param("levelquizquestionorder") levelquizquestionorder: number
+    @Param("levelquizquestionorder") levelquizquestionorder: number,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
+    // the level and the question in the path are both the caller's, or not found (before anything is compared)
+    await findOwnedLevel(org, levelid);
+    await findOwnedQuestion(org, questionid);
     assertSameOwner(await ownerOfLevel(levelid), await ownerOfQuestion(questionid));
-    await new LevelQuizQuestionBusiness().createLevelQuizQuestion(<
+    await new LevelQuizQuestionBusiness(org).createLevelQuizQuestion(<
       levelquizquestionsAttributes
     >{
       levelid,
@@ -172,9 +179,10 @@ export class LevelQuizQuestionController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `levelquizquestionid`, type: () => String, required: true })
   async activatequizquestion(
-    @Param("levelquizquestionid") levelquizquestionid: string
+    @Param("levelquizquestionid") levelquizquestionid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LevelQuizQuestionBusiness().activateLevelQuizQuestion(
+    await new LevelQuizQuestionBusiness(org).activateLevelQuizQuestion(
       levelquizquestionid
     );
     return {
@@ -207,9 +215,10 @@ export class LevelQuizQuestionController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `levelquizquestionid`, type: () => String, required: true })
   async deactivatequizquestion(
-    @Param("levelquizquestionid") levelquizquestionid: string
+    @Param("levelquizquestionid") levelquizquestionid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LevelQuizQuestionBusiness().deactivateLevelQuizQuestion(
+    await new LevelQuizQuestionBusiness(org).deactivateLevelQuizQuestion(
       levelquizquestionid
     );
     return {
@@ -248,9 +257,10 @@ export class LevelQuizQuestionController {
   })
   async orderquizquestion(
     @Param("levelquizquestionid") levelquizquestionid: string,
-    @Param("levelquizquestionorder") levelquizquestionorder: number
+    @Param("levelquizquestionorder") levelquizquestionorder: number,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LevelQuizQuestionBusiness().updateorderLevelQuizQuestion(
+    await new LevelQuizQuestionBusiness(org).updateorderLevelQuizQuestion(
       levelquizquestionid,
       levelquizquestionorder
     );
@@ -284,9 +294,10 @@ export class LevelQuizQuestionController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `levelquizquestionid`, type: () => String, required: true })
   async deletequizquestion(
-    @Param("levelquizquestionid") levelquizquestionid: string
+    @Param("levelquizquestionid") levelquizquestionid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LevelQuizQuestionBusiness().deleteLevelQuizQuestion(
+    await new LevelQuizQuestionBusiness(org).deleteLevelQuizQuestion(
       levelquizquestionid
     );
     return {
@@ -325,14 +336,18 @@ export class LevelQuizQuestionController {
   @ApiParam({ name: `levelquizquestionid`, type: () => String, required: true })
   async setlesson(
     @Param("levelquizquestionid") levelquizquestionid: string,
-    @Body() body: LevelQuizSetLesson
+    @Body() body: LevelQuizSetLesson,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    // The lesson must belong to the same owner as both ends of the row it is set on (its level and its question).
+    // The row in the path and the lesson in the body are both the caller's, or not found (before anything is
+    // compared). The lesson must belong to the same owner as both ends of the row it is set on (its level and its question).
+    await assertInScope(org, "levelquizquestion", levelquizquestionid);
+    await findOwnedLesson(org, body.lessonid);
     const ends = await ownersOfLevelQuizQuestion(levelquizquestionid);
     const lessonOwner = await ownerOfLesson(body.lessonid);
     assertSameOwner(lessonOwner, ends.parent);
     assertSameOwner(lessonOwner, ends.question);
-    await new LevelQuizQuestionBusiness().setlesson(
+    await new LevelQuizQuestionBusiness(org).setlesson(
       levelquizquestionid,
       body.lessonid
     );

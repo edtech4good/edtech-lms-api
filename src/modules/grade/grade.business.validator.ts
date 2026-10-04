@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ValidationError, ValidationErrorItem } from 'joi';
 import { GradeBusiness } from 'src/business';
+import { requestScope } from "src/business/content-scope";
 import { IRequest } from 'src/models/IRequest';
 
 export const CreateGrade = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const gradeexists = await new GradeBusiness().isexistsGradeName({
+  const gradeexists = await new GradeBusiness(requestScope(request)).isexistsGradeName({
     gradename: data.gradename,
     gradeid: '',
     gradestatus: false,
@@ -29,7 +30,7 @@ export const CreateGrade = async (request: IRequest, data: any): Promise<Array<V
 };
 
 export const EditGrade = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const gradeexists = await new GradeBusiness().isexistsGradeID(data.gradeid);
+  const gradeexists = await new GradeBusiness(requestScope(request)).isexistsGradeID(data.gradeid);
   if (!gradeexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -42,7 +43,7 @@ export const EditGrade = async (request: IRequest, data: any): Promise<Array<Val
     error.details.push(erroritem);
     return [error];
   } else {
-    const gradeexistsnew = await new GradeBusiness().isexistsGradeName({
+    const gradeexistsnew = await new GradeBusiness(requestScope(request)).isexistsGradeName({
       gradename: data.gradename,
       gradeid: data.gradeid,
       gradestatus: false,
@@ -67,7 +68,7 @@ export const EditGrade = async (request: IRequest, data: any): Promise<Array<Val
   return [];
 };
 export const DeleteGrade = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const gradeexists = await new GradeBusiness().isexistsGradeID(data.gradeid);
+  const gradeexists = await new GradeBusiness(requestScope(request)).isexistsGradeID(data.gradeid);
   if (!gradeexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];

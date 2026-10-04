@@ -55,6 +55,8 @@ import { LessonPracticesUpdate } from "./models/LessonPracticesUpdate";
 import { LessonResponse } from "./models/LessonResponse";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { assertSameOwner, ownerOfLesson, ownerOfPractice } from "src/business/content-owner";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { assertInScope, findOwnedLesson } from "src/business/content-scope";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -88,9 +90,10 @@ export class LessonPracticeController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonid`, type: () => String, required: true })
   async getpractice(
-    @Param("lessonid") lessonid: string
+    @Param("lessonid") lessonid: string,
+    @Org() org: OrgContext
   ): Promise<LessonPracticesResponse> {
-    const data = await new LessonPracticeBusiness().getLessonPracticebyLessonid(
+    const data = await new LessonPracticeBusiness(org).getLessonPracticebyLessonid(
       lessonid
     );
     return {
@@ -124,9 +127,10 @@ export class LessonPracticeController {
   @ApiParam({ name: `lessonid`, type: () => String, required: true })
   @ApiParam({ name: `lessonpracticeid`, type: () => String, required: true })
   async getpracticebyid(
-    @Param("lessonpracticeid") lessonpracticeid: string
+    @Param("lessonpracticeid") lessonpracticeid: string,
+    @Org() org: OrgContext
   ): Promise<LessonPracticeResponse> {
-    const data = await new LessonPracticeBusiness().getLessonPracticebyid(
+    const data = await new LessonPracticeBusiness(org).getLessonPracticebyid(
       lessonpracticeid
     );
     return {
@@ -161,9 +165,12 @@ export class LessonPracticeController {
   async addpractice(
     @Param("lessonid") lessonid: string,
     @Body() lessonpractice: LessonPracticeCreate,
-    @Request() payload: IRequest
+    @Request() payload: IRequest,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonPracticeBusiness().createLessonPractice(
+    // the lesson in the path is the caller's, or not found (as one that is not there): nothing is written
+    await findOwnedLesson(org, lessonid);
+    await new LessonPracticeBusiness(org).createLessonPractice(
       {
         ...lessonpractice,
         lessonid,
@@ -202,9 +209,10 @@ export class LessonPracticeController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonpracticeid`, type: () => String, required: true })
   async activatepractice(
-    @Param("lessonpracticeid") lessonpracticeid: string
+    @Param("lessonpracticeid") lessonpracticeid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonPracticeBusiness().activateLessonPractice(lessonpracticeid);
+    await new LessonPracticeBusiness(org).activateLessonPractice(lessonpracticeid);
     return {
       error: false,
       data: true,
@@ -235,9 +243,10 @@ export class LessonPracticeController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonpracticeid`, type: () => String, required: true })
   async deactivatepractice(
-    @Param("lessonpracticeid") lessonpracticeid: string
+    @Param("lessonpracticeid") lessonpracticeid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonPracticeBusiness().deactivateLessonPractice(
+    await new LessonPracticeBusiness(org).deactivateLessonPractice(
       lessonpracticeid
     );
     return {
@@ -272,9 +281,10 @@ export class LessonPracticeController {
   @ApiParam({ name: `lessonpracticeorder`, type: () => Number, required: true })
   async orderpractice(
     @Param("lessonpracticeid") lessonpracticeid: string,
-    @Param("lessonpracticeorder") lessonpracticeorder: number
+    @Param("lessonpracticeorder") lessonpracticeorder: number,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonPracticeBusiness().updateorderLessonPractice(
+    await new LessonPracticeBusiness(org).updateorderLessonPractice(
       lessonpracticeid,
       lessonpracticeorder
     );
@@ -313,11 +323,15 @@ export class LessonPracticeController {
   async updatepractice(
     @Param("lessonpracticeid") lessonpracticeid: string,
     @Body() lessonpractice: LessonPracticesUpdate,
-    @Request() payload: IRequest
+    @Request() payload: IRequest,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    // Moving a practice carries its questions with it: it may only go to a lesson with the same owner.
+    // The practice in the path and the lesson in the body are both the caller's, or not found (before anything is
+    // compared). Moving a practice carries its questions with it: it may only go to a lesson with the same owner.
+    await assertInScope(org, "practice", lessonpracticeid);
+    await findOwnedLesson(org, lessonpractice.lessonid);
     assertSameOwner(await ownerOfPractice(lessonpracticeid), await ownerOfLesson(lessonpractice.lessonid));
-    await new LessonPracticeBusiness().updateLessonPractice(lessonpracticeid, {
+    await new LessonPracticeBusiness(org).updateLessonPractice(lessonpracticeid, {
       ...lessonpractice,
       lessonpracticeid,
       lessonpracticestatus: true,
@@ -353,9 +367,10 @@ export class LessonPracticeController {
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonpracticeid`, type: () => String, required: true })
   async deletepractice(
-    @Param("lessonpracticeid") lessonpracticeid: string
+    @Param("lessonpracticeid") lessonpracticeid: string,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonPracticeBusiness().deleteLessonPractice(lessonpracticeid);
+    await new LessonPracticeBusiness(org).deleteLessonPractice(lessonpracticeid);
     return {
       error: false,
       data: true,

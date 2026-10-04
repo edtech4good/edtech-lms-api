@@ -10,7 +10,17 @@ import {
   questions,
 } from "../models/data-models/init-models";
 
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedPracticeQuestion, findOwnedPractice } from "./content-scope";
+
+/**
+ * Built with the caller's context, every read and write here is limited to the rows in scope (a row of another
+ * organisation is reported exactly as an absent one); built without one it is unscoped (the sync payloads, and
+ * the recompute of a lesson's points, which only ever runs on a lesson that was found in scope).
+ */
 export class LessonPracticeQuestionBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   createLessonPracticeQuestion = async (
     lessonpracticequestion: lessonpracticequestionsAttributes
   ) => {
@@ -19,6 +29,9 @@ export class LessonPracticeQuestionBusiness {
     return await lessonpracticequestions.create(lessonpracticequestion);
   };
   getLessonPracticeQuestionbyid = async (lessonpracticequestionid: string) => {
+    if (this.org) {
+      await findOwnedPracticeQuestion(this.org, lessonpracticequestionid);
+    }
     lessonpractices.belongsTo(lessonpracticequestions, {
       foreignKey: "lessonpracticeid",
     });
@@ -74,6 +87,9 @@ export class LessonPracticeQuestionBusiness {
       : null;
   };
   getLessonPracticeQuestionbyLessonid = async (lessonpracticeid: string) => {
+    if (this.org) {
+      await findOwnedPractice(this.org, lessonpracticeid);
+    }
     lessonpractices.belongsTo(lessonpracticequestions, {
       foreignKey: "lessonpracticeid",
     });
@@ -99,7 +115,7 @@ export class LessonPracticeQuestionBusiness {
     });
 
     const data = await lessonpracticequestions.findAll({
-      where: { lessonpracticeid },
+      where: await andScope(this.org, "practicequestion", { lessonpracticeid }),
       include: [
         {
           model: lessonpractices,
@@ -133,7 +149,9 @@ export class LessonPracticeQuestionBusiness {
       : null;
   };
   getLessonPracticeQuestionid = async (lessonpracticequestionid: string) =>
-    lessonpracticequestions.findOne({
+    this.org
+      ? findOwnedPracticeQuestion(this.org, lessonpracticequestionid)
+      : lessonpracticequestions.findOne({
       where: { lessonpracticequestionid },
     });
 
@@ -141,7 +159,7 @@ export class LessonPracticeQuestionBusiness {
     const where: WhereOptions<lessonpracticequestionsAttributes> = {};
     const order = ["lessonpracticequestionorder"];
 
-    return await lessonpracticequestions.findAll({ where, order });
+    return await lessonpracticequestions.findAll({ where: await andScope(this.org, "practicequestion", where), order });
   };
 
   deleteLessonPracticeQuestion = async (lessonpracticequestionid: string) => {
@@ -194,7 +212,7 @@ export class LessonPracticeQuestionBusiness {
     const where: WhereOptions<lessonpracticequestionsAttributes> = {
       lessonpracticequestionid,
     };
-    const tempdt = await lessonpracticequestions.count({ where });
+    const tempdt = await lessonpracticequestions.count({ where: await andScope(this.org, "practicequestion", where) });
     return tempdt > 0;
   };
 
@@ -216,7 +234,7 @@ export class LessonPracticeQuestionBusiness {
         },
       };
     }
-    const tempdt = await lessonpracticequestions.count({ where });
+    const tempdt = await lessonpracticequestions.count({ where: await andScope(this.org, "practicequestion", where) });
     return tempdt > 0;
   };
 }

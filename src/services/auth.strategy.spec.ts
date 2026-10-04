@@ -83,7 +83,7 @@ const lmsuserToken = sign_({
   lmsuserid: "lmsuser-1",
   lmsusername: "admin@example.com",
   lmsuserroles: [],
-  organisationid: null,
+  organisationid: "33333333-3333-4333-8333-333333333333",
   isplatform: false,
 });
 
@@ -237,9 +237,9 @@ describe("JwtAccessStrategy requires the organisation claims on a staff token", 
     expect(getGradesWithFilter).not.toHaveBeenCalled();
   });
 
-  it("accepts organisationid: null with isplatform: false (a staff user with no organisation yet)", async () => {
-    await get(staff({ organisationid: null, isplatform: false })).expect(200);
-    expect(getGradesWithFilter).toHaveBeenCalledTimes(1);
+  it("accepts organisationid: null with isplatform: false (a staff user with no organisation yet): the route, which limits content to an organisation, has none to limit to and refuses it (403, not 401)", async () => {
+    await get(staff({ organisationid: null, isplatform: false })).expect(403);
+    expect(getGradesWithFilter).not.toHaveBeenCalled();
   });
 
   it("accepts a platform token (null organisation, isplatform true) and one acting as an organisation", async () => {

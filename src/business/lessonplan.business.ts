@@ -8,8 +8,17 @@ import {
 } from "../models/data-models/init-models";
 import { lessonplans, lessonplansAttributes } from "src/models/data-models/lessonplan";
 import { LessonPlanBase } from "src/modules/lesson/models/LessonPlansResponse";
+import { OrgContext } from "src/decorators/org.decorator";
+import { andScope, findOwnedPlan, findOwnedLesson } from "./content-scope";
 
+/**
+ * Built with the caller's context, every read and write here is limited to the rows in scope (a row of another
+ * organisation is reported exactly as an absent one); built without one it is unscoped (the sync payloads, and
+ * the recompute of a lesson's points, which only ever runs on a lesson that was found in scope).
+ */
 export class LessonPlanBusiness {
+  constructor(private readonly org?: OrgContext) {}
+
   createLessonPlan = async (lessonplan: lessonplansAttributes) => {
     lessonplan.lessonplanid = uuidv4();
     lessonplan.lessonplanstatus = true;
@@ -17,6 +26,9 @@ export class LessonPlanBusiness {
     return ln;
   };
   getLessonPlanbyid = async (lessonplanid: string) => {
+    if (this.org) {
+      await findOwnedPlan(this.org, lessonplanid);
+    }
     lessons.belongsTo(lessonplans, {
       foreignKey: "lessonid",
     });
@@ -61,6 +73,9 @@ export class LessonPlanBusiness {
       : null;
   };
   getLessonPlanbyLessonid = async (lessonid: string) => {
+    if (this.org) {
+      await findOwnedLesson(this.org, lessonid);
+    }
     lessons.belongsTo(lessonplans, {
       foreignKey: "lessonid",
     });
@@ -78,7 +93,7 @@ export class LessonPlanBusiness {
     });
 
     const data = await lessonplans.findAll({
-      where: { lessonid },
+      where: await andScope(this.org, "plan", { lessonid }),
       include: [
         {
           model: documents,
@@ -114,7 +129,9 @@ export class LessonPlanBusiness {
     });
 
   getLessonPlanid = async (lessonplanid: string) =>
-    lessonplans.findOne({
+    this.org
+      ? findOwnedPlan(this.org, lessonplanid)
+      : lessonplans.findOne({
       where: { lessonplanid },
     });
 
@@ -122,7 +139,7 @@ export class LessonPlanBusiness {
     const where: WhereOptions<lessonplansAttributes> = {};
     const order = ["lessonplanorder"];
 
-    return await lessonplans.findAll({ where, order });
+    return await lessonplans.findAll({ where: await andScope(this.org, "plan", where), order });
   };
 
   deleteLessonPlan = async (lessonplanid: string) => {
@@ -197,7 +214,7 @@ export class LessonPlanBusiness {
     const where: WhereOptions<lessonplansAttributes> = {
       lessonplanid,
     };
-    const tempdt = await lessonplans.count({ where });
+    const tempdt = await lessonplans.count({ where: await andScope(this.org, "plan", where) });
     return tempdt > 0;
   };
 
@@ -219,7 +236,7 @@ export class LessonPlanBusiness {
         },
       };
     }
-    const tempdt = await lessonplans.count({ where });
+    const tempdt = await lessonplans.count({ where: await andScope(this.org, "plan", where) });
     return tempdt > 0;
   };
 

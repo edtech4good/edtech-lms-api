@@ -19,6 +19,8 @@ import { LessonPracticeQuestionBase, LessonPracticeQuestionsResponse } from './m
 import { LessonResponse } from './models/LessonResponse';
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { assertSameOwner, ownerOfPractice, ownerOfQuestion } from "src/business/content-owner";
+import { Org, OrgContext } from "src/decorators/org.decorator";
+import { findOwnedPractice, findOwnedQuestion } from "src/business/content-scope";
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -48,8 +50,8 @@ export class LessonPracticeQuestionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonpracticeid`, type: () => String, required: true })
-  async getpracticequestion(@Param('lessonpracticeid') lessonpracticeid: string): Promise<LessonPracticeQuestionsResponse> {
-    const data = await new LessonPracticeQuestionBusiness().getLessonPracticeQuestionbyLessonid(lessonpracticeid);
+  async getpracticequestion(@Param('lessonpracticeid') lessonpracticeid: string, @Org() org: OrgContext): Promise<LessonPracticeQuestionsResponse> {
+    const data = await new LessonPracticeQuestionBusiness(org).getLessonPracticeQuestionbyLessonid(lessonpracticeid);
     return {
       error: false,
       data: data ? data : undefined
@@ -80,10 +82,14 @@ export class LessonPracticeQuestionController {
   @ApiParam({ name: `lessonpracticequestionorder`, type: () => Number, required: true })
   async addpracticequestion(@Param('lessonpracticeid') lessonpracticeid: string,
     @Param('questionid') questionid: string,
-    @Param('lessonpracticequestionorder') lessonpracticequestionorder: number
+    @Param('lessonpracticequestionorder') lessonpracticequestionorder: number,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
+    // the practice and the question in the path are both the caller's, or not found (before anything is compared)
+    await findOwnedPractice(org, lessonpracticeid);
+    await findOwnedQuestion(org, questionid);
     assertSameOwner(await ownerOfPractice(lessonpracticeid), await ownerOfQuestion(questionid));
-    await new LessonPracticeQuestionBusiness().createLessonPracticeQuestion(<lessonpracticequestionsAttributes>{
+    await new LessonPracticeQuestionBusiness(org).createLessonPracticeQuestion(<lessonpracticequestionsAttributes>{
       lessonpracticeid,
       lessonpracticequestionstatus: false,
       lessonpracticequestionid: "",
@@ -116,8 +122,8 @@ export class LessonPracticeQuestionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonpracticequestionid`, type: () => String, required: true })
-  async activatepracticequestion(@Param('lessonpracticequestionid') lessonpracticequestionid: string): Promise<ResponseBoolean> {
-    await new LessonPracticeQuestionBusiness().activateLessonPracticeQuestion(lessonpracticequestionid);
+  async activatepracticequestion(@Param('lessonpracticequestionid') lessonpracticequestionid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
+    await new LessonPracticeQuestionBusiness(org).activateLessonPracticeQuestion(lessonpracticequestionid);
     return {
       error: false,
       data: true
@@ -144,8 +150,8 @@ export class LessonPracticeQuestionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonpracticequestionid`, type: () => String, required: true })
-  async deactivatepracticequestion(@Param('lessonpracticequestionid') lessonpracticequestionid: string): Promise<ResponseBoolean> {
-    await new LessonPracticeQuestionBusiness().deactivateLessonPracticeQuestion(lessonpracticequestionid);
+  async deactivatepracticequestion(@Param('lessonpracticequestionid') lessonpracticequestionid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
+    await new LessonPracticeQuestionBusiness(org).deactivateLessonPracticeQuestion(lessonpracticequestionid);
     return {
       error: false,
       data: true
@@ -174,9 +180,10 @@ export class LessonPracticeQuestionController {
   @ApiParam({ name: `lessonpracticequestionid`, type: () => String, required: true })
   @ApiParam({ name: `lessonpracticequestionorder`, type: () => Number, required: true })
   async orderpracticequestion(@Param('lessonpracticequestionid') lessonpracticequestionid: string,
-    @Param('lessonpracticequestionorder') lessonpracticequestionorder: number
+    @Param('lessonpracticequestionorder') lessonpracticequestionorder: number,
+    @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    await new LessonPracticeQuestionBusiness().updateorderLessonPracticeQuestion(
+    await new LessonPracticeQuestionBusiness(org).updateorderLessonPracticeQuestion(
       lessonpracticequestionid,
       lessonpracticequestionorder);
     return {
@@ -205,8 +212,8 @@ export class LessonPracticeQuestionController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonpracticequestionid`, type: () => String, required: true })
-  async deletepracticequestion(@Param('lessonpracticequestionid') lessonpracticequestionid: string): Promise<ResponseBoolean> {
-    await new LessonPracticeQuestionBusiness().deleteLessonPracticeQuestion(lessonpracticequestionid);
+  async deletepracticequestion(@Param('lessonpracticequestionid') lessonpracticequestionid: string, @Org() org: OrgContext): Promise<ResponseBoolean> {
+    await new LessonPracticeQuestionBusiness(org).deleteLessonPracticeQuestion(lessonpracticequestionid);
     return {
       error: false,
       data: true
