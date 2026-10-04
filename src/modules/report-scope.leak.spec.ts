@@ -1246,6 +1246,19 @@ describe("reports are confined to the caller's organisation", () => {
       const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(absent.status).toBe(404);
     });
+    it.each(IN_X)("%s: this report reads a learner and a class: either alone is sent, an empty list names none", async (who) => {
+      (axios.post as jest.Mock).mockResolvedValue(reply);
+      await ask(who, page([{ key: "studentid", value: TX.learners[0].id }]));
+      await ask(who, page([{ key: "standard", value: TX.klass }]));
+      expect((axios.post as jest.Mock).mock.calls).toEqual([
+        [cloudUrl, page([{ key: "studentid", value: TX.learners[0].id }]), { headers: HEADERS_X }],
+        [cloudUrl, page([{ key: "standard", value: TX.klass }]), { headers: HEADERS_X }],
+      ]);
+      (axios.post as jest.Mock).mockClear();
+      const none = await noRows();
+      expect(await answerFor(who, page([{ key: "studentid", value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
       const none = await noRows();
       expect(await answerFor(who, page([{ key: "curriculumid", value: TX.curriculum }]))).toEqual(none);
@@ -1346,6 +1359,13 @@ describe("reports are confined to the caller's organisation", () => {
     it.each(IN_X)("%s: another organisation's school is the 404 of an unknown school though the report takes no school", async (who) => {
       const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(absent.status).toBe(404);
+    });
+    it.each(IN_X)("%s: names only a key the student API does not read for this report: the answer is the one for no rows and nothing is sent", async (who) => {
+      const none = await noRows();
+      const unread: [string, string] = key === "standard" ? ["studentid", TX.learners[0].id] : ["standard", TX.klass];
+      expect(await answerFor(who, page([{ key: unread[0], value: unread[1] }]))).toEqual(none);
+      expect(await answerFor(who, page([{ key: unread[0], value: [unread[1]] }, { key, value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
       const none = await noRows();
@@ -1449,6 +1469,19 @@ describe("reports are confined to the caller's organisation", () => {
       const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(absent.status).toBe(404);
     });
+    it.each(IN_X)("%s: this report reads a learner and a class: either alone is sent, an empty list names none", async (who) => {
+      (axios.post as jest.Mock).mockResolvedValue(reply);
+      await ask(who, page([{ key: "studentid", value: TX.learners[0].id }]));
+      await ask(who, page([{ key: "standard", value: TX.klass }]));
+      expect((axios.post as jest.Mock).mock.calls).toEqual([
+        [cloudUrl, page([{ key: "studentid", value: TX.learners[0].id }]), { headers: HEADERS_X }],
+        [cloudUrl, page([{ key: "standard", value: TX.klass }]), { headers: HEADERS_X }],
+      ]);
+      (axios.post as jest.Mock).mockClear();
+      const none = await noRows();
+      expect(await answerFor(who, page([{ key: "studentid", value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
       const none = await noRows();
       expect(await answerFor(who, page([{ key: "curriculumid", value: TX.curriculum }]))).toEqual(none);
@@ -1550,6 +1583,13 @@ describe("reports are confined to the caller's organisation", () => {
     it.each(IN_X)("%s: another organisation's school is the 404 of an unknown school though the report takes no school", async (who) => {
       const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(absent.status).toBe(404);
+    });
+    it.each(IN_X)("%s: names only a key the student API does not read for this report: the answer is the one for no rows and nothing is sent", async (who) => {
+      const none = await noRows();
+      const unread: [string, string] = key === "standard" ? ["studentid", TX.learners[0].id] : ["standard", TX.klass];
+      expect(await answerFor(who, page([{ key: unread[0], value: unread[1] }]))).toEqual(none);
+      expect(await answerFor(who, page([{ key: unread[0], value: [unread[1]] }, { key, value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
       const none = await noRows();
@@ -1865,6 +1905,13 @@ describe("reports are confined to the caller's organisation", () => {
       const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(absent.status).toBe(404);
     });
+    it.each(IN_X)("%s: names only a key the student API does not read for this report: the answer is the one for no rows and nothing is sent", async (who) => {
+      const none = await noRows();
+      const unread: [string, string] = key === "standard" ? ["studentid", TX.learners[0].id] : ["standard", TX.klass];
+      expect(await answerFor(who, page([{ key: unread[0], value: unread[1] }]))).toEqual(none);
+      expect(await answerFor(who, page([{ key: unread[0], value: [unread[1]] }, { key, value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
       const none = await noRows();
       expect(await answerFor(who, page([{ key: "curriculumid", value: TX.curriculum }]))).toEqual(none);
@@ -1965,6 +2012,13 @@ describe("reports are confined to the caller's organisation", () => {
     it.each(IN_X)("%s: another organisation's school is the 404 of an unknown school though the report takes no school", async (who) => {
       const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(absent.status).toBe(404);
+    });
+    it.each(IN_X)("%s: names only a key the student API does not read for this report: the answer is the one for no rows and nothing is sent", async (who) => {
+      const none = await noRows();
+      const unread: [string, string] = key === "standard" ? ["studentid", TX.learners[0].id] : ["standard", TX.klass];
+      expect(await answerFor(who, page([{ key: unread[0], value: unread[1] }]))).toEqual(none);
+      expect(await answerFor(who, page([{ key: unread[0], value: [unread[1]] }, { key, value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
       const none = await noRows();
@@ -2068,6 +2122,13 @@ describe("reports are confined to the caller's organisation", () => {
       const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(absent.status).toBe(404);
     });
+    it.each(IN_X)("%s: names only a key the student API does not read for this report: the answer is the one for no rows and nothing is sent", async (who) => {
+      const none = await noRows();
+      const unread: [string, string] = key === "standard" ? ["studentid", TX.learners[0].id] : ["standard", TX.klass];
+      expect(await answerFor(who, page([{ key: unread[0], value: unread[1] }]))).toEqual(none);
+      expect(await answerFor(who, page([{ key: unread[0], value: [unread[1]] }, { key, value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
       const none = await noRows();
       expect(await answerFor(who, page([{ key: "curriculumid", value: TX.curriculum }]))).toEqual(none);
@@ -2169,6 +2230,13 @@ describe("reports are confined to the caller's organisation", () => {
     it.each(IN_X)("%s: another organisation's school is the 404 of an unknown school though the report takes no school", async (who) => {
       const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(absent.status).toBe(404);
+    });
+    it.each(IN_X)("%s: names only a key the student API does not read for this report: the answer is the one for no rows and nothing is sent", async (who) => {
+      const none = await noRows();
+      const unread: [string, string] = key === "standard" ? ["studentid", TX.learners[0].id] : ["standard", TX.klass];
+      expect(await answerFor(who, page([{ key: unread[0], value: unread[1] }]))).toEqual(none);
+      expect(await answerFor(who, page([{ key: unread[0], value: [unread[1]] }, { key, value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
       const none = await noRows();
@@ -2516,6 +2584,13 @@ describe("reports are confined to the caller's organisation", () => {
       const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(absent.status).toBe(404);
     });
+    it.each(IN_X)("%s: names only a key the student API does not read for this report: the answer is the one for no rows and nothing is sent", async (who) => {
+      const none = await noRows();
+      const unread: [string, string] = key === "standard" ? ["studentid", TX.learners[0].id] : ["standard", TX.klass];
+      expect(await answerFor(who, page([{ key: unread[0], value: unread[1] }]))).toEqual(none);
+      expect(await answerFor(who, page([{ key: unread[0], value: [unread[1]] }, { key, value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
       const none = await noRows();
       expect(await answerFor(who, page([{ key: "curriculumid", value: TX.curriculum }]))).toEqual(none);
@@ -2617,6 +2692,13 @@ describe("reports are confined to the caller's organisation", () => {
       const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(absent.status).toBe(404);
     });
+    it.each(IN_X)("%s: names only a key the student API does not read for this report: the answer is the one for no rows and nothing is sent", async (who) => {
+      const none = await noRows();
+      const unread: [string, string] = key === "standard" ? ["studentid", TX.learners[0].id] : ["standard", TX.klass];
+      expect(await answerFor(who, page([{ key: unread[0], value: unread[1] }]))).toEqual(none);
+      expect(await answerFor(who, page([{ key: unread[0], value: [unread[1]] }, { key, value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
     it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
       const none = await noRows();
       expect(await answerFor(who, page([{ key: "curriculumid", value: TX.curriculum }]))).toEqual(none);
@@ -2717,6 +2799,13 @@ describe("reports are confined to the caller's organisation", () => {
     it.each(IN_X)("%s: another organisation's school is the 404 of an unknown school though the report takes no school", async (who) => {
       const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
       expect(absent.status).toBe(404);
+    });
+    it.each(IN_X)("%s: names only a key the student API does not read for this report: the answer is the one for no rows and nothing is sent", async (who) => {
+      const none = await noRows();
+      const unread: [string, string] = key === "standard" ? ["studentid", TX.learners[0].id] : ["standard", TX.klass];
+      expect(await answerFor(who, page([{ key: unread[0], value: unread[1] }]))).toEqual(none);
+      expect(await answerFor(who, page([{ key: unread[0], value: [unread[1]] }, { key, value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
       const none = await noRows();

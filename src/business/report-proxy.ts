@@ -20,26 +20,36 @@ export interface OnlineReport {
   shape: "list" | "download";
   /** Does the report take a school filter? */
   school: boolean;
+  /**
+   * The keys the student API reads to find the learners the report is about (`studentid`, `standard`), and no other:
+   * a report whose own key is missing answers for the fixed test learner whatever else the body names.
+   */
+  names: ReadonlyArray<"studentid" | "standard">;
   /** What the list answer's `student` is when there is nothing to show: omitted, or null. */
   student?: "null";
 }
 
+// `names`, from the student API's report business (src/business/report.business.ts there; the line of the key read,
+// then of the fixed-learner fallback): studentprogress studentid and standard (:51, :55; :58-60); studentprogress/class
+// standard (:257; :262-264); studentlevelquiz studentid (:1079; :1083-1085); studentlevelquiz/class standard (:1271;
+// :1274-1276); student-grade-progress standard (:694; :697-699); student-level-progress studentid (:902; :904-905);
+// student-lesson-progress studentid (:966; :969-970). The status and last-completed-quiz reports take a school.
 export const ONLINE_REPORTS = {
-  studentprogress: { path: "studentprogress", shape: "list", school: false },
-  studentprogressDownload: { path: "studentprogress/download", shape: "download", school: false },
-  classprogress: { path: "studentprogress/class", shape: "list", school: false },
-  classprogressDownload: { path: "studentprogress/class/download", shape: "download", school: false },
-  lastcompletedquiz: { path: "studentlastcompletedquiz", shape: "list", school: true },
-  lastcompletedquizDownload: { path: "studentlastcompletedquiz/download", shape: "download", school: true },
-  levelquiz: { path: "studentlevelquiz", shape: "list", school: false },
-  levelquizDownload: { path: "studentlevelquiz/download", shape: "download", school: false },
-  classlevelquiz: { path: "studentlevelquiz/class", shape: "list", school: false },
-  classlevelquizDownload: { path: "studentlevelquiz/class/download", shape: "download", school: false },
-  studentstatus: { path: "studentstatus", shape: "list", school: true },
-  studentstatusDownload: { path: "studentstatus/download", shape: "download", school: true },
-  gradeprogress: { path: "student-grade-progress", shape: "list", school: false },
-  levelprogress: { path: "student-level-progress", shape: "list", school: false, student: "null" },
-  lessonprogress: { path: "student-lesson-progress", shape: "list", school: false, student: "null" },
+  studentprogress: { path: "studentprogress", shape: "list", school: false, names: ["studentid", "standard"] },
+  studentprogressDownload: { path: "studentprogress/download", shape: "download", school: false, names: ["studentid", "standard"] },
+  classprogress: { path: "studentprogress/class", shape: "list", school: false, names: ["standard"] },
+  classprogressDownload: { path: "studentprogress/class/download", shape: "download", school: false, names: ["standard"] },
+  lastcompletedquiz: { path: "studentlastcompletedquiz", shape: "list", school: true, names: [] },
+  lastcompletedquizDownload: { path: "studentlastcompletedquiz/download", shape: "download", school: true, names: [] },
+  levelquiz: { path: "studentlevelquiz", shape: "list", school: false, names: ["studentid"] },
+  levelquizDownload: { path: "studentlevelquiz/download", shape: "download", school: false, names: ["studentid"] },
+  classlevelquiz: { path: "studentlevelquiz/class", shape: "list", school: false, names: ["standard"] },
+  classlevelquizDownload: { path: "studentlevelquiz/class/download", shape: "download", school: false, names: ["standard"] },
+  studentstatus: { path: "studentstatus", shape: "list", school: true, names: [] },
+  studentstatusDownload: { path: "studentstatus/download", shape: "download", school: true, names: [] },
+  gradeprogress: { path: "student-grade-progress", shape: "list", school: false, names: ["standard"] },
+  levelprogress: { path: "student-level-progress", shape: "list", school: false, names: ["studentid"], student: "null" },
+  lessonprogress: { path: "student-lesson-progress", shape: "list", school: false, names: ["studentid"], student: "null" },
 } as const satisfies Record<string, OnlineReport>;
 export type OnlineReportName = keyof typeof ONLINE_REPORTS;
 
@@ -111,7 +121,8 @@ export const confineOnlineBody = async (
           return undefined;
         }
       }
-      names = names || entry.key === "studentid" || entry.key === "standard";
+      // only a key this report reads names a learner; an empty list names none
+      names = names || (report.names.some((k) => k === entry.key) && ids.length > 0);
     }
     kept.push(entry);
   }
