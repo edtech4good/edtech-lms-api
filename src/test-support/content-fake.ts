@@ -344,6 +344,14 @@ export class ContentFake {
       jest.spyOn(m, "findOne" as never).mockImplementation((async (o?: FindOptions) => find(o)[0] ?? null) as never);
       jest.spyOn(m, "findAll" as never).mockImplementation((async (o?: FindOptions) => {
         let found = find(o);
+        // `attributes: [[fn("sum", col(c)), alias]]` is one row holding the total (null when there is nothing to add up)
+        const total = (Array.isArray(o?.attributes) ? (o!.attributes as unknown[]) : []).find(
+          (a): a is [{ fn: string; args: Array<{ col: string }> }, string] => Array.isArray(a) && (a[0] as { fn?: string })?.fn === "sum",
+        );
+        if (total && !o?.group) {
+          const column = total[0].args[0].col;
+          return [{ [total[1]]: found.length === 0 ? null : found.reduce((sum, r) => sum + Number(r[column] ?? 0), 0) }];
+        }
         if (o?.group) {
           const seen = new Set<unknown>();
           found = found.filter((r) => (seen.has(r[o.group as string]) ? false : seen.add(r[o.group as string])));

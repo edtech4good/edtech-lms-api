@@ -655,6 +655,8 @@ export class ReportBusiness {
             const bestlesson = minBy(bestlevel?.lessons, 'lessonorder');
             lessonwhere.lessonid = bestlesson?.lessonid;
         }
+        // no lesson to show (no learner, or a curriculum that is not there, is not the caller's, or has none): no rows
+        if(!lessonwhere.lessonid) return { rows: [], count: 0 };
         const lesson = await lessons.findOne({
             attributes: ['lessonname'],
             where: {lessonid: lessonwhere.lessonid, lessonstatus: true, isdeleted: false},
@@ -1364,6 +1366,8 @@ export class ReportBusiness {
             const bestgrade = minBy(curriculum?.grades, 'gradeorder');
             gradewhere.gradeid = bestgrade?.gradeid;
         }
+        // no grade to show (no learner, or a curriculum that is not there, is not the caller's, or has none): no rows
+        if(!gradewhere.gradeid) return { rows: [], count: 0 };
         const stds = await students.findAndCountAll({
             where: await this.learners(where), limit, offset,
             include: [
@@ -1918,6 +1922,8 @@ export class ReportBusiness {
             const bestlevel = minBy(bestgrade?.levels, 'levelorder');
             levelwhere.levelid = bestlevel?.levelid;
         }
+        // no level to show (no learner, or a curriculum that is not there, is not the caller's, or has none): no rows
+        if(!levelwhere.levelid) return { rows: [], count: 0 };
         const level = await levels.findOne({
             where: { levelid: levelwhere.levelid },
             attributes: ['levelname'],

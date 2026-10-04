@@ -303,11 +303,11 @@ describe("reports are confined to the caller's organisation", () => {
    * and on one that belongs to no organisation. The curriculums' names (and their grades', levels' and lessons') carry
    * the name of the school whose tree they are.
    */
-  const enrolments = async (answerOf: () => Promise<unknown>) => {
+  const enrolments = async <T extends { status: number }>(answerOf: () => Promise<T>) => {
     enrolOn(TY.curriculum);
-    const y = JSON.stringify(await answerOf());
+    const y = await answerOf();
     enrolOn(TU.curriculum);
-    const u = JSON.stringify(await answerOf());
+    const u = await answerOf();
     enrolOn(TX.curriculum);
     return [y, u];
   };
@@ -493,13 +493,26 @@ describe("reports are confined to the caller's organisation", () => {
 
   describe("GET /report/studentusage", () => {
     const countries = (res: request.Response) => (res.body.data as Array<{ name: string }>).map((c) => c.name);
+    const series = (res: request.Response) =>
+      Object.fromEntries((res.body.data as Array<{ name: string; series: Array<{ name: string; value: number }> }>).map((c) => [c.name, Object.fromEntries(c.series.map((v) => [v.name, v.value]))]));
     it.each(IN_X)("%s: lists the countries X is linked to, none of the others", async (who) => {
       const res = await send(who, "get", "/report/studentusage").expect(200);
       expect(countries(res)).toEqual([TX.countryname]);
     });
-    it("a platform user not acting: lists every country", async () => {
+    it.each(IN_X)("%s: the usage in X's country is X's learners' alone, though a school of Y's is in that country too", async (who) => {
+      // X's learners spent 600 and 1200 seconds: 1800 over 30 days for 2 active learners
+      const res = await send(who, "get", "/report/studentusage").expect(200);
+      expect(series(res)).toEqual({ [TX.countryname]: { Expected: 7, Actual: 30 } });
+    });
+    it("a platform user not acting: lists every country, with the usage of every school in it", async () => {
       const res = await send(NOT_ACTING, "get", "/report/studentusage").expect(200);
       expect(countries(res)).toEqual([TX.countryname, TY.countryname, TU.countryname]);
+      // 10 active learners in all; X's country holds X's school and Y's second school (1800 + 600 seconds)
+      expect(series(res)).toEqual({
+        [TX.countryname]: { Expected: 7, Actual: 8 },
+        [TY.countryname]: { Expected: 7, Actual: 12 },
+        [TU.countryname]: { Expected: 7, Actual: 20 },
+      });
     });
   });
 
@@ -562,8 +575,9 @@ describe("reports are confined to the caller's organisation", () => {
     });
     it.each(IN_X)("%s: a learner of X enrolled on a curriculum that is not X's reads none of its content", async (who) => {
       const [y, u] = await enrolments(async () => said(await send(who, "post", path, page([{ key: "standard", value: TX.klass }]))));
-      expect(y).not.toContain(TY.schoolname);
-      expect(u).not.toContain(TU.schoolname);
+      expect([y.status, u.status]).toEqual([200, 200]);
+      expect(JSON.stringify(y)).not.toContain(TY.schoolname);
+      expect(JSON.stringify(u)).not.toContain(TU.schoolname);
     });
     fixedLearner(
       path,
@@ -599,8 +613,9 @@ describe("reports are confined to the caller's organisation", () => {
     });
     it.each(IN_X)("%s: a learner of X enrolled on a curriculum that is not X's reads none of its content", async (who) => {
       const [y, u] = await enrolments(async () => said(await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }]))));
-      expect(y).not.toContain(TY.schoolname);
-      expect(u).not.toContain(TU.schoolname);
+      expect([y.status, u.status]).toEqual([200, 200]);
+      expect(JSON.stringify(y)).not.toContain(TY.schoolname);
+      expect(JSON.stringify(u)).not.toContain(TU.schoolname);
     });
     fixedLearner(
       path,
@@ -636,8 +651,9 @@ describe("reports are confined to the caller's organisation", () => {
     });
     it.each(IN_X)("%s: a learner of X enrolled on a curriculum that is not X's reads none of its content", async (who) => {
       const [y, u] = await enrolments(async () => said(await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }]))));
-      expect(y).not.toContain(TY.schoolname);
-      expect(u).not.toContain(TU.schoolname);
+      expect([y.status, u.status]).toEqual([200, 200]);
+      expect(JSON.stringify(y)).not.toContain(TY.schoolname);
+      expect(JSON.stringify(u)).not.toContain(TU.schoolname);
     });
     fixedLearner(
       path,
@@ -685,8 +701,9 @@ describe("reports are confined to the caller's organisation", () => {
     });
     it.each(IN_X)("%s: a learner of X enrolled on a curriculum that is not X's reads none of its content", async (who) => {
       const [y, u] = await enrolments(async () => said(await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }]))));
-      expect(y).not.toContain(TY.schoolname);
-      expect(u).not.toContain(TU.schoolname);
+      expect([y.status, u.status]).toEqual([200, 200]);
+      expect(JSON.stringify(y)).not.toContain(TY.schoolname);
+      expect(JSON.stringify(u)).not.toContain(TU.schoolname);
     });
     fixedLearner(
       path,
@@ -751,8 +768,9 @@ describe("reports are confined to the caller's organisation", () => {
     });
     it.each(IN_X)("%s: a learner of X enrolled on a curriculum that is not X's reads none of its content", async (who) => {
       const [y, u] = await enrolments(async () => said(await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }]))));
-      expect(y).not.toContain(TY.schoolname);
-      expect(u).not.toContain(TU.schoolname);
+      expect([y.status, u.status]).toEqual([200, 200]);
+      expect(JSON.stringify(y)).not.toContain(TY.schoolname);
+      expect(JSON.stringify(u)).not.toContain(TU.schoolname);
     });
     fixedLearner(
       path,
@@ -796,7 +814,8 @@ describe("reports are confined to the caller's organisation", () => {
       expect(res.body.data.total).toBe(2);
     });
     it.each(IN_X)("%s: another organisation's class, lesson and level, and the unowned ones, answer as ones that are not there", async (who) => {
-      await asAbsent(who, "post", asking(path, "standard"), [TY.klass, TU.klass]);
+      const absent = await asAbsent(who, "post", asking(path, "standard"), [TY.klass, TU.klass]);
+      expect(absent.status).toBe(200);
       const lesson = await asAbsent(who, "post", asking(path, "lessonid", [{ key: "standard", value: TX.klass }]), [TY.lesson, TU.lesson]);
       expect(lesson.status).toBe(200);
       const level = await asAbsent(who, "post", asking(path, "levelid", [{ key: "standard", value: TX.klass }]), [TY.level, TU.level]);
@@ -810,8 +829,9 @@ describe("reports are confined to the caller's organisation", () => {
     });
     it.each(IN_X)("%s: a learner of X enrolled on a curriculum that is not X's reads none of its content", async (who) => {
       const [y, u] = await enrolments(async () => said(await send(who, "post", path, page([{ key: "standard", value: TX.klass }]))));
-      expect(y).not.toContain(TY.schoolname);
-      expect(u).not.toContain(TU.schoolname);
+      expect([y.status, u.status]).toEqual([200, 200]);
+      expect(JSON.stringify(y)).not.toContain(TY.schoolname);
+      expect(JSON.stringify(u)).not.toContain(TU.schoolname);
     });
     fixedLearner(
       path,
@@ -869,8 +889,9 @@ describe("reports are confined to the caller's organisation", () => {
     });
     it.each(IN_X)("%s: a learner of X enrolled on a curriculum that is not X's reads none of its content", async (who) => {
       const [y, u] = await enrolments(async () => said(await send(who, "post", path, page([{ key: "standard", value: TX.klass }]))));
-      expect(y).not.toContain(TY.schoolname);
-      expect(u).not.toContain(TU.schoolname);
+      expect([y.status, u.status]).toEqual([200, 200]);
+      expect(JSON.stringify(y)).not.toContain(TY.schoolname);
+      expect(JSON.stringify(u)).not.toContain(TU.schoolname);
     });
     fixedLearner(
       path,
@@ -955,8 +976,9 @@ describe("reports are confined to the caller's organisation", () => {
     });
     it.each(IN_X)("%s: a learner of X enrolled on a curriculum that is not X's reads none of its content", async (who) => {
       const [y, u] = await enrolments(async () => said(await send(who, "post", path, page([{ key: "standard", value: TX.klass }]))));
-      expect(y).not.toContain(TY.schoolname);
-      expect(u).not.toContain(TU.schoolname);
+      expect([y.status, u.status]).toEqual([200, 200]);
+      expect(JSON.stringify(y)).not.toContain(TY.schoolname);
+      expect(JSON.stringify(u)).not.toContain(TU.schoolname);
     });
     fixedLearner(
       path,
