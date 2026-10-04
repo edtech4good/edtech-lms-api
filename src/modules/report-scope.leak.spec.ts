@@ -10,6 +10,8 @@ import { Role } from "src/models/enums";
 import { SchoolRole } from "src/models/enums/school.role.enum";
 import { Default_Test_Student_ID } from "src/models/enums/user.enum";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
+import { ONLINE_REPORTS, OnlineReportName, ReportProxy } from "src/business/report-proxy";
+import { IMultiPaging } from "src/models/IPaging";
 import { ContentFake } from "src/test-support/content-fake";
 import { ReportController } from "./report/report.controller";
 
@@ -1177,8 +1179,8 @@ describe("reports are confined to the caller's organisation", () => {
   // of an unknown school, or the answer for no rows) and nothing is sent.
 
   const cloud = (path: string) => `${Config.fortyk.api.rpi.cloud}/report/${path}`;
-  const HEADERS_PLATFORM = { Authorization: Config.fortyk.api.serversynckey };
-  const HEADERS_X = { ...HEADERS_PLATFORM, "X-Organisation-Id": X };
+  const HEADERS_PLATFORM = { Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": "platform" };
+  const HEADERS_X = { Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": X };
   const DOWNLOAD_REPLY = { data: { error: false, data: [] } };
   /** A file's answer: its text when it is one, else the refusal (without what differs per request). */
   const csvAnswer = (res: request.Response) => {
@@ -1258,7 +1260,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -1381,7 +1383,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -1498,7 +1500,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -1622,7 +1624,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -1740,7 +1742,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -1855,7 +1857,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -1971,7 +1973,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -2088,7 +2090,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -2205,7 +2207,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -2323,7 +2325,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -2441,7 +2443,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -2572,7 +2574,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -2704,7 +2706,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -2821,7 +2823,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -2938,7 +2940,7 @@ describe("reports are confined to the caller's organisation", () => {
       expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
       expect(axios.post).not.toHaveBeenCalled();
     });
-    it("a platform user not acting: sends the body exactly as it came, with the server key and no organisation", async () => {
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
       (axios.post as jest.Mock).mockResolvedValue(reply);
       const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
       const res = await ask(NOT_ACTING, body);
@@ -2993,5 +2995,34 @@ describe("reports are confined to the caller's organisation", () => {
       expect(axios.post).not.toHaveBeenCalled();
     });
 
+  });
+
+  describe("the organisation header on every forwarded report request", () => {
+    const names = Object.keys(ONLINE_REPORTS) as OnlineReportName[];
+    /** A body the confinement lets through for X, for any report: X's own learner, class and (where taken) school. */
+    const bodyFor = (name: OnlineReportName): IMultiPaging =>
+      page([
+        { key: "studentid", value: TX.learners[0].id },
+        { key: "standard", value: TX.klass },
+        ...(ONLINE_REPORTS[name].school ? [{ key: "schoolid", value: TX.school }] : []),
+      ]) as IMultiPaging;
+    const callers2 = {
+      platform: { organisationid: null, isplatform: true },
+      organisation: { organisationid: X, isplatform: false },
+    } as const;
+
+    it("the route table has the fifteen routes", () => {
+      expect(names).toHaveLength(15);
+    });
+    it.each(Object.keys(callers2) as Array<keyof typeof callers2>)("%s: every route sends X-Organisation-Id, an organisation id or `platform`, never none", async (who) => {
+      (axios.post as jest.Mock).mockResolvedValue({ data: { error: false, data: [] } });
+      for (const name of names) {
+        (axios.post as jest.Mock).mockClear();
+        await new ReportProxy(callers2[who]).post(name, bodyFor(name));
+        expect(axios.post).toHaveBeenCalledTimes(1);
+        const headers = (axios.post as jest.Mock).mock.calls[0][2].headers as Record<string, string>;
+        expect({ name, header: headers["X-Organisation-Id"] }).toEqual({ name, header: who === "platform" ? "platform" : X });
+      }
+    });
   });
 });

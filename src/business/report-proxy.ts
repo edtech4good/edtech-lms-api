@@ -174,11 +174,16 @@ const emptyAnswer = (report: OnlineReport, body: IMultiPaging | undefined) => ({
   },
 });
 
+/** The value of `X-Organisation-Id` that asks the student API for the platform's unscoped view. */
+const PLATFORM_SCOPE = "platform";
+
 /**
  * The reports the student API answers, asked for on the caller's behalf. For the platform (not acting as an
- * organisation) the request is sent as it came. For an organisation caller it is confined first (see
- * `confineOnlineBody`), nothing is sent when the answer is the empty one, and the request carries the acting
- * organisation's id (`X-Organisation-Id`). The student API's own answer, and its errors, are handed back as they are.
+ * organisation) the body is sent as it came and the request carries `X-Organisation-Id: platform`. For an organisation
+ * caller it is confined first (see `confineOnlineBody`), nothing is sent when the answer is the empty one, and the
+ * request carries the acting organisation's id in the same header. Every forwarded request carries the header, an
+ * organisation id or `platform`: the student API refuses a server-key report call without it. The student API's own
+ * answer, and its errors, are handed back as they are.
  */
 export class ReportProxy {
   constructor(private readonly org: OrgContext) {}
@@ -196,7 +201,7 @@ export class ReportProxy {
     return axios.post(`${Config.fortyk.api.rpi.cloud}/report/${report.path}`, send, {
       headers: {
         Authorization: Config.fortyk.api.serversynckey,
-        ...(scope.kind === "organisation" ? { "X-Organisation-Id": scope.organisationid } : {}),
+        "X-Organisation-Id": scope.kind === "organisation" ? scope.organisationid : PLATFORM_SCOPE,
       },
     });
   }
