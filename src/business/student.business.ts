@@ -21,7 +21,7 @@ import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
 import { assertEnrolmentFits, ownerOfSchool } from "./content-owner";
-import { withSchoolIds } from "./school-identity";
+import { normaliseSchoolName, withSchoolIds } from "./school-identity";
 import { andInOwnedSchools, findOwnedStudent, requireOwnedSchoolByName } from "./school-scope";
 import { OrgContext } from "src/decorators/org.decorator";
 import { schoolScope } from "./school-scope";
@@ -34,13 +34,16 @@ import axios from "axios";
 import { Config } from "src/config";
 import { unionBy } from "lodash";
 /**
- * The ids of the live curriculums a row of the edit file names, by NAME. Curriculum names are unique within an
- * organisation, not across them, so a name means the curriculum of the school's owner: only that organisation's
- * curriculums are looked at (a name only another organisation holds is a name nobody holds). A school with no owner
- * belongs to the platform: an organisation caller (who cannot reach one) is held to its own organisation, and the
- * platform not acting reads as before, by name alone. The platform may also name a curriculum that has no owner yet
- * for a school that has one (see assertSameOwner); when the owner and an unowned curriculum both have the name, the
- * owner's is the one meant. Each name resolves to ONE curriculum, so `complete` says whether every distinct name did.
+ * The ids of the live curriculums a row of the edit file names, by NAME, resolved name by name. Names are compared as
+ * the project compares text (trim, NFC, lower-case: `normaliseSchoolName`). Curriculum names are unique within an
+ * organisation, not across them, so which curriculums a name may mean depends on whose they are:
+ *  - an organisation caller (or a platform user acting as one): its own organisation's;
+ *  - the platform not acting, for a school that has an owner: the owner's, and those with no owner yet;
+ *  - the platform not acting, for a school with no owner: those with no owner yet, and no organisation's.
+ * A name is the owner's one curriculum if the owner has exactly one of that name (more than one is ambiguous, so
+ * unresolved); otherwise the one unowned curriculum of that name if there is exactly one; otherwise unresolved. The
+ * caller refuses a file with an unresolved name, the same way whatever the reason, so nothing says which organisation
+ * holds a name. `ids` has each resolved curriculum once, in file order.
  */
 const curriculumIdsNamed = async (
   names: string[],
@@ -49,28 +52,33 @@ const curriculumIdsNamed = async (
   transaction?: Transaction,
 ): Promise<{ ids: string[]; complete: boolean }> => {
   const scope = scopeOf(org);
-  const owner = schoolOwner ?? (scope.kind === "organisation" ? scope.organisationid : null);
-  const limit: WhereOptions =
-    owner === null
-      ? {}
-      : scope.kind === "organisation"
-        ? { organisationid: owner }
-        : { [Op.or]: [{ organisationid: owner }, { organisationid: null }] };
-  const found = await curriculums.findAll({
-    where: { [Op.and]: [{ curriculumname: { [Op.in]: names }, isdeleted: false }, limit] },
-        attributes: ['curriculumid', 'curriculumname', 'organisationid'],
+  const owner = scope.kind === "organisation" ? scope.organisationid : schoolOwner;
+  const withUnowned = scope.kind === "platform";
+  const limit: WhereOptions = owner !== null
+    ? withUnowned
+      ? { [Op.or]: [{ organisationid: owner }, { organisationid: null }] }
+      : { organisationid: owner }
+    : { organisationid: null };
+  const live = await curriculums.findAll({
+    where: { [Op.and]: [{ isdeleted: false }, limit] },
+    attributes: ['curriculumid', 'curriculumname', 'organisationid'],
     raw: true,
     transaction,
   });
-  const byName = new Map<string, { curriculumid: string; organisationid?: string | null }>();
-  for (const c of found) {
-    const have = byName.get(c.curriculumname);
-    // the owner's curriculum, else the first one found
-    if (!have || (have.organisationid !== owner && c.organisationid === owner)) {
-      byName.set(c.curriculumname, c);
+  const ids: string[] = [];
+  let complete = true;
+  for (const name of new Set(names.map(normaliseSchoolName))) {
+    const named = live.filter((c) => normaliseSchoolName(c.curriculumname) === name);
+    const owned = named.filter((c) => owner !== null && c.organisationid === owner);
+    const unowned = named.filter((c) => (c.organisationid ?? null) === null);
+    const one = owned.length > 0 ? (owned.length === 1 ? owned[0] : undefined) : unowned.length === 1 ? unowned[0] : undefined;
+    if (one && one.curriculumid !== undefined) {
+      if (!ids.includes(one.curriculumid)) ids.push(one.curriculumid);
+    } else {
+      complete = false;
     }
   }
-  return { ids: [...byName.values()].map((c) => c.curriculumid), complete: byName.size === new Set(names).size };
+  return { ids, complete };
 };
 
 export class StudentBusiness {
