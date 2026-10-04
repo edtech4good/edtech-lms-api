@@ -248,3 +248,23 @@ export const assertTagsFitOwner = async (
     }
   }
 };
+
+/**
+ * The tag rule for a caller. Tag names are unique within an organisation, so what a name means depends on who
+ * asks: an organisation caller (or a platform user acting as one) means its OWN tag of that name, and a name it has
+ * no tag of is simply a new name, so there is nothing to refuse and nothing about another organisation's tags to
+ * reveal. Only a platform user not acting, who has no organisation of its own and may see every tag, is held to
+ * `assertTagsFitOwner`: the names must not be held only by an organisation other than the owner of the row.
+ */
+export const assertTagsAllowed = async (
+  org: OrgContext | undefined,
+  kind: "question" | "document",
+  names: ReadonlyArray<string>,
+  owner: Owner,
+  tx?: Tx,
+): Promise<void> => {
+  if (scopeOf(org).kind === "organisation") {
+    return;
+  }
+  await assertTagsFitOwner(kind, names, owner, tx);
+};

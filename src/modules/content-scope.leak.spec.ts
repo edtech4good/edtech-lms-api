@@ -41,9 +41,9 @@ import { SubjectModule } from "./subject/subject.module";
  * unowned one, are answered exactly as a row that is not there is (the route's own answer for an absent id: a 400
  * from its request rules where it has them, a 404 where it has not), with every table unchanged; a list holds the
  * caller's rows and none of the others; a platform user not acting still reaches every row, the server token the
- * routes that admit it, and a school-user token the routes that admit it. A row in the path that is another
- * organisation's, with the caller's own row named in the query, is the 404 an absent one gets, as the handler
- * checks the row named in the path.
+ *  routes that admit it, and a school-user token the routes that admit it. The row named in the path is the one
+ * checked, whatever else the request names: another organisation's row in the path, with the caller's own row also
+ * named by the request, is the 404 an absent one gets.
  */
 const tokenExists = jest.fn();
 jest.mock("src/business/token.business", () => ({
@@ -239,15 +239,15 @@ describe("content is confined to the caller's organisation", () => {
     /** The unowned tree's row of the same kind as another organisation's `id` (the trees' ids differ by a fixed step). */
   const unownedOf = (id: string) => uuid(Number(id.slice(-12)) + (3000 - 2000));
   /**
-   * The row in the path is the one checked: another organisation's row in the path (and the unowned one of the same
-   * kind), with the caller's own row of the same kind named in the query, answers as an id that is not there does for
-   * the same request. Returns the status of that answer.
+      * The row named in the path is the one checked, whatever else the request names: another organisation's row in the
+   * path (and the unowned one of the same kind), with the caller's own row of the same kind also named by the request,
+   * answers as an id that is not there does for the same request. Returns the status of that answer.
    */
   const asAbsentPath = async (who: Who, method: Method, reqOf: (id: string) => Req, param: string, own: string, foreign: string) => {
-    const query = (id: string) => `${reqOf(id).path}?${param}=${own}`;
-    const absent = said(await refuses(who, method, query(MISSING), reqOf(MISSING).body));
-    expect(said(await refuses(who, method, query(foreign), reqOf(foreign).body))).toEqual(absent);
-    expect(said(await refuses(who, method, query(unownedOf(foreign)), reqOf(unownedOf(foreign)).body))).toEqual(absent);
+        const withOwn = (id: string) => `${reqOf(id).path}?${param}=${own}`;
+    const absent = said(await refuses(who, method, withOwn(MISSING), reqOf(MISSING).body));
+    expect(said(await refuses(who, method, withOwn(foreign), reqOf(foreign).body))).toEqual(absent);
+    expect(said(await refuses(who, method, withOwn(unownedOf(foreign)), reqOf(unownedOf(foreign)).body))).toEqual(absent);
     return absent.status;
   };
   const stored = (table: ContentTable, key: string, id: string) => db.tables[table].find((r) => r[key] === id)!;
@@ -349,7 +349,7 @@ describe("content is confined to the caller's organisation", () => {
     it.each(IN_X)("%s: a subject of Y or an unowned one answers as an absent subject does, nothing written", async (who) => {
       expect(await asAbsent(who, "put", (id) => r(`/curriculum/${TX.curriculum}`, body(id)), TY.subject, TU.subject)).toBe(400);
     });
-    it.each(IN_X)("%s: the curriculum in the path is the one checked, with X's own named in the query", async (who) => {
+    it.each(IN_X)("%s: the curriculum named in the path is the one checked, whatever else the request names", async (who) => {
       expect(await asAbsentPath(who, "put", (id) => r(`/curriculum/${id}`, body(TX.subject)), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
     });
     it("a platform user not acting: any curriculum, with a subject of its owner", async () => {
@@ -1975,6 +1975,12 @@ describe("content is confined to the caller's organisation", () => {
       expect((await send(who, "post", "/question/create", body())).status).toBe(200);
       expect(db.createdIn("questions")).toEqual([expect.objectContaining({ organisationid: X, questionidentifier: "សំណួរ-ថ្មី" })]);
     });
+        it.each(IN_X)("%s: tags in the body are names: one Y holds is as free as one nobody holds", async (who) => {
+      const held = await send(who, "post", "/question/create", body({ questionidentifier: "tags-a", questiontags: ["qtagy"] }));
+      const free = await send(who, "post", "/question/create", body({ questionidentifier: "tags-b", questiontags: ["qtagnew"] }));
+      expect([held.status, free.status]).toEqual([200, 200]);
+      expect(db.createdIn("questions").map((q) => q.questiontags)).toEqual([["qtagy"], ["qtagnew"]]);
+    });
     it.each(IN_X)("%s: the identifier is unique among X's questions only: Y's identifier is free", async (who) => {
       const free = await send(who, "post", "/question/create", body({ questionidentifier: stored("questions", "questionid", TY.question).questionidentifier }));
       expect(free.status).toBe(200);
@@ -2071,8 +2077,15 @@ describe("content is confined to the caller's organisation", () => {
       expect((await send(who, "get", `/question/tag/${TX.question}/qtagx`)).status).toBe(200);
       expect(stored("questions", "questionid", TX.question).questiontags).toEqual(["qtagx"]);
     });
-    it.each(IN_X)("%s: Y's and an unowned question answer as an absent one does (404)", async (who) => {
+        it.each(IN_X)("%s: Y's and an unowned question answer as an absent one does (404)", async (who) => {
       expect(await asAbsent(who, "get", (id) => r(`/question/tag/${id}/qtagx`), TY.question, TU.question)).toBe(404);
+    });
+    it.each(IN_X)("%s: a tag name Y (or nobody) holds is a name like any other for X's question: the answer does not tell who holds it", async (who) => {
+      const held = await send(who, "get", `/question/tag/${TX.question}/qtagy`);
+      const free = await send(who, "get", `/question/tag/${TX.question}/qtagnew`);
+      expect(said(held)).toEqual(said(free));
+      expect(free.status).toBe(200);
+      expect(stored("questions", "questionid", TX.question).questiontags).toEqual(["qtagy", "qtagnew"]);
     });
     it.each(IN_X)("%s: the question in the path is the one checked", async (who) => {
       expect(await asAbsentPath(who, "get", (id) => r(`/question/tag/${id}/qtagx`), "questionid", TX.question, TY.question)).toBe(404);
@@ -2368,8 +2381,15 @@ describe("content is confined to the caller's organisation", () => {
       expect((await send(who, "get", `/document/tag/${TX.document}/dtagx`)).status).toBe(200);
       expect(stored("documents", "documentid", TX.document).documenttags).toEqual(["dtagx"]);
     });
-    it.each(IN_X)("%s: Y's and an unowned document answer as an absent one does (404)", async (who) => {
+        it.each(IN_X)("%s: Y's and an unowned document answer as an absent one does (404)", async (who) => {
       expect(await asAbsent(who, "get", (id) => r(`/document/tag/${id}/dtagx`), TY.document, TU.document)).toBe(404);
+    });
+    it.each(IN_X)("%s: a tag name Y (or nobody) holds is a name like any other for X's document: the answer does not tell who holds it", async (who) => {
+      const held = await send(who, "get", `/document/tag/${TX.document}/dtagy`);
+      const free = await send(who, "get", `/document/tag/${TX.document}/dtagnew`);
+      expect(said(held)).toEqual(said(free));
+      expect(free.status).toBe(200);
+      expect(stored("documents", "documentid", TX.document).documenttags).toEqual(["dtagy", "dtagnew"]);
     });
     it.each(IN_X)("%s: the document in the path is the one checked", async (who) => {
       expect(await asAbsentPath(who, "get", (id) => r(`/document/tag/${id}/dtagx`), "documentid", TX.document, TY.document)).toBe(404);
@@ -2736,7 +2756,7 @@ describe("content is confined to the caller's organisation", () => {
     it.each(IN_X)("%s: about Y's or an unowned curriculum it is the 404 an absent curriculum gets, nothing written", async (who) => {
       expect(await asAbsent(who, "post", (id) => r("/feedback/create", body(id)), TY.curriculum, TU.curriculum)).toBe(404);
     });
-    it("a platform user not acting: about any curriculum", async () => {
+        it("a platform user not acting: about any curriculum", async () => {
       expect((await send(NOT_ACTING, "post", "/feedback/create", body(TU.curriculum))).status).toBe(200);
       expect(db.createdIn("feedbacks")[0].curriculumid).toBe(TU.curriculum);
     });

@@ -58,7 +58,7 @@ import {
 } from "./question.request.validator";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { Org, OrgContext } from "src/decorators/org.decorator";
-import { assertTagsFitOwner, ownerForNewContent, ownerOfQuestion } from "src/business/content-owner";
+import { assertTagsAllowed, ownerForNewContent, ownerOfQuestion } from "src/business/content-owner";
 import { findOwnedQuestion } from "src/business/content-scope";
 
 @ApiExtraModels(ResponseBoolean)
@@ -97,9 +97,9 @@ export class QuestionController {
     @User() user: LmsUserToken,
     @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    // The owner is the organisation the caller acts in; tags must not be another organisation's.
+    // The owner is the organisation the caller acts in; a tag name means the caller's own tag of that name.
     const organisationid = ownerForNewContent(org);
-    await assertTagsFitOwner("question", (body.questiontags as unknown as string[] | undefined) ?? [], organisationid);
+    await assertTagsAllowed(org, "question", (body.questiontags as unknown as string[] | undefined) ?? [], organisationid);
     await new QuestionBusiness(org).createquestion(<questionsAttributes>{
       ...body,
       organisationid,
@@ -385,7 +385,7 @@ export class QuestionController {
   ): Promise<ResponseBoolean> {
     // the question in the path is the caller's, or not found (before the tag is compared with anything)
     await findOwnedQuestion(org, questionid, { where: { isdeleted: false } });
-    await assertTagsFitOwner("question", [tag], await ownerOfQuestion(questionid));
+    await assertTagsAllowed(org, "question", [tag], await ownerOfQuestion(questionid));
     await new QuestionBusiness(org).addquestionTag(questionid, tag, user);
     return {
       error: false,

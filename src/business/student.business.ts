@@ -701,13 +701,16 @@ WHERE
     org: OrgContext,
   ) => {
     // Before any row is written: every learner a row names, and every school it names, must be the caller's (else 404 and
-    // nothing is written), and the curriculums a row names must have the owner of the school it names. (A curriculum that
-    // is not found is left to the row's own checks below, which report it.)
+    // nothing is written), and the curriculums a row names must be curriculums of the owner of the school it names.
     for (const [rowindex, x] of studentdata.entries()) {
       await findOwnedStudent(org, { studentid: x.studentid }, transaction);
       const school = await requireOwnedSchoolByName(org, x.schoolname, transaction, `students.${rowindex}.schoolname`);
       const schoolOwner = await ownerOfSchool(school.schoolid, transaction);
-      const named = await curriculumIdsNamed(x.curriculums.split('/'), schoolOwner, org);
+      const names = x.curriculums.split('/');
+      const named = await curriculumIdsNamed(names, schoolOwner, org);
+      // a name that is not one of the school's owner's curriculums (a name only another organisation holds is one) is the
+      // refusal a name nobody holds gets, before any row is written
+      if (named.length !== names.length) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
       await assertEnrolmentFits(schoolOwner, named, transaction);
     }
     for (const [rowindex, x] of studentdata.entries()) {

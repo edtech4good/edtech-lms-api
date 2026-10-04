@@ -1,7 +1,9 @@
 import { ApiError } from "src/models/ApiError";
+import { questiontags } from "src/models/data-models/questiontags";
 import { ContentFake } from "src/test-support/content-fake";
 import {
   assertSameOwner,
+    assertTagsAllowed,
   assertTagsFitOwner,
   callerOwner,
   ownerForNewContent,
@@ -205,3 +207,38 @@ describe("assertTagsFitOwner", () => {
     await fits("question", [], X);
   });
 });
+
+describe("assertTagsAllowed", () => {
+  beforeEach(() => {
+    db.add("questiontags", { questiontagid: "t1", questiontagname: "easy", organisationid: X });
+    db.add("questiontags", { questiontagid: "t2", questiontagname: "hard", organisationid: Y });
+    db.add("documenttags", { documenttagid: "dt1", documenttagname: "lesson", organisationid: Y });
+  });
+  const asX = { organisationid: X, isplatform: false };
+  const actingAsX = { organisationid: X, isplatform: true };
+  const platform = { organisationid: null, isplatform: true };
+
+  it("for an organisation caller, and a platform user acting as one, a name another organisation holds is a new name, as an unheld name is", async () => {
+    for (const org of [asX, actingAsX]) {
+      await assertTagsAllowed(org, "question", ["easy", "hard", "brand-new-name"], X);
+      await assertTagsAllowed(org, "document", ["lesson"], X);
+    }
+  });
+
+  it("no tag is read for an organisation caller, so nothing it asks can tell it who holds a name", async () => {
+    const reads = jest.spyOn(questiontags, "findAll");
+    await assertTagsAllowed(asX, "question", ["hard"], X);
+    expect(reads).not.toHaveBeenCalled();
+  });
+
+  it("a platform user not acting is held to the owner of the row, as before", async () => {
+    await assertTagsAllowed(platform, "question", ["easy", "brand-new-name"], X);
+    await expect(assertTagsAllowed(platform, "question", ["hard"], X)).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(assertTagsAllowed(platform, "document", ["lesson"], X)).rejects.toMatchObject({ code: "INVALID_INPUT" });
+  });
+
+  it("a caller with no scope is refused (403)", async () => {
+    await expect(assertTagsAllowed({ organisationid: null, isplatform: false }, "question", ["easy"], X)).rejects.toMatchObject({ code: "NOT_ALLOWED" });
+  });
+});
+

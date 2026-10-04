@@ -48,7 +48,7 @@ import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { Permission } from "src/models/enums/permissions.enum";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { Org, OrgContext } from "src/decorators/org.decorator";
-import { assertTagsFitOwner, ownerForNewContent, ownerOfDocument } from "src/business/content-owner";
+import { assertTagsAllowed, ownerForNewContent, ownerOfDocument } from "src/business/content-owner";
 import { findOwnedDocument } from "src/business/content-scope";
 
 @ApiExtraModels(DocumentBase)
@@ -290,7 +290,7 @@ export class DocumentController {
   ): Promise<ResponseBoolean> {
     // the document in the path is the caller's, or not found (before the tag is compared with anything)
     await findOwnedDocument(org, documentid, { where: { isdeleted: false } });
-    await assertTagsFitOwner("document", [tag], await ownerOfDocument(documentid));
+    await assertTagsAllowed(org, "document", [tag], await ownerOfDocument(documentid));
     await new DocumentBusiness(org).adddocumentTag(documentid, tag, user);
     return {
       error: false,
