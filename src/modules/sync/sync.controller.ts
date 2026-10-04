@@ -19,7 +19,7 @@ import { pushToCloud, rostersNameTheirSchool, studentsFile } from "src/business/
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { findOwnedSchool, resolveOwnedSchoolSegment } from "src/business/school-scope";
 import { SyncBusiness } from "src/business/sync.business";
-import { planContentSync, resolveSyncOrganisation } from "src/business/sync-target";
+import { planContentSync } from "src/business/sync-target";
 import { AccessGuard } from "src/guards/access.guard";
 import { Role, TokenType } from "src/models/enums";
 import { Org, OrgContext } from "src/decorators/org.decorator";
@@ -66,7 +66,7 @@ export class SyncController {
   }
 
   @OrgPolicy("owned", {
-    note: "One organisation's content in the older shape; a platform user who is not acting as an organisation must name the organisation.",
+    note: "The whole platform's content in the older shape, which carries no organisation: a platform user who is not acting as an organisation only. School-user tokens pass the guards but @Org() answers 401.",
     enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
   })
   @Get("")
@@ -89,8 +89,11 @@ export class SyncController {
     @Org() org: OrgContext,
     @Query("organisationid") organisationid?: unknown,
   ) {
-    const organisation = await resolveSyncOrganisation(org, organisationid);
-    const file = zipped(await new SyncBusiness().synconlineForOrganisation(organisation));
+    // This file has no header naming an organisation, and the student API reads such a file as the WHOLE platform's content
+    // (it replaces everything it holds). So it is served to the platform, not acting as an organisation, only: the same rule
+    // as format 2 of `sync/content`.
+    await planContentSync(org, { organisationid, format: 2 });
+    const file = zipped(await new SyncBusiness().synconline());
     res.set({
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="sync-data.zip"`,

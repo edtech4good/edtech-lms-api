@@ -361,8 +361,8 @@ describe("the content sync is one organisation's", () => {
       );
       expect(ids(json.curriculums, "curriculumid")).toEqual(sorted(TX.curriculum, TY.curriculum, TU.curriculum));
       expect(ids(json.questions, "questionid")).toEqual(sorted(TX.question, TX.question2, TY.question, TY.question2, TU.question, TU.question2));
-      // (that the rows carry no owner column is pinned on the SQL, in content-api-payloads.spec.ts: the in-memory
-      // tables here return a whole row whatever columns were asked for)
+      // (that the content rows carry no owner column is pinned on the SQL, in content-api-payloads.spec.ts: the in-memory
+      // tables serialise a whole row through `JSON.stringify` whatever columns were asked for, so it cannot be seen here)
     });
 
     it.each(["X's Organisation Admin", "X's Admin", "a platform user acting as X"] as Who[])("%s: format 2 is the platform's only (400)", async (who) => {
@@ -486,33 +486,27 @@ describe("the content sync is one organisation's", () => {
   describe("GET /sync", () => {
     const V1_KEYS = ["curriculums", "curriculumbaselines", "grades", "levels", "lessons", "lessonlearnings", "lessonpractices", "lessonpracticequestions", "lessonquizzes", "lessonquizquestions", "levelquizquestions", "questions", "documents", "standards", "schools", "countries"].sort();
 
-    it.each(IN_X)("%s: X's content only, in the shape the older client reads", async (who) => {
-      const { status, json, raw } = await download(who, "/sync");
+    // The file has no header naming an organisation, and the student API reads such a file as the whole platform's content:
+    // one organisation's rows in it would replace everything else a Pi holds. So it is the platform's, or nobody's.
+    it("the platform, not acting as an organisation, gets the whole platform's content in the older shape", async () => {
+      const { status, json } = await download(NOT_ACTING, "/sync");
       expect(status).toBe(200);
       expect(Object.keys(json).sort()).toEqual(V1_KEYS);
-      expect(ids(json.curriculums, "curriculumid")).toEqual([TX.curriculum]);
-      expect(ids(json.questions, "questionid")).toEqual(sorted(TX.question, TX.question2));
-      expect(ids(json.documents, "documentid")).toEqual(sorted(TX.document, TX.document2));
-      expect(ids(json.schools, "schoolid")).toEqual(sorted(TX.school, TX.school2));
-      expect(ids(json.countries, "countryid")).toEqual(sorted(TX.country, TX.freeCountry));
-      expect(ids(json.standards, "standardid")).toEqual([TX.standard]);
-      // the older shape has no owner column on the content (a school keeps its own)
-      for (const table of ["curriculums", "questions", "documents"]) for (const row of json[table] as Row[]) expect(row).not.toHaveProperty("organisationid");
-      for (const row of json.schools as Row[]) expect(row.organisationid).toBe(X);
-      for (const id of [...everyIdOf(TY), ...everyIdOf(TU)]) expect(raw).not.toContain(id);
+      expect(ids(json.curriculums, "curriculumid")).toEqual(sorted(TX.curriculum, TY.curriculum, TU.curriculum));
+      expect(ids(json.questions, "questionid")).toEqual(sorted(TX.question, TX.question2, TY.question, TY.question2, TU.question, TU.question2));
+      expect(ids(json.schools, "schoolid")).toEqual(sorted(TX.school, TX.school2, TY.school, TY.school2, TU.school, TU.school2));
     });
 
-    it("a platform user not acting names an organisation; without one: 400; another organisation named by an organisation's staff: the 404 of an absent one", async () => {
-      expect(ids((await download(NOT_ACTING, `/sync?organisationid=${Y}`)).json.curriculums, "curriculumid")).toEqual([TY.curriculum]);
-      expect((await send(NOT_ACTING, "get", "/sync")).status).toBe(400);
-      const foreign = await send("X's Admin", "get", `/sync?organisationid=${Y}`);
-      expect(foreign.status).toBe(404);
-      expect(said(foreign)).toEqual(said(await send("X's Admin", "get", `/sync?organisationid=${MISSING_ORGANISATION}`)));
+    it.each(IN_X)("%s: refused (400), the same refusal as format 2 of sync/content: nothing is served", async (who) => {
+      const res = await send(who, "get", "/sync");
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "format", message: "Format 2 is for the platform, not acting as an organisation, only." }]);
+      expect(said(res)).toEqual(said(await send(who, "get", "/sync/content?format=2")));
     });
 
-    it("content that names another organisation's question is refused (400)", async () => {
-      db.tables.lessonpracticequestions[0].questionid = TY.question;
-      expect((await send("X's Admin", "get", "/sync")).status).toBe(400);
+    it("naming an organisation does not make it one organisation's: the platform is refused (400), and so is an organisation's staff", async () => {
+      expect((await send(NOT_ACTING, "get", `/sync?organisationid=${Y}`)).status).toBe(400);
+      expect((await send("X's Admin", "get", `/sync?organisationid=${Y}`)).status).toBe(400);
     });
 
     it.each(["a server token", "a school-user token"] as Who[])("%s is not admitted", async (who) => {

@@ -36,14 +36,7 @@ import { BaselineQuestionBusiness } from "./baslinequestion.business";
 import { LessonPlanBusiness } from "./lessonplan.business";
 import { SubjectBusiness } from "./subject.business";
 import { organisations } from "src/models/data-models/organisations";
-import {
-  buildOrganisationContent,
-  confine,
-  contextOfOrganisation,
-  readCountries,
-  readSchools,
-  readStandards,
-} from "./organisation-content-export";
+import { buildOrganisationContent } from "./organisation-content-export";
 
 export class SyncBusiness {
   // old version apk
@@ -90,34 +83,6 @@ export class SyncBusiness {
       countries,
     };
     return JSON.stringify(syncdata);
-  };
-
-  // The same payload as `synconline`, for ONE organisation: its schools, classes, countries and content, read through
-  // business classes built with the organisation's own context (and checked as the format 3 payload is: see
-  // organisation-content-export.ts).
-  synconlineForOrganisation = async (organisation: organisations) => {
-    const org = contextOfOrganisation(organisation.organisationid);
-    const schoolRows = await readSchools(org);
-    const plain = (list: Array<{ get: (o: { plain: true }) => unknown }>) => list.map((r) => r.get({ plain: true }) as Record<string, unknown>);
-    const tables = confine({
-      curriculums: plain(await new CurriculumBusiness(org).getCurriculumsForStudentApi()),
-      curriculumbaselines: plain(await new CurriculumBaseLineBusiness(org).getCurriculumBaseLines(true)),
-      grades: plain(await new GradeBusiness(org).getGrades()),
-      levels: plain(await new LevelBusiness(org).getLevels()),
-      lessons: plain(await new LessonBusiness(org).getLessons()),
-      lessonlearnings: plain(await new LessonLearningBusiness(org).getLessonLearnings()),
-      lessonpractices: plain(await new LessonPracticeBusiness(org).getLessonPractices()),
-      lessonpracticequestions: plain(await new LessonPracticeQuestionBusiness(org).getLessonPracticeQuestions()),
-      lessonquizzes: plain(await new LessonQuizBusiness(org).getLessonQuizzes()),
-      lessonquizquestions: plain(await new LessonQuizQuestionBusiness(org).getLessonQuizQuestions()),
-      levelquizquestions: plain(await new LevelQuizQuestionBusiness(org).getLevelQuizQuestions(true)),
-      questions: plain(await new QuestionBusiness(org).getquestions()),
-      documents: plain(await new DocumentBusiness(org).getdocuments()),
-      standards: await readStandards(org),
-      schools: schoolRows,
-      countries: await readCountries(org, schoolRows),
-    });
-    return JSON.stringify(tables);
   };
 
   // One organisation's content in the format the student API reads (format 3): see organisation-content-export.ts.
