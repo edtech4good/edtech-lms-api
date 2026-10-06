@@ -5,6 +5,7 @@ import { RequirePermissions } from 'src/decorators/requirePermissions.decorator'
 import { User } from 'src/decorators/user.decorator';
 import { Org, OrgContext, OrgOrServer, orgOf } from 'src/decorators/org.decorator';
 import { hasSchoolUserId } from 'src/services/organisation-claims';
+import { schoolUserOrgContext } from 'src/business/school-scope';
 import { AccessGuard } from 'src/guards/access.guard';
 import { PlatformGuard } from "src/guards/platform.guard";
 import { CheckPermissionsGuard } from 'src/guards/checkPermission.guard';
@@ -29,7 +30,7 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 @ApiBearerAuth()
 export class CountryController {
 
-    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation." })
+    @OrgPolicy("owned", { note: "Must list only countries linked to the caller's organisation.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
     @Get('all')
     @ApiResponse({
       status: 200,
@@ -50,9 +51,9 @@ export class CountryController {
       @Query("country") countryname: string = '',
       @User() user: LmsUserToken,
     ): Promise<any> {
-      // A staff token reads the countries its organisation is linked to; a school-user (teacher) token has no
-      // organisation context and reads every country, as before.
-      const scope = hasSchoolUserId(user) ? "school-user" : orgOf(user);
+      // A staff token reads the countries its organisation is linked to; a school-user (teacher) token, the
+      // countries linked to the organisation that owns the teacher's school (none when that school has none).
+      const scope = hasSchoolUserId(user) ? await schoolUserOrgContext(user) : orgOf(user);
       const data = await new CountryBusiness().getCountriesWithFilter(countryname, user, scope);
       return {
           data: data,
