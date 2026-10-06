@@ -16,6 +16,7 @@ import { ContentFake } from "src/test-support/content-fake";
 import { contentProblems, TABLE_KEYS, HEADER_KEYS } from "src/test-support/student-api-content-contract";
 import { StudentController } from "../students/student.controller";
 import { TeacherController } from "../teachers/teacher.controller";
+import { schools } from "src/models/data-models/school";
 import { SyncController } from "./sync.controller";
 
 /**
@@ -244,6 +245,40 @@ describe("the content sync is one organisation's", () => {
     const entries = zip.getEntries().map((e) => e.entryName);
     return { url, headers: options.headers, entries, json: JSON.parse(zip.readAsText(entries[0])) };
   };
+
+  // ───────────────────────────── GET /sync/report-data ─────────────────────────────
+  // The application key is the only credential this route takes, and it carries no organisation: it is served as the
+  // platform, so the export covers every organisation. Nothing is scoped; what is proved is who gets in and what the key gets.
+  describe("GET /sync/report-data", () => {
+    // the export reads the schools table; a refused request must not have read it (and an export must have)
+    const schoolReads = () => (schools.findAll as unknown as jest.Mock).mock.calls.length;
+
+    it.each([...IN_X, NOT_ACTING, "a school-user token" as Who])("%s: refused, and no export is made for it", async (who) => {
+      const res = await send(who, "get", "/sync/report-data").buffer().parse(textOf);
+      expect(res.status).toBe(403);
+      const text = (res.body as Buffer).toString("utf8");
+      expect(res.headers["content-type"]).not.toMatch(/zip/);
+      expect(text).not.toContain("syncfile.ini");
+      for (const id of [...everyIdOf(TX), ...everyIdOf(TY), ...everyIdOf(TU)]) expect(text).not.toContain(id);
+      expect(schoolReads()).toBe(0);
+    });
+
+    it("no credential at all: refused (401), and no export is made", async () => {
+      const res = await request(app.getHttpServer()).get("/sync/report-data").set("Connection", "close");
+      expect(res.status).toBe(401);
+      expect(schoolReads()).toBe(0);
+    });
+
+    it("a server token: the export holds every organisation's schools and curriculums, and the unowned ones", async () => {
+      const { res, status, json } = await download("a server token", "/sync/report-data");
+      expect(status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/application\/zip/);
+      expect(schoolReads()).toBeGreaterThan(0);
+      expect(ids(json.contents.schools, "schoolid")).toEqual(sorted(...[TX, TY, TU].flatMap((t) => [t.school, t.school2])));
+      expect(ids(json.contents.curriculums, "curriculumid")).toEqual(sorted(TX.curriculum, TY.curriculum, TU.curriculum));
+      expect(ids(json.students, "schooluserid")).toEqual(sorted(...[TX, TY, TU].flatMap((t) => [t.login, t.teacherLogin])));
+    });
+  });
 
   // ───────────────────────────── GET /sync/content ─────────────────────────────
   describe("GET /sync/content", () => {

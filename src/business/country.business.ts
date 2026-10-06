@@ -57,11 +57,14 @@ export class CountryBusiness {
     return await countries.findAll({ where: await andLinkedCountries(where, org) });
   }
   /**
-   * `scope` is the caller's organisation context for a staff token. A school-user
-   * (teacher) token has none and is passed as "school-user": it still reads every
-   * country, as before.
+   * `scope` is the caller's organisation context: a staff token's own, or, for a school-user (teacher) token, the
+   * organisation that owns the teacher's school (`schoolUserOrgContext`). `null` is a caller in scope of no
+   * organisation (a teacher whose school belongs to none): nothing is linked to it, so the list is empty.
    */
-  getCountriesWithFilter = async (countryname: string, user: LmsUserToken, scope: OrgContext | "school-user") => {
+  getCountriesWithFilter = async (countryname: string, user: LmsUserToken, scope: OrgContext | null) => {
+    if (scope === null) {
+      return [];
+    }
     const where: WhereOptions<countriesAttributes> = {
       isdeleted: false,
       countryname: {
@@ -77,7 +80,7 @@ export class CountryBusiness {
     }
 
     return await countries.findAll({
-      where: scope === "school-user" ? where : await andLinkedCountries(where, scope),
+      where: await andLinkedCountries(where, scope),
       order,
     });
   };

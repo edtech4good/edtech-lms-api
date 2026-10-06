@@ -25,7 +25,12 @@ import { schools } from "src/models/data-models/school";
 import { schoolusers } from "src/models/data-models/schoolusers";
 import { rpiuseraccess } from "src/models/data-models/rpiuseraccess";
 import { standards } from "src/models/data-models/standard";
+import { studentactives } from "src/models/data-models/studentactives";
 import { studentappusages } from "src/models/data-models/studentappusage";
+import { studentlearningprogress } from "src/models/data-models/studentlearningprogress";
+import { studentpoints } from "src/models/data-models/studentpoints";
+import { studentprogressquestions } from "src/models/data-models/studentprogressquestions";
+import { logfiles } from "src/models/data-models/logfiles";
 import { studentgradesprogress } from "src/models/data-models/studentgradesprogress";
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
@@ -47,7 +52,8 @@ import { rowMatches, withPrimaryKey } from "./fakewhere";
  * the instance `update()`) writes it back, as with the real model, and `save` and
  * `update` write only the fields they are given when a `fields` option names them.
  * The static `update(values, { where })` writes into the rows it matches (a field named in `fields` that `values` does not hold is
- * skipped, as Sequelize skips it).
+ * skipped, as Sequelize skips it). `bulkCreate` with `updateOnDuplicate` updates the stored row that has the same primary key
+ * (the listed fields only) instead of adding one.
  * `snapshot()` is every table as it stands, to compare before and after a refusal
  * that must have written nothing (an update writes no `created` entry).
  * The columns in `IGNORE_CASE` are compared without regard to case, as MySQL's
@@ -92,6 +98,12 @@ const MODELS = {
   rpiuseraccess: [rpiuseraccess, "rpiuseraccessid"],
   studentappusages: [studentappusages, "studentappusageid"],
   syncs: [syncs, "syncid"],
+  // what a teacher's log upload writes
+  studentactives: [studentactives, "studentactiveid"],
+  studentlearningprogress: [studentlearningprogress, "studentlearningprogressid"],
+  studentpoints: [studentpoints, "studentpointid"],
+  studentprogressquestions: [studentprogressquestions, "studentprogressquestionid"],
+  logfiles: [logfiles, "logfileid"],
 } as const;
 
 /**
@@ -380,11 +392,17 @@ export class ContentFake {
         for (const row of found) for (const key of o?.fields ?? Object.keys(values)) if (key in values) row[key] = values[key];
         return [found.length];
       }) as never);
-      jest.spyOn(m, "bulkCreate" as never).mockImplementation((async (list: Row[]) => {
+      jest.spyOn(m, "bulkCreate" as never).mockImplementation((async (list: Row[], o?: { updateOnDuplicate?: ReadonlyArray<string> }) => {
         for (const attrs of list) {
           const row = { ...attrs };
           this.created.push({ table: name, row });
-          rows().push(row);
+          // with `updateOnDuplicate`, a row that has the key of a stored row sets the listed fields of that row and nothing else, as MySQL does
+          const stored = o?.updateOnDuplicate ? rows().find((r) => String(r[key]).toLowerCase() === String(row[key]).toLowerCase()) : undefined;
+          if (stored) {
+            for (const field of o!.updateOnDuplicate!) if (field in row) stored[field] = row[field];
+          } else {
+            rows().push(row);
+          }
         }
         return list;
       }) as never);

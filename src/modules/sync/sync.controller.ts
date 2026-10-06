@@ -36,7 +36,10 @@ const zipped = (json: string) => {
 @ApiBearerAuth()
 export class SyncController {
 
-  @OrgPolicy("server", { note: "Authenticated only by the application API key; must be served as platform until the key is retired or scoped." })
+  @OrgPolicy("server", {
+    note: "Authenticated only by the application API key; must be served as platform until the key is retired or scoped.",
+    enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
+  })
   @Get("report-data")
   @ApiResponse({
     status: 200,

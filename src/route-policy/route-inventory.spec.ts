@@ -69,15 +69,16 @@ const EXPECTED_BY_POLICY = {
 // How the routes divide by enforcement, stated explicitly (they sum to the
 // total):
 //  - enforced: by a guard (self 5 + global 5 + platform with PlatformGuard 18
-//    = 28), or, for an owned route, by the spec it names (241, listed below) = 269
+//    = 28), or, for an owned or server route, by the spec it names (243 owned,
+//    listed below, + 1 server = 244) = 272
 //  - not applicable (public): 11
-//  - pending the organisation boundary: owned without a proving spec 2 +
-//    platform without PlatformGuard 0 + server 1 = 3
+//  - pending the organisation boundary: owned or server without a proving spec
+//    0 + platform without PlatformGuard 0 = 0
 const EXPECTED_ENFORCED_BY_GUARD = 28;
-const EXPECTED_ENFORCED_BY_SPEC = 241;
+const EXPECTED_ENFORCED_BY_SPEC = 244;
 const EXPECTED_ENFORCED = EXPECTED_ENFORCED_BY_GUARD + EXPECTED_ENFORCED_BY_SPEC;
 const EXPECTED_NOT_APPLICABLE = 11;
-const EXPECTED_PENDING = 3;
+const EXPECTED_PENDING = 0;
 // The owned routes that name a spec proving them, pinned by name so adding or
 // removing one is a conscious edit.
 const EXPECTED_OWNED_ENFORCED = [
@@ -111,6 +112,7 @@ const EXPECTED_OWNED_ENFORCED = [
   "GET /baselinequestion/getall/:curriculumbaselineid",
   "GET /country",
   "GET /country/:countryid",
+  "GET /country/all",
   "GET /curriculum/:curriculumid",
   "GET /curriculum/all",
   "GET /curriculum/country/:countryid",
@@ -264,6 +266,7 @@ const EXPECTED_OWNED_ENFORCED = [
   "POST /teacher/create",
   "POST /user",
   "POST /user/create",
+  "PUT /log/import",
   "PUT /baselinequestion/activate/:baselinequestionid",
   "PUT /baselinequestion/deactivate/:baselinequestionid",
   "PUT /baselinequestion/order/:baselinequestionid/:baselinequestionorder",
@@ -323,6 +326,9 @@ const EXPECTED_OWNED_ENFORCED = [
   "PUT /subject/:subjectid",
   "PUT /user/:lmsuserid",
 ];
+// The `server` routes that name a spec proving them (the API key admitted, nobody else), pinned by name.
+const EXPECTED_SERVER_ENFORCED = ["GET /sync/report-data"];
+
 // Every `platform` route has PlatformGuard (18 routes), pinned by name so
 // moving a route out of the platform set is a conscious edit.
 const EXPECTED_PLATFORM = [
@@ -413,7 +419,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("pending enforcement", () => {
-    it("divides the routes into 269 enforced (28 by a guard, 241 by a proving spec), 11 not applicable (public) and 3 pending", () => {
+    it("divides the routes into 272 enforced (28 by a guard, 244 by a proving spec), 11 not applicable (public) and 0 pending", () => {
       const count = (state: string) => routes.filter((r) => enforcementState(r) === state).length;
       expect(count("yes")).toBe(EXPECTED_ENFORCED);
       expect(count("n/a")).toBe(EXPECTED_NOT_APPLICABLE);
@@ -445,10 +451,18 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("owned routes proved by a spec", () => {
-    it("the enforced owned routes are exactly the 241 named ones", () => {
+    it("the enforced owned routes are exactly the 243 named ones", () => {
       const enforced = routes.filter((r) => r.policy === "owned" && enforcementState(r) === "yes");
       expect(enforced.map(key).sort()).toEqual([...EXPECTED_OWNED_ENFORCED].sort());
-      expect(enforced).toHaveLength(EXPECTED_ENFORCED_BY_SPEC);
+      expect(enforced).toHaveLength(EXPECTED_OWNED_ENFORCED.length);
+      expect(EXPECTED_OWNED_ENFORCED.length + EXPECTED_SERVER_ENFORCED.length).toBe(EXPECTED_ENFORCED_BY_SPEC);
+    });
+
+    it("a server route counts as enforced the way an owned route does: the one that names a proving spec", () => {
+      const enforced = routes.filter((r) => r.policy === "server" && enforcementState(r) === "yes");
+      expect(enforced.map(key).sort()).toEqual([...EXPECTED_SERVER_ENFORCED].sort());
+      expect(enforced.every((r) => r.enforcedByProven && r.admitsApiKey)).toBe(true);
+      expect(routes.filter((r) => r.policy === "server" && enforcementState(r) !== "yes").map(key)).toEqual([]);
     });
 
     it("every route that names a proving spec is proven by it (the file exists and has the route in a test title)", () => {
@@ -457,14 +471,14 @@ describe("route inventory (real application wiring)", () => {
       expect(declared.length).toBeGreaterThan(0);
     });
 
-    it("only owned routes name a proving spec", () => {
-      expect(routes.filter((r) => r.enforcedBy !== undefined && r.policy !== "owned").map(key)).toEqual([]);
+    it("only owned and server routes name a proving spec", () => {
+      expect(routes.filter((r) => r.enforcedBy !== undefined && r.policy !== "owned" && r.policy !== "server").map(key)).toEqual([]);
     });
 
-    it("the enforced routes are not in the pending snapshot, and the other owned routes still are", () => {
+    it("the enforced routes are not in the pending snapshot, which is empty", () => {
       const pending = new Set(pendingEnforcementLines(routes).map((l) => l.split("  ")[0]));
-      for (const name of EXPECTED_OWNED_ENFORCED) expect(pending.has(name)).toBe(false);
-      expect(pending.has("GET /country/all")).toBe(true);
+      for (const name of [...EXPECTED_OWNED_ENFORCED, ...EXPECTED_SERVER_ENFORCED]) expect(pending.has(name)).toBe(false);
+      expect([...pending]).toEqual([]);
     });
   });
 
@@ -637,6 +651,19 @@ describe("route inventory checks (synthetic routes, to prove they can fail)", ()
     expect(enforcementState(route({ policy: "server" }))).toBe("pending");
   });
 
+  it("a server route is enforced only when its named spec is proven, as an owned route is, else pending", () => {
+    expect(enforcementState(route({ policy: "server", admitsApiKey: true }))).toBe("pending");
+    expect(enforcementState(route({ policy: "server", enforcedBy: "x.spec.ts", enforcedByProven: false }))).toBe("pending");
+    expect(enforcementState(route({ policy: "server", enforcedBy: "x.spec.ts", enforcedByProven: true }))).toBe("yes");
+    expect(pendingEnforcementLines([route({ policy: "server", enforcedBy: "x.spec.ts", enforcedByProven: true })])).toEqual([]);
+    expect(pendingEnforcementLines([route({ path: "/k", policy: "server", admitsApiKey: true })])).toEqual(["GET /k  server+apikey"]);
+    // the other policies cannot be proved by a named spec
+    for (const policy of ["public", "self", "global"]) {
+      expect(enforcementState(route({ policy, enforcedBy: "x.spec.ts", enforcedByProven: true }))).toBe(policy === "public" ? "n/a" : "yes");
+    }
+    expect(enforcementState(route({ policy: "platform", enforcedBy: "x.spec.ts", enforcedByProven: true }))).toBe("pending");
+  });
+
   it("an owned route is enforced only when its named spec is proven, else pending", () => {
     expect(enforcementState(route({ policy: "owned" }))).toBe("pending");
     expect(enforcementState(route({ policy: "owned", enforcedBy: "x.spec.ts", enforcedByProven: false }))).toBe("pending");
@@ -696,9 +723,9 @@ describe("route inventory checks (synthetic routes, to prove they can fail)", ()
 describe("specProvesRoute (what makes an owned route count as enforced)", () => {
   let root: string;
   const write = (name: string, text: string) => {
-    mkdirSync(join(root, "specs"), { recursive: true });
-    writeFileSync(join(root, "specs", name), text);
-    return `specs/${name}`;
+    mkdirSync(join(root, "src", "specs"), { recursive: true });
+    writeFileSync(join(root, "src", "specs", name), text);
+    return `src/specs/${name}`;
   };
   const proves = (source: string, routeKey = "PUT /user/:id") => {
     const file = write(`case-${Math.random().toString(36).slice(2)}.spec.ts`, source);
@@ -769,10 +796,23 @@ describe("specProvesRoute (what makes an owned route count as enforced)", () => 
       expect(proves(`it("POST /user (list) works", () => { expect(1).toBe(1); });`, "POST /user")).toBe(true);
     });
 
+    it("a spec jest does not run: outside src/, or under a path jest ignores", () => {
+      const source = `it("GET /x", () => { expect(1).toBe(1); });`;
+      for (const dir of ["scripts", "test", "src/node_modules/pkg", "src/build", "src/dist", "."]) {
+        mkdirSync(join(root, dir), { recursive: true });
+        writeFileSync(join(root, dir, "real.spec.ts"), source);
+        expect(specProvesRoute(`${dir}/real.spec.ts`, "GET /x", root)).toBe(false);
+      }
+      // the same file under src/ proves it
+      mkdirSync(join(root, "src", "ok"), { recursive: true });
+      writeFileSync(join(root, "src", "ok", "real.spec.ts"), source);
+      expect(specProvesRoute("src/ok/real.spec.ts", "GET /x", root)).toBe(true);
+    });
+
     it("a file that does not exist, is not a spec, or leaves the repository", () => {
-      expect(specProvesRoute("specs/missing.spec.ts", "GET /x", root)).toBe(false);
+      expect(specProvesRoute("src/specs/missing.spec.ts", "GET /x", root)).toBe(false);
       write("plain.ts", `it("GET /x", () => { expect(1).toBe(1); });`);
-      expect(specProvesRoute("specs/plain.ts", "GET /x", root)).toBe(false);
+      expect(specProvesRoute("src/specs/plain.ts", "GET /x", root)).toBe(false);
       expect(specProvesRoute("../outside.spec.ts", "GET /x", root)).toBe(false);
       expect(specProvesRoute("/etc/hosts.spec.ts", "GET /x", root)).toBe(false);
       expect(specProvesRoute(undefined, "GET /x", root)).toBe(false);

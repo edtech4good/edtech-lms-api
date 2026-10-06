@@ -63,16 +63,19 @@ import { SetMetadata } from "@nestjs/common";
  *     @OrgPolicy("owned")
  *     @OrgPolicy("owned", { note: "Must list only the linked countries." })
  *     @OrgPolicy("owned", { enforcedBy: "src/modules/user/user.organisation-scope.spec.ts" })
+ *     @OrgPolicy("server", { enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts" })
  *
- * An `owned` route counts as enforced in the inventory only when it names, with
- * `enforcedBy`, a spec file (path from the repository root) that exists and has
- * a test that runs (not skipped, todo or focused, and not inside a describe that
- * is) with the route's `METHOD /path` (as the inventory prints it, for example
- * `PUT /user/:lmsuserid`) in its full title (enclosing describe titles and its
- * own) and a direct `expect(` call in its body. A signpost, not proof. The
- * spec is what proves the route limits every read and write to the caller's
- * organisation; a route without the option, or naming a spec that does not
- * mention it, stays pending.
+ * An `owned` or `server` route counts as enforced in the inventory only when it
+ * names, with `enforcedBy`, a spec file under `src/` (path from the repository
+ * root) that exists and has a test that runs (not skipped, todo or focused,
+ * and not inside a describe that is) with the route's `METHOD /path` (as the
+ * inventory prints it, for example `PUT /user/:lmsuserid`) in its full title
+ * (enclosing describe titles and its own) and a direct `expect(` call in its
+ * body. A signpost, not proof. For an `owned` route the spec is what proves
+ * the route limits every read and write to the caller's organisation; for a
+ * `server` route it is what proves that only the application API key gets in
+ * and that the key is served as the platform. A route without the option, or
+ * naming a spec that does not mention it, stays pending.
  *
  * The optional `note` is a short reason where the choice is not obvious (for
  * example a route that mixes concerns). State what the route REQUIRES.
@@ -113,7 +116,10 @@ export type OrgPolicyName = (typeof ORG_POLICIES)[number];
 
 export interface OrgPolicyOptions {
   note?: string;
-  /** For `owned` routes: the spec file that proves the route is limited to the caller's organisation. */
+  /**
+   * For `owned` and `server` routes: the spec file that proves the route is limited to the caller's organisation
+   * (`owned`), or admits only the application API key and serves it as the platform (`server`).
+   */
   enforcedBy?: string;
 }
 

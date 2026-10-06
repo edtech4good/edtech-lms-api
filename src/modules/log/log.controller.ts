@@ -30,6 +30,7 @@ import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { dbinstance } from "src/services/dbservice";
 import { CentralDirectory, File, Open } from "unzipper";
 import { Istudentprogress, LogBusiness } from "./../../business/log.business";
+import { assertLogRowsInSchool, uploadingTeacher } from "src/business/log-scope";
 import { v4 as uuidv4 } from "uuid";
 import { User } from "src/decorators/user.decorator";
 import { LmsUserToken } from "src/models/token.model";
@@ -37,6 +38,9 @@ import { LOG_ZIP_DECOMPRESSED_MAX_BYTES } from "src/constants/zip-limits";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 const logger = new Logger("LogController");
+
+/** The password of the zip a teacher's device uploads (read by the importer, and by specs that build an upload). */
+export const LOG_ZIP_PASSWORD = "7egGmeU4gRE6YAcx";
 
 // Streams a zip entry and counts bytes as they come out of the inflater,
 // aborting once the cap is exceeded. Defence in depth against a central
@@ -67,7 +71,7 @@ const bufferWithLimit = (
 @Controller("log")
 @ApiBearerAuth()
 export class LogController {
-  @OrgPolicy("owned", { note: "Rows must belong to learners of the uploading teacher's school." })
+  @OrgPolicy("owned", { note: "Rows must belong to learners of the uploading teacher's school.", enforcedBy: "src/modules/log/log-scope.leak.spec.ts" })
   @Put("import")
   @ApiResponse({
     status: 200,
@@ -126,24 +130,28 @@ export class LogController {
           throw new ApiError(ErrorCode.FILE_REJECTED, "That file is too large.", { status: HttpStatus.PAYLOAD_TOO_LARGE });
         }
       }
+      // Whose upload it is, and whose learners it names, are decided before anything is written: a teacher's
+      // upload may only hold rows of learners of the teacher's own school.
+      const teacher = await uploadingTeacher(user);
+      const parsedlogs: Map<File, Istudentprogress> = new Map();
+      for (const file of directory.files) {
+        if (file.path === 'log.ini') {
+          const logdata: Istudentprogress = JSON.parse(
+            (await bufferWithLimit(file, LOG_ZIP_PASSWORD, LOG_ZIP_DECOMPRESSED_MAX_BYTES)).toString()
+          );
+          await assertLogRowsInSchool(teacher, logdata);
+          parsedlogs.set(file, logdata);
+        }
+      }
       const tnx = await dbinstance.getdbinstance().transaction();
       const logbusiness = new LogBusiness(tnx);
       const zipAWSS3filename = `logupload-${new Date().getTime()}.zip`;
-      await logbusiness.recordSyncActivity(user, zipAWSS3filename, offline);
       try {
+        await logbusiness.recordSyncActivity(user, zipAWSS3filename, offline, teacher);
         const parentfileid = uuidv4();
         for await (const file of directory.files) {
           if(file.path === 'log.ini') {
-            const logdata: Istudentprogress = JSON.parse(
-              (
-                await bufferWithLimit(
-                  file,
-                  "7egGmeU4gRE6YAcx",
-                  LOG_ZIP_DECOMPRESSED_MAX_BYTES
-                )
-              ).toString()
-            );
-            await logbusiness.importstudentsprogress(logdata);
+            await logbusiness.importstudentsprogress(parsedlogs.get(file) as Istudentprogress);
           } else if(file.path.includes('RPI-API')) {
             await logbusiness.createstudentaccesslogfiles(file, parentfileid);
           } else {

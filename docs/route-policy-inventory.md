@@ -19,28 +19,28 @@ A policy is a requirement on the routes that declare it. Declaring one does
 not enforce it: enforcement arrives in later packages. The **Enforced**
 column says which routes are already backed (`yes`) and which are not yet
 (`pending`); `public` routes show `n/a`, because nothing backs them. A guard
-backs a route; an `owned` route counts as enforced only when it names, with
-`@OrgPolicy("owned", { enforcedBy })`, a spec file that exists and has the
-route's `METHOD /path` in the title of a test that runs and calls `expect(`
-(the **Proved by** column). That is a signpost: it shows that a test naming
-the route exists and asserts something; whether its assertions are
+backs a route. An `owned` or `server` route counts as enforced only when its
+`@OrgPolicy` names, with the `enforcedBy` option, a spec file under `src/` that
+exists and has the route's `METHOD /path` in the title of a test that runs and
+calls `expect(` (the **Proved by** column). That is a signpost: it shows that a
+test naming the route exists and asserts something; whether its assertions are
 sufficient is shown by mutation, not by the inventory. The
 pending routes are pinned in
 `src/route-policy/pending-enforcement.snapshot.txt`.
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **283** routes, **269** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned route, by the spec it names), **11** are not applicable (public) and **3** are pending.
+Of **283** routes, **272** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 243 | 241 | 0 | 2 |
+| owned | 243 | 243 | 0 | 0 |
 | platform | 18 | 18 | 0 | 0 |
-| server | 1 | 0 | 0 | 1 |
+| server | 1 | 1 | 0 | 0 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **283** | **269** | **11** | **3** |
+| **all** | **283** | **272** | **11** | **0** |
 
 ## Policies
 
@@ -57,8 +57,8 @@ A route used by both a user token and the API key is classified by its user path
 
 ## Columns
 
-- **Enforced**: `yes` when a guard already backs the policy, or an `owned` route has a spec that proves it; `n/a` for `public` routes (nothing backs them); `pending` otherwise.
-- **Proved by**: for an `owned` route that is enforced, the spec file named by `enforcedBy`.
+- **Enforced**: `yes` when a guard already backs the policy, or an `owned` or `server` route has a spec that proves it; `n/a` for `public` routes (nothing backs them); `pending` otherwise.
+- **Proved by**: for an `owned` or `server` route that is enforced, the spec file named by `enforcedBy`.
 - **API key**: `yes` when every `AccessGuard` on the route lists the application API key, so a caller with no user gets through.
 - **School-user token**: `yes` when a school-user (teacher or classroom device) access token gets through every guard on the route, derived from the guard metadata: every `AccessGuard` is the access token type with no role list, there is no `PlatformGuard`, and no permission is required. Feature switches such as `LogImportGuard` aside.
 
@@ -95,7 +95,7 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | DELETE | `/country/:countryid` | CountryController.delete | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[delete_country] | Writes to global reference data (countries) must be restricted to platform users. |
 | GET | `/country/:countryid` | CountryController.get | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_country] | Must find only a country linked to the caller's organisation. |
 | PUT | `/country/:countryid` | CountryController.update | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_country] | Writes to global reference data (countries) must be restricted to platform users. |
-| GET | `/country/all` | CountryController.getAllCountries | owned | pending |  |  | yes | AccessGuard(ACCESS) | Must list only countries linked to the caller's organisation. |
+| GET | `/country/all` | CountryController.getAllCountries | owned | yes | `src/modules/people-scope.leak.spec.ts` |  | yes | AccessGuard(ACCESS) | Must list only countries linked to the caller's organisation. |
 | POST | `/country/create` | CountryController.create | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[create_country] | Writes to global reference data (countries) must be restricted to platform users. |
 | DELETE | `/curriculumbaseline/:curriculumbaselineid` | CurriculumBaseLineController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_baseline-endline] |  |
 | GET | `/curriculumbaseline/:curriculumbaselineid/download` | CurriculumBaseLineController.getStudentBaselineEndlineResults | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_download_student] |  |
@@ -215,7 +215,7 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | PUT | `/level/quiz/question/deactivate/:levelquizquestionid` | LevelQuizQuestionController.deactivatequizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[deactivate_level_quiz_question] |  |
 | PUT | `/level/quiz/question/order/:levelquizquestionid/:levelquizquestionorder` | LevelQuizQuestionController.orderquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[reorder_level_quiz_question] |  |
 | PUT | `/level/quiz/question/setlesson/:levelquizquestionid` | LevelQuizQuestionController.setlesson | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[reorder_level_quiz_question] |  |
-| PUT | `/log/import` | LogController.create | owned | pending |  |  | yes | LogImportGuard, AccessGuard(ACCESS), CheckPermissionsGuard | Rows must belong to learners of the uploading teacher's school. |
+| PUT | `/log/import` | LogController.create | owned | yes | `src/modules/log/log-scope.leak.spec.ts` |  | yes | LogImportGuard, AccessGuard(ACCESS), CheckPermissionsGuard | Rows must belong to learners of the uploading teacher's school. |
 | GET | `/organisation` | OrganisationController.getall | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[view_organisation] |  |
 | POST | `/organisation` | OrganisationController.create | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[create_organisation] |  |
 | DELETE | `/organisation/:organisationid` | OrganisationController.delete | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[delete_organisation] |  |
@@ -342,7 +342,7 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 8.
 | POST | `/sync/cloud` | SyncController.synconline | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.admin, Role.superadmin) | Pushes one organisation's content (format 3) with the organisation named in the request header; a platform user who is not acting as an organisation must name the organisation, and can ask for the whole platform's in format 2. |
 | POST | `/sync/cloud/:schoolname/students` | SyncController.synconlineschool | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.admin, Role.superadmin) | Pushes only the learners of one school of the caller's organisation, with that school's organisation named in the request header. |
 | GET | `/sync/content` | SyncController.syncContent | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  | yes | AccessGuard(ACCESS) | One organisation's content (format 3); a platform user who is not acting as an organisation must name the organisation, and can ask for the whole platform's in format 2. School-user tokens pass the guards but @Org() answers 401. |
-| GET | `/sync/report-data` | SyncController.getReportData | server | pending |  | yes |  | AccessGuard(ACCESS, Role.apikey) | Authenticated only by the application API key; must be served as platform until the key is retired or scoped. |
+| GET | `/sync/report-data` | SyncController.getReportData | server | yes | `src/modules/sync/sync-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey) | Authenticated only by the application API key; must be served as platform until the key is retired or scoped. |
 | POST | `/teacher` | TeacherController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_teacher] |  |
 | DELETE | `/teacher/:schooluserid` | TeacherController.deleteuser | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_teacher] |  |
 | POST | `/teacher/create` | TeacherController.createall | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) | The optional cloud push must send only the teachers created by this call. |
