@@ -10,6 +10,7 @@ import { AWSService } from "src/services/aws.service";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
 import { dbinstance } from "src/services/dbservice";
 import { ContentFake } from "src/test-support/content-fake";
+import { assertLogRowsInSchool, findInChunks } from "src/business/log-scope";
 import { LOG_ZIP_PASSWORD, LogController } from "./log.controller";
 
 /**
@@ -50,6 +51,10 @@ const STU_Y_GONE = uuid(406); // deleted, school Y
 const USR_Y_GONE = uuid(416);
 const USR_Y = uuid(414);
 const USR_U = uuid(415);
+const STU_XY = uuid(407); // a learner of X whose login row is in Y
+const USR_XY = uuid(417);
+const STU_YX = uuid(408); // a learner of Y whose login row is in X
+const USR_YX = uuid(418);
 const TCH_X = uuid(421);
 const TCH_Y = uuid(422);
 const TCH_NO_SCHOOL = uuid(423);
@@ -92,7 +97,7 @@ const TABLE_OF: Record<Kind, string> = {
 
 /** A learner of the fixtures: the id the rows carry as `studentid`, and the login they carry as a login id. */
 const who = {
-  x: [STU_X, USR_X], x2: [STU_X2, USR_X2], gone: [STU_X_GONE, USR_X_GONE], ygone: [STU_Y_GONE, USR_Y_GONE], y: [STU_Y, USR_Y], u: [STU_U, USR_U], unknown: [MISSING, uuid(998)],
+  x: [STU_X, USR_X], x2: [STU_X2, USR_X2], gone: [STU_X_GONE, USR_X_GONE], ygone: [STU_Y_GONE, USR_Y_GONE], xy: [STU_XY, USR_XY], yx: [STU_YX, USR_YX], y: [STU_Y, USR_Y], u: [STU_U, USR_U], unknown: [MISSING, uuid(998)],
 } as const;
 type Learner = keyof typeof who;
 
@@ -140,6 +145,10 @@ const seed = () => {
   login(TCH_X, S_X, SchoolRole.TEACHER, "teacherx");
   login(TCH_Y, S_Y, SchoolRole.TEACHER, "teachery");
   db.add("schoolusers", { schooluserid: TCH_NO_SCHOOL, schoolusername: "teachernone", schooluserrole: SchoolRole.TEACHER, schoolid: null, schooluserstatus: true, isdisabled: false, schooluserpasswordhash: "hash" });
+  login(USR_XY, S_Y, SchoolRole.STUDENT, "learnerxy");
+  login(USR_YX, S_X, SchoolRole.STUDENT, "learneryx");
+  learner(STU_XY, USR_XY, S_X);
+  learner(STU_YX, USR_YX, S_Y);
   learner(STU_X, USR_X, S_X);
   learner(STU_X2, USR_X2, S_X);
   learner(STU_X_GONE, USR_X_GONE, S_X, { isdeleted: true });
@@ -343,6 +352,23 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
       }
     });
 
+    it("a login whose learner row and login row are in different schools is refused (either way round), as a login id and as a learning-progress `userid`", async () => {
+      for (const odd of ["xy", "yx"] as Learner[]) {
+        for (const kind of ["access", "studentappusages"] as Kind[]) await refused(teacher(TCH_X), logOf([kind, odd]));
+        const logdata = logOf(["studentlearningprogress", "x"]);
+        (logdata.log.progress.studentlearningprogress[0] as Row).userid = who[odd][1];
+        await refused(teacher(TCH_X), logdata);
+      }
+    });
+
+    it("a login that two learner rows own is refused when either row is in another school, and accepted when both are in the school", async () => {
+      db.add("students", { studentid: uuid(409), schooluserid: USR_X, schoolid: S_Y, studentfirstname: KHMER, isactive: 1 });
+      await refused(teacher(TCH_X), logOf(["access", "x"]));
+      await refused(teacher(TCH_X), logOf(["studentappusages", "x"]));
+      db.tables.students.find((s) => s.studentid === uuid(409))!.schoolid = S_X;
+      expect((await upload(teacher(TCH_X), logOf(["access", "x"], ["studentappusages", "x"]))).status).toBe(200);
+    });
+
     it("the refusal names no id and no name, and is the same whichever learner it was", async () => {
       const bodies: string[] = [];
       for (const other of ["y", "u", "unknown", "ygone"] as Learner[]) {
@@ -412,6 +438,55 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
       const missing = await upload(teacher(MISSING), logOf(["result", "x"]));
       expect(missing.status).toBe(404);
       db.nothingCreated();
+    });
+  });
+});
+
+describe("the lookups of a log upload go in chunks", () => {
+  it("findInChunks looks up every id, in pieces of at most the size, and joins the answers", async () => {
+    const calls: string[][] = [];
+    const found = await findInChunks(["a", "b", "c", "d", "e"], async (chunk) => {
+      calls.push(chunk);
+      return chunk.map((id) => id.toUpperCase());
+    }, 2);
+    expect(calls).toEqual([["a", "b"], ["c", "d"], ["e"]]);
+    expect(found).toEqual(["A", "B", "C", "D", "E"]);
+    expect(await findInChunks([], async () => { throw new Error("no lookup for no ids"); }, 2)).toEqual([]);
+    expect(await findInChunks(new Set(["a"]), async (chunk) => chunk, 5000)).toEqual(["a"]);
+  });
+
+  describe("assertLogRowsInSchool with a chunk size of 2", () => {
+    const db = new ContentFake();
+    beforeEach(() => {
+      jest.restoreAllMocks();
+      db.install();
+      seed_(db);
+    });
+    // seven learners of X and one of Y: far more ids than one chunk holds
+    const seed_ = (fake: ContentFake) => {
+      for (let i = 0; i < 7; i++) {
+        fake.add("students", { studentid: uuid(8100 + i), schooluserid: uuid(8200 + i), schoolid: S_X, isactive: 1 });
+        fake.add("schoolusers", { schooluserid: uuid(8200 + i), schoolid: S_X, schooluserrole: SchoolRole.STUDENT });
+        fake.add("studentprogress", { studentprogressid: uuid(8300 + i), studentid: uuid(8100 + i) });
+      }
+      fake.add("students", { studentid: uuid(8110), schooluserid: uuid(8210), schoolid: S_Y, isactive: 1 });
+      fake.add("schoolusers", { schooluserid: uuid(8210), schoolid: S_Y, schooluserrole: SchoolRole.STUDENT });
+      fake.add("studentprogress", { studentprogressid: uuid(8310), studentid: uuid(8110) });
+    };
+    const teacherRow = { schoolid: S_X } as never;
+    const result = (n: number, studentid: string, id = uuid(8400 + n)) => ({ studentprogressid: id, studentid });
+    const log = (...rows: Row[]) => ({ log: { access: [], result: rows, progress: {} } });
+
+    it("accepts rows of seven learners (several chunks), and a row of another school's learner in the last chunk is still refused", async () => {
+      const own = Array.from({ length: 7 }, (_, i) => result(i, uuid(8100 + i)));
+      await expect(assertLogRowsInSchool(teacherRow, log(...own), 2)).resolves.toBeUndefined();
+      await expect(assertLogRowsInSchool(teacherRow, log(...own, result(7, uuid(8110))), 2)).rejects.toMatchObject({ code: "FILE_REJECTED" });
+    });
+
+    it("a stored row of another school's learner, reached by the key of the last row of the upload, is still found", async () => {
+      const own = Array.from({ length: 7 }, (_, i) => result(i, uuid(8100 + i)));
+      own[6].studentprogressid = uuid(8310);
+      await expect(assertLogRowsInSchool(teacherRow, log(...own), 2)).rejects.toMatchObject({ code: "FILE_REJECTED" });
     });
   });
 });

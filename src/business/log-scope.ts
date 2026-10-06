@@ -92,6 +92,19 @@ const SPECS: Spec[] = [
   { rows: progressRows("studentappusages"), model: studentappusages, pk: "studentappusageid", login: "schooluserid" },
 ];
 
+/** How many ids one `IN (...)` lookup carries: a large upload never puts them all in one statement. */
+export const LOOKUP_CHUNK = 5000;
+
+/** `find` for every chunk of at most `size` ids, the answers joined: the same rows as one lookup of all of them. */
+export const findInChunks = async <T>(ids: Iterable<string>, find: (chunk: string[]) => Promise<T[]>, size = LOOKUP_CHUNK): Promise<T[]> => {
+  const all = [...ids];
+  const found: T[] = [];
+  for (let i = 0; i < all.length; i += size) {
+    found.push(...(await find(all.slice(i, i + size))));
+  }
+  return found;
+};
+
 /** A stored value read back as an id (an absent one never matches anything). */
 const storedId = (value: unknown): string => String(value ?? "").toLowerCase();
 
@@ -109,9 +122,10 @@ const storedId = (value: unknown): string => String(value ?? "").toLowerCase();
  *  - `progress.studentactives`, `studentlearningprogress`, `studentgradesprogress`, `studentlevelsprogress`,
  *    `studentlessonsprogress`, `studentpoints`: `studentid` (and `userid` on a learning-progress row when it has one).
  *  - `progress.studentappusages`: `schooluserid`, a login id.
- * A login that a learner owns is judged as the learner is; any other login must be a login of the school.
+ * A login passes only when its own `schoolusers` row is in the school and so is every learner row that owns it
+ * (`students.schooluserid` is not unique).
  */
-export const assertLogRowsInSchool = async (teacher: schoolusers, logdata: unknown): Promise<void> => {
+export const assertLogRowsInSchool = async (teacher: schoolusers, logdata: unknown, chunkSize = LOOKUP_CHUNK): Promise<void> => {
   const log = (logdata as { log?: unknown } | null | undefined)?.log;
   if (log === undefined || log === null) return;
 
@@ -153,53 +167,54 @@ export const assertLogRowsInSchool = async (teacher: schoolusers, logdata: unkno
   if (studentIds.size + loginIds.size + eitherIds.size + questionKeys.size + uploadedParents.size === 0) return;
   if (!schoolid) throw outsideSchool(); // a teacher with no school has no learners
   const school = schoolid.toLowerCase();
-  const list = (ids: Set<string>) => ({ [Op.in]: [...ids] });
+  // every `IN` lookup goes in chunks
+  const lookup = <T>(ids: Iterable<string>, find: (chunk: { [Op.in]: string[] }) => Promise<object[]>) =>
+    findInChunks(ids, async (chunk) => (await find({ [Op.in]: chunk })) as unknown as T[], chunkSize);
 
   // the stored rows the upload's keys reach: whom they belong to is judged like the upload's own rows
   for (const spec of SPECS) {
     const keys = pks.get(spec)!;
     if (keys.size === 0) continue;
     const cols = [spec.student, spec.login, spec.either].filter((c): c is string => !!c);
-    const stored = (await spec.model.findAll({ attributes: [spec.pk, ...cols], where: { [spec.pk]: list(keys) } })) as Row[];
+    const stored = await lookup<Row>(keys, (ids) => spec.model.findAll({ attributes: [spec.pk, ...cols], where: { [spec.pk]: ids } }));
     for (const row of stored) {
       if (spec.student) studentIds.add(storedId(row[spec.student]));
       if (spec.login) loginIds.add(storedId(row[spec.login]));
       if (spec.either && row[spec.either] !== undefined && row[spec.either] !== null) eitherIds.add(storedId(row[spec.either]));
     }
   }
-  const storedQuestions = questionKeys.size === 0 ? [] : ((await studentprogressquestions.findAll({
+  const storedQuestions = await lookup<Row>(questionKeys, (ids) => studentprogressquestions.findAll({
     attributes: ["studentprogressquestionid", "studentprogressid"],
-    where: { studentprogressquestionid: list(questionKeys) },
-  })) as unknown as Row[]);
+    where: { studentprogressquestionid: ids },
+  }));
   const parents = new Set<string>([...uploadedParents, ...storedQuestions.map((q) => storedId(q.studentprogressid))]);
-  const parentRows = parents.size === 0 ? [] : ((await studentprogress.findAll({
+  const parentRows = await lookup<Row>(parents, (ids) => studentprogress.findAll({
     attributes: ["studentprogressid", "studentid"],
-    where: { studentprogressid: list(parents) },
-  })) as unknown as Row[]);
+    where: { studentprogressid: ids },
+  }));
   const parentOwner = new Map(parentRows.map((r) => [storedId(r.studentprogressid), storedId(r.studentid)]));
   for (const owner of parentOwner.values()) studentIds.add(owner);
 
-  // whose each id is: the school of the learner, or of the login (a learner's own login is the learner's)
+  // whose each id is: the school of the learner, or of the login and of every learner that owns it
   const named = new Set([...loginIds, ...eitherIds]);
   const learnerSchool = new Map<string, string>();
   const everyStudent = new Set([...studentIds, ...eitherIds]);
-  if (everyStudent.size > 0) {
-    for (const l of (await students.findAll({ attributes: ["studentid", "schoolid"], where: { studentid: list(everyStudent) } })) as unknown as Row[]) {
-      learnerSchool.set(storedId(l.studentid), storedId(l.schoolid));
-    }
+  for (const l of await lookup<Row>(everyStudent, (ids) => students.findAll({ attributes: ["studentid", "schoolid"], where: { studentid: ids } }))) {
+    learnerSchool.set(storedId(l.studentid), storedId(l.schoolid));
   }
-  const loginOwnerSchool = new Map<string, string>();
+  // `students.schooluserid` is not unique: every learner row that owns a login counts
+  const loginOwnerSchools = new Map<string, string[]>();
+  for (const l of await lookup<Row>(named, (ids) => students.findAll({ attributes: ["schooluserid", "schoolid"], where: { schooluserid: ids } }))) {
+    const login = storedId(l.schooluserid);
+    loginOwnerSchools.set(login, [...(loginOwnerSchools.get(login) ?? []), storedId(l.schoolid)]);
+  }
   const staffLoginSchool = new Map<string, string>();
-  if (named.size > 0) {
-    for (const l of (await students.findAll({ attributes: ["schooluserid", "schoolid"], where: { schooluserid: list(named) } })) as unknown as Row[]) {
-      loginOwnerSchool.set(storedId(l.schooluserid), storedId(l.schoolid));
-    }
-    for (const l of (await schoolusers.findAll({ attributes: ["schooluserid", "schoolid"], where: { schooluserid: list(named) } })) as unknown as Row[]) {
-      staffLoginSchool.set(storedId(l.schooluserid), storedId(l.schoolid));
-    }
+  for (const l of await lookup<Row>(named, (ids) => schoolusers.findAll({ attributes: ["schooluserid", "schoolid"], where: { schooluserid: ids } }))) {
+    staffLoginSchool.set(storedId(l.schooluserid), storedId(l.schoolid));
   }
   const learnerOk = (id: string) => learnerSchool.get(id) === school;
-  const loginOk = (id: string) => (loginOwnerSchool.has(id) ? loginOwnerSchool.get(id) === school : staffLoginSchool.get(id) === school);
+  // a login passes when its own `schoolusers` row is in the school and so is every learner row that owns it
+  const loginOk = (id: string) => staffLoginSchool.get(id) === school && (loginOwnerSchools.get(id) ?? []).every((owner) => owner === school);
 
   for (const id of studentIds) if (!learnerOk(id)) throw outsideSchool();
   for (const id of loginIds) if (!loginOk(id)) throw outsideSchool();
