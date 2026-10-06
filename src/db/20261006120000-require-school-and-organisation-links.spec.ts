@@ -46,6 +46,28 @@ describe("C5 up()", () => {
     for (const c of C5_COLUMNS) expect(fake.cols.get(`${c.table}.${c.column}`)!.nullable).toBe(true);
   });
 
+  it("guards EVERY column: with one NULL in each, the thrown message has a line for each of them", async () => {
+    const everyone = Object.fromEntries(C5_COLUMNS.map((c) => [`${c.table}.${c.column}`, { nullable: true, nulls: [`${c.table}-row`] }]));
+    const fake = makeRequiredColumnsQI(C5_COLUMNS, everyone);
+    const err = await migration.up(fake.queryInterface).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    for (const c of C5_COLUMNS) {
+      expect(err.message).toContain(`${c.table}.${c.column}: 1 row(s) with no value (${c.pk}, all 1): ${c.table}-row`);
+    }
+    expect(fake.alters()).toEqual([]);
+  });
+
+  it("guards each column on its own: a NULL in only that column refuses, and names only it", async () => {
+    for (const c of C5_COLUMNS) {
+      const fake = makeRequiredColumnsQI(C5_COLUMNS, { ...nullable, [`${c.table}.${c.column}`]: { nullable: true, nulls: ["x"] } });
+      const err = await migration.up(fake.queryInterface).catch((e: Error) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).toContain(`${c.table}.${c.column}: 1 row(s)`);
+      expect(err.message.match(/row\(s\) with no value/g)).toHaveLength(1);
+      expect(fake.alters()).toEqual([]);
+    }
+  });
+
   it("is idempotent: on tightened tables a second run is a no-op", async () => {
     const fake = makeRequiredColumnsQI(C5_COLUMNS, tightened);
     await migration.up(fake.queryInterface);

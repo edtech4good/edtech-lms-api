@@ -16,7 +16,8 @@
  * id it finds, so a database that already has the organisation (the backfill
  * gives its own ids) is reused, never duplicated. Only when the code is not
  * there is a row inserted, with the fixed id below. Its country link is added
- * the same way. Nothing is ever overwritten.
+ * the same way. Nothing is ever overwritten. A deleted organisation of that code is
+ * refused (see `ensureOrganisation`).
  */
 const COUNTRY = { id: "b0000000-0000-4000-8000-000000000001", name: "Cambodia" };
 
@@ -52,14 +53,22 @@ async function ensureOrganisation(conn, code) {
     COUNTRY.id,
     COUNTRY.name,
   ]);
-  let [rows] = await conn.execute(`SELECT organisationid FROM organisations WHERE organisationcode = ? LIMIT 1`, [code]);
+  // `organisationcode` is unique across ALL rows, deleted ones included (codes are never reissued), so a deleted
+  // organisation with this code can neither be reused (it is gone) nor replaced: refuse, saying so.
+  let [rows] = await conn.execute(`SELECT organisationid, isdeleted FROM organisations WHERE organisationcode = ? LIMIT 1`, [code]);
+  if (rows.length > 0 && Number(rows[0].isdeleted) !== 0) {
+    throw new Error(
+      `The organisation with code "${code}" has been deleted, and a code is never reissued, so this seed cannot use it. ` +
+        "Restore it, or seed a database that does not have it.",
+    );
+  }
   if (rows.length === 0) {
     await conn.execute(
       `INSERT INTO organisations (organisationid, organisationname, organisationcode, organisationshortname, organisationpreset, uitheme)
        VALUES (?,?,?,?,?,?)`,
       [org.id, org.name, org.code, org.shortname, org.preset, org.uitheme],
     );
-    [rows] = await conn.execute(`SELECT organisationid FROM organisations WHERE organisationcode = ? LIMIT 1`, [code]);
+    [rows] = await conn.execute(`SELECT organisationid, isdeleted FROM organisations WHERE organisationcode = ? LIMIT 1`, [code]);
   }
   const organisationid = rows[0].organisationid;
   const [links] = await conn.execute(

@@ -19,8 +19,8 @@ const fakeConn = (state: { organisations?: Row[]; links?: Row[]; tables?: Record
   const execute = jest.fn(async (sql: string, params: unknown[] = []): Promise<[unknown, unknown]> => {
     sent.push(sql.replace(/\s+/g, " ").trim());
     if (/^INSERT IGNORE INTO countries/.test(sql)) return [{}, undefined];
-    if (/^SELECT organisationid FROM organisations WHERE organisationcode/.test(sql)) {
-      return [organisations.filter((o) => o.organisationcode === params[0]).map((o) => ({ organisationid: o.organisationid })), undefined];
+    if (/^SELECT organisationid, isdeleted FROM organisations WHERE organisationcode/.test(sql)) {
+      return [organisations.filter((o) => o.organisationcode === params[0]).map((o) => ({ organisationid: o.organisationid, isdeleted: o.isdeleted ?? 0 })), undefined];
     }
     if (/^INSERT INTO organisations/.test(sql)) {
       const [organisationid, , organisationcode] = params;
@@ -83,6 +83,13 @@ describe("ensureOrganisation", () => {
     await ensureOrganisation(f.conn, "miv");
     expect(f.links).toHaveLength(1);
     expect(f.organisations).toHaveLength(1);
+  });
+
+  it("refuses a code whose organisation is soft-deleted: codes are never reissued, so it is neither reused nor replaced, and nothing is written", async () => {
+    const f = fakeConn({ organisations: [{ organisationid: "gone", organisationcode: "miv", isdeleted: 1 }] });
+    await expect(ensureOrganisation(f.conn, "miv")).rejects.toThrow('The organisation with code "miv" has been deleted');
+    expect(f.sent.filter((s) => /^INSERT INTO (organisations|organisationcountry)/.test(s))).toEqual([]);
+    expect(f.links).toEqual([]);
   });
 
   it("refuses a code that is not a seed organisation", async () => {

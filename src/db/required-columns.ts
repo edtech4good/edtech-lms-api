@@ -178,28 +178,57 @@ function modifyStatement(queryInterface: QueryInterface, target: RequiredColumn,
 }
 
 /**
+ * Runs `work` with this connection in strict mode. Without it, MySQL turns a NULL
+ * that slips in between the guard and a MODIFY into '' (a warning, not an error) and
+ * the tightening "succeeds" with a value nobody chose; with it, the MODIFY fails
+ * (1138) and changes nothing. The session's own mode is restored afterwards, even
+ * when `work` throws. Nothing is sent when the mode is already strict.
+ */
+async function inStrictMode(queryInterface: QueryInterface, transaction: Transaction, work: () => Promise<void>): Promise<void> {
+  const rows = (await queryInterface.sequelize.query("SELECT @@SESSION.sql_mode AS mode", {
+    type: QueryTypes.SELECT,
+    transaction,
+  })) as Array<{ mode?: string }>;
+  const original = String(rows[0]?.mode ?? "");
+  const strict = original.split(",").some((m) => m === "STRICT_TRANS_TABLES" || m === "STRICT_ALL_TABLES");
+  if (strict) {
+    await work();
+    return;
+  }
+  await queryInterface.sequelize.query("SET SESSION sql_mode = CONCAT(@@sql_mode, ',STRICT_TRANS_TABLES')", { transaction });
+  try {
+    await work();
+  } finally {
+    await queryInterface.sequelize.query(`SET SESSION sql_mode = ${queryInterface.sequelize.escape(original)}`, { transaction });
+  }
+}
+
+/**
  * Makes each column NOT NULL, keeping its type, charset, collation and comment as
  * the database reports them (a foreign key between two columns needs their
  * charsets to agree, and sibling tables differ between deployments). The
  * foreign key and the index stay as they are. A column that is already
  * required is skipped, so a re-run changes nothing and one that stopped halfway
- * finishes. No data is written.
+ * finishes. No data is written. The connection is put in strict mode for the
+ * MODIFYs (see `inStrictMode`).
  */
 export async function requireColumns(
   queryInterface: QueryInterface,
   columns: readonly RequiredColumn[],
   transaction: Transaction,
 ): Promise<void> {
-  for (const target of columns) {
-    const def = await readColumn(queryInterface, target, transaction);
-    if (def === null) {
-      throw new Error(`${target.table}.${target.column} does not exist: run the earlier migrations first.`);
+  await inStrictMode(queryInterface, transaction, async () => {
+    for (const target of columns) {
+      const def = await readColumn(queryInterface, target, transaction);
+      if (def === null) {
+        throw new Error(`${target.table}.${target.column} does not exist: run the earlier migrations first.`);
+      }
+      if (!def.nullable) {
+        continue;
+      }
+      await queryInterface.sequelize.query(modifyStatement(queryInterface, target, def, false), { transaction });
     }
-    if (!def.nullable) {
-      continue;
-    }
-    await queryInterface.sequelize.query(modifyStatement(queryInterface, target, def, false), { transaction });
-  }
+  });
 }
 
 /** The `down()` mirror: each column NULL again, in reverse order. A column or table already gone is skipped. Writes no data. */

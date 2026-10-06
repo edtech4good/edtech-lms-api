@@ -37,6 +37,12 @@ const assertCurriculumsFitOwner = async (owner: string | null | undefined, ids: 
   }
 };
 
+/** The admin's school form has no organisation field, so the message names the switcher (as the content-create message does). */
+const CHOOSE_ORGANISATION =
+  "Act as an organisation first (use the organisation switcher), or choose the organisation this school belongs to.";
+const KEEP_ORGANISATION =
+  "A school must belong to an organisation. Choose one, or leave the organisation out to keep the current one.";
+
 const organisationRequired = (message: string) =>
   new ApiError(ErrorCode.INVALID_INPUT, "Some of the information isn't valid.", {
     fields: [{ field: "organisationid", message }],
@@ -112,7 +118,7 @@ export class SchoolBusiness {
       } else {
         resulting = opts.requested === undefined ? null : opts.requested;
         if (resulting === null) {
-          throw organisationRequired("Choose the organisation this school belongs to.");
+          throw organisationRequired(CHOOSE_ORGANISATION);
         }
       }
     } else {
@@ -124,7 +130,7 @@ export class SchoolBusiness {
       resulting = opts.requested === undefined ? opts.current : opts.requested;
       if (opts.requested === null) {
         // The column is being written, and it cannot be emptied.
-        throw organisationRequired("A school must belong to an organisation. Choose one.");
+        throw organisationRequired(KEEP_ORGANISATION);
       }
     }
     if (resulting !== null) {

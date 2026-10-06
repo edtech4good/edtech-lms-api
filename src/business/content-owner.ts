@@ -179,9 +179,12 @@ export const ownerForNewContent = (org: OrgContext | undefined): string => {
 /**
  * Attaching refuses a cross-owner link. When BOTH sides have an owner and the
  * owners differ, the attach is refused with 400. Every row of the six content
- * tables has an owner (the owner column is required), so a side with none is a
- * row that was not found; the routes check existence on their own, so it is let
- * through here and answered there.
+ * tables has an owner (the owner column is required), so a side with none (`null`)
+ * is an id that matches no row. It is let through here: that is how it behaved
+ * before the owner columns were required, and the callers do not all check that
+ * the id exists first (a school create or update does not check that the curriculum
+ * ids it is given exist at all). Whether a missing id should be refused is a
+ * separate question from the owner rule.
  * The message names nothing private: no organisation, no row.
  */
 export const assertSameOwner = (a: Owner | undefined, b: Owner | undefined): void => {
@@ -198,8 +201,9 @@ export const assertSameOwners = ({ parent, question }: AttachOwners): void => as
 
 /**
  * A learner enrolled on curriculums is a link between a school and each curriculum: the school's owner and
- * every curriculum's must agree (see `assertSameOwner` for what an unowned side means; a school with no owner
- * yet takes any curriculum, so none is read).
+ * every curriculum's must agree (see `assertSameOwner` for what a side with no owner means). A school always
+ * has an organisation now (`schools.organisationid` is required); the early return is only for a caller that
+ * has no school owner to compare.
  */
 export const assertEnrolmentFits = async (schoolOwner: Owner | undefined, curriculumids: ReadonlyArray<string>, tx?: Tx): Promise<void> => {
   if (typeof schoolOwner !== "string") {

@@ -187,7 +187,7 @@ describe("schools write their organisation", () => {
       it("naming no organisation is refused (400 on organisationid): a school always has one, so nothing is written", async () => {
         const res = await create(token, school());
         expect(res.status).toBe(400);
-        expect(res.body.fields).toEqual([{ field: "organisationid", message: "Choose the organisation this school belongs to." }]);
+        expect(res.body.fields).toEqual([{ field: "organisationid", message: "Act as an organisation first (use the organisation switcher), or choose the organisation this school belongs to." }]);
         expect(lockCalls).toEqual([]);
         nothingWritten();
       });
@@ -195,7 +195,7 @@ describe("schools write their organisation", () => {
       it("sending null is refused the same way", async () => {
         const res = await create(token, school({ organisationid: null }));
         expect(res.status).toBe(400);
-        expect(res.body.fields).toEqual([{ field: "organisationid", message: "Choose the organisation this school belongs to." }]);
+        expect(res.body.fields).toEqual([{ field: "organisationid", message: "Act as an organisation first (use the organisation switcher), or choose the organisation this school belongs to." }]);
         nothingWritten();
       });
 
@@ -289,7 +289,7 @@ describe("schools write their organisation", () => {
       it("null is refused (400 on organisationid): a school cannot be left without an organisation, and keeps the one it has", async () => {
         const res = await update(token, SCHOOL_IN_X, school({ organisationid: null, countryid: C3 }));
         expect(res.status).toBe(400);
-        expect(res.body.fields).toEqual([{ field: "organisationid", message: "A school must belong to an organisation. Choose one." }]);
+        expect(res.body.fields).toEqual([{ field: "organisationid", message: "A school must belong to an organisation. Choose one, or leave the organisation out to keep the current one." }]);
         expect(table[0].organisationid).toBe(X);
         nothingWritten();
       });

@@ -39,6 +39,13 @@
  * and is 0 only when every scenario ran to its last check and passed. A crash,
  * a refusal or a script that never reached the end exits non-zero.
  *
+ * Every school belongs to an organisation (the column is required), so the script
+ * makes a scratch organisation of its own (code `zzrace…`), links it to the country
+ * it uses, and puts the schools of scenarios 1 to 4, A and B in it; school writes
+ * go through the real business code as a platform caller that names that
+ * organisation where the code needs one (a school create). Scenario C keeps its own
+ * two-country organisation. Nothing outside the `zzrace` rows is touched.
+ *
  * Scratch rows carry a fixed prefix (`zzrace`). A run first removes whatever a
  * killed earlier run left, and removes its own on the way out; every open
  * transaction is rolled back in the `finally`.
@@ -111,10 +118,20 @@ async function main(): Promise<number> {
     const [curriculum] = await select<{ curriculumid: string }>("SELECT curriculumid FROM curriculums LIMIT 1");
     if (!country || !curriculum) throw new Error("The scratch database needs a country and a curriculum.");
 
+    // The scratch organisation the main schools belong to, linked to the one country they use.
+    const mainOrg = uuid();
+    await db.query(
+      "INSERT INTO organisations (organisationid, organisationname, organisationcode, organisationshortname, organisationpreset) VALUES (?, ?, ?, 'ZR', 'schoolnetwork')",
+      { replacements: [mainOrg, `${PREFIX} main org ${mainOrg.slice(0, 8)}`, `${PREFIX}m${mainOrg.slice(0, 7)}`] },
+    );
+    await db.query("INSERT INTO organisationcountry (organisationcountryid, organisationid, countryid) VALUES (?, ?, ?)", {
+      replacements: [uuid(), mainOrg, country.countryid],
+    });
+
     const schoolid = uuid();
     const original = `${SCHOOL_PREFIX}${schoolid.slice(0, 8)}`;
-    await db.query("INSERT INTO schools (schoolid, schoolname, isdeleted, curriculums, countryid) VALUES (?, ?, 0, JSON_ARRAY(), ?)", {
-      replacements: [schoolid, original, country.countryid],
+    await db.query("INSERT INTO schools (schoolid, schoolname, isdeleted, curriculums, countryid, organisationid) VALUES (?, ?, 0, JSON_ARRAY(), ?, ?)", {
+      replacements: [schoolid, original, country.countryid, mainOrg],
     });
 
     const staff = { lmsuserid: "race-script" } as never;
@@ -233,15 +250,15 @@ async function main(): Promise<number> {
     // B. while a by-name writer's transaction is open, unrelated school writes are not blocked.
     const otherId = uuid();
     const otherName = `${SCHOOL_PREFIX}b ${otherId.slice(0, 8)}`;
-    await db.query("INSERT INTO schools (schoolid, schoolname, isdeleted, curriculums, countryid) VALUES (?, ?, 0, JSON_ARRAY(), ?)", {
-      replacements: [otherId, otherName, country.countryid],
+    await db.query("INSERT INTO schools (schoolid, schoolname, isdeleted, curriculums, countryid, organisationid) VALUES (?, ?, 0, JSON_ARRAY(), ?, ?)", {
+      replacements: [otherId, otherName, country.countryid, mainOrg],
     });
     const txB = await begin();
     await resolveSchoolByName(await currentName(), txB);
     const unrelatedRename = await settledWithin(editSchool(otherId, `${otherName} renamed`, country.countryid), 3000);
     const unrelatedCreate = await settledWithin(
       new SchoolBusiness().createschool(
-        { schoolname: `${SCHOOL_PREFIX}b new ${otherId.slice(0, 8)}`, countryid: country.countryid, curriculums: [] } as never,
+        { schoolname: `${SCHOOL_PREFIX}b new ${otherId.slice(0, 8)}`, countryid: country.countryid, curriculums: [], organisationid: mainOrg } as never,
         staff,
         platform,
       ),

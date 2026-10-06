@@ -186,6 +186,47 @@ describe("requireColumns", () => {
   });
 });
 
+describe("requireColumns pins strict mode for its own connection", () => {
+  const NOT_STRICT = "ONLY_FULL_GROUP_BY,NO_ENGINE_SUBSTITUTION";
+  const PIN = "SET SESSION sql_mode = CONCAT(@@sql_mode, ',STRICT_TRANS_TABLES')";
+  const indexOf = (fake: ReturnType<typeof makeRequiredColumnsQI>, test: (s: string) => boolean) => fake.statements.findIndex(test);
+
+  it("when the session is not strict: sends the pin before the first MODIFY, restores the original mode after the last", async () => {
+    const fake = makeRequiredColumnsQI(C5_COLUMNS, {}, NOT_STRICT);
+    await requireColumns(fake.queryInterface, C5_COLUMNS, fake.TX as never);
+    const pin = indexOf(fake, (s) => s === PIN);
+    const firstAlter = indexOf(fake, (s) => /^ALTER TABLE/.test(s));
+    const restore = indexOf(fake, (s) => s === `SET SESSION sql_mode = '${NOT_STRICT}'`);
+    const lastAlter = fake.statements.map((s, i) => (/^ALTER TABLE/.test(s) ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
+    expect(pin).toBeGreaterThanOrEqual(0);
+    expect(pin).toBeLessThan(firstAlter);
+    expect(restore).toBeGreaterThan(lastAlter);
+    expect(fake.sqlMode()).toBe(NOT_STRICT);
+  });
+
+  it("restores the original mode even when a MODIFY fails", async () => {
+    const fake = makeRequiredColumnsQI(C5_COLUMNS, { "students.schoolid": { type: "varchar(36); DROP TABLE x" } }, NOT_STRICT);
+    await expect(requireColumns(fake.queryInterface, C5_COLUMNS, fake.TX as never)).rejects.toThrow(/Unexpected type/);
+    expect(fake.sqlMode()).toBe(NOT_STRICT);
+  });
+
+  it("sends nothing about the mode when the session is already strict", async () => {
+    for (const mode of ["STRICT_TRANS_TABLES", "ONLY_FULL_GROUP_BY,STRICT_ALL_TABLES"]) {
+      const fake = makeRequiredColumnsQI(C5_COLUMNS, {}, mode);
+      await requireColumns(fake.queryInterface, C5_COLUMNS, fake.TX as never);
+      expect(fake.statements.filter((s) => /sql_mode/.test(s) && !/^SELECT/.test(s))).toEqual([]);
+    }
+  });
+
+  it("a NULL that slips in after the guard fails the MODIFY even when the session was not strict, and is never turned into a value", async () => {
+    const fake = makeRequiredColumnsQI(C5_COLUMNS, { "students.schoolid": { nulls: ["late"] } }, NOT_STRICT);
+    await expect(requireColumns(fake.queryInterface, C5_COLUMNS, fake.TX as never)).rejects.toThrow("Invalid use of NULL value");
+    expect(fake.coerced).toEqual([]);
+    expect(fake.cols.get("students.schoolid")!.nullable).toBe(true);
+    expect(fake.sqlMode()).toBe(NOT_STRICT);
+  });
+});
+
 describe("relaxColumns: the down() mirror", () => {
   it("makes each required column nullable again, in reverse order, and writes no data", async () => {
     const fake = makeRequiredColumnsQI(C5_COLUMNS, Object.fromEntries(C5_COLUMNS.map((c) => [`${c.table}.${c.column}`, { nullable: false }])));
