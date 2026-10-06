@@ -178,11 +178,10 @@ export const ownerForNewContent = (org: OrgContext | undefined): string => {
 
 /**
  * Attaching refuses a cross-owner link. When BOTH sides have an owner and the
- * owners differ, the attach is refused with 400. When either side is still
- * unowned (content that exists before the owners are assigned), the attach is
- * ALLOWED: this is deliberate for the time being, so that existing content keeps
- * working until every row has an owner. It becomes strict (an unowned side is
- * refused too) when the owner column is made required.
+ * owners differ, the attach is refused with 400. Every row of the six content
+ * tables has an owner (the owner column is required), so a side with none is a
+ * row that was not found; the routes check existence on their own, so it is let
+ * through here and answered there.
  * The message names nothing private: no organisation, no row.
  */
 export const assertSameOwner = (a: Owner | undefined, b: Owner | undefined): void => {

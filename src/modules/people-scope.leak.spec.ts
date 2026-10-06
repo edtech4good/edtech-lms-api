@@ -380,10 +380,12 @@ describe("people and schools are confined to the caller's organisation", () => {
       expect(res.status).toBe(403);
       db.nothingCreated();
     });
-    it("a platform user not acting names the organisation in the body (or none)", async () => {
+    it("a platform user not acting names the organisation in the body; naming none is refused (400), nothing is created", async () => {
       await send("a platform user not acting", "post", "/school/create", body({ schoolname: "សាលា ក", organisationid: Y, countryid: C2 })).expect(200);
-      await send("a platform user not acting", "post", "/school/create", body({ schoolname: "សាលា ខ" })).expect(200);
-      expect(db.createdIn("schools").map((s) => s.organisationid ?? null)).toEqual([Y, null]);
+      const res = await send("a platform user not acting", "post", "/school/create", body({ schoolname: "សាលា ខ" }));
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "organisationid", message: "Choose the organisation this school belongs to." }]);
+      expect(db.createdIn("schools").map((s) => s.organisationid ?? null)).toEqual([Y]);
     });
     it("a server token is refused (401): the route does not admit it", async () => {
       const res = await refuses("a server token", "post", "/school/create", body());

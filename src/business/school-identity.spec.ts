@@ -286,10 +286,19 @@ describe("withSchoolIds", () => {
     await expect(withSchoolIds([{ schoolid: "gone", schoolname: "x" }])).rejects.toBeInstanceOf(ApiError);
   });
 
-  it("leaves a row with neither name nor id alone (the columns are nullable)", async () => {
+  it("refuses a row with neither name nor id (400, nothing is returned to insert): a learner or login always belongs to a school", async () => {
     fakeMysql();
-    const [out] = await withSchoolIds([{ n: 1 } as Row]);
-    expect(out).toEqual({ n: 1 });
+    const err = await withSchoolIds([{ n: 1 } as Row]).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.getStatus()).toBe(400);
+    expect(err.message).toBe("Choose a school.");
+    expect(err.fields).toEqual([{ field: "schoolid", message: "Choose a school." }]);
+  });
+
+  it("refuses a row whose name and id are both empty, and a batch where only the second row names no school", async () => {
+    fakeMysql();
+    await expect(withSchoolIds([{ schoolid: "", schoolname: "" } as Row])).rejects.toMatchObject({ message: "Choose a school." });
+    await expect(withSchoolIds([{ schoolname: "Sample School" }, { n: 2 } as Row])).rejects.toMatchObject({ message: "Choose a school." });
   });
 
   it("fails the whole batch when one row names no school", async () => {

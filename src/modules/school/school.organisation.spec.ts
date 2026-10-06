@@ -184,15 +184,19 @@ describe("schools write their organisation", () => {
     describe("the platform", () => {
       const token = callers.platform;
 
-      it("may omit the organisation: the school is written with none (the column stays nullable until the backfill has run)", async () => {
-        await create(token, school()).expect(200);
-        expect(created[0].organisationid).toBeNull();
+      it("naming no organisation is refused (400 on organisationid): a school always has one, so nothing is written", async () => {
+        const res = await create(token, school());
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual([{ field: "organisationid", message: "Choose the organisation this school belongs to." }]);
         expect(lockCalls).toEqual([]);
+        nothingWritten();
       });
 
-      it("may send null: the same", async () => {
-        await create(token, school({ organisationid: null })).expect(200);
-        expect(created[0].organisationid).toBeNull();
+      it("sending null is refused the same way", async () => {
+        const res = await create(token, school({ organisationid: null }));
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual([{ field: "organisationid", message: "Choose the organisation this school belongs to." }]);
+        nothingWritten();
       });
 
       it("may name an organisation: written, row locked inside the transaction, country must be one of its countries", async () => {
@@ -282,9 +286,12 @@ describe("schools write their organisation", () => {
         nothingWritten();
       });
 
-      it("null clears the organisation (no country check then)", async () => {
-        await update(token, SCHOOL_IN_X, school({ organisationid: null, countryid: C3 })).expect(200);
-        expect(table[0].organisationid).toBeNull();
+      it("null is refused (400 on organisationid): a school cannot be left without an organisation, and keeps the one it has", async () => {
+        const res = await update(token, SCHOOL_IN_X, school({ organisationid: null, countryid: C3 }));
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual([{ field: "organisationid", message: "A school must belong to an organisation. Choose one." }]);
+        expect(table[0].organisationid).toBe(X);
+        nothingWritten();
       });
     });
 
@@ -331,9 +338,9 @@ describe("schools write their organisation", () => {
       });
     });
 
-    it("a school with no organisation yet takes any curriculum (allowed until the owners are assigned)", async () => {
-      await create(callers.platform, school({ curriculums: [CX, CY] })).expect(200);
-      expect(created[0].organisationid).toBeNull();
+    it("the platform creating a school in an organisation is held to the same rule: a curriculum of another organisation is refused (400), nothing written", async () => {
+      refusal(await create(callers.platform, school({ organisationid: X, curriculums: [CX, CY] })));
+      nothingWritten();
     });
 
     it("the platform moving a school to another organisation re-checks every curriculum it has", async () => {

@@ -30,7 +30,7 @@ import { StudentBusiness } from "./student.business";
  */
 export type SchoolWrite = Omit<schoolsAttributes, "organisationid"> & { organisationid?: string | null };
 
-/** Every curriculum in `ids` must have the school's owner (or none yet: see `assertSameOwner`). */
+/** Every curriculum in `ids` must have the school's owner (see `assertSameOwner`). */
 const assertCurriculumsFitOwner = async (owner: string | null | undefined, ids: unknown, transaction: Transaction) => {
   for (const id of Array.isArray(ids) ? (ids as string[]) : []) {
     assertSameOwner(owner ?? null, await ownerOfCurriculum(id, transaction));
