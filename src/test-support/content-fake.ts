@@ -25,7 +25,12 @@ import { schools } from "src/models/data-models/school";
 import { schoolusers } from "src/models/data-models/schoolusers";
 import { rpiuseraccess } from "src/models/data-models/rpiuseraccess";
 import { standards } from "src/models/data-models/standard";
+import { studentactives } from "src/models/data-models/studentactives";
 import { studentappusages } from "src/models/data-models/studentappusage";
+import { studentlearningprogress } from "src/models/data-models/studentlearningprogress";
+import { studentpoints } from "src/models/data-models/studentpoints";
+import { studentprogressquestions } from "src/models/data-models/studentprogressquestions";
+import { logfiles } from "src/models/data-models/logfiles";
 import { studentgradesprogress } from "src/models/data-models/studentgradesprogress";
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
@@ -92,6 +97,12 @@ const MODELS = {
   rpiuseraccess: [rpiuseraccess, "rpiuseraccessid"],
   studentappusages: [studentappusages, "studentappusageid"],
   syncs: [syncs, "syncid"],
+  // what a teacher's log upload writes
+  studentactives: [studentactives, "studentactiveid"],
+  studentlearningprogress: [studentlearningprogress, "studentlearningprogressid"],
+  studentpoints: [studentpoints, "studentpointid"],
+  studentprogressquestions: [studentprogressquestions, "studentprogressquestionid"],
+  logfiles: [logfiles, "logfileid"],
 } as const;
 
 /**

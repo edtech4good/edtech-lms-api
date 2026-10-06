@@ -1,6 +1,4 @@
-import { ApiError } from "src/models/ApiError";
-import { ErrorCode } from "src/models/enums/errorcode.enum";
-import { STAFF_SCHOOL_ROLES } from "src/models/enums/school.role.enum";
+import { uploadingTeacher } from "./log-scope";
 import { Op, Transaction } from "sequelize";
 import { logfiles } from "src/models/data-models/logfiles";
 import { rpiuseraccess } from "src/models/data-models/rpiuseraccess";
@@ -291,22 +289,9 @@ export class LogBusiness {
     }, {transaction: this._transaction})
   }
 
-  recordSyncActivity = async (user: LmsUserToken, filename: string, offlineonline: boolean) => {
-    if(!user.schooluserid) throw new ApiError(ErrorCode.NOT_ALLOWED, "Only a teacher account can upload logs.");
-    const teacher = await schoolusers.findOne({
-      where: { schooluserid: user.schooluserid}
-    });
-    if(!teacher) throw new ApiError(ErrorCode.NOT_FOUND, "That teacher doesn't exist.");
-    // Defence in depth alongside the role check at auth/school/login
-    // (#90): a school-user token predating that fix, or
-    // any other future school-token route, must not let a student token
-    // write into central's log tables. Allow-list (not `!== STUDENT`): an
-    // unmapped role value must also be refused. Also refuses a disabled or
-    // deleted teacher account, whose already-issued token otherwise stays
-    // live for its full lifetime.
-    if(!STAFF_SCHOOL_ROLES.includes(teacher.schooluserrole) || teacher.isdisabled || teacher.isdeleted) {
-      throw new ApiError(ErrorCode.NOT_ALLOWED, "Only a teacher account can upload logs.");
-    }
+  /** `teacher`: the uploader, when the caller has already resolved (and checked) them with `uploadingTeacher`. */
+  recordSyncActivity = async (user: LmsUserToken, filename: string, offlineonline: boolean, teacher?: schoolusers) => {
+    teacher = teacher ?? (await uploadingTeacher(user));
     await syncs.create({
       syncid: uuidv4(),
       filename,
