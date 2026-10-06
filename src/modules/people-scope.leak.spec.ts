@@ -384,6 +384,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       await send("a platform user not acting", "post", "/school/create", body({ schoolname: "សាលា ក", organisationid: Y, countryid: C2 })).expect(200);
       const res = await send("a platform user not acting", "post", "/school/create", body({ schoolname: "សាលា ខ" }));
       expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Act as an organisation first (use the organisation switcher), or choose the organisation this school belongs to.");
       expect(res.body.fields).toEqual([{ field: "organisationid", message: "Act as an organisation first (use the organisation switcher), or choose the organisation this school belongs to." }]);
       expect(db.createdIn("schools").map((s) => s.organisationid ?? null)).toEqual([Y]);
     });

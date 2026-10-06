@@ -43,8 +43,9 @@ const CHOOSE_ORGANISATION =
 const KEEP_ORGANISATION =
   "A school must belong to an organisation. Choose one, or leave the organisation out to keep the current one.";
 
+/** The text is the top-level message too: the admin shows only that, and a field entry alone would hide the hint. */
 const organisationRequired = (message: string) =>
-  new ApiError(ErrorCode.INVALID_INPUT, "Some of the information isn't valid.", {
+  new ApiError(ErrorCode.INVALID_INPUT, message, {
     fields: [{ field: "organisationid", message }],
   });
 
