@@ -78,7 +78,7 @@ export class SubjectBusiness {
       return false;
     }
   };
-  isexistssubjectName = async (subject: subjectsAttributes) => {
+  isexistssubjectName = async (subject: Omit<subjectsAttributes, "organisationid">) => {
     const where: WhereOptions<subjectsAttributes> = {
       subjectname: subject.subjectname,
       isdeleted: false,

@@ -203,7 +203,7 @@ export class CurriculumBusiness {
       return false;
     }
   };
-  isexistsCurriculumName = async (curriculum: curriculumsAttributes) => {
+  isexistsCurriculumName = async (curriculum: Omit<curriculumsAttributes, "organisationid">) => {
     let where: WhereOptions<curriculumsAttributes> = {
       curriculumname: curriculum.curriculumname,
       isdeleted: false,

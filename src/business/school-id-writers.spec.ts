@@ -630,8 +630,11 @@ describe("school names are trimmed on create and update", () => {
 
   it("createschool stores the trimmed name", async () => {
     const create = jest.spyOn(schools, "create").mockResolvedValue({} as never);
-    await new SchoolBusiness().createschool({ ...input } as never, { lmsuserid: "u" } as never, PLATFORM);
-    expect(create.mock.calls[0][0]).toMatchObject({ schoolname: "Sample School" });
+    const ORG = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    jest.spyOn(organisations, "findOne").mockResolvedValue({ organisationid: ORG, isdeleted: false } as never);
+    jest.spyOn(organisationcountry, "count").mockResolvedValue(1 as never);
+    await new SchoolBusiness().createschool({ ...input, organisationid: ORG } as never, { lmsuserid: "u" } as never, PLATFORM);
+    expect(create.mock.calls[0][0]).toMatchObject({ schoolname: "Sample School", organisationid: ORG });
   });
 
   it("the duplicate-name check and the edit check look the school up by the trimmed name", async () => {

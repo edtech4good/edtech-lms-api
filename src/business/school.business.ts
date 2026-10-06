@@ -23,12 +23,31 @@ import { v4 as uuidv4 } from "uuid";
 import { CurriculumBusiness } from "./curriculum.business";
 import { StudentBusiness } from "./student.business";
 
-/** Every curriculum in `ids` must have the school's owner (or none yet: see `assertSameOwner`). */
+/**
+ * What a create or edit of a school carries in: the school's own columns, and the organisation the request ASKED for
+ * (`undefined` when it named none, `null` when it named "no organisation"). The organisation the school is stored with is
+ * decided here (`schoolOrganisation`), never taken from the request as it stands.
+ */
+export type SchoolWrite = Omit<schoolsAttributes, "organisationid"> & { organisationid?: string | null };
+
+/** Every curriculum in `ids` must have the school's owner (see `assertSameOwner`). */
 const assertCurriculumsFitOwner = async (owner: string | null | undefined, ids: unknown, transaction: Transaction) => {
   for (const id of Array.isArray(ids) ? (ids as string[]) : []) {
     assertSameOwner(owner ?? null, await ownerOfCurriculum(id, transaction));
   }
 };
+
+/** The admin's school form has no organisation field, so the message names the switcher (as the content-create message does). */
+const CHOOSE_ORGANISATION =
+  "Act as an organisation first (use the organisation switcher), or choose the organisation this school belongs to.";
+const KEEP_ORGANISATION =
+  "A school must belong to an organisation. Choose one, or leave the organisation out to keep the current one.";
+
+/** The text is the top-level message too: the admin shows only that, and a field entry alone would hide the hint. */
+const organisationRequired = (message: string) =>
+  new ApiError(ErrorCode.INVALID_INPUT, message, {
+    fields: [{ field: "organisationid", message }],
+  });
 
 export class SchoolBusiness {
   getschoolbyname = (schoolname: string) =>
@@ -70,10 +89,10 @@ export class SchoolBusiness {
    *
    *  - Caller scope organisation X: the school is X's. A requested organisation,
    *    if one was sent, must be X (else 403).
-   *  - Caller scope platform: the school gets the organisation the request names,
-   *    or none when it names none. (`schools.organisationid` stays nullable until
-   *    the backfill has assigned every existing school; the next tightening
-   *    makes it required, and this then becomes "must name one".)
+   *  - Caller scope platform: the school gets the organisation the request names.
+   *    A school always has an organisation (`schools.organisationid` is required),
+   *    so a platform caller who is not acting as an organisation and names none
+   *    (or names `null`) is refused with 400 before anything is written.
    * An organisation that is written must exist and not be deleted (the row is
    * locked and read here: the foreign key does not know about `isdeleted`), and
    * the school's country must be one the organisation is linked to
@@ -99,6 +118,9 @@ export class SchoolBusiness {
         resulting = scope.organisationid;
       } else {
         resulting = opts.requested === undefined ? null : opts.requested;
+        if (resulting === null) {
+          throw organisationRequired(CHOOSE_ORGANISATION);
+        }
       }
     } else {
       // Updating: only a platform caller names an organisation (the key is
@@ -107,6 +129,10 @@ export class SchoolBusiness {
         throw new ApiError(ErrorCode.NOT_ALLOWED);
       }
       resulting = opts.requested === undefined ? opts.current : opts.requested;
+      if (opts.requested === null) {
+        // The column is being written, and it cannot be emptied.
+        throw organisationRequired(KEEP_ORGANISATION);
+      }
     }
     if (resulting !== null) {
       // The organisation row is locked (shared) whenever the school has or is being
@@ -133,28 +159,29 @@ export class SchoolBusiness {
     return resulting;
   };
 
-  createschool = async (school: schoolsAttributes, user: LmsUserToken, org: OrgContext) => {
+  createschool = async (school: SchoolWrite, user: LmsUserToken, org: OrgContext) => {
     const requested = school.organisationid;
     scopeOf(org);
     const transaction = await dbinstance.getdbinstance().transaction();
     try {
-      school.organisationid = await this.schoolOrganisation({
+      // Never null here: for a create `schoolOrganisation` refuses before it returns one.
+      const organisationid = (await this.schoolOrganisation({
         org,
         requested,
         current: null,
         creating: true,
         countryid: school.countryid,
         transaction,
-      });
+      })) as string;
       // A curriculum of another organisation cannot be attached to the school.
-      await assertCurriculumsFitOwner(school.organisationid, school.curriculums, transaction);
+      await assertCurriculumsFitOwner(organisationid, school.curriculums, transaction);
       school.schoolid = uuidv4();
       // Surrounding whitespace is never part of a school's name: a name stored
       // with it cannot be matched by the writers that look schools up by name.
       school.schoolname = school.schoolname.trim();
       school.isdeleted = false;
       school.created_by = user.lmsuserid;
-      const created = await schools.create(school, { transaction });
+      const created = await schools.create({ ...school, organisationid }, { transaction });
       await transaction.commit();
       return created;
     } catch (e) {
@@ -242,7 +269,7 @@ export class SchoolBusiness {
    * (UPDATE) and then only COUNTS schools without a lock, so it never waits for a
    * school row; the other order (organisation then school) exists nowhere.
    */
-  updateschoolName = async (school: schoolsAttributes, user: LmsUserToken, org: OrgContext) => {
+  updateschoolName = async (school: SchoolWrite, user: LmsUserToken, org: OrgContext) => {
     const requested = school.organisationid;
     scopeOf(org);
     const transaction = await dbinstance.getdbinstance().transaction();
@@ -280,7 +307,8 @@ export class SchoolBusiness {
       tempdt.updated_by = user.lmsuserid;
       const fields: (keyof schoolsAttributes)[] = ["schoolname", "countryid", "curriculums", "updated_at", "updated_by"];
       if (requested !== undefined) {
-        tempdt.organisationid = resulting;
+        // `resulting` is a live organisation's id: an update that names the column never empties it.
+        tempdt.organisationid = resulting as string;
         fields.push("organisationid");
       }
       // uitheme is optional on this endpoint (branding/logo upload is a
@@ -327,7 +355,7 @@ export class SchoolBusiness {
     await tempdt.save({ fields: ["isdeleted", "deleted_at", "deleted_by"] });
     return true;
   };
-  isexistsschoolName = async (school: schoolsAttributes) => {
+  isexistsschoolName = async (school: Omit<schoolsAttributes, "organisationid">) => {
     const where: WhereOptions<schoolsAttributes> = {
       schoolname: school.schoolname,
       isdeleted: false,

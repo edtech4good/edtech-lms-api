@@ -7,7 +7,7 @@ export interface schoolsAttributes {
   schoolid: string;
   schoolname: string;
   countryid: string;
-  organisationid?: string | null;
+  organisationid: string;
   curriculums: Array<string>;
   expectedcontribution?: number;
   expectedusage?: number;
@@ -24,14 +24,14 @@ export interface schoolsAttributes {
 
 export type schoolsPk = "schoolid";
 export type schoolsId = schools[schoolsPk];
-export type schoolsOptionalAttributes = "schoolid" | "isdeleted" | "uitheme" | "brandingconfig" | "organisationid";
+export type schoolsOptionalAttributes = "schoolid" | "isdeleted" | "uitheme" | "brandingconfig";
 export type schoolsCreationAttributes = Optional<schoolsAttributes, schoolsOptionalAttributes>;
 
 export class schools extends Model<schoolsAttributes, schoolsCreationAttributes> implements schoolsAttributes {
   schoolid!: string;
   schoolname!: string;
   countryid!: string;
-  organisationid?: string | null;
+  organisationid!: string;
   curriculums!: Array<string>;
   expectedcontribution!: number;
   expectedusage!: number;
@@ -83,7 +83,7 @@ export class schools extends Model<schoolsAttributes, schoolsCreationAttributes>
       },
       organisationid: {
         type: DataTypes.STRING(36),
-        allowNull: true,
+        allowNull: false,
         references: {
           model: 'organisations',
           key: 'organisationid'

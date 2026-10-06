@@ -8,7 +8,7 @@ export interface documenttagsAttributes {
   isdeleted: Boolean;
   created_at?: Date;
   created_by?: string;
-  organisationid?: string | null;
+  organisationid: string;
   updated_at?: Date;
   updated_by?: string;
   deleted_at?: Date;
@@ -17,7 +17,7 @@ export interface documenttagsAttributes {
 
 export type documenttagsPk = "documenttagid";
 export type documenttagsId = documenttags[documenttagsPk];
-export type documenttagsOptionalAttributes = "documenttagid" | "isdeleted" | "organisationid";
+export type documenttagsOptionalAttributes = "documenttagid" | "isdeleted";
 export type documenttagsCreationAttributes = Optional<documenttagsAttributes, documenttagsOptionalAttributes>;
 
 export class documenttags extends Model<documenttagsAttributes, documenttagsCreationAttributes> implements documenttagsAttributes {
@@ -26,7 +26,7 @@ export class documenttags extends Model<documenttagsAttributes, documenttagsCrea
   isdeleted!: Boolean;
   created_at!: Date;
   created_by!: string;
-  organisationid?: string | null;
+  organisationid!: string;
   updated_at!: Date;
   updated_by!: string;
   deleted_at!: Date;
@@ -56,7 +56,7 @@ export class documenttags extends Model<documenttagsAttributes, documenttagsCrea
     },
     organisationid: {
       type: DataTypes.STRING(36),
-      allowNull: true,
+      allowNull: false,
       references: {
         model: 'organisations',
         key: 'organisationid'

@@ -74,7 +74,7 @@ export class DocumentTagBusiness {
       return false;
     }
   };
-  isexistsdocumentTagName = async (documenttag: documenttagsAttributes) => {
+  isexistsdocumentTagName = async (documenttag: Omit<documenttagsAttributes, "organisationid">) => {
     const where: WhereOptions<documenttagsAttributes> = {
       documenttagname: documenttag.documenttagname,
       isdeleted: false,

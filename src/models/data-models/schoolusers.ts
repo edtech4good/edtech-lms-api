@@ -14,7 +14,7 @@ export interface schoolusersAttributes {
   schooluserstatus: number;
   schoolname?: string;
   /** Added by C4. The school's id: what a learner or login belongs to. `schoolname` is a stored copy. */
-  schoolid?: string;
+  schoolid: string;
   isdisabled: boolean;
   isdeleted?: boolean;
   created_at?: Date;
@@ -31,7 +31,7 @@ export interface schoolusersAttributes {
 
 export type schoolusersPk = "schooluserid";
 export type schoolusersId = schoolusers[schoolusersPk];
-export type schoolusersOptionalAttributes = "schooluserid" | "schooluserstatus" | "schoolname" | "schoolid" | "isdisabled" | "isdeleted";
+export type schoolusersOptionalAttributes = "schooluserid" | "schooluserstatus" | "schoolname" | "isdisabled" | "isdeleted";
 export type schoolusersCreationAttributes = Optional<schoolusersAttributes, schoolusersOptionalAttributes>;
 
 export class schoolusers extends Model<schoolusersAttributes, schoolusersCreationAttributes> implements schoolusersAttributes {
@@ -41,7 +41,7 @@ export class schoolusers extends Model<schoolusersAttributes, schoolusersCreatio
   schooluserrole!: number;
   schooluserstatus!: number;
   schoolname?: string;
-  schoolid?: string;
+  schoolid!: string;
   isdisabled!: boolean;
   isdeleted!: boolean;
   created_at!: Date;
@@ -99,7 +99,7 @@ export class schoolusers extends Model<schoolusersAttributes, schoolusersCreatio
     },
     schoolid: {
       type: DataTypes.STRING(36),
-      allowNull: true
+      allowNull: false
     },
     isdisabled: {
       type: DataTypes.BOOLEAN,

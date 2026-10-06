@@ -33,7 +33,7 @@ export interface studentsAttributes {
   schooltype?: string;
   schoolname?: string;
   /** Added by C4. The school's id: what a learner or login belongs to. `schoolname` is a stored copy. */
-  schoolid?: string;
+  schoolid: string;
   city: string;
   country: string;
   state: string;
@@ -97,7 +97,6 @@ export type studentsOptionalAttributes =
   | "standard"
   | "schooltype"
   | "schoolname"
-  | "schoolid"
   | "dateofjoin"
   | "gradeid"
   | "startinglevelid"
@@ -134,7 +133,7 @@ export class students
   standard?: string;
   schooltype?: string;
   schoolname?: string;
-  schoolid?: string;
+  schoolid!: string;
   city!: string;
   country!: string;
   state!: string;
@@ -290,7 +289,7 @@ export class students
         },
         schoolid: {
           type: DataTypes.STRING(36),
-          allowNull: true,
+          allowNull: false,
         },
         city: {
           type: DataTypes.STRING(250),

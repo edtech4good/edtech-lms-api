@@ -95,7 +95,7 @@ export class DocumentBusiness {
             return false;
         }
     };
-    isexistsdocumentName = async (document: documentsAttributes) => {
+    isexistsdocumentName = async (document: Omit<documentsAttributes, "organisationid">) => {
         const where: WhereOptions<documentsAttributes> = {
             documentname: document.documentname,
             isdeleted: false

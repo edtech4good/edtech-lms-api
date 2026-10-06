@@ -73,7 +73,7 @@ export class QuestionTagBusiness {
       return false;
     }
   };
-  isexistsquestionTagName = async (questiontag: questiontagsAttributes) => {
+  isexistsquestionTagName = async (questiontag: Omit<questiontagsAttributes, "organisationid">) => {
     const where: WhereOptions<questiontagsAttributes> = {
       questiontagname: questiontag.questiontagname,
       isdeleted: false,
