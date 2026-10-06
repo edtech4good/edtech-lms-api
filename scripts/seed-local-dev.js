@@ -12,6 +12,13 @@
  * to a value published in LOCAL_DEVELOPMENT.md. Dev credentials belong behind
  * an explicit opt-in command, guarded by ALLOW_LOCAL_DEV_SEED=true.
  *
+ * It also creates the two organisations the other local seeds put their rows in
+ * (`edtech4good` and `miv`, each linked to Cambodia: see lib/seed-organisations.js),
+ * so a fresh local database has them. The Super Admin belongs to NO organisation:
+ * it is the platform's own account. Every other seeded school, login and piece of
+ * content is created by `seed:demo` / `seed:dcrs`, inside its organisation. Each of
+ * those seeds also creates the organisation it needs, so they run in any order.
+ *
  * Stored value is bcrypt(md5(password)), matching hashPassword() in
  * src/services/password.service.ts. That file's verifyPassword() rejects
  * anything that is not a bcrypt hash (must start with `$2`), so a bare MD5
@@ -22,6 +29,7 @@ const dotenv = require("dotenv");
 const mysql = require("mysql2/promise");
 const bcryptjs = require("bcryptjs");
 const md5 = require("crypto-js/md5");
+const { ORGANISATIONS, ensureOrganisation } = require("./lib/seed-organisations");
 
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
@@ -65,6 +73,10 @@ async function main() {
       );
       process.exit(1);
     }
+    for (const code of Object.keys(ORGANISATIONS)) {
+      await ensureOrganisation(conn, code);
+    }
+    console.log(`Organisations ready: ${Object.values(ORGANISATIONS).map((o) => `${o.name} (${o.code})`).join(", ")}.`);
     console.log(`Superadmin password set to: ${plaintext}`);
     console.log("Local development only. Never run this against a real deployment.");
   } finally {

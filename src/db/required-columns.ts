@@ -87,7 +87,7 @@ export async function findViolations(
     })) as Array<{ n: number | string }>;
     const count = Number(counted[0]?.n ?? 0);
     let ids: string[] = [];
-    if (count > 0) {
+    if (count > 0 && limit > 0) {
       const cap = Number.isFinite(limit) ? ` LIMIT ${Math.max(0, Math.floor(limit))}` : "";
       const rows = (await db.query(
         `SELECT \`${pk}\` AS id FROM \`${table}\` WHERE \`${column}\` IS NULL ORDER BY \`${pk}\`${cap}`,
