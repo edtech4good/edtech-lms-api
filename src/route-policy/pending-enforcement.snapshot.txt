@@ -4,6 +4,3 @@
 # One route per line, sorted by path then method: METHOD /path  policy
 # `+apikey` marks a route whose guards also admit the application API key.
 # Generated: `npm run routes:policy -- --write`. Checked by route-inventory.spec.ts.
-GET /country/all  owned
-PUT /log/import  owned
-GET /sync/report-data  server+apikey

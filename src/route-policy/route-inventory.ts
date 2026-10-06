@@ -99,7 +99,7 @@ export interface RouteRecord {
    * CheckPermissionsGuard (if present) asks for no permission.
    */
   schoolUserAdmitted: boolean;
-  /** The spec file an `owned` route names as proof (`@OrgPolicy("owned", { enforcedBy })`), as declared. */
+  /** The spec file an `owned` or `server` route names as proof (`@OrgPolicy("owned", { enforcedBy })`), as declared. */
   enforcedBy: string | undefined;
   /**
    * True when that spec file exists under the repository and has this route's
@@ -429,7 +429,7 @@ export async function enumerateRoutes(): Promise<RouteRecord[]> {
                 schoolUserAdmitted,
                 enforcedBy: policy?.enforcedBy,
                 enforcedByProven:
-                  policy?.policy === "owned" && specProvesRoute(policy.enforcedBy, `${method} ${path}`),
+                  isSpecProvable(policy?.policy) && specProvesRoute(policy?.enforcedBy, `${method} ${path}`),
               });
             }
           }
@@ -467,10 +467,14 @@ export const countByPolicy = (routes: RouteRecord[]): Record<string, number> => 
   return counts;
 };
 
+/** The policies a route proves with a named spec (`enforcedBy`): the rest are backed by a guard, or by nothing. */
+export const isSpecProvable = (policy: string | undefined): boolean => policy === "owned" || policy === "server";
+
 /**
  * Declaring a policy does not enforce it. A route is "pending enforcement"
  * while its policy is declared but no guard backs it: every `platform` route
- * without PlatformGuard, every `owned` route, every `server` route. `public`,
+ * without PlatformGuard, every `owned` and every `server` route that no proving
+ * spec backs (`enforcedBy`, see specProvesRoute). `public`,
  * `self` and `global` have nothing further to enforce here (their guards are
  * the access guard they already have). As later work packages add the guards
  * and query filters, routes leave this list (and the snapshot that pins it,
@@ -478,12 +482,11 @@ export const countByPolicy = (routes: RouteRecord[]): Record<string, number> => 
  */
 export const isPendingEnforcement = (route: RouteRecord): boolean =>
   (route.policy === "platform" && !route.hasPlatformGuard) ||
-  (route.policy === "owned" && !route.enforcedByProven) ||
-  route.policy === "server";
+  (isSpecProvable(route.policy) && !route.enforcedByProven);
 
 /**
  * `yes`: a guard backs the policy (self and global routes, and platform routes
- * with PlatformGuard), or an `owned` route names a spec that proves it
+ * with PlatformGuard), or an `owned` or `server` route names a spec that proves it
  * (`enforcedBy`, see specProvesRoute). `n/a`: public routes, which no guard
  * backs and none is needed. `pending`: see isPendingEnforcement.
  */
@@ -577,8 +580,8 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "not enforce it: enforcement arrives in later packages. The **Enforced**",
     "column says which routes are already backed (`yes`) and which are not yet",
     "(`pending`); `public` routes show `n/a`, because nothing backs them. A guard",
-    "backs a route; an `owned` route counts as enforced only when it names, with",
-    "`@OrgPolicy(\"owned\", { enforcedBy })`, a spec file that exists and has the",
+    "backs a route; an `owned` or a `server` route counts as enforced only when it",
+    "names, with `@OrgPolicy(\"owned\", { enforcedBy })` (or `\"server\"`), a spec file that exists and has the",
     "route's `METHOD /path` in the title of a test that runs and calls `expect(`",
     "(the **Proved by** column). That is a signpost: it shows that a test naming",
     "the route exists and asserts something; whether its assertions are",
@@ -588,7 +591,7 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "",
     PENDING_MEANING,
     "",
-    `Of **${routes.length}** routes, **${enforced}** are enforced (by a guard: self, global, and platform routes with \`PlatformGuard\`; or, for an owned route, by the spec it names), **${notApplicable}** are not applicable (public) and **${pending}** are pending.`,
+    `Of **${routes.length}** routes, **${enforced}** are enforced (by a guard: self, global, and platform routes with \`PlatformGuard\`; or, for an owned or server route, by the spec it names), **${notApplicable}** are not applicable (public) and **${pending}** are pending.`,
     "",
     "| Policy | Routes | Enforced | Not applicable | Pending |",
     "|---|---|---|---|---|",
@@ -609,8 +612,8 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "",
     "## Columns",
     "",
-    "- **Enforced**: `yes` when a guard already backs the policy, or an `owned` route has a spec that proves it; `n/a` for `public` routes (nothing backs them); `pending` otherwise.",
-    "- **Proved by**: for an `owned` route that is enforced, the spec file named by `enforcedBy`.",
+    "- **Enforced**: `yes` when a guard already backs the policy, or an `owned` or `server` route has a spec that proves it; `n/a` for `public` routes (nothing backs them); `pending` otherwise.",
+    "- **Proved by**: for an `owned` or `server` route that is enforced, the spec file named by `enforcedBy`.",
     "- **API key**: `yes` when every `AccessGuard` on the route lists the application API key, so a caller with no user gets through.",
     "- **School-user token**: `yes` when a school-user (teacher or classroom device) access token gets through every guard on the route, derived from the guard metadata: every `AccessGuard` is the access token type with no role list, there is no `PlatformGuard`, and no permission is required. Feature switches such as `LogImportGuard` aside.",
     "",
