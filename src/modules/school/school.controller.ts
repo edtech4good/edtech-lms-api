@@ -32,7 +32,7 @@ import {
   BusinessValidationInterceptor,
   SchemaValidationInterceptor,
 } from "src/interceptors";
-import { schoolsAttributes } from "src/models/data-models/school";
+import type { SchoolWrite } from "src/business/school.business";
 import { Role, TokenType } from "src/models/enums";
 import { Permission } from "src/models/enums/permissions.enum";
 import { IMultiPaging } from "src/models/IPaging";
@@ -290,7 +290,7 @@ export class SchoolController {
     @User() user: LmsUserToken,
     @Org() org: OrgContext
   ): Promise<SchoolCreateResponse> {
-    const temp: schoolsAttributes = {
+    const temp: SchoolWrite = {
       schoolname: body.schoolname,
       countryid: body.countryid,
       curriculums: body.curriculums,
@@ -393,7 +393,7 @@ export class SchoolController {
     @User() user: LmsUserToken,
     @Org() org: OrgContext
   ): Promise<SchoolCreateResponse> {
-    const data = await new SchoolBusiness().updateschoolName(<schoolsAttributes>{
+    const data = await new SchoolBusiness().updateschoolName(<SchoolWrite>{
       schoolid: schoolid,
       schoolname: body.schoolname,
       countryid: body.countryid,

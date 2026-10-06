@@ -67,6 +67,11 @@ const lockedRead = (transaction?: Transaction) => ({
   lock: transaction ? transaction.LOCK.SHARE : undefined,
 });
 
+const schoolRequired = () =>
+  new ApiError(ErrorCode.INVALID_INPUT, "Choose a school.", {
+    fields: [{ field: "schoolid", message: "Choose a school." }],
+  });
+
 const noSuchSchool = (field: string) =>
   new ApiError(ErrorCode.INVALID_INPUT, "That school doesn't exist.", {
     fields: [{ field, message: "That school doesn't exist." }],
@@ -207,7 +212,9 @@ export async function requireSchoolByName(
  *    one; an id that matches no school fails the write;
  *  - a row with only a `schoolname` gets the school resolved from it, once per
  *    distinct name; a name that matches no school fails the whole write;
- *  - a row with neither is left alone (the columns are nullable).
+ *  - a row with neither fails the write (400, "Choose a school."): a learner and a
+ *    login always belong to a school (`schoolid` is required), so nothing is
+ *    inserted for a row that names none.
  */
 export async function withSchoolIds<T extends { schoolid?: string | null; schoolname?: string | null }>(
   rows: T[],
@@ -235,8 +242,7 @@ export async function withSchoolIds<T extends { schoolid?: string | null; school
         byName.set(row.schoolname, school);
       }
     } else {
-      out.push(row);
-      continue;
+      throw schoolRequired();
     }
     out.push({ ...row, schoolid: school.schoolid, schoolname: school.schoolname });
   }
