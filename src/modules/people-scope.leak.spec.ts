@@ -144,7 +144,7 @@ const seed = () => {
   db.add("schools", { schoolid: S_Y, schoolname: NAME_Y, organisationid: Y, countryid: C2, curriculums: [CUR_Y] });
   db.add("schools", { schoolid: S_U, schoolname: NAME_U, organisationid: null, countryid: C3, curriculums: [] });
   const login = (schooluserid: string, school: string, name: string, role: SchoolRole, who: string) =>
-    db.add("schoolusers", { schooluserid, schoolusername: who, schooluserrole: role, schoolid: school, schoolname: name, schooluserstatus: true, schooluserpasswordhash: "hash" });
+    db.add("schoolusers", { schooluserid, schoolusername: who, schooluserrole: role, schoolid: school, schoolname: name, schooluserstatus: true, isdisabled: false, schooluserpasswordhash: "hash" });
   const learner = (studentid: string, schooluserid: string, school: string, name: string, first: string, klass: string, cur: string) =>
     db.add("students", {
       studentid, schooluserid, schoolid: school, schoolname: name, studentfirstname: first, studentlastname: "ចាន់", standard: klass,
@@ -1485,12 +1485,19 @@ describe("people and schools are confined to the caller's organisation", () => {
       expect(idsOf(foreign.body.data, "countryid")).toEqual([]);
     });
     it("a teacher whose school belongs to no organisation, one whose login is not there, and one whose login is deleted read no country", async () => {
-      db.add("schoolusers", { schooluserid: uuid(431), schoolusername: "teacheru", schooluserrole: SchoolRole.TEACHER, schoolid: S_U, schoolname: NAME_U, schooluserstatus: true, schooluserpasswordhash: "hash" });
-      db.add("schoolusers", { schooluserid: uuid(432), schoolusername: "teacherd", schooluserrole: SchoolRole.TEACHER, schoolid: S_X, schoolname: NAME_X, schooluserstatus: true, schooluserpasswordhash: "hash", isdeleted: true });
+      db.add("schoolusers", { schooluserid: uuid(431), schoolusername: "teacheru", schooluserrole: SchoolRole.TEACHER, schoolid: S_U, schoolname: NAME_U, schooluserstatus: true, isdisabled: false, schooluserpasswordhash: "hash" });
+      db.add("schoolusers", { schooluserid: uuid(432), schoolusername: "teacherd", schooluserrole: SchoolRole.TEACHER, schoolid: S_X, schoolname: NAME_X, schooluserstatus: true, isdisabled: false, schooluserpasswordhash: "hash", isdeleted: true });
       for (const id of [uuid(431), uuid(432), teacherLoginId]) {
         const res = await asTeacher(id).expect(200);
         expect(idsOf(res.body.data, "countryid")).toEqual([]);
       }
+    });
+    it("a teacher whose login is disabled, and one whose school is deleted, read no country", async () => {
+      db.add("schoolusers", { schooluserid: uuid(433), schoolusername: "teachero", schooluserrole: SchoolRole.TEACHER, schoolid: S_X, schoolname: NAME_X, schooluserstatus: true, isdisabled: true, schooluserpasswordhash: "hash" });
+      expect(idsOf((await asTeacher(uuid(433)).expect(200)).body.data, "countryid")).toEqual([]);
+      expect(idsOf((await asTeacher(TCH_X).expect(200)).body.data, "countryid")).toEqual([C1]);
+      db.tables.schools.find((x) => x.schoolid === S_X)!.isdeleted = true;
+      expect(idsOf((await asTeacher(TCH_X).expect(200)).body.data, "countryid")).toEqual([]);
     });
     it("the school is the one on the login row, not the school name the token carries", async () => {
       const res = await request(app.getHttpServer()).get("/country/all")

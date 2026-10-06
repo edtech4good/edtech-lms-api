@@ -146,8 +146,8 @@ export class LogController {
       const tnx = await dbinstance.getdbinstance().transaction();
       const logbusiness = new LogBusiness(tnx);
       const zipAWSS3filename = `logupload-${new Date().getTime()}.zip`;
-      await logbusiness.recordSyncActivity(user, zipAWSS3filename, offline, teacher);
       try {
+        await logbusiness.recordSyncActivity(user, zipAWSS3filename, offline, teacher);
         const parentfileid = uuidv4();
         for await (const file of directory.files) {
           if(file.path === 'log.ini') {

@@ -229,8 +229,8 @@ export const findOwnedFeesRow = (org: OrgContext, schoolcontributeid: unknown, t
 /**
  * The organisation context of a school-user (teacher) token: the organisation that owns the school of the token's
  * `schoolusers` row (the row decides, not the school name the token carries), as a context for an organisation's
- * user. `null` when the login is unknown or deleted, has no school, or its school belongs to no organisation: such
- * a caller is in scope of no organisation, and a list for it is empty.
+ * user. `null` when the login is unknown, deleted or disabled, has no school, or its school is deleted or belongs to
+ * no organisation: such a caller is in scope of no organisation, and a list for it is empty.
  */
 export const schoolUserOrgContext = async (user: { schooluserid?: unknown }): Promise<OrgContext | null> => {
   if (typeof user.schooluserid !== "string" || user.schooluserid.length === 0) {
@@ -238,12 +238,12 @@ export const schoolUserOrgContext = async (user: { schooluserid?: unknown }): Pr
   }
   const login = await schoolusers.findOne({
     attributes: ["schoolid"],
-    where: { schooluserid: user.schooluserid, isdeleted: false },
+    where: { schooluserid: user.schooluserid, isdeleted: false, isdisabled: false },
   });
   if (!login?.schoolid) {
     return null;
   }
-  const school = await schools.findOne({ attributes: ["organisationid"], where: { schoolid: login.schoolid } });
+  const school = await schools.findOne({ attributes: ["organisationid"], where: { schoolid: login.schoolid, isdeleted: false } });
   return school?.organisationid ? { organisationid: school.organisationid, isplatform: false, permissions: [] } : null;
 };
 

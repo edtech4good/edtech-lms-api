@@ -723,9 +723,9 @@ describe("route inventory checks (synthetic routes, to prove they can fail)", ()
 describe("specProvesRoute (what makes an owned route count as enforced)", () => {
   let root: string;
   const write = (name: string, text: string) => {
-    mkdirSync(join(root, "specs"), { recursive: true });
-    writeFileSync(join(root, "specs", name), text);
-    return `specs/${name}`;
+    mkdirSync(join(root, "src", "specs"), { recursive: true });
+    writeFileSync(join(root, "src", "specs", name), text);
+    return `src/specs/${name}`;
   };
   const proves = (source: string, routeKey = "PUT /user/:id") => {
     const file = write(`case-${Math.random().toString(36).slice(2)}.spec.ts`, source);
@@ -796,10 +796,23 @@ describe("specProvesRoute (what makes an owned route count as enforced)", () => 
       expect(proves(`it("POST /user (list) works", () => { expect(1).toBe(1); });`, "POST /user")).toBe(true);
     });
 
+    it("a spec jest does not run: outside src/, or under a path jest ignores", () => {
+      const source = `it("GET /x", () => { expect(1).toBe(1); });`;
+      for (const dir of ["scripts", "test", "src/node_modules/pkg", "src/build", "src/dist", "."]) {
+        mkdirSync(join(root, dir), { recursive: true });
+        writeFileSync(join(root, dir, "real.spec.ts"), source);
+        expect(specProvesRoute(`${dir}/real.spec.ts`, "GET /x", root)).toBe(false);
+      }
+      // the same file under src/ proves it
+      mkdirSync(join(root, "src", "ok"), { recursive: true });
+      writeFileSync(join(root, "src", "ok", "real.spec.ts"), source);
+      expect(specProvesRoute("src/ok/real.spec.ts", "GET /x", root)).toBe(true);
+    });
+
     it("a file that does not exist, is not a spec, or leaves the repository", () => {
-      expect(specProvesRoute("specs/missing.spec.ts", "GET /x", root)).toBe(false);
+      expect(specProvesRoute("src/specs/missing.spec.ts", "GET /x", root)).toBe(false);
       write("plain.ts", `it("GET /x", () => { expect(1).toBe(1); });`);
-      expect(specProvesRoute("specs/plain.ts", "GET /x", root)).toBe(false);
+      expect(specProvesRoute("src/specs/plain.ts", "GET /x", root)).toBe(false);
       expect(specProvesRoute("../outside.spec.ts", "GET /x", root)).toBe(false);
       expect(specProvesRoute("/etc/hosts.spec.ts", "GET /x", root)).toBe(false);
       expect(specProvesRoute(undefined, "GET /x", root)).toBe(false);

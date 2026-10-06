@@ -46,6 +46,8 @@ const STU_U = uuid(405);
 const USR_X = uuid(411); // the logins of the learners
 const USR_X2 = uuid(412);
 const USR_X_GONE = uuid(413);
+const STU_Y_GONE = uuid(406); // deleted, school Y
+const USR_Y_GONE = uuid(416);
 const USR_Y = uuid(414);
 const USR_U = uuid(415);
 const TCH_X = uuid(421);
@@ -90,7 +92,7 @@ const TABLE_OF: Record<Kind, string> = {
 
 /** A learner of the fixtures: the id the rows carry as `studentid`, and the login they carry as a login id. */
 const who = {
-  x: [STU_X, USR_X], x2: [STU_X2, USR_X2], gone: [STU_X_GONE, USR_X_GONE], y: [STU_Y, USR_Y], u: [STU_U, USR_U], unknown: [MISSING, uuid(998)],
+  x: [STU_X, USR_X], x2: [STU_X2, USR_X2], gone: [STU_X_GONE, USR_X_GONE], ygone: [STU_Y_GONE, USR_Y_GONE], y: [STU_Y, USR_Y], u: [STU_U, USR_U], unknown: [MISSING, uuid(998)],
 } as const;
 type Learner = keyof typeof who;
 
@@ -132,6 +134,7 @@ const seed = () => {
   login(USR_X, S_X, SchoolRole.STUDENT, "learnerx");
   login(USR_X2, S_X, SchoolRole.STUDENT, "learnerx2");
   login(USR_X_GONE, S_X, SchoolRole.STUDENT, "learnergone");
+  login(USR_Y_GONE, S_Y, SchoolRole.STUDENT, "learnerygone");
   login(USR_Y, S_Y, SchoolRole.STUDENT, "learnery");
   login(USR_U, S_U, SchoolRole.STUDENT, "learneru");
   login(TCH_X, S_X, SchoolRole.TEACHER, "teacherx");
@@ -140,6 +143,9 @@ const seed = () => {
   learner(STU_X, USR_X, S_X);
   learner(STU_X2, USR_X2, S_X);
   learner(STU_X_GONE, USR_X_GONE, S_X, { isdeleted: true });
+  learner(STU_Y_GONE, USR_Y_GONE, S_Y, { isdeleted: true });
+  // a deleted learner's login is deleted with them
+  for (const id of [USR_X_GONE, USR_Y_GONE]) db.tables.schoolusers.find((u) => u.schooluserid === id)!.isdeleted = true;
   learner(STU_Y, USR_Y, S_Y);
   learner(STU_U, USR_U, S_U);
   db.add("studentprogress", { studentprogressid: SP_X, studentid: STU_X, ispass: 1 });
@@ -223,18 +229,23 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
     });
 
     describe.each(KINDS)("a %s row", (kind) => {
-      it.each(["y", "u", "unknown", "gone"] as Learner[])("of a learner who is %s (another school, no organisation, not there, deleted) refuses the whole upload, which holds X's own rows too", async (other) => {
+      it.each(["y", "u", "unknown", "ygone"] as Learner[])("of a learner who is %s (another school, no organisation, not there, deleted in another school) refuses the whole upload, which holds X's own rows too", async (other) => {
         await refused(teacher(TCH_X), logOf(["result", "x"], ["studentactives", "x"], [kind, other], ["access", "x"]));
+      });
+      it("of a learner of X's school who has been deleted is imported with the rest (the export carries history)", async () => {
+        const res = await upload(teacher(TCH_X), logOf(["result", "x"], [kind, "gone"]));
+        expect(res.status).toBe(200);
+        expect(db.createdIn(TABLE_OF[kind] as never).length).toBeGreaterThan(0);
       });
     });
 
     it("a learning-progress row of X's own learner that carries another school's login or learner as its `userid` refuses the upload", async () => {
-      for (const foreign of [USR_Y, STU_Y, TCH_Y, USR_X_GONE, MISSING]) {
+      for (const foreign of [USR_Y, STU_Y, TCH_Y, USR_Y_GONE, STU_Y_GONE, MISSING]) {
         const logdata = logOf(["studentlearningprogress", "x"]);
         (logdata.log.progress.studentlearningprogress[0] as Row).userid = foreign;
         await refused(teacher(TCH_X), logdata);
       }
-      for (const own of [USR_X, STU_X, TCH_X, null]) {
+      for (const own of [USR_X, STU_X, TCH_X, USR_X_GONE, STU_X_GONE, null]) {
         const logdata = logOf(["studentlearningprogress", "x"]);
         (logdata.log.progress.studentlearningprogress[0] as Row).userid = own;
         expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
@@ -242,7 +253,7 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
     });
 
     it("an access or usage row that names another school's teacher login, or one that is nobody's, refuses the upload", async () => {
-      for (const foreign of [TCH_Y, MISSING]) {
+      for (const foreign of [TCH_Y, USR_Y_GONE, MISSING]) {
         const access = logOf(["access", "x"]);
         (access.log.access[0] as Row).userid = foreign;
         await refused(teacher(TCH_X), access);
@@ -252,9 +263,89 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
       }
     });
 
+    // Every table is written by the primary key the upload gives, so a row that carries the key of a STORED row also names that row's learner.
+    const PK: Record<Kind, string> = {
+      access: "rpiuseraccessid", result: "studentprogressid", studentactives: "studentactiveid", studentlearningprogress: "studentlearningprogressid",
+      studentgradesprogress: "studentgradeprogressid", studentlevelsprogress: "studentlevelprogressid", studentlessonsprogress: "studentlessonprogressid",
+      studentpoints: "studentpointid", studentappusages: "studentappusageid",
+    };
+    const sectionOf = (logdata: ReturnType<typeof logOf>, kind: Kind): Row[] =>
+      kind === "access" ? logdata.log.access : kind === "result" ? logdata.log.result : logdata.log.progress[kind];
+    const STORED_KEY = uuid(7001);
+    const storedRow = (kind: Kind) => db.tables[TABLE_OF[kind]].filter((r) => r[PK[kind]] === STORED_KEY);
+
+    describe.each(KINDS)("a %s row that carries the key of a stored row", (kind) => {
+      const upload_ = (logdata: ReturnType<typeof logOf>) => {
+        sectionOf(logdata, kind)[0][PK[kind]] = STORED_KEY;
+        return logdata;
+      };
+      it.each(["y", "ygone", "u"] as Learner[])("that belongs to a learner of another school (%s), under X's learner, is refused and the stored row is left as it was", async (owner) => {
+        db.add(TABLE_OF[kind] as never, { ...rows[kind](who[owner][0], who[owner][1]), [PK[kind]]: STORED_KEY });
+        const before = JSON.stringify(storedRow(kind));
+        await refused(teacher(TCH_X), upload_(logOf([kind, "x"])));
+        expect(JSON.stringify(storedRow(kind))).toBe(before);
+      });
+      it("that belongs to a learner of X's school is updated in place, not added", async () => {
+        db.add(TABLE_OF[kind] as never, { ...rows[kind](STU_X2, USR_X2), [PK[kind]]: STORED_KEY });
+        expect((await upload(teacher(TCH_X), upload_(logOf([kind, "x"])))).status).toBe(200);
+        expect(storedRow(kind)).toHaveLength(1);
+        expect(storedRow(kind)[0]).toMatchObject(kind === "access" ? { userid: USR_X } : kind === "studentappusages" ? { schooluserid: USR_X } : { studentid: STU_X });
+      });
+      it("that belongs to nobody is a new row", async () => {
+        expect((await upload(teacher(TCH_X), upload_(logOf([kind, "x"])))).status).toBe(200);
+        expect(storedRow(kind)).toHaveLength(1);
+      });
+    });
+
+    it("a learning-progress row of X's own learner that carries the key of a stored row whose `userid` is another school's is refused", async () => {
+      db.add("studentlearningprogress", { ...rows.studentlearningprogress(STU_X, USR_Y), studentlearningprogressid: STORED_KEY });
+      const logdata = logOf(["studentlearningprogress", "x"]);
+      logdata.log.progress.studentlearningprogress[0].studentlearningprogressid = STORED_KEY;
+      await refused(teacher(TCH_X), logdata);
+    });
+
+    describe("a question", () => {
+      const withQuestion = (parent: string | null, key: string = STORED_KEY) => {
+        const result = rows.result(STU_X, USR_X);
+        const own = parent ?? (result.studentprogressid as string);
+        result.studentprogressquestions = [{ studentprogressid: own, studentprogressquestionid: key, tries: 2, iscorrect: 1, referencequestionid: next() }];
+        return { log: { access: [], result: [result], progress: logOf().log.progress } };
+      };
+      const storedQuestion = () => db.tables.studentprogressquestions.filter((q) => q.studentprogressquestionid === STORED_KEY);
+      it("that carries the key of a stored question of another school's result, under X's own result, is refused and the stored question is left as it was", async () => {
+        db.add("studentprogressquestions", { studentprogressquestionid: STORED_KEY, studentprogressid: SP_Y, tries: 1, iscorrect: 0, referencequestionid: next() });
+        const before = JSON.stringify(storedQuestion());
+        await refused(teacher(TCH_X), withQuestion(null));
+        expect(JSON.stringify(storedQuestion())).toBe(before);
+      });
+      it("that carries the key of a stored question of X's own result is updated in place", async () => {
+        db.add("studentprogressquestions", { studentprogressquestionid: STORED_KEY, studentprogressid: SP_X, tries: 1, iscorrect: 0, referencequestionid: next() });
+        expect((await upload(teacher(TCH_X), withQuestion(null))).status).toBe(200);
+        expect(storedQuestion()).toHaveLength(1);
+        expect(storedQuestion()[0]).toMatchObject({ tries: 2 });
+      });
+      it("whose key is missing or not a string refuses the upload", async () => {
+        for (const bad of [undefined, null, "", 7]) {
+          const logdata = withQuestion(null);
+          (logdata.log.result[0].studentprogressquestions as Row[])[0].studentprogressquestionid = bad;
+          await refused(teacher(TCH_X), logdata);
+        }
+      });
+    });
+
+    it("a row whose primary key is missing or not a string refuses the upload, whatever the table", async () => {
+      for (const kind of KINDS) {
+        for (const bad of [undefined, null, "", 7]) {
+          const logdata = logOf([kind, "x"]);
+          sectionOf(logdata, kind)[0][PK[kind]] = bad;
+          await refused(teacher(TCH_X), logdata);
+        }
+      }
+    });
+
     it("the refusal names no id and no name, and is the same whichever learner it was", async () => {
       const bodies: string[] = [];
-      for (const other of ["y", "u", "unknown", "gone"] as Learner[]) {
+      for (const other of ["y", "u", "unknown", "ygone"] as Learner[]) {
         const res = await refused(teacher(TCH_X), logOf(["result", other]));
         const { reference, logid, stack, ...rest } = res.body as Row;
         bodies.push(JSON.stringify(rest));
@@ -314,6 +405,10 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
       db.tables.schoolusers.find((s) => s.schooluserid === TCH_X)!.isdeleted = true;
       const gone = await upload(teacher(TCH_X), logOf(["result", "x"]));
       expect(gone.status).toBe(403);
+      db.tables.schoolusers.find((s) => s.schooluserid === TCH_X)!.isdeleted = false;
+      db.tables.schoolusers.find((s) => s.schooluserid === TCH_X)!.isdisabled = true;
+      const disabled = await upload(teacher(TCH_X), logOf(["result", "x"]));
+      expect(disabled.status).toBe(403);
       const missing = await upload(teacher(MISSING), logOf(["result", "x"]));
       expect(missing.status).toBe(404);
       db.nothingCreated();

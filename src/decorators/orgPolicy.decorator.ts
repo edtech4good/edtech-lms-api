@@ -66,9 +66,9 @@ import { SetMetadata } from "@nestjs/common";
  *     @OrgPolicy("server", { enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts" })
  *
  * An `owned` or `server` route counts as enforced in the inventory only when it
- * names, with `enforcedBy`, a spec file (path from the repository root) that
- * exists and has a test that runs (not skipped, todo or focused, and not inside
- * a describe that is) with the route's `METHOD /path` (as the inventory prints
+ * names, with `enforcedBy`, a spec file under `src/` (path from the repository
+ * root) that exists and has a test that runs (not skipped, todo or focused,
+ * and not inside a describe that is) with the route's `METHOD /path` (as the inventory prints
  * it, for example `PUT /user/:lmsuserid`) in its full title (enclosing describe
  * titles and its own) and a direct `expect(` call in its body. A signpost, not
  * proof. For an `owned` route the spec is what proves the route limits every

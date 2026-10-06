@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { existsSync, readFileSync } from "fs";
-import { join, normalize, isAbsolute } from "path";
+import { join, normalize, isAbsolute, sep } from "path";
 import * as ts from "typescript";
 import { Module, RequestMethod } from "@nestjs/common";
 import {
@@ -283,6 +283,15 @@ export const specTests = (source: string): SpecTest[] => {
   return tests;
 };
 
+/** Is this file among the paths jest is told to ignore (`testPathIgnorePatterns` in jest.config.js)? */
+const jestIgnores = (absolutePath: string, root: string): boolean => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const patterns = (require(join(REPO_ROOT, "jest.config.js")).testPathIgnorePatterns ?? []) as string[];
+  return patterns.some((pattern) =>
+    new RegExp(pattern.replace("<rootDir>", root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))).test(absolutePath.split(sep).join("/")),
+  );
+};
+
 /**
  * Does the spec at `enforcedBy` (path from the repository root) exist, and does
  * a test in it that runs normally have `routeKey` in its full title (enclosing
@@ -295,6 +304,11 @@ export const specTests = (source: string): SpecTest[] => {
  */
 export const specProvesRoute = (enforcedBy: string | undefined, routeKey: string, root = REPO_ROOT): boolean => {
   if (!enforcedBy || isAbsolute(enforcedBy) || normalize(enforcedBy).startsWith("..") || !enforcedBy.endsWith(".spec.ts")) {
+    return false;
+  }
+  // Only a file jest runs can prove a route: under `src/` (jest's `roots`) and not among its ignored paths.
+  const relative = normalize(enforcedBy).split(sep).join("/");
+  if (!relative.startsWith("src/") || jestIgnores(join(root, relative), root)) {
     return false;
   }
   const path = join(root, enforcedBy);
@@ -580,11 +594,11 @@ export const renderInventoryMarkdown = (routes: RouteRecord[]): string => {
     "not enforce it: enforcement arrives in later packages. The **Enforced**",
     "column says which routes are already backed (`yes`) and which are not yet",
     "(`pending`); `public` routes show `n/a`, because nothing backs them. A guard",
-    "backs a route; an `owned` or a `server` route counts as enforced only when it",
-    "names, with `@OrgPolicy(\"owned\", { enforcedBy })` (or `\"server\"`), a spec file that exists and has the",
-    "route's `METHOD /path` in the title of a test that runs and calls `expect(`",
-    "(the **Proved by** column). That is a signpost: it shows that a test naming",
-    "the route exists and asserts something; whether its assertions are",
+    "backs a route. An `owned` or `server` route counts as enforced only when its",
+    "`@OrgPolicy` names, with the `enforcedBy` option, a spec file under `src/` that",
+    "exists and has the route's `METHOD /path` in the title of a test that runs and",
+    "calls `expect(` (the **Proved by** column). That is a signpost: it shows that a",
+    "test naming the route exists and asserts something; whether its assertions are",
     "sufficient is shown by mutation, not by the inventory. The",
     "pending routes are pinned in",
     "`src/route-policy/pending-enforcement.snapshot.txt`.",
