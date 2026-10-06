@@ -14,7 +14,7 @@ export interface curriculumsAttributes {
   countryid?: Array<string>;
   created_at?: Date;
   created_by?: string;
-  organisationid?: string | null;
+  organisationid: string;
   updated_at?: Date;
   updated_by?: string;
   deleted_at?: Date;
@@ -40,7 +40,7 @@ export class curriculums
   isdeleted!: boolean;
   created_at!: Date;
   created_by!: string;
-  organisationid?: string | null;
+  organisationid!: string;
   updated_at!: Date;
   updated_by!: string;
   deleted_at!: Date;
@@ -111,7 +111,7 @@ export class curriculums
         },
         organisationid: {
           type: DataTypes.STRING(36),
-          allowNull: true,
+          allowNull: false,
           references: {
             model: 'organisations',
             key: 'organisationid'

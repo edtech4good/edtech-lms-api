@@ -11,7 +11,7 @@ export interface subjectsAttributes {
   countryid?: Array<string>;
   created_at?: Date;
   created_by?: string;
-  organisationid?: string | null;
+  organisationid: string;
   updated_at?: Date;
   updated_by?: string;
   deleted_at?: Date;
@@ -36,7 +36,7 @@ export class subjects
   isdeleted!: boolean;
   created_at!: Date;
   created_by!: string;
-  organisationid?: string | null;
+  organisationid!: string;
   updated_at!: Date;
   updated_by!: string;
   deleted_at!: Date;
@@ -75,7 +75,7 @@ export class subjects
         },
         organisationid: {
           type: DataTypes.STRING(36),
-          allowNull: true,
+          allowNull: false,
           references: {
             model: 'organisations',
             key: 'organisationid'
