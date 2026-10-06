@@ -228,6 +228,30 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
       });
     });
 
+    it("a learning-progress row of X's own learner that carries another school's login or learner as its `userid` refuses the upload", async () => {
+      for (const foreign of [USR_Y, STU_Y, TCH_Y, USR_X_GONE, MISSING]) {
+        const logdata = logOf(["studentlearningprogress", "x"]);
+        (logdata.log.progress.studentlearningprogress[0] as Row).userid = foreign;
+        await refused(teacher(TCH_X), logdata);
+      }
+      for (const own of [USR_X, STU_X, TCH_X, null]) {
+        const logdata = logOf(["studentlearningprogress", "x"]);
+        (logdata.log.progress.studentlearningprogress[0] as Row).userid = own;
+        expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
+      }
+    });
+
+    it("an access or usage row that names another school's teacher login, or one that is nobody's, refuses the upload", async () => {
+      for (const foreign of [TCH_Y, MISSING]) {
+        const access = logOf(["access", "x"]);
+        (access.log.access[0] as Row).userid = foreign;
+        await refused(teacher(TCH_X), access);
+        const usage = logOf(["studentappusages", "x"]);
+        (usage.log.progress.studentappusages[0] as Row).schooluserid = foreign;
+        await refused(teacher(TCH_X), usage);
+      }
+    });
+
     it("the refusal names no id and no name, and is the same whichever learner it was", async () => {
       const bodies: string[] = [];
       for (const other of ["y", "u", "unknown", "gone"] as Learner[]) {
