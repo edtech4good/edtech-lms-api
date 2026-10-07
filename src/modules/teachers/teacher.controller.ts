@@ -21,7 +21,7 @@ import {
   ApiTags,
   getSchemaPath,
 } from "@nestjs/swagger";
-import { pushToCloud, rostersNameTheirSchool, teachersFile } from "src/business/cloud-push";
+import { pushToCloud, teachersFile } from "src/business/cloud-push";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { TeacherBusiness } from "src/business/teacher.business";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
@@ -157,7 +157,7 @@ export class TeacherController {
     if (cloud) {
       const teacherusers = await new SchoolUserBusiness().getschoolteachersbyid(
         result.map((x) => x.schooluserid),
-        { withSchoolId: rostersNameTheirSchool() },
+        { withSchoolId: true },
       );
       if (teacherusers.length <= 0) {
         throw new ApiError(ErrorCode.NOT_FOUND, "There are no teachers to sync.");

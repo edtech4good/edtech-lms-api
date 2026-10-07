@@ -125,16 +125,11 @@ export class LevelQuizQuestionBusiness {
             where: { levelquizquestionid }
         });
 
-    getLevelQuizQuestions = async (old: boolean = false) => {
+    getLevelQuizQuestions = async () => {
         const option: any = {};
         const where: WhereOptions<levelquizquestionsAttributes> = {
         }
         const order = ["levelquizquestionorder"];
-        if(old) {
-            option.attributes = {
-                exclude: ['lessonid']
-            }
-        }
         option.where = await andScope(this.org, "levelquizquestion", where);
         option.order = order;
         return await levelquizquestions.findAll(option);

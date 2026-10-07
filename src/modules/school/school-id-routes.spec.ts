@@ -116,25 +116,12 @@ describe("the exports and the cloud sync take the school's name or id in the pat
     expect(res.set).toHaveBeenCalledWith(expect.objectContaining({ "Content-Disposition": expect.stringContaining("teachers-Sample School.zip") }));
   });
 
-  it("POST /sync/cloud/:schoolname/students: name or id, learners of the school by id (online)", async () => {
-    const saved = process.env.SYNC_FORMAT_DEFAULT;
-    try {
-      // until the student API reads organisations' content the rows are as they were (no school id)...
-      delete process.env.SYNC_FORMAT_DEFAULT;
-      await expect(new SyncController().synconlineschool("Sample School", PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
-      expect(getschooluserbyschoolid).toHaveBeenCalledWith(SAMPLE.schoolid, true, { withSchoolId: false });
-      getschooluserbyschoolid.mockClear();
-      // ...and once it does, the rows keep their school id: the file names the school it is for
-      process.env.SYNC_FORMAT_DEFAULT = "3";
-      await expect(new SyncController().synconlineschool("Sample School", PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
-      expect(getschooluserbyschoolid).toHaveBeenCalledWith(SAMPLE.schoolid, true, { withSchoolId: true });
-      getschooluserbyschoolid.mockClear();
-      await expect(new SyncController().synconlineschool("Nowhere", PLATFORM)).rejects.toMatchObject({ message: "That school doesn't exist." });
-      expect(getschooluserbyschoolid).not.toHaveBeenCalled();
-    } finally {
-      if (saved === undefined) delete process.env.SYNC_FORMAT_DEFAULT;
-      else process.env.SYNC_FORMAT_DEFAULT = saved;
-    }
+  it("POST /sync/cloud/:schoolname/students: name or id, learners of the school by id (online), the rows keeping their school id", async () => {
+    await expect(new SyncController().synconlineschool("Sample School", PLATFORM)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(getschooluserbyschoolid).toHaveBeenCalledWith(SAMPLE.schoolid, true, { withSchoolId: true });
+    getschooluserbyschoolid.mockClear();
+    await expect(new SyncController().synconlineschool("Nowhere", PLATFORM)).rejects.toMatchObject({ message: "That school doesn't exist." });
+    expect(getschooluserbyschoolid).not.toHaveBeenCalled();
   });
 });
 

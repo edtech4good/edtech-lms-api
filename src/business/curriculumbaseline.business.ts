@@ -24,15 +24,11 @@ import { andSchoolScope } from "./school-scope";
 export class CurriculumBaseLineBusiness {
   constructor(private readonly org?: OrgContext) {}
 
-  getCurriculumBaseLines = (old: boolean = false) => {
+  getCurriculumBaseLines = () => {
     const option: any = {};
     const where: WhereOptions<curriculumbaselineAttributes> = {
       isdeleted: false,
     };
-    if(old) {
-      where.created_by = { [Op.is]: null as any };
-      option.attributes = ['curriculumbaselineid', 'curriculumid', 'baselineid'];
-    }
     option.where = where;
     return this.scopedFindAll(option);
   };
