@@ -123,8 +123,13 @@ export class SyncController {
   // Not Role.organisationadmin: this pushes to the cloud server with the server key.
   @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
   @HttpCode(HttpStatus.OK)
-  async synconline(@Org() org: OrgContext, @Body() body?: { organisationid?: unknown; format?: unknown }) {
-    refuseRetiredFormat(org, body?.format);
+  async synconline(
+    @Org() org: OrgContext,
+    @Body() body?: { organisationid?: unknown; format?: unknown },
+    @Query("format") format?: unknown,
+  ) {
+    // a format named in the body or in the query is refused alike
+    refuseRetiredFormat(org, body?.format !== undefined ? body.format : format);
     const plan = await planContentSync(org, { organisationid: body?.organisationid });
     return pushToCloud(
       "master",

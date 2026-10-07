@@ -450,6 +450,17 @@ describe("the content sync is one organisation's", () => {
       expect(schoolReads()).toBe(0);
     });
 
+    it.each(CALLERS.filter(([who]) => who !== "X's Organisation Admin"))("POST /sync/cloud with a format in the query: %s is refused (400) with the retirement message, and nothing is sent", async (who) => {
+      for (const format of ["2", "3", "", "2&format=3"]) {
+        const res = await send(who, "post", `/sync/cloud?format=${format}`, { organisationid: X });
+        expect({ format, ...said(res) }).toEqual({ format, ...REFUSAL });
+        const noBody = await send(who, "post", `/sync/cloud?format=${format}`);
+        expect({ format, ...said(noBody) }).toEqual({ format, ...REFUSAL });
+      }
+      expect(axios.put).not.toHaveBeenCalled();
+      expect(schoolReads()).toBe(0);
+    });
+
     it("the platform, not acting, that sends format 2 and names no organisation gets the refusal of the format, not 'Choose an organisation'", async () => {
       expect(said(await send(NOT_ACTING, "post", "/sync/cloud", { format: 2 }))).toEqual(REFUSAL);
       expect(axios.put).not.toHaveBeenCalled();
