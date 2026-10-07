@@ -21,7 +21,6 @@
  *  - CurriculumBusiness.getCurriculumsForStudentApi (the admin API's getCurriculums is separate and keeps the column)
  *  - QuestionBusiness.getquestions
  *  - DocumentBusiness.getdocuments
- *  - SubjectBusiness.getSubjects
  *
  * (and the learner rows they include). `school-id-payloads.spec.ts` and
  * `content-api-payloads.spec.ts` pin each of them to the generated SQL. The
@@ -39,8 +38,8 @@ export const studentApiAttributes = { exclude: [...NOT_IN_STUDENT_API] };
  * school's learners or teachers, sent as `{ schoolid, studentusers }` or
  * `{ schoolid, teachers }`. Each row carries its `schoolid`, which the student
  * API checks against the school the file names. Only `organisationid` stays out.
- * Used only when the rosters go in that shape (see `defaultSyncFormat`), by the
- * three getters that take `{ withSchoolId: true }`:
+ * Every cloud push of a roster goes in that shape (the older `{ studentusers }` and bare list of
+ * teachers are retired with content format 2), asked for by the three getters that take `{ withSchoolId: true }`:
  *
  *  - SchoolUserBusiness.getschooluserbyschoolid   (cloud sync of a school's learners)
  *  - SchoolUserBusiness.getschooluserbyid         (cloud push of learners just created)

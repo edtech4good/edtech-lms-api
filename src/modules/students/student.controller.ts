@@ -28,7 +28,7 @@ import {
 } from "@nestjs/swagger";
 import { isValid, parse } from "date-fns";
 import { json2csv } from "json-2-csv";
-import { pushToCloud, rostersNameTheirSchool, studentsFile } from "src/business/cloud-push";
+import { pushToCloud, studentsFile } from "src/business/cloud-push";
 import { assertEnrolmentFits } from "src/business/content-owner";
 import { findOwnedSchool, findOwnedStandard, findOwnedStudent, resolveOwnedSchoolRef } from "src/business/school-scope";
 import { scopeOf } from "src/business/org-scope";
@@ -323,7 +323,7 @@ export class StudentController {
     if (cloud) {
       const studentusers = await new SchoolUserBusiness().getschooluserbyid(
         result.map((x) => x.schooluserid),
-        { withSchoolId: rostersNameTheirSchool() },
+        { withSchoolId: true },
       );
       if (studentusers.length <= 0) {
         throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to sync.");

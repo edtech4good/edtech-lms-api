@@ -34,111 +34,13 @@ import { SchoolUserBusiness } from "./schooluser.business";
 import { StandardBusiness } from "./standard.business";
 import { BaselineQuestionBusiness } from "./baslinequestion.business";
 import { LessonPlanBusiness } from "./lessonplan.business";
-import { SubjectBusiness } from "./subject.business";
 import { organisations } from "src/models/data-models/organisations";
 import { buildOrganisationContent } from "./organisation-content-export";
 
 export class SyncBusiness {
-  // old version apk
-  synconline = async () => {
-    const curriculums = await new CurriculumBusiness().getCurriculumsForStudentApi();
-    const curriculumbaselines =
-      await new CurriculumBaseLineBusiness().getCurriculumBaseLines(true);
-    // const baselinequestion = await new BaselineQuestionBusiness().getBaselineQuestion();
-    const grades = await new GradeBusiness().getGrades();
-    const levels = await new LevelBusiness().getLevels();
-    const lessons = await new LessonBusiness().getLessons();
-    const lessonlearnings =
-      await new LessonLearningBusiness().getLessonLearnings();
-    const lessonpractices =
-      await new LessonPracticeBusiness().getLessonPractices();
-    const lessonpracticequestions =
-      await new LessonPracticeQuestionBusiness().getLessonPracticeQuestions();
-    const lessonquizzes = await new LessonQuizBusiness().getLessonQuizzes();
-    const lessonquizquestions =
-      await new LessonQuizQuestionBusiness().getLessonQuizQuestions();
-    const levelquizquestions =
-      await new LevelQuizQuestionBusiness().getLevelQuizQuestions(true);
-    const questions = await new QuestionBusiness().getquestions();
-    const documents = await new DocumentBusiness().getdocuments();
-    const standards = await new StandardBusiness().getStandards();
-    const schools = await new SchoolBusiness().getSchools();
-    const countries = await new CountryBusiness().getCountries();
-    const syncdata = {
-      curriculums,
-      curriculumbaselines,
-      grades,
-      levels,
-      lessons,
-      lessonlearnings,
-      lessonpractices,
-      lessonpracticequestions,
-      lessonquizzes,
-      lessonquizquestions,
-      levelquizquestions,
-      questions,
-      documents,
-      standards,
-      schools,
-      countries,
-    };
-    return JSON.stringify(syncdata);
-  };
-
   // One organisation's content in the format the student API reads (format 3): see organisation-content-export.ts.
   syncontentVersion3 = async (organisation: organisations) =>
     JSON.stringify(await buildOrganisationContent(organisation));
-
-  // this function made for new version apk
-  syncontentVersion2 = async () => {
-    const curriculums = await new CurriculumBusiness().getCurriculumsForStudentApi();
-    const curriculumbaselines =
-      await new CurriculumBaseLineBusiness().getCurriculumBaseLines();
-    const baselinequestion = await new BaselineQuestionBusiness().getBaselineQuestion();
-    const grades = await new GradeBusiness().getGrades();
-    const levels = await new LevelBusiness().getLevels();
-    const lessons = await new LessonBusiness().getLessons();
-    const lessonlearnings =
-      await new LessonLearningBusiness().getLessonLearnings();
-    const lessonpractices =
-      await new LessonPracticeBusiness().getLessonPractices();
-    const lessonpracticequestions =
-      await new LessonPracticeQuestionBusiness().getLessonPracticeQuestions();
-    const lessonquizzes = await new LessonQuizBusiness().getLessonQuizzes();
-    const lessonquizquestions =
-      await new LessonQuizQuestionBusiness().getLessonQuizQuestions();
-    const levelquizquestions =
-      await new LevelQuizQuestionBusiness().getLevelQuizQuestions();
-    const questions = await new QuestionBusiness().getquestions();
-    const documents = await new DocumentBusiness().getdocuments();
-    const standards = await new StandardBusiness().getStandards();
-    const schools = await new SchoolBusiness().getSchools();
-    const countries = await new CountryBusiness().getCountries();
-    const lessonplans = await new LessonPlanBusiness().getLessonPlans();
-    const subjects = await new SubjectBusiness().getSubjects();
-    const syncdata = {
-      curriculums,
-      curriculumbaselines,
-      baselinequestion,
-      grades,
-      levels,
-      lessons,
-      lessonlearnings,
-      lessonpractices,
-      lessonpracticequestions,
-      lessonquizzes,
-      lessonquizquestions,
-      levelquizquestions,
-      questions,
-      documents,
-      standards,
-      schools,
-      countries,
-      lessonplans,
-      subjects
-    };
-    return JSON.stringify(syncdata);
-  };
 
   getreportdata = async () => {
     const curriculums = await new CurriculumBusiness().getCurriculumsForStudentApi();

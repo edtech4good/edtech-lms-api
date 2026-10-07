@@ -20,8 +20,9 @@ import { schools } from "src/models/data-models/school";
 import { SyncController } from "./sync.controller";
 
 /**
- * The content sync is one organisation's: `GET sync/content` and `POST sync/cloud` (format 3), `GET sync` (the
- * older shape), `POST sync/cloud/:schoolname/students`, and the roster pushes of `?cloud=true`. Driven over real
+ * The content sync is one organisation's: `GET sync/content` and `POST sync/cloud` (format 3, the only format: format 2
+ * is retired, and so is `GET sync`, which was its older shape), `POST sync/cloud/:schoolname/students`, and the roster
+ * pushes of `?cloud=true`. Driven over real
  * HTTP through the real strategy, guards, controllers and business classes; replaced are the models (an in-memory
  * copy of the tables), the token lookup and the cloud server (axios).
  *
@@ -205,8 +206,6 @@ describe("the content sync is one organisation's", () => {
     jest.spyOn(Logger, "warn").mockImplementation(() => Logger);
     jest.spyOn(Logger, "info").mockImplementation(() => Logger);
     jest.spyOn(console, "warn").mockImplementation(() => undefined);
-    // the format of organisations' content (format 3): the setting an operator makes once the student API reads it
-    process.env.SYNC_FORMAT_DEFAULT = "3";
     tokenExists.mockResolvedValue(true);
     db.install();
     for (const t of [TX, TY, TU]) seedTree(t);
@@ -220,10 +219,6 @@ describe("the content sync is one organisation's", () => {
     jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(transaction as never);
     (axios.put as jest.Mock).mockReset().mockResolvedValue({ status: 200 });
   });
-  afterEach(() => {
-    delete process.env.SYNC_FORMAT_DEFAULT;
-  });
-
   const send = (who: Who, method: Method, path: string, body?: object) => {
     const r = request(app.getHttpServer())[method](path).set("Authorization", callers[who]).set("Connection", "close");
     return body ? r.send(body) : r;
@@ -416,84 +411,73 @@ describe("the content sync is one organisation's", () => {
     });
   });
 
-  // ───────────────────────────── format 2 ─────────────────────────────
-  describe("GET /sync/content?format=2", () => {
-    it("the platform, not acting as an organisation, gets the whole platform's content in the shape it always had (no header)", async () => {
-      const { status, json } = await download(NOT_ACTING, "/sync/content?format=2");
-      expect(status).toBe(200);
-      expect(Object.keys(json).sort()).toEqual(
-        ["curriculums", "curriculumbaselines", "baselinequestion", "grades", "levels", "lessons", "lessonlearnings", "lessonpractices", "lessonpracticequestions", "lessonquizzes", "lessonquizquestions", "levelquizquestions", "questions", "documents", "standards", "schools", "countries", "lessonplans", "subjects"].sort(),
-      );
-      expect(ids(json.curriculums, "curriculumid")).toEqual(sorted(TX.curriculum, TY.curriculum, TU.curriculum));
-      expect(ids(json.questions, "questionid")).toEqual(sorted(TX.question, TX.question2, TY.question, TY.question2, TU.question, TU.question2));
-      // (that the content rows carry no owner column is pinned on the SQL, in content-api-payloads.spec.ts: the in-memory
-      // tables serialise a whole row through `JSON.stringify` whatever columns were asked for, so it cannot be seen here)
-    });
+  // ───────────────────────────── format 2 is retired ─────────────────────────────
+  // A request that sends `format` at all (any value; the admin's older body did) is a 400 that says why, and nothing is read
+  // or pushed. The format is always 3.
+  describe("a content sync that names a format is refused (format 2 is retired)", () => {
+    const RETIRED = "Format 2 has been retired; content is one organisation's (format 3).";
+    const REFUSAL = { status: 400, body: { code: "INVALID_INPUT", data: false, error: true, errormessage: RETIRED, fields: [{ field: "format", message: RETIRED }], hint: "Check the highlighted fields." } };
+    const schoolReads = () => (schools.findAll as unknown as jest.Mock).mock.calls.length;
+    const CALLERS: Array<[Who, string]> = [
+      ["X's Organisation Admin", ""],
+      ["X's Admin", ""],
+      ["a platform user acting as X", ""],
+      [NOT_ACTING, `&organisationid=${X}`],
+    ];
 
-    it.each(["X's Organisation Admin", "X's Admin", "a platform user acting as X"] as Who[])("%s: format 2 is the platform's only (400)", async (who) => {
-      const res = await send(who, "get", "/sync/content?format=2");
-      expect(res.status).toBe(400);
-      expect(res.body.fields).toEqual([{ field: "format", message: "Format 2 is for the platform, not acting as an organisation, only." }]);
-    });
-
-    it("format 2 does not take an organisation (400); a format that is neither 2 nor 3 is refused (400)", async () => {
-      expect((await send(NOT_ACTING, "get", `/sync/content?format=2&organisationid=${X}`)).status).toBe(400);
-      for (const format of ["1", "4", "two", ""]) {
-        const res = await send(NOT_ACTING, "get", `/sync/content?format=${format}&organisationid=${X}`);
-        expect(res.status).toBe(format === "" ? 200 : 400);
+    it.each(CALLERS)("GET /sync/content?format=...: %s is refused (400) with the retirement message, whatever the value, and nothing is read", async (who, extra) => {
+      for (const format of ["2", "3", "1", "4", "two", "", "2&format=3"]) {
+        const res = await send(who, "get", `/sync/content?format=${format}${extra}`);
+        expect({ format, ...said(res) }).toEqual({ format, ...REFUSAL });
+        expect(res.headers["content-type"]).not.toMatch(/zip/);
       }
-    });
-  });
-
-  // ───────────────────────────── SYNC_FORMAT_DEFAULT ─────────────────────────────
-  describe.each([["2"], [undefined]])("while the student API in service may not read format 3 (SYNC_FORMAT_DEFAULT=%s: 2 is the default)", (setting) => {
-    beforeEach(() => {
-      if (setting === undefined) delete process.env.SYNC_FORMAT_DEFAULT;
-      else process.env.SYNC_FORMAT_DEFAULT = setting;
+      expect(schoolReads()).toBe(0);
     });
 
-    it("a request that does not say gets format 2 if the caller is the platform not acting, and a 400 for anyone else", async () => {
-      expect(Object.keys((await download(NOT_ACTING, "/sync/content")).json)).not.toContain("format");
-      for (const who of IN_X) {
-        const res = await send(who, "get", "/sync/content");
-        expect(res.status).toBe(400);
-        expect(res.body.errormessage).toMatch(/whole platform's content only/);
+    it("GET /sync/content?format=2 does not give the platform, not acting, the whole platform's content any more: with or without an organisation it is the same refusal", async () => {
+      expect(said(await send(NOT_ACTING, "get", "/sync/content?format=2"))).toEqual(REFUSAL);
+      expect(said(await send(NOT_ACTING, "get", `/sync/content?format=2&organisationid=${X}`))).toEqual(REFUSAL);
+      expect(schoolReads()).toBe(0);
+    });
+
+    // (an Organisation Admin is not admitted to the push at all: 403, below)
+    it.each(CALLERS.filter(([who]) => who !== "X's Organisation Admin"))("POST /sync/cloud with a format in the body: %s is refused (400) with the retirement message, whatever the value, and nothing is sent", async (who) => {
+      for (const format of [2, 3, "2", "3", "", null, [2]]) {
+        const res = await send(who, "post", "/sync/cloud", { format, organisationid: X });
+        expect({ format, ...said(res) }).toEqual({ format, ...REFUSAL });
       }
+      expect(axios.put).not.toHaveBeenCalled();
+      expect(schoolReads()).toBe(0);
     });
 
-    it("format 3 asked for is refused (400): this server serves format 2 until the setting is 3", async () => {
-      for (const [who, path] of [[NOT_ACTING, `/sync/content?format=3&organisationid=${X}`], ["X's Admin", "/sync/content?format=3"], ["a platform user acting as X", "/sync/content?format=3"]] as Array<[Who, string]>) {
-        const res = await send(who, "get", path);
-        expect(res.status).toBe(400);
-        expect(res.body.errormessage).toBe("This server pushes format 2 until SYNC_FORMAT_DEFAULT is 3.");
-        expect(res.body.fields).toEqual([{ field: "format", message: "This server pushes format 2 until SYNC_FORMAT_DEFAULT is 3." }]);
+    it.each(CALLERS.filter(([who]) => who !== "X's Organisation Admin"))("POST /sync/cloud with a format in the query: %s is refused (400) with the retirement message, and nothing is sent", async (who) => {
+      for (const format of ["2", "3", "", "2&format=3"]) {
+        const res = await send(who, "post", `/sync/cloud?format=${format}`, { organisationid: X });
+        expect({ format, ...said(res) }).toEqual({ format, ...REFUSAL });
+        const noBody = await send(who, "post", `/sync/cloud?format=${format}`);
+        expect({ format, ...said(noBody) }).toEqual({ format, ...REFUSAL });
       }
+      expect(axios.put).not.toHaveBeenCalled();
+      expect(schoolReads()).toBe(0);
     });
 
-    it("POST /sync/cloud with format 3 in the body is refused (400) for everyone, and nothing is sent", async () => {
-      for (const who of [NOT_ACTING, "X's Admin", "a platform user acting as X"] as Who[]) {
-        const res = await send(who, "post", "/sync/cloud", { format: 3, organisationid: X });
-        expect(res.status).toBe(400);
-        expect(res.body.errormessage).toBe("This server pushes format 2 until SYNC_FORMAT_DEFAULT is 3.");
-      }
-      for (const format of ["3", 3]) expect((await send(NOT_ACTING, "post", "/sync/cloud", { format, organisationid: Y })).status).toBe(400);
+    it("the platform, not acting, that sends format 2 and names no organisation gets the refusal of the format, not 'Choose an organisation'", async () => {
+      expect(said(await send(NOT_ACTING, "post", "/sync/cloud", { format: 2 }))).toEqual(REFUSAL);
       expect(axios.put).not.toHaveBeenCalled();
     });
 
-    it("format 2 asked for is what it gives anyway, to the platform not acting", async () => {
-      expect(Object.keys((await download(NOT_ACTING, "/sync/content?format=2")).json)).not.toContain("format");
-      await send(NOT_ACTING, "post", "/sync/cloud", { format: 2 }).expect(200);
-      expect(axios.put).toHaveBeenCalledTimes(1);
+    it("a caller with no scope still gets what it got before (401/403), not the format refusal", async () => {
+      expect((await send("a server token", "get", "/sync/content?format=2")).status).toBe(401);
+      expect((await send("a school-user token", "get", "/sync/content?format=2")).status).toBe(401);
+      expect((await send("X's Organisation Admin", "post", "/sync/cloud", { format: 2 })).status).toBe(403);
+      expect((await send("a school-user token", "post", "/sync/cloud", { format: 2 })).status).toBe(403);
     });
-  });
 
-  describe("while SYNC_FORMAT_DEFAULT is 3", () => {
-    it("format 3 asked for is what it gives, and format 2 stays for the platform not acting only", async () => {
-      expect((await download("X's Admin", "/sync/content?format=3")).json.format).toBe(3);
-      await send("X's Admin", "post", "/sync/cloud", { format: 3 }).expect(200);
-      expect(pushed().json.format).toBe(3);
-      expect((await send("X's Admin", "get", "/sync/content?format=2")).status).toBe(400);
-      expect((await download(NOT_ACTING, "/sync/content?format=2")).status).toBe(200);
+    it("the same requests without a format are served (so the refusals above are the format's doing)", async () => {
+      expect((await send("X's Admin", "get", "/sync/content")).status).toBe(200);
+      expect((await send(NOT_ACTING, "get", `/sync/content?organisationid=${X}`)).status).toBe(200);
+      await send(NOT_ACTING, "post", "/sync/cloud", { organisationid: X }).expect(200);
+      expect(axios.put).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -573,35 +557,20 @@ describe("the content sync is one organisation's", () => {
     });
   });
 
-  // ───────────────────────────── GET /sync ─────────────────────────────
-  describe("GET /sync", () => {
-    const V1_KEYS = ["curriculums", "curriculumbaselines", "grades", "levels", "lessons", "lessonlearnings", "lessonpractices", "lessonpracticequestions", "lessonquizzes", "lessonquizquestions", "levelquizquestions", "questions", "documents", "standards", "schools", "countries"].sort();
+  // ───────────────────────────── GET /sync (retired) ─────────────────────────────
+  // `GET /sync` served the whole platform's content in the older shape (format 2 of `sync/content`, to the platform not
+  // acting). It no longer exists: the answer is the one any unknown path gets, for every caller.
+  describe("GET /sync is not a route", () => {
+    const EVERYONE = [...IN_X, NOT_ACTING, "a server token", "a school-user token"] as Who[];
+    const schoolReads = () => (schools.findAll as unknown as jest.Mock).mock.calls.length;
 
-    // The file has no header naming an organisation, and the student API reads such a file as the whole platform's content:
-    // one organisation's rows in it would replace everything else a Pi holds. So it is the platform's, or nobody's.
-    it("the platform, not acting as an organisation, gets the whole platform's content in the older shape", async () => {
-      const { status, json } = await download(NOT_ACTING, "/sync");
-      expect(status).toBe(200);
-      expect(Object.keys(json).sort()).toEqual(V1_KEYS);
-      expect(ids(json.curriculums, "curriculumid")).toEqual(sorted(TX.curriculum, TY.curriculum, TU.curriculum));
-      expect(ids(json.questions, "questionid")).toEqual(sorted(TX.question, TX.question2, TY.question, TY.question2, TU.question, TU.question2));
-      expect(ids(json.schools, "schoolid")).toEqual(sorted(TX.school, TX.school2, TY.school, TY.school2, TU.school, TU.school2));
-    });
-
-    it.each(IN_X)("%s: refused (400), the same refusal as format 2 of sync/content: nothing is served", async (who) => {
+    it.each(EVERYONE)("%s: 404, the answer of a path that is not there, and nothing is served or read", async (who) => {
       const res = await send(who, "get", "/sync");
-      expect(res.status).toBe(400);
-      expect(res.body.fields).toEqual([{ field: "format", message: "Format 2 is for the platform, not acting as an organisation, only." }]);
-      expect(said(res)).toEqual(said(await send(who, "get", "/sync/content?format=2")));
-    });
-
-    it("naming an organisation does not make it one organisation's: the platform is refused (400), and so is an organisation's staff", async () => {
-      expect((await send(NOT_ACTING, "get", `/sync?organisationid=${Y}`)).status).toBe(400);
-      expect((await send("X's Admin", "get", `/sync?organisationid=${Y}`)).status).toBe(400);
-    });
-
-    it.each(["a server token", "a school-user token"] as Who[])("%s is not admitted", async (who) => {
-      expect((await send(who, "get", "/sync")).status).toBe(401);
+      expect(res.status).toBe(404);
+      expect(res.headers["content-type"]).not.toMatch(/zip/);
+      expect(said(res)).toEqual(said(await send(who, "get", "/sync-that-is-not-there")));
+      expect(said(await send(who, "get", `/sync?organisationid=${X}`)).status).toBe(404);
+      expect(schoolReads()).toBe(0);
     });
   });
 
@@ -647,26 +616,6 @@ describe("the content sync is one organisation's", () => {
       expect(foreign.status).toBe(404);
       expect(said(foreign)).toEqual(said(await send(who, "post", "/sync/cloud", { organisationid: MISSING_ORGANISATION })));
       expect(axios.put).not.toHaveBeenCalled();
-    });
-
-    it("format 2 in the body: the platform, not acting, pushes the whole platform's content (no organisation in the header); an organisation's Admin is refused (400)", async () => {
-      await send(NOT_ACTING, "post", "/sync/cloud", { format: 2 }).expect(200);
-      const call = pushed();
-      expect(call.headers).not.toHaveProperty("X-Organisation-Id");
-      expect(call.json).not.toHaveProperty("format");
-      expect(ids(call.json.curriculums, "curriculumid")).toEqual(sorted(TX.curriculum, TY.curriculum, TU.curriculum));
-      (axios.put as jest.Mock).mockClear();
-      expect((await send("X's Admin", "post", "/sync/cloud", { format: 2 })).status).toBe(400);
-      expect((await send("a platform user acting as X", "post", "/sync/cloud", { format: 2 })).status).toBe(400);
-      expect(axios.put).not.toHaveBeenCalled();
-    });
-
-    it("while SYNC_FORMAT_DEFAULT is not 3 (unset, or 2) an organisation's Admin pushes nothing (400) and the platform pushes the whole platform's content", async () => {
-      delete process.env.SYNC_FORMAT_DEFAULT;
-      expect((await send("X's Admin", "post", "/sync/cloud")).status).toBe(400);
-      expect(axios.put).not.toHaveBeenCalled();
-      await send(NOT_ACTING, "post", "/sync/cloud").expect(200);
-      expect(pushed().json).not.toHaveProperty("format");
     });
   });
 
@@ -716,17 +665,6 @@ describe("the content sync is one organisation's", () => {
     it("X's Organisation Admin is not admitted (403)", async () => {
       expect((await send("X's Organisation Admin", "post", `/sync/cloud/${TX.school}/students`)).status).toBe(403);
     });
-
-    it("while SYNC_FORMAT_DEFAULT is not 3 (unset) the file is the older { studentusers } with no school id on any row", async () => {
-      delete process.env.SYNC_FORMAT_DEFAULT;
-      await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`).expect(200);
-      const call = pushed();
-      expect(Object.keys(call.json)).toEqual(["studentusers"]);
-      for (const row of call.json.studentusers as Row[]) {
-        expect(row).not.toHaveProperty("schoolid");
-        expect(row.student as Row).not.toHaveProperty("schoolid");
-      }
-    });
   });
 
   // ───────────────────────────── the roster pushes of ?cloud=true ─────────────────────────────
@@ -763,20 +701,6 @@ describe("the content sync is one organisation's", () => {
       expect(call.json.schoolid).toBe(TX.school);
       expect(call.json.teachers).toHaveLength(1);
       expect(call.json.teachers[0]).toMatchObject({ schoolusername: "newteacher1", schoolid: TX.school, schoolname: TX.names.school });
-    });
-
-    it.each([["2"], [undefined]])("while SYNC_FORMAT_DEFAULT is %s (not 3) the rosters keep the shape they had: no school id, the teachers a bare list", async (setting) => {
-      if (setting === undefined) delete process.env.SYNC_FORMAT_DEFAULT;
-      else process.env.SYNC_FORMAT_DEFAULT = setting;
-      await send("X's Admin", "post", "/student/create?cloud=true", studentBody(TX.school, TX.standard, TX.curriculum)).expect(200);
-      const students = pushed(0);
-      expect(Object.keys(students.json)).toEqual(["studentusers"]);
-      expect(students.json.studentusers[0]).not.toHaveProperty("schoolid");
-      expect(students.json.studentusers[0].student).not.toHaveProperty("schoolid");
-      await send("X's Admin", "post", "/teacher/create?cloud=true", { schoolname: TX.names.school, teachers: [{ schoolusername: "newteacher2", schooluserpasswordhash: "pass1234" }] }).expect(200);
-      const teachers = pushed(1);
-      expect(Array.isArray(teachers.json)).toBe(true);
-      expect(teachers.json[0]).not.toHaveProperty("schoolid");
     });
 
     it("Y's school is a 404 and nothing is sent", async () => {

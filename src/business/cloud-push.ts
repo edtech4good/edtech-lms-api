@@ -1,7 +1,7 @@
 import AdmZip from "adm-zip";
 import axios from "axios";
 import FormData from "form-data";
-import { Config, defaultSyncFormat } from "src/config";
+import { Config } from "src/config";
 
 /** The student API routes a sync writes to. */
 export type CloudImport = "master" | "students" | "teachers";
@@ -34,16 +34,8 @@ export const pushToCloud = async (kind: CloudImport, entry: string, json: string
   throw Error(response.data);
 };
 
-/**
- * Do the rosters go to the student API in the shape that names their school (`{ schoolid, ... }`, every row carrying its
- * `schoolid`)? Only when `SYNC_FORMAT_DEFAULT` is 3, i.e. the student API in service reads it; until then the rosters go as they did.
- */
-export const rostersNameTheirSchool = (): boolean => defaultSyncFormat() === 3;
+/** The learners' file of one school: `{ schoolid, studentusers }`, every row carrying its `schoolid`. */
+export const studentsFile = (schoolid: string, studentusers: unknown[]) => ({ schoolid, studentusers });
 
-/** The learners' file of one school: `{ schoolid, studentusers }`, or the older `{ studentusers }`. */
-export const studentsFile = (schoolid: string, studentusers: unknown[]) =>
-  rostersNameTheirSchool() ? { schoolid, studentusers } : { studentusers };
-
-/** The teachers' file of one school: `{ schoolid, teachers }`, or the older list of teachers. */
-export const teachersFile = (schoolid: string, teachers: unknown[]) =>
-  rostersNameTheirSchool() ? { schoolid, teachers } : teachers;
+/** The teachers' file of one school: `{ schoolid, teachers }`, every row carrying its `schoolid`. */
+export const teachersFile = (schoolid: string, teachers: unknown[]) => ({ schoolid, teachers });

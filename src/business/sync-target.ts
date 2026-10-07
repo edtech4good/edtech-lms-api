@@ -1,48 +1,35 @@
 import { OrgContext } from "src/decorators/org.decorator";
-import { defaultSyncFormat } from "src/config";
 import { ApiError } from "src/models/ApiError";
 import { organisations } from "src/models/data-models/organisations";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { scopeOf } from "./org-scope";
 
 /**
- * What a content sync (`GET sync`, `GET sync/content`, `POST sync/cloud`) is for.
+ * What a content sync (`GET sync/content`, `POST sync/cloud`) is for.
  *
- * Content is exported and pushed one organisation at a time. Whose it is comes
- * from the caller's token: an organisation's staff, and a platform user acting
- * as an organisation, sync that organisation. A platform user who is not acting
- * must say which one, with `organisationid`, and gets the same 404 for an
+ * Content is exported and pushed one organisation at a time (format 3). Whose it
+ * is comes from the caller's token: an organisation's staff, and a platform user
+ * acting as an organisation, sync that organisation. A platform user who is not
+ * acting must say which one, with `organisationid`, and gets the same 404 for an
  * organisation that is not there as for one that is. Naming an organisation
  * other than the one the token acts in is the same 404, never a way into it.
  *
- * The platform, not acting as an organisation, can also ask for the whole
- * platform's content in the older format 2 (`format=2`). Nobody else can.
- * `SYNC_FORMAT_DEFAULT` (see `defaultSyncFormat`) is what a request that does
- * not say gets, and a request for a format higher than it is refused: what this
- * server pushes (or serves, for upload elsewhere) follows its setting, never the caller.
+ * There is no other format: the whole-platform file (format 2) is retired, and a
+ * request that names a `format` at all is refused (see `refuseRetiredFormat`).
  */
 export interface SyncRequest {
   organisationid?: unknown;
-  format?: unknown;
 }
 
-export type SyncPlan = { format: 2 } | { format: 3; organisation: organisations };
+/** What a content sync is for: the one organisation whose content is exported or pushed (format 3). */
+export interface SyncPlan {
+  organisation: organisations;
+}
 
 const invalid = (field: string, message: string) =>
   new ApiError(ErrorCode.INVALID_INPUT, message, { fields: [{ field, message }] });
 
 const organisationNotFound = () => new ApiError(ErrorCode.NOT_FOUND, "That organisation doesn't exist.");
-
-/** `2` or `3`, as a number or as text; nothing given is `undefined`; anything else is a 400. */
-const parseFormat = (value: unknown): 2 | 3 | undefined => {
-  if (value === undefined || value === null || value === "") {
-    return undefined;
-  }
-  const text = typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
-  if (text === "2") return 2;
-  if (text === "3") return 3;
-  throw invalid("format", "format must be 2 or 3.");
-};
 
 const parseOrganisationId = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === "") {
@@ -77,32 +64,23 @@ export const resolveSyncOrganisation = async (org: OrgContext, named: unknown): 
   return row;
 };
 
-/** The format and the organisation a content sync (`sync/content`, `sync/cloud`) is for. */
-export const planContentSync = async (org: OrgContext, request: SyncRequest): Promise<SyncPlan> => {
-  const scope = scopeOf(org);
-  const asked = parseFormat(request.format);
-  const setting = defaultSyncFormat();
-  // What this server sends, and what it serves for upload elsewhere, follows its setting and never the caller: an older student
-  // API reads one organisation's file as the whole platform's, so a request for a HIGHER format than the setting is refused.
-  if (asked !== undefined && asked > setting) {
-    const message = "This server pushes format 2 until SYNC_FORMAT_DEFAULT is 3.";
-    throw new ApiError(ErrorCode.INVALID_INPUT, message, { fields: [{ field: "format", message }] });
+const RETIRED_FORMAT_MESSAGE = "Format 2 has been retired; content is one organisation's (format 3).";
+
+/**
+ * A content sync takes no `format`: the format is always 3. A request that sends one (any value, in the query or the body;
+ * the admin's older request body did) is a 400 that says why, and nothing is exported or pushed. The caller's scope is
+ * read first, so a caller with no scope still gets the 403 it always did.
+ */
+export const refuseRetiredFormat = (org: OrgContext, format: unknown): void => {
+  scopeOf(org); // throws first when there is no scope
+  if (format !== undefined) {
+    throw new ApiError(ErrorCode.INVALID_INPUT, RETIRED_FORMAT_MESSAGE, {
+      fields: [{ field: "format", message: RETIRED_FORMAT_MESSAGE }],
+    });
   }
-  const format = asked ?? setting;
-  if (format === 2) {
-    if (scope.kind !== "platform") {
-      throw new ApiError(
-        ErrorCode.INVALID_INPUT,
-        asked === undefined
-          ? "This server syncs the whole platform's content only. Sync as a platform user who is not acting as an organisation."
-          : "Format 2 is for the platform, not acting as an organisation, only.",
-        { fields: [{ field: "format", message: "Format 2 is for the platform, not acting as an organisation, only." }] },
-      );
-    }
-    if (parseOrganisationId(request.organisationid) !== undefined) {
-      throw invalid("organisationid", "Format 2 is the whole platform's content: it does not take an organisation.");
-    }
-    return { format: 2 };
-  }
-  return { format: 3, organisation: await resolveSyncOrganisation(org, request.organisationid) };
 };
+
+/** The organisation a content sync (`sync/content`, `sync/cloud`) is for. */
+export const planContentSync = async (org: OrgContext, request: SyncRequest): Promise<SyncPlan> => ({
+  organisation: await resolveSyncOrganisation(org, request.organisationid),
+});

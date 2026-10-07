@@ -34,9 +34,7 @@ jest.mock("src/business", () => ({
   })),
 }));
 jest.mock("src/business/sync.business", () => ({
-  SyncBusiness: jest.fn().mockImplementation(() => ({
-    syncontentVersion2: async () => "",
-  })),
+  SyncBusiness: jest.fn().mockImplementation(() => ({})),
 }));
 jest.mock("src/business/schooluser.business", () => ({
   SchoolUserBusiness: jest.fn().mockImplementation(() => ({

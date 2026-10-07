@@ -10,7 +10,6 @@ import {
   documenttags,
 } from "../models/data-models/init-models";
 import { subjects, subjectsAttributes } from "src/models/data-models/subjects";
-import { studentApiAttributes } from "./student-api-payload";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedSubject } from "./content-scope";
 
@@ -99,15 +98,6 @@ export class SubjectBusiness {
     };
     const tempdt = await subjects.count({ where: await andScope(this.org, "subject", where) });
     return tempdt > 0;
-  };
-  getSubjects = async () => {
-    const where: WhereOptions<subjectsAttributes> = {
-      //isdeleted: false,
-    };
-    const order = ["subjectname"];
-
-    // only the sync payload (student API) reads this: see student-api-payload.ts
-    return await subjects.findAll({ where: await andScope(this.org, "subject", where), order, attributes: studentApiAttributes });
   };
   // The organisation payload (format 3): whole rows, the owner included, for the subjects in scope.
   getSubjectsWithOwner = async () =>
