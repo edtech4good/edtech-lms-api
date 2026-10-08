@@ -56,13 +56,13 @@ import {
 
 // Pinned on purpose. When you add or remove a route, update these numbers AND
 // run `npm run routes:policy -- --write` to refresh the committed files.
-const EXPECTED_TOTAL = 282;
+const EXPECTED_TOTAL = 281;
 const EXPECTED_BY_POLICY = {
   public: 11,
   self: 5,
   owned: 242,
   platform: 18,
-  server: 1,
+  server: 0,
   global: 5,
 };
 
@@ -70,12 +70,12 @@ const EXPECTED_BY_POLICY = {
 // total):
 //  - enforced: by a guard (self 5 + global 5 + platform with PlatformGuard 18
 //    = 28), or, for an owned or server route, by the spec it names (242 owned,
-//    listed below, + 1 server = 243) = 271
+//    listed below, + 0 server = 242) = 270
 //  - not applicable (public): 11
 //  - pending the organisation boundary: owned or server without a proving spec
 //    0 + platform without PlatformGuard 0 = 0
 const EXPECTED_ENFORCED_BY_GUARD = 28;
-const EXPECTED_ENFORCED_BY_SPEC = 243;
+const EXPECTED_ENFORCED_BY_SPEC = 242;
 const EXPECTED_ENFORCED = EXPECTED_ENFORCED_BY_GUARD + EXPECTED_ENFORCED_BY_SPEC;
 const EXPECTED_NOT_APPLICABLE = 11;
 const EXPECTED_PENDING = 0;
@@ -326,7 +326,8 @@ const EXPECTED_OWNED_ENFORCED = [
   "PUT /user/:lmsuserid",
 ];
 // The `server` routes that name a spec proving them (the API key admitted, nobody else), pinned by name.
-const EXPECTED_SERVER_ENFORCED = ["GET /sync/report-data"];
+// None since GET /sync/report-data was retired; the policy stays for the next route that only the API key may call.
+const EXPECTED_SERVER_ENFORCED: string[] = [];
 
 // Every `platform` route has PlatformGuard (18 routes), pinned by name so
 // moving a route out of the platform set is a conscious edit.
@@ -418,7 +419,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("pending enforcement", () => {
-    it("divides the routes into 271 enforced (28 by a guard, 243 by a proving spec), 11 not applicable (public) and 0 pending", () => {
+    it("divides the routes into 270 enforced (28 by a guard, 242 by a proving spec), 11 not applicable (public) and 0 pending", () => {
       const count = (state: string) => routes.filter((r) => enforcementState(r) === state).length;
       expect(count("yes")).toBe(EXPECTED_ENFORCED);
       expect(count("n/a")).toBe(EXPECTED_NOT_APPLICABLE);

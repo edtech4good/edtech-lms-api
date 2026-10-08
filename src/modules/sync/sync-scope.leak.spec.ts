@@ -241,40 +241,6 @@ describe("the content sync is one organisation's", () => {
     return { url, headers: options.headers, entries, json: JSON.parse(zip.readAsText(entries[0])) };
   };
 
-  // ───────────────────────────── GET /sync/report-data ─────────────────────────────
-  // The application key is the only credential this route takes, and it carries no organisation: it is served as the
-  // platform, so the export covers every organisation. Nothing is scoped; what is proved is who gets in and what the key gets.
-  describe("GET /sync/report-data", () => {
-    // the export reads the schools table; a refused request must not have read it (and an export must have)
-    const schoolReads = () => (schools.findAll as unknown as jest.Mock).mock.calls.length;
-
-    it.each([...IN_X, NOT_ACTING, "a school-user token" as Who])("%s: refused, and no export is made for it", async (who) => {
-      const res = await send(who, "get", "/sync/report-data").buffer().parse(textOf);
-      expect(res.status).toBe(403);
-      const text = (res.body as Buffer).toString("utf8");
-      expect(res.headers["content-type"]).not.toMatch(/zip/);
-      expect(text).not.toContain("syncfile.ini");
-      for (const id of [...everyIdOf(TX), ...everyIdOf(TY), ...everyIdOf(TU)]) expect(text).not.toContain(id);
-      expect(schoolReads()).toBe(0);
-    });
-
-    it("no credential at all: refused (401), and no export is made", async () => {
-      const res = await request(app.getHttpServer()).get("/sync/report-data").set("Connection", "close");
-      expect(res.status).toBe(401);
-      expect(schoolReads()).toBe(0);
-    });
-
-    it("a server token: the export holds every organisation's schools and curriculums, and the unowned ones", async () => {
-      const { res, status, json } = await download("a server token", "/sync/report-data");
-      expect(status).toBe(200);
-      expect(res.headers["content-type"]).toMatch(/application\/zip/);
-      expect(schoolReads()).toBeGreaterThan(0);
-      expect(ids(json.contents.schools, "schoolid")).toEqual(sorted(...[TX, TY, TU].flatMap((t) => [t.school, t.school2])));
-      expect(ids(json.contents.curriculums, "curriculumid")).toEqual(sorted(TX.curriculum, TY.curriculum, TU.curriculum));
-      expect(ids(json.students, "schooluserid")).toEqual(sorted(...[TX, TY, TU].flatMap((t) => [t.login, t.teacherLogin])));
-    });
-  });
-
   // ───────────────────────────── GET /sync/content ─────────────────────────────
   describe("GET /sync/content", () => {
     it.each(IN_X)("%s: X's content only, in format 3 with the header the student API reads", async (who) => {
@@ -570,6 +536,31 @@ describe("the content sync is one organisation's", () => {
       expect(res.headers["content-type"]).not.toMatch(/zip/);
       expect(said(res)).toEqual(said(await send(who, "get", "/sync-that-is-not-there")));
       expect(said(await send(who, "get", `/sync?organisationid=${X}`)).status).toBe(404);
+      expect(schoolReads()).toBe(0);
+    });
+  });
+
+  // ───────────────────────────── GET /sync/report-data (retired) ─────────────────────────────
+  // `GET /sync/report-data` served the whole platform (every organisation's content, learners and recent progress) to the
+  // application key, which carries no organisation. Nothing used it. It no longer exists: the answer is the one any unknown
+  // path gets, for every caller, the application key included, and for a request with no credential at all.
+  describe("GET /sync/report-data is not a route", () => {
+    const EVERYONE = [...IN_X, NOT_ACTING, "a server token", "a school-user token"] as Who[];
+    const schoolReads = () => (schools.findAll as unknown as jest.Mock).mock.calls.length;
+
+    it.each(EVERYONE)("%s: 404, the answer of a path that is not there, and nothing is served or read", async (who) => {
+      const res = await send(who, "get", "/sync/report-data");
+      expect(res.status).toBe(404);
+      expect(res.headers["content-type"]).not.toMatch(/zip/);
+      expect(said(res)).toEqual(said(await send(who, "get", "/sync/report-data-that-is-not-there")));
+      expect(schoolReads()).toBe(0);
+    });
+
+    it("no credential at all: the same 404, not a 401", async () => {
+      const res = await request(app.getHttpServer()).get("/sync/report-data").set("Connection", "close");
+      expect(res.status).toBe(404);
+      const unknown = await request(app.getHttpServer()).get("/sync/report-data-that-is-not-there").set("Connection", "close");
+      expect(said(res)).toEqual(said(unknown));
       expect(schoolReads()).toBe(0);
     });
   });

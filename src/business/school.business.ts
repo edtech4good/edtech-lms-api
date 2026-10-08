@@ -407,13 +407,4 @@ export class SchoolBusiness {
     }
     return data;
   }
-
-  getSchools = async () => {
-    const where: WhereOptions<schoolsAttributes> = {
-      //isdeleted: false,
-    };
-    const order = ["schoolname"];
-
-    return await schools.findAll({ where, order });
-  };
 }

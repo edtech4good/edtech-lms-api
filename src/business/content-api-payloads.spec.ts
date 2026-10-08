@@ -1,23 +1,18 @@
 import { Sequelize } from "sequelize";
 import { CurriculumBusiness } from "src/business/curriculum.business";
 import { GradeBusiness } from "src/business/grade.business";
-import { DocumentBusiness } from "src/business/document.business";
-import { QuestionBusiness } from "src/business/question.business";
-import { SyncBusiness } from "src/business/sync.business";
 import { buildOrganisationContent } from "src/business/organisation-content-export";
 import { initModels } from "src/models/data-models/init-models";
 
 /**
- * The report data (`sync/report-data`) is a payload for the student API, which has no
- * `organisationid` on the content tables (C7). Each of them is built by a
- * getter on a business class; the real SQL Sequelize generates is captured here
- * (no database) and the SELECT list of every statement against the three content
- * tables the sync reads is checked, so a getter that starts selecting the column
- * again fails here before it reaches a Pi. A select list must name the table's own
- * key (so `SELECT *` fails), and no statement a getter sends, other than a read of the
- * schools, may mention the column anywhere (so a JOIN that pulls it in fails).
+ * The readers behind the content payloads carry the organisation's limit. The real SQL Sequelize generates is captured
+ * here (no database). Two things are pinned: a business class built with a caller's context adds a limit to its read
+ * where one built without it does not, and the organisation payload (format 3) reads every table through classes built
+ * with the organisation's context, the tables that have an owner by `organisationid` (read whole, the owner included)
+ * and the rest by the ids of their parents in scope. A reader that loses its limit fails here before it reaches a Pi.
+ * The admin API's own read of the curriculums keeps its owner column too.
  */
-describe("content payloads for the student API do not select organisationid", () => {
+describe("content readers carry the organisation's limit", () => {
   const sequelize = new Sequelize({ dialect: "mysql" });
   initModels(sequelize);
 
@@ -36,93 +31,28 @@ describe("content payloads for the student API do not select organisationid", ()
   const selectList = (sql: string) => sql.split(" FROM ")[0];
   const reading = (sqls: string[], table: string) => sqls.filter((s) => new RegExp(`FROM \`${table}\``).test(s));
 
-  const CONTENT = ["curriculums", "questions", "documents"] as const;
-  const KEY = { curriculums: "curriculumid", questions: "questionid", documents: "documentid" } as const;
-  /** A school legitimately carries its organisation; nothing else the getters read does. */
-  const outsideSchools = (sqls: string[]) => sqls.filter((s) => !/FROM `schools`/.test(s));
-  const namesNoOrganisation = (sqls: string[]) => {
-    expect(sqls.length).toBeGreaterThan(0);
-    for (const sql of outsideSchools(sqls)) expect(sql).not.toMatch(/organisationid/);
-  };
-
-  describe.each([
-    ["getquestions", "questions", "questionid", () => new QuestionBusiness().getquestions()],
-    ["getdocuments", "documents", "documentid", () => new DocumentBusiness().getdocuments()],
-    ["getCurriculumsForStudentApi", "curriculums", "curriculumid", () => new CurriculumBusiness().getCurriculumsForStudentApi()],
-  ] as const)("%s", (_name, table, key, run) => {
-    it(`selects the table's columns, but not organisationid`, async () => {
-      const all = await capture(run);
-      const sqls = reading(all, table);
-      expect(sqls).toHaveLength(1);
-      expect(selectList(sqls[0])).toMatch(new RegExp(`\`${key}\``));
-      expect(selectList(sqls[0])).not.toMatch(/organisationid/);
-      namesNoOrganisation(all);
-    });
-  });
-
   it("the admin API's own read of the curriculums DOES carry organisationid (only the payload hides it)", async () => {
     const sqls = reading(await capture(() => new CurriculumBusiness().getCurriculums()), "curriculums");
     expect(sqls).toHaveLength(1);
     expect(selectList(sqls[0])).toMatch(/organisationid/);
   });
 
-  describe.each([
-    ["getreportdata (sync/report-data)", () => new SyncBusiness().getreportdata()],
-  ] as const)("%s", (_name, run) => {
-    it.each(CONTENT)("reads %s by named columns, without organisationid", async (table) => {
-      const sqls = reading(await capture(run), table);
-      expect(sqls.length).toBeGreaterThan(0);
-      for (const sql of sqls) {
-        expect(selectList(sql)).toMatch(new RegExp(`\`${KEY[table]}\``));
-        expect(selectList(sql)).not.toMatch(/organisationid/);
-      }
-    });
-
-    it("sends no statement that names organisationid, other than a read of the schools", async () => {
-      namesNoOrganisation(await capture(run));
-    });
-  });
-
-  it("getreportdata has no subjects", async () => {
-    expect(reading(await capture(() => new SyncBusiness().getreportdata()), "subjects")).toEqual([]);
-  });
-
   /**
    * The readers the admin routes use are the ones the payloads use, and content is limited to the caller's
    * organisation by building the business class with the caller's context (content-scope.ts). A class built without
-   * one is what it was: every reader the payloads call sends the one statement it always did, with no limit on the
-   * rows (no `IN (...)` list of the caller's ids, no read of the ids first). With a context the same reader adds the
-   * limit, so the difference is the context and nothing else.
+   * one sends the one statement it always did, with no limit on the rows (no `IN (...)` list of the caller's ids);
+   * with a context the same reader adds the limit, so the difference is the context and nothing else.
    */
-  describe("the payloads' readers are not limited to an organisation", () => {
-    const CONTENT_TABLES = [
-      "curriculums", "grades", "levels", "lessons", "lessonlearnings", "lessonpractices", "lessonpracticequestions",
-      "lessonquizzes", "lessonquizquestions", "levelquizquestions", "lessonplans", "baselinequestion", "questions",
-      "documents", "subjects", "feedbacks",
-    ];
-    const contentReads = (sqls: string[]) => sqls.filter((s) => CONTENT_TABLES.some((t) => new RegExp(`FROM \`${t}\``).test(s)));
-
-    it.each([
-      ["getreportdata (sync/report-data)", () => new SyncBusiness().getreportdata()],
-    ] as const)("%s reads every content table once, with no limit on the rows", async (_name, run) => {
-      const reads = contentReads(await capture(run));
-      expect(reads.length).toBeGreaterThan(0);
-      for (const table of new Set(reads.map((s) => CONTENT_TABLES.find((t) => new RegExp(`FROM \`${t}\``).test(s))))) {
-        expect(reads.filter((s) => new RegExp(`FROM \`${table}\``).test(s))).toHaveLength(1);
-      }
-      for (const sql of reads) expect(sql).not.toMatch(/ IN \(/);
-    });
-
-    it("the same reader built with a caller's context does add the limit (so the check above can fail)", async () => {
-      const org = { organisationid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", isplatform: false };
-      const unscoped = reading(await capture(() => new GradeBusiness().getGrades()), "grades");
-      expect(unscoped).toHaveLength(1);
-      expect(unscoped[0]).not.toMatch(/ IN \(/);
-      const all = await capture(() => new GradeBusiness(org).getGrades());
-      expect(reading(all, "curriculums").length).toBeGreaterThan(0); // the curriculums the organisation owns, read first
-      expect(reading(all, "grades").some((s) => / IN \(/.test(s))).toBe(true);
-    });
+  it("a reader built with a caller's context adds the limit that one built without it does not", async () => {
+    const org = { organisationid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", isplatform: false };
+    const unscoped = reading(await capture(() => new GradeBusiness().getGrades()), "grades");
+    expect(unscoped).toHaveLength(1);
+    expect(unscoped[0]).not.toMatch(/ IN \(/);
+    const all = await capture(() => new GradeBusiness(org).getGrades());
+    expect(reading(all, "curriculums").length).toBeGreaterThan(0); // the curriculums the organisation owns, read first
+    expect(reading(all, "grades").some((s) => / IN \(/.test(s))).toBe(true);
   });
+
   /**
    * One organisation's payload (format 3) is read through business classes built with the organisation's context, so every
    * statement against a content table carries the limit: the owner for the tables that have one, the ids of the parents in

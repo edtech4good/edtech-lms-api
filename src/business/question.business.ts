@@ -21,7 +21,6 @@ import {
   questions,
   questionsAttributes,
 } from "../models/data-models/questions";
-import { studentApiAttributes } from "./student-api-payload";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedQuestion } from "./content-scope";
 
@@ -119,8 +118,6 @@ export class QuestionBusiness {
     this.org
       ? findOwnedQuestion(this.org, questionid, { where: { isdeleted: false } })
       : questions.findOne({ where: { questionid, isdeleted: false } });
-  // sync payload (student API): see student-api-payload.ts. Limited to the questions in scope when built with a caller's context.
-  getquestions = async () => questions.findAll({ where: await andScope(this.org, "question"), attributes: studentApiAttributes });
   // The organisation payload (format 3): whole rows, the owner included, for the questions in scope.
   getquestionsWithOwner = async () => questions.findAll({ where: await andScope(this.org, "question") });
   getquestionall = async (paging: IPaging) => {

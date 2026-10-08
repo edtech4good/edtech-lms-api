@@ -240,13 +240,4 @@ export class FeedbackBusiness {
       : await feedbacks.findOne(options);
     return fb;
   };
-
-  getFeedbacks = async () => {
-    const where: WhereOptions<feedbackAttributes> = {
-      //isdeleted: false,
-    };
-    const order = ["created_at"];
-
-    return await feedbacks.findAll({ where, order });
-  };
 }

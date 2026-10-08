@@ -6,7 +6,7 @@ import { students } from "src/models/data-models/students";
 
 /**
  * The rosters pushed to the student API (cloud push of learners and teachers,
- * the content export, `sync/report-data`) are built from three getters on
+ * the exports a classroom Pi imports) are built from getters on
  * `SchoolUserBusiness`, each a `schoolusers` query that INCLUDES `students`
  * with no attribute list of its own. They depend on the models' default scope
  * to keep the C4 `schoolid` out of the included learner and the login. If a
@@ -51,19 +51,9 @@ describe("roster payload getters keep schoolid out of the login and the included
     guards(await capture((b) => b.getschooluserbyid(["u1"])));
   });
 
-  it("getschoolusers (content export and sync/report-data)", async () => {
-    guards(await capture((b) => b.getschoolusers()));
-  });
-
   // The join type decides WHICH logins reach the payload: an inner join silently drops
   // a login that has no learner row. Pinned for every getter that includes the learner.
   describe("the learner join keeps (or drops) logins exactly as the payload always has", () => {
-    it("getschoolusers: LEFT OUTER JOIN, so a login with no learner row stays in sync/report-data", async () => {
-      const sql = await capture((b) => b.getschoolusers());
-      expect(sql).toMatch(/LEFT OUTER JOIN `students` AS `student`/);
-      expect(sql).not.toMatch(/INNER JOIN/);
-    });
-
     it("getschooluserbyid: LEFT OUTER JOIN, so a login with no learner row is still pushed", async () => {
       const sql = await capture((b) => b.getschooluserbyid(["u1"]));
       expect(sql).toMatch(/LEFT OUTER JOIN `students` AS `student`/);
