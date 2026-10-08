@@ -37,6 +37,8 @@ npm run start:dev
 
 The API listens on port 3000. Swagger is at http://localhost:3000/docs.
 
+The database has to exist before `db:migrate` runs. Its default character set and collation do not matter: every migration that creates a table names `utf8mb4` and `utf8mb4_unicode_ci` itself, so a database created with MySQL 8's default (`utf8mb4_0900_ai_ci`) migrates cleanly. Creating it as `utf8mb4_unicode_ci` is still the better habit, because it matches servers that were set up that way.
+
 Configuration is read in `src/config.ts`. Every setting has a flat environment variable, and the whole block can also arrive as one JSON value in `FORTYKAPICONFIG`, which is how the deployed containers get it. The flat variables are easier for local work:
 
 ```env
