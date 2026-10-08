@@ -53,6 +53,11 @@ or its curriculum). The boundary is enforced in code, route by route:
   student API must say so in the PR.
 - Deploy notes belong in the PR: migrations to run, flags to set, who must sign
   in again.
+- Central never runs `sequelize.sync()`, so an index a model declares
+  (`indexes:`) exists only if a migration creates it, with the same name and
+  columns (`20261008140000-model-indexes`). `npm run db:check-indexes` compares
+  the compiled models with a migrated database and must report nothing MISSING.
+  A declared unique index also needs a duplicate guard before it is added.
 
 ## Khmer text
 
