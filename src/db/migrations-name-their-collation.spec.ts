@@ -71,12 +71,24 @@ const migrationFiles = fs
 
 const source = (file: string) => fs.readFileSync(path.join(MIGRATIONS_DIR, file), "utf8");
 
+/** Source with block and line comments removed, so a comment that says "createTable" is not counted. */
+const code = (file: string) =>
+  source(file)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+/** How many table creations the code of a file spells out: `createTable(` calls plus raw CREATE TABLE statements. */
+const createsInSource = (file: string) =>
+  (code(file).match(/\bcreateTable\s*\(/g) ?? []).length +
+  (code(file).match(/\bCREATE\s+TABLE\b/gi) ?? []).length;
+
 /**
  * Migrations whose up() cannot be run against the fake: they read rows or
  * table metadata back and branch on it (seeds, a password re-wrap, the
- * NOT NULL tightening). None of them creates a table. Each is judged on its
- * source instead: the last test fails if one of them starts to create a table
- * without naming the charset and collation.
+ * NOT NULL tightening). Because the fake cannot see what they do, the rule for
+ * them is stricter: they must create no table at all (no `createTable(` and no
+ * CREATE TABLE in their code). A migration that needs to create a table has to
+ * be made runnable against the fake, not added here.
  */
 const NEEDS_REAL_DATA: string[] = [
   "20260407120500-seed-rbac-local-dev.ts",
@@ -122,12 +134,16 @@ describe("migrations name the character set and collation of every table they cr
     ).toEqual([]);
   });
 
-  it("every migration whose source creates a table was seen creating one (the fake did not skip it)", () => {
-    const unseen = outcomes
-      .filter((o) => /createTable|CREATE\s+TABLE/i.test(source(o.file)))
-      .filter((o) => o.rec.creates.length === 0 && o.rec.rawCreates.length === 0)
-      .map((o) => o.file);
-    expect(unseen).toEqual([]);
+  it("every table creation spelled out in a migration's code was seen (a create behind a guard the fake took cannot hide)", () => {
+    const mismatched = outcomes
+      .filter((o) => !NEEDS_REAL_DATA.includes(o.file))
+      .map((o) => ({
+        migration: o.file,
+        inSource: createsInSource(o.file),
+        recorded: o.rec.creates.length + o.rec.rawCreates.length,
+      }))
+      .filter((r) => r.inSource !== r.recorded);
+    expect(mismatched).toEqual([]);
   });
 
   it("every createTable call passes charset utf8mb4 and collate utf8mb4_unicode_ci", () => {
@@ -156,13 +172,8 @@ describe("migrations name the character set and collation of every table they cr
     expect(wrong).toEqual([]);
   });
 
-  it("the migrations that cannot run against the fake create no table, or name the collation in their source", () => {
-    const wrong = NEEDS_REAL_DATA.filter((f) => {
-      const src = source(f);
-      const creates = /createTable|CREATE\s+TABLE/i.test(src);
-      return creates && (!src.includes(WANT_COLLATE) || !src.includes(WANT_CHARSET));
-    });
-    expect(wrong).toEqual([]);
+  it("the migrations that cannot run against the fake create no table at all", () => {
+    expect(NEEDS_REAL_DATA.filter((f) => createsInSource(f) > 0)).toEqual([]);
   });
 
   it("the list of migrations that cannot run against the fake names real files", () => {
