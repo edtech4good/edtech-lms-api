@@ -192,28 +192,4 @@ export class SchoolUserBusiness {
         transaction,
       },
     );
-
-  getschoolusers = async () => {
-    schoolusers.hasOne(students, {
-      foreignKey: "schooluserid",
-      sourceKey: "schooluserid",
-    });
-    students.belongsTo(schoolusers, {
-      foreignKey: "schooluserid",
-    });
-
-    return schoolusers.findAll({
-      where: {
-        schooluserstatus: true,
-      },
-      attributes: studentApiAttributes,
-      include: [
-        {
-          model: students,
-          required: false,
-          attributes: studentApiAttributes,
-        },
-      ],
-    });
-  };
 }

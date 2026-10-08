@@ -51,19 +51,9 @@ describe("roster payload getters keep schoolid out of the login and the included
     guards(await capture((b) => b.getschooluserbyid(["u1"])));
   });
 
-  it("getschoolusers (every login; no route calls it since sync/report-data was retired)", async () => {
-    guards(await capture((b) => b.getschoolusers()));
-  });
-
   // The join type decides WHICH logins reach the payload: an inner join silently drops
   // a login that has no learner row. Pinned for every getter that includes the learner.
   describe("the learner join keeps (or drops) logins exactly as the payload always has", () => {
-    it("getschoolusers: LEFT OUTER JOIN, so a login with no learner row stays in its result", async () => {
-      const sql = await capture((b) => b.getschoolusers());
-      expect(sql).toMatch(/LEFT OUTER JOIN `students` AS `student`/);
-      expect(sql).not.toMatch(/INNER JOIN/);
-    });
-
     it("getschooluserbyid: LEFT OUTER JOIN, so a login with no learner row is still pushed", async () => {
       const sql = await capture((b) => b.getschooluserbyid(["u1"]));
       expect(sql).toMatch(/LEFT OUTER JOIN `students` AS `student`/);

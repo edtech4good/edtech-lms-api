@@ -13,18 +13,10 @@
  *  - SchoolUserBusiness.getschooluserbyid         (cloud push of learners just created)
  *  - SchoolUserBusiness.getschoolteachersbyid     (cloud push of teachers just created)
  *    (these three keep it out unless asked for `{ withSchoolId: true }`: see `studentApiRosterAttributes`)
- *  - SchoolUserBusiness.getschoolusers            (no caller since sync/report-data was retired; kept with its pins)
  *  - TeacherBusiness.getteacheruserbyschoolid     (export of a school's teachers)
  *
- * and, for the content (`organisationid`), these getters (the format 3 content export reads its tables through
- * the `*WithOwner` readers and the scoped business classes instead, so the three below have no caller either):
- *
- *  - CurriculumBusiness.getCurriculumsForStudentApi (the admin API's getCurriculums is separate and keeps the column)
- *  - QuestionBusiness.getquestions
- *  - DocumentBusiness.getdocuments
- *
- * (and the learner rows they include). `school-id-payloads.spec.ts` and
- * `content-api-payloads.spec.ts` pin each of them to the generated SQL. The
+ * `school-id-payloads.spec.ts` pins each of them to the generated SQL. The content payload (format 3)
+ * is built elsewhere (organisation-content-export.ts) and is not described here. The
  * admin API's own reads are NOT in this list and do carry both columns. A
  * column is only ever listed here once, and only for a table that has it: the
  * exclusion of a column a table does not have changes nothing.

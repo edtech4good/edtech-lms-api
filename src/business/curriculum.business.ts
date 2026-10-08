@@ -22,7 +22,6 @@ import {
 } from "../models/data-models/init-models";
 import { buildWhere } from "./../services/util.service";
 import { subjects } from "src/models/data-models/subjects";
-import { studentApiAttributes } from "./student-api-payload";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedCurriculum } from "./content-scope";
 import { andInOwnedSchools } from "./school-scope";
@@ -101,15 +100,6 @@ export class CurriculumBusiness {
     const order = ["curriculumname"];
 
     return await curriculums.findAll({ where: await andScope(this.org, "curriculum", where), order });
-  };
-  /** The same rows for a payload that goes to the student API: without the columns it does not have (see student-api-payload.ts). */
-  getCurriculumsForStudentApi = async () => {
-    const where: WhereOptions<curriculumsAttributes> = {
-      //isdeleted: false,
-    };
-    const order = ["curriculumname"];
-
-    return await curriculums.findAll({ where: await andScope(this.org, "curriculum", where), order, attributes: studentApiAttributes });
   };
   getCurriculumsWithFilter = async (cur: string, studentid: string, standardid: string, schoolid: string | undefined) => {
     const where: WhereOptions<curriculumsAttributes> = {

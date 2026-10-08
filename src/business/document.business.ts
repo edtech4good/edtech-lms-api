@@ -6,7 +6,6 @@ import { LmsUserToken } from "src/models/token.model";
 import { buildWhere } from "src/services/util.service";
 import { v4 as uuidv4 } from 'uuid';
 import { documents, documentsAttributes } from "../models/data-models/documents";
-import { studentApiAttributes } from "./student-api-payload";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedDocument } from "./content-scope";
 
@@ -44,9 +43,6 @@ export class DocumentBusiness {
         return await documents.findAndCountAll({ where, order, limit, offset });
     };
     getdocumentname = (documentname: string) => documents.findOne({ where: { documentname, isdeleted: false } });
-    // sync payload (student API): see student-api-payload.ts
-    // Limited to the documents in scope when built with a caller's context.
-    getdocuments = async () => documents.findAll({ where: await andScope(this.org, "document"), attributes: studentApiAttributes });
     // The organisation payload (format 3): whole rows, the owner included, for the documents in scope.
     getdocumentsWithOwner = async () => documents.findAll({ where: await andScope(this.org, "document") });
     deletedocument = async (documentid: string, user: LmsUserToken) => {

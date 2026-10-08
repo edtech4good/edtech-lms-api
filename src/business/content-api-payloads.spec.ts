@@ -1,20 +1,13 @@
 import { Sequelize } from "sequelize";
 import { CurriculumBusiness } from "src/business/curriculum.business";
 import { GradeBusiness } from "src/business/grade.business";
-import { DocumentBusiness } from "src/business/document.business";
-import { QuestionBusiness } from "src/business/question.business";
 import { buildOrganisationContent } from "src/business/organisation-content-export";
 import { initModels } from "src/models/data-models/init-models";
 
 /**
- * Content for the student API: the student API has no `organisationid` on the content
- * tables (C7). Each payload is built by a
- * getter on a business class; the real SQL Sequelize generates is captured here
- * (no database) and the SELECT list of every statement against the three content
- * tables the sync reads is checked, so a getter that starts selecting the column
- * again fails here before it reaches a Pi. A select list must name the table's own
- * key (so `SELECT *` fails), and no statement a getter sends, other than a read of the
- * schools, may mention the column anywhere (so a JOIN that pulls it in fails).
+ * Content for the student API: the student API has no `organisationid` on the content tables (C7), and the
+ * organisation's payload (format 3) is read through business classes built with the organisation's context. The real SQL
+ * Sequelize generates is captured here (no database), so a reader that loses its limit fails here before it reaches a Pi.
  */
 describe("content payloads for the student API do not select organisationid", () => {
   const sequelize = new Sequelize({ dialect: "mysql" });
@@ -34,28 +27,6 @@ describe("content payloads for the student API do not select organisationid", ()
   };
   const selectList = (sql: string) => sql.split(" FROM ")[0];
   const reading = (sqls: string[], table: string) => sqls.filter((s) => new RegExp(`FROM \`${table}\``).test(s));
-
-  /** A school legitimately carries its organisation; nothing else the getters read does. */
-  const outsideSchools = (sqls: string[]) => sqls.filter((s) => !/FROM `schools`/.test(s));
-  const namesNoOrganisation = (sqls: string[]) => {
-    expect(sqls.length).toBeGreaterThan(0);
-    for (const sql of outsideSchools(sqls)) expect(sql).not.toMatch(/organisationid/);
-  };
-
-  describe.each([
-    ["getquestions", "questions", "questionid", () => new QuestionBusiness().getquestions()],
-    ["getdocuments", "documents", "documentid", () => new DocumentBusiness().getdocuments()],
-    ["getCurriculumsForStudentApi", "curriculums", "curriculumid", () => new CurriculumBusiness().getCurriculumsForStudentApi()],
-  ] as const)("%s", (_name, table, key, run) => {
-    it(`selects the table's columns, but not organisationid`, async () => {
-      const all = await capture(run);
-      const sqls = reading(all, table);
-      expect(sqls).toHaveLength(1);
-      expect(selectList(sqls[0])).toMatch(new RegExp(`\`${key}\``));
-      expect(selectList(sqls[0])).not.toMatch(/organisationid/);
-      namesNoOrganisation(all);
-    });
-  });
 
   it("the admin API's own read of the curriculums DOES carry organisationid (only the payload hides it)", async () => {
     const sqls = reading(await capture(() => new CurriculumBusiness().getCurriculums()), "curriculums");
