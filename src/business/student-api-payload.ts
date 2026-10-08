@@ -1,6 +1,6 @@
 /**
  * What this API sends to the student API (cloud push of learners and teachers,
- * the content and report-data sync, the exports a classroom Pi imports) is a
+ * the content sync, the exports a classroom Pi imports) is a
  * contract with another service. `students` and `schoolusers` here carry a
  * `schoolid` column (C4), and the content tables an `organisationid` column
  * (C7), that the student API does not have yet, so a payload that carried
@@ -13,10 +13,11 @@
  *  - SchoolUserBusiness.getschooluserbyid         (cloud push of learners just created)
  *  - SchoolUserBusiness.getschoolteachersbyid     (cloud push of teachers just created)
  *    (these three keep it out unless asked for `{ withSchoolId: true }`: see `studentApiRosterAttributes`)
- *  - SchoolUserBusiness.getschoolusers            (content export and sync/report-data)
+ *  - SchoolUserBusiness.getschoolusers            (no caller since sync/report-data was retired; kept with its pins)
  *  - TeacherBusiness.getteacheruserbyschoolid     (export of a school's teachers)
  *
- * and, for the content (`organisationid`), the getters the sync reads:
+ * and, for the content (`organisationid`), these getters (the format 3 content export reads its tables through
+ * the `*WithOwner` readers and the scoped business classes instead, so the three below have no caller either):
  *
  *  - CurriculumBusiness.getCurriculumsForStudentApi (the admin API's getCurriculums is separate and keeps the column)
  *  - QuestionBusiness.getquestions
