@@ -1,42 +1,31 @@
 /**
- * What this API sends to the student API (cloud push of learners and teachers,
- * the content sync, the exports a classroom Pi imports) is a
- * contract with another service. `students` and `schoolusers` here carry a
- * `schoolid` column (C4) that the student API does not have yet, so a payload
- * that carried it would not be what that service was written against.
+ * The column lists for the rows of a roster (learners and their logins, teachers' logins) that leave this API
+ * as a payload: the exports a classroom Pi imports, and the cloud pushes of a school's learners and teachers.
+ * The rows are selected through one of two lists, at the point each getter reads them, so that what leaves is
+ * named and does not follow whatever columns the tables gain:
  *
- * Every function that builds such a payload keeps the column out EXPLICITLY, at
- * the point it selects the rows, through `studentApiAttributes`:
+ *  - `studentApiAttributes` omits `schoolid` and `organisationid`. It is the default of the roster getters and the
+ *    only list of the teachers' export, so a roster that does not name its school carries neither column:
+ *      - SchoolUserBusiness.getschooluserbyschoolid   (export of a school's learners)
+ *      - SchoolUserBusiness.getschooluserbyid         (learners just created, when not asked for `withSchoolId`)
+ *      - SchoolUserBusiness.getschoolteachersbyid     (teachers just created, when not asked for `withSchoolId`)
+ *      - TeacherBusiness.getteacheruserbyschoolid     (export of a school's teachers)
+ *  - `studentApiRosterAttributes` omits `organisationid` only. A cloud push of a roster names its school once, at the
+ *    top level of the file (`{ schoolid, studentusers }` or `{ schoolid, teachers }`: see `studentsFile` and
+ *    `teachersFile` in cloud-push.ts), and each row keeps its own `schoolid`. The first three getters above use it when called
+ *    with `{ withSchoolId: true }`, which the cloud pushes do.
  *
- *  - SchoolUserBusiness.getschooluserbyschoolid   (export of a school's learners; cloud sync of a school)
- *  - SchoolUserBusiness.getschooluserbyid         (cloud push of learners just created)
- *  - SchoolUserBusiness.getschoolteachersbyid     (cloud push of teachers just created)
- *    (these three keep it out unless asked for `{ withSchoolId: true }`: see `studentApiRosterAttributes`)
- *  - TeacherBusiness.getteacheruserbyschoolid     (export of a school's teachers)
- *
- * `school-id-payloads.spec.ts` pins each of them to the generated SQL. The content payload (format 3)
- * is built elsewhere (organisation-content-export.ts) and is not described here. The
- * admin API's own reads are NOT in this list and do carry both columns. A
- * column is only ever listed here once, and only for a table that has it: the
- * exclusion of a column a table does not have changes nothing.
+ * `school-id-payloads.spec.ts` pins the generated SQL of each getter, with and without `withSchoolId`. The content
+ * payload (format 3) is built elsewhere (organisation-content-export.ts) and is not described here. The admin API's own
+ * reads are not in this list and carry both columns.
  */
 export const NOT_IN_STUDENT_API = ["schoolid", "organisationid"] as const;
 
-/** `attributes` for a query whose rows go to the student API. */
+/** `attributes` for a roster that does not name its school: neither `schoolid` nor `organisationid`. */
 export const studentApiAttributes = { exclude: [...NOT_IN_STUDENT_API] };
 
 /**
- * `attributes` for the one kind of push that names its school: a roster of one
- * school's learners or teachers, sent as `{ schoolid, studentusers }` or
- * `{ schoolid, teachers }`. Each row carries its `schoolid`, which the student
- * API checks against the school the file names. Only `organisationid` stays out.
- * Every cloud push of a roster goes in that shape (the older `{ studentusers }` and bare list of
- * teachers are retired with content format 2), asked for by the three getters that take `{ withSchoolId: true }`:
- *
- *  - SchoolUserBusiness.getschooluserbyschoolid   (cloud sync of a school's learners)
- *  - SchoolUserBusiness.getschooluserbyid         (cloud push of learners just created)
- *  - SchoolUserBusiness.getschoolteachersbyid     (cloud push of teachers just created)
- *
- * `school-id-payloads.spec.ts` pins the SQL of each, with and without it.
+ * `attributes` for a roster that names its school: every row keeps its `schoolid`, and only `organisationid` stays
+ * out. Asked for with `{ withSchoolId: true }` (see the list at the top of this file).
  */
 export const studentApiRosterAttributes = { exclude: ["organisationid"] };
