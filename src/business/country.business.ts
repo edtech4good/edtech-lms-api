@@ -148,13 +148,4 @@ export class CountryBusiness {
 
     return count.length > 0;
   };
-
-  getCountries = async () => {
-    const where: WhereOptions<countriesAttributes> = {
-      //isdeleted: false,
-    };
-    const order = ["countryname"];
-
-    return await countries.findAll({ where, order });
-  };
 }

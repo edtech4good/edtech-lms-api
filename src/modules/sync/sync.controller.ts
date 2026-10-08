@@ -36,38 +36,6 @@ const zipped = (json: string) => {
 @ApiBearerAuth()
 export class SyncController {
 
-  @OrgPolicy("server", {
-    note: "Authenticated only by the application API key; must be served as platform until the key is retired or scoped.",
-    enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
-  })
-  @Get("report-data")
-  @ApiResponse({
-    status: 200,
-    description: "Sync exported sucesfully",
-  })
-  @ApiResponse({
-    status: 400,
-    description: "Error while exporting Sync",
-  })
-  @ApiResponse({
-    status: 500,
-    description: "Server error",
-  })
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.apikey))
-  async getReportData(@Response({ passthrough: true }) res: any) {
-    const zip = new AdmZip();
-    zip.addFile(
-      "syncfile.ini",
-      Buffer.from(await new SyncBusiness().getreportdata())
-    );
-    res.set({
-      "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="sync-data.zip"`,
-    });
-    return new StreamableFile(zip.toBuffer());
-  }
-
   @OrgPolicy("owned", {
     note: "One organisation's content (format 3); a platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired. School-user tokens pass the guards but @Org() answers 401.",
     enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",

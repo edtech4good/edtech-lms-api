@@ -421,13 +421,4 @@ export class SchoolcontributeBusiness {
       };
 
 
-    getSchoolContribution = async () => {
-        const where: WhereOptions<schoolcontributedataAttributes> = {
-            //isdeleted: false,
-        };
-        const order = ["schoolname"];
-
-        return await schoolcontributedata.findAll({ where, order });
-    };
-
 }

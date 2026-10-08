@@ -30,7 +30,7 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **282** routes, **271** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
+Of **281** routes, **270** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
@@ -38,9 +38,9 @@ Of **282** routes, **271** are enforced (by a guard: self, global, and platform 
 | self | 5 | 5 | 0 | 0 |
 | owned | 242 | 242 | 0 | 0 |
 | platform | 18 | 18 | 0 | 0 |
-| server | 1 | 1 | 0 | 0 |
+| server | 0 | 0 | 0 | 0 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **282** | **271** | **11** | **0** |
+| **all** | **281** | **270** | **11** | **0** |
 
 ## Policies
 
@@ -62,7 +62,7 @@ A route used by both a user token and the API key is classified by its user path
 - **API key**: `yes` when every `AccessGuard` on the route lists the application API key, so a caller with no user gets through.
 - **School-user token**: `yes` when a school-user (teacher or classroom device) access token gets through every guard on the route, derived from the guard metadata: every `AccessGuard` is the access token type with no role list, there is no `PlatformGuard`, and no permission is required. Feature switches such as `LogImportGuard` aside.
 
-Routes admitting the API key: 13. Routes admitting a school-user token: 7.
+Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 
 ## Routes
 
@@ -341,7 +341,6 @@ Routes admitting the API key: 13. Routes admitting a school-user token: 7.
 | POST | `/sync/cloud` | SyncController.synconline | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.admin, Role.superadmin) | Pushes one organisation's content (format 3) with the organisation named in the request header; a platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired. |
 | POST | `/sync/cloud/:schoolname/students` | SyncController.synconlineschool | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.admin, Role.superadmin) | Pushes only the learners of one school of the caller's organisation, with that school's organisation named in the request header. |
 | GET | `/sync/content` | SyncController.syncContent | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  | yes | AccessGuard(ACCESS) | One organisation's content (format 3); a platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired. School-user tokens pass the guards but @Org() answers 401. |
-| GET | `/sync/report-data` | SyncController.getReportData | server | yes | `src/modules/sync/sync-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey) | Authenticated only by the application API key; must be served as platform until the key is retired or scoped. |
 | POST | `/teacher` | TeacherController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_teacher] |  |
 | DELETE | `/teacher/:schooluserid` | TeacherController.deleteuser | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_teacher] |  |
 | POST | `/teacher/create` | TeacherController.createall | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) | The optional cloud push must send only the teachers created by this call. |

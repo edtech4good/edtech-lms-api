@@ -177,15 +177,6 @@ export class StandardBusiness {
     });
   };
 
-  getStandards = async () => {
-    const where: WhereOptions<standardsAttributes> = {
-      //isdeleted: false,
-    };
-    const order = ["standardname"];
-
-    return await standards.findAll({ where, order });
-  };
-
   // `schoolid` is already resolved by the route (see resolveSchoolRef); undefined = every school.
   getStandardsWithFilter = async (standardname: string, schoolid: string | undefined, org: OrgContext) => {
     const where: WhereOptions<standardsAttributes> = {
