@@ -11,7 +11,7 @@
  *   MISSING   declared, no index of that name on the table, and no other index there that
  *             already starts with the same columns (so the declared one would add nothing)
  *   COVERED   declared, no index of that name, but another index on the table starts with
- *             the same columns (e.g. (studentid, gradeid) covers an index on studentid; a
+ *             the same whole columns, BTREE, no prefix length (e.g. (studentid, gradeid) covers an index on studentid; a
  *             foreign key's own index covers its column). Reported, not counted as missing.
  *   PRESENT   declared, and an index of that name is there (columns compared too)
  *   UNIQUE    any declared unique index (a unique needs a duplicate guard before it is added)
@@ -22,6 +22,7 @@
 import { QueryTypes } from "sequelize";
 import { dbinstance } from "src/services/dbservice";
 import { initModels } from "src/models/data-models/init-models";
+import { ActualIndex, covers, sameAsDeclared } from "src/db/model-index-check";
 
 interface Declared {
   table: string;
@@ -53,15 +54,17 @@ async function main(): Promise<void> {
   }
 
   const rows = (await sequelize.query(
-    `SELECT TABLE_NAME AS tbl, INDEX_NAME AS name, NON_UNIQUE AS nonunique, SEQ_IN_INDEX AS seq, COLUMN_NAME AS col
+    `SELECT TABLE_NAME AS tbl, INDEX_NAME AS name, NON_UNIQUE AS nonunique, SEQ_IN_INDEX AS seq, COLUMN_NAME AS col, SUB_PART AS subpart, INDEX_TYPE AS itype
      FROM information_schema.statistics WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX`,
     { type: QueryTypes.SELECT },
-  )) as Array<{ tbl?: string; TBL?: string; name?: string; NAME?: string; nonunique?: number; NONUNIQUE?: number; col?: string; COL?: string }>;
-  const actual = new Map<string, { columns: string[]; unique: boolean }>();
+  )) as Array<{ tbl?: string; TBL?: string; name?: string; NAME?: string; nonunique?: number; NONUNIQUE?: number; col?: string; COL?: string; subpart?: number | null; SUBPART?: number | null; itype?: string; ITYPE?: string }>;
+  const actual = new Map<string, ActualIndex>();
   for (const r of rows) {
     const key = `${r.tbl ?? r.TBL}.${r.name ?? r.NAME}`;
-    const e = actual.get(key) ?? { columns: [], unique: Number(r.nonunique ?? r.NONUNIQUE) === 0 };
+    const e = actual.get(key) ?? { columns: [], unique: Number(r.nonunique ?? r.NONUNIQUE) === 0, subParts: [], type: String(r.itype ?? r.ITYPE) };
     e.columns.push(String(r.col ?? r.COL));
+    const sub = r.subpart ?? r.SUBPART;
+    e.subParts.push(sub === null || sub === undefined ? null : Number(sub));
     actual.set(key, e);
   }
   const tables = new Set(
@@ -82,7 +85,7 @@ async function main(): Promise<void> {
     const a = actual.get(`${d.table}.${d.name}`);
     if (!a) {
       const by = [...actual.entries()].find(
-        ([k, v]) => k.startsWith(`${d.table}.`) && !d.unique && d.columns.every((c, i) => v.columns[i] === c),
+        ([k, v]) => k.startsWith(`${d.table}.`) && !d.unique && covers(v, d.columns),
       );
       if (by) {
         covered.push({ ...d, by: by[0] });
@@ -92,8 +95,8 @@ async function main(): Promise<void> {
       continue;
     }
     present.push(d);
-    if (a.columns.join(",") !== d.columns.join(",") || a.unique !== d.unique) {
-      mismatched.push(`${fmt(d)}  database has (${a.columns.join(", ")})${a.unique ? " UNIQUE" : ""}`);
+    if (!sameAsDeclared(a, d.columns, d.unique)) {
+      mismatched.push(`${fmt(d)}  database has (${a.columns.map((c, i) => c + (a.subParts[i] === null ? "" : `(${a.subParts[i]})`)).join(", ")})${a.unique ? " UNIQUE" : ""} ${a.type}`);
     }
   }
   const declaredKeys = new Set(declared.map((d) => `${d.table}.${d.name}`));

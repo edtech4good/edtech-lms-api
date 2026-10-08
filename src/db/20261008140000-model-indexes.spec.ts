@@ -29,6 +29,58 @@ const ADDED = EXPECTED.flatMap(([t, ixs]) => ixs.map(([n]) => `${t}.${n}`));
 /** Declared by a model but already covered by an index there (a composite that leads with the column; the foreign key's own index): NOT added. */
 const COVERED = ["studentlearningsprogress.studentid", "studentgradesprogress.studentid", "studentlevelsprogress.studentid", "studentlessonsprogress.studentid", "studentactives.studentid", "studentpoints.studentid", "schools.countryid"];
 
+/**
+ * Every non-PRIMARY index the compiled models declare (table.name(columns)), as of this migration. CI has no MySQL to run
+ * `npm run db:check-indexes`, so this pins the declared set: a NEW or CHANGED `indexes:` entry turns this red until someone
+ * classifies it (add a migration for it and to EXPECTED above, list it in COVERED, or, if a migration already made it, update this list).
+ * Classes: the 14 in EXPECTED are added here; the 7 in COVERED are not (an existing index leads with the column); 2 are unique and
+ * already created by earlier migrations; the other 19 are created by earlier migrations.
+ */
+const DECLARED_SNAPSHOT = [
+  "grades.curriculumid(curriculumid)",
+  "lessonlearnings.lessonid(lessonid)",
+  "lessonplans.lessonid(lessonid)",
+  "lessonpracticequestions.lessonpracticeid(lessonpracticeid)",
+  "lessonpracticequestions.questionid(questionid)",
+  "lessonpractices.lessonid(lessonid)",
+  "lessonquizquestions.lessonquizid(lessonquizid)",
+  "lessonquizquestions.questionid(questionid)",
+  "lessonquizzes.lessonid(lessonid)",
+  "lessons.levelid(levelid)",
+  "levelquizquestions.levelid(levelid)",
+  "levelquizquestions.questionid(questionid)",
+  "levels.gradeid(gradeid)",
+  "organisationcountry.organisationcountry_organisation_country_unique(organisationid,countryid) UNIQUE",
+  "schools.countryid(countryid)",
+  "schoolusers.schoolusername(schoolusername) UNIQUE",
+  "studentactives.lessonid(referenceid)",
+  "studentactives.studentid(studentid)",
+  "studentappusages.schooluserid(schooluserid)",
+  "studentgradesprogress.curriculumid(curriculumid)",
+  "studentgradesprogress.gradeid(gradeid)",
+  "studentgradesprogress.studentid(studentid)",
+  "studentlearningsprogress.lessonlearningid(lessonlearningid)",
+  "studentlearningsprogress.studentid(studentid)",
+  "studentlessonsprogress.curid(curid)",
+  "studentlessonsprogress.gradeid(gradeid)",
+  "studentlessonsprogress.lessonid(lessonid)",
+  "studentlessonsprogress.levelid(levelid)",
+  "studentlessonsprogress.studentid(studentid)",
+  "studentlevelsprogress.curid(curid)",
+  "studentlevelsprogress.gradeid(gradeid)",
+  "studentlevelsprogress.levelid(levelid)",
+  "studentlevelsprogress.studentid(studentid)",
+  "studentpoints.lessonid(lessonid)",
+  "studentpoints.studentid(studentid)",
+  "studentprogressquestions.studentprogressid(studentprogressid)",
+  "students.curriculumid(curriculumid)",
+  "students.gradeid(gradeid)",
+  "students.schooluserid(schooluserid)",
+  "students.startinglevelid(startinglevelid)",
+  "students.studentcurrentlessonid(studentcurrentlessonid)",
+  "students.studentcurrentlevelid(studentcurrentlevelid)",
+];
+
 interface Ix {
   name: string;
   columns: string[];
@@ -129,6 +181,25 @@ const makeQI = (opts: Opts = {}) => {
 /** All indexes as a sorted list of `table.name:columns`. */
 const named = (indexes: Map<string, Ix[]>, of: (n: string) => boolean = () => true): string[] =>
   [...indexes.entries()].flatMap(([t, l]) => l.filter((i) => of(i.name)).map((i) => `${t}.${i.name}:${i.columns.join("+")}`)).sort();
+
+describe("the declared set is pinned", () => {
+  it("the compiled models declare exactly the 42 non-PRIMARY indexes in DECLARED_SNAPSHOT (a new or changed declaration needs classifying)", () => {
+    const sequelize = new Sequelize("none", "none", "none", { dialect: "mysql" });
+    initModels(sequelize);
+    const declared: string[] = [];
+    for (const model of Object.values(sequelize.models)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const i of ((model as any)._indexes ?? []) as any[]) {
+        if (i.name === "PRIMARY") continue;
+        const cols = i.fields.map((f: string | { name?: string; attribute?: string }) => (typeof f === "string" ? f : (f.name ?? f.attribute)));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        declared.push(`${(model as any).getTableName()}.${i.name}(${cols.join(",")})${i.unique ? " UNIQUE" : ""}`);
+      }
+    }
+    expect(declared.sort()).toEqual([...DECLARED_SNAPSHOT].sort());
+    expect(DECLARED_SNAPSHOT).toHaveLength(42);
+  });
+});
 
 describe("the list matches the models", () => {
   it("each of the fourteen is declared by its model with this name and these columns, and the covered seven are declared too", () => {

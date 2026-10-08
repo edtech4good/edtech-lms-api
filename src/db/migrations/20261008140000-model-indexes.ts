@@ -35,8 +35,10 @@ import { tableNameList } from "../migration-helpers";
  *
  * ## down()
  *
- * Drops, by name and only where present, the fourteen, in reverse. It touches no index it
- * did not add: the composites, primary keys and the seven above stay.
+ * Drops, by name and only where present, the fourteen, in reverse, whether or not `up()`
+ * created them (on a database that had them before, e.g. a hand-built one, `down()` drops
+ * them too). It touches no index outside those fourteen names: the composites, primary keys
+ * and the seven above stay.
  */
 
 interface IndexSpec {
