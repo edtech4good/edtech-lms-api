@@ -5,11 +5,14 @@ import { buildOrganisationContent } from "src/business/organisation-content-expo
 import { initModels } from "src/models/data-models/init-models";
 
 /**
- * Content for the student API: the student API has no `organisationid` on the content tables (C7), and the
- * organisation's payload (format 3) is read through business classes built with the organisation's context. The real SQL
- * Sequelize generates is captured here (no database), so a reader that loses its limit fails here before it reaches a Pi.
+ * The readers behind the content payloads carry the organisation's limit. The real SQL Sequelize generates is captured
+ * here (no database). Two things are pinned: a business class built with a caller's context adds a limit to its read
+ * where one built without it does not, and the organisation payload (format 3) reads every table through classes built
+ * with the organisation's context, the tables that have an owner by `organisationid` (read whole, the owner included)
+ * and the rest by the ids of their parents in scope. A reader that loses its limit fails here before it reaches a Pi.
+ * The admin API's own read of the curriculums keeps its owner column too.
  */
-describe("content payloads for the student API do not select organisationid", () => {
+describe("content readers carry the organisation's limit", () => {
   const sequelize = new Sequelize({ dialect: "mysql" });
   initModels(sequelize);
 

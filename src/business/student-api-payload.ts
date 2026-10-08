@@ -2,9 +2,8 @@
  * What this API sends to the student API (cloud push of learners and teachers,
  * the content sync, the exports a classroom Pi imports) is a
  * contract with another service. `students` and `schoolusers` here carry a
- * `schoolid` column (C4), and the content tables an `organisationid` column
- * (C7), that the student API does not have yet, so a payload that carried
- * either would not be what that service was written against.
+ * `schoolid` column (C4) that the student API does not have yet, so a payload
+ * that carried it would not be what that service was written against.
  *
  * Every function that builds such a payload keeps the column out EXPLICITLY, at
  * the point it selects the rows, through `studentApiAttributes`:
