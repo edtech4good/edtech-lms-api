@@ -144,10 +144,13 @@ describe("migrations name the character set and collation of every table they cr
     expect(wrong).toEqual([]);
   });
 
-  it("every raw CREATE TABLE names COLLATE=utf8mb4_unicode_ci", () => {
+  it("every raw CREATE TABLE names the table option CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci (a column-level COLLATE does not count)", () => {
     const wrong = outcomes.flatMap((o) =>
       o.rec.rawCreates
-        .filter((sql) => !/COLLATE\s*=?\s*utf8mb4_unicode_ci/i.test(sql))
+        .filter(
+          (sql) =>
+            !/CHARSET\s*=\s*utf8mb4\b/i.test(sql) || !/COLLATE\s*=\s*utf8mb4_unicode_ci/i.test(sql),
+        )
         .map((sql) => ({ migration: o.file, sql: sql.replace(/\s+/g, " ").slice(0, 80) })),
     );
     expect(wrong).toEqual([]);
@@ -164,6 +167,11 @@ describe("migrations name the character set and collation of every table they cr
 
   it("the list of migrations that cannot run against the fake names real files", () => {
     expect(NEEDS_REAL_DATA.filter((f) => !migrationFiles.includes(f))).toEqual([]);
+  });
+
+  it("saw the raw CREATE TABLE the baseline issues (the raw check is not vacuous)", () => {
+    const raw = outcomes.flatMap((o) => o.rec.rawCreates.map(() => o.file));
+    expect(raw).toContain("20230108000000-create-domain-tables-baseline.ts");
   });
 
   it("saw the tables the baseline and later migrations create (the recording is not empty)", () => {
