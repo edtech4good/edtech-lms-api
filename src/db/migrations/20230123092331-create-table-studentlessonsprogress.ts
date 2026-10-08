@@ -43,6 +43,8 @@ module.exports = {
         },
         {
           transaction: transaction,
+          charset: "utf8mb4",
+          collate: "utf8mb4_unicode_ci",
         }
       );
       return await queryInterface.addIndex(
