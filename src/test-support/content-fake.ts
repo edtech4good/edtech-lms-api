@@ -204,6 +204,7 @@ interface FindOptions {
   where?: unknown;
   include?: IncludeSpec[];
   attributes?: unknown;
+  order?: unknown;
   group?: string;
   limit?: number;
   offset?: number;
@@ -369,6 +370,20 @@ export class ContentFake {
         if (total && !o?.group) {
           const column = total[0].args[0].col;
           return [{ [total[1]]: found.length === 0 ? null : found.reduce((sum, r) => sum + Number(r[column] ?? 0), 0) }];
+        }
+        // `order: [[column, "ASC" | "DESC"], ...]` on plain columns (an entry that names an association is not applied), stable
+        const keys = (Array.isArray(o?.order) ? (o!.order as unknown[]) : []).filter(
+          (k): k is [string, string?] => Array.isArray(k) && k.length >= 1 && k.length <= 2 && typeof k[0] === "string",
+        );
+        if (keys.length > 0) {
+          const compare = (a: unknown, b: unknown) => (a === b ? 0 : a === null || a === undefined ? -1 : b === null || b === undefined ? 1 : a < (b as never) ? -1 : 1);
+          found = [...found].sort((a, b) => {
+            for (const [column, direction] of keys) {
+              const c = compare(a[column], b[column]);
+              if (c !== 0) return direction?.toUpperCase() === "DESC" ? -c : c;
+            }
+            return 0;
+          });
         }
         if (o?.group) {
           const seen = new Set<unknown>();
