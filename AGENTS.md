@@ -58,6 +58,10 @@ or its curriculum). The boundary is enforced in code, route by route:
   columns (`20261008140000-model-indexes`). `npm run db:check-indexes` compares
   the compiled models with a migrated database and must report nothing MISSING.
   A declared unique index also needs a duplicate guard before it is added.
+- The CI job `schema-drift` (`scripts/ci/schema-drift.sh`) builds an empty MySQL 8.0
+  database from the migrations alone, boots the built server once and fails if boot
+  changed the schema, or if a model declares a table, column or index no migration
+  creates. Run it locally against a throwaway database (invocation in the script header).
 
 ## Khmer text
 
