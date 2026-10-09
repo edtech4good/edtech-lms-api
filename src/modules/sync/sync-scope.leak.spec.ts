@@ -18,7 +18,8 @@ import { StudentController } from "../students/student.controller";
 import { TeacherController } from "../teachers/teacher.controller";
 import { schools } from "src/models/data-models/school";
 import { SyncController } from "./sync.controller";
-import { confine } from "src/business/organisation-content-export";
+import { confine, contextOfOrganisation } from "src/business/organisation-content-export";
+import { LessonLearningBusiness } from "src/business/lessonlearning.business";
 
 /**
  * The content sync is one organisation's: `GET sync/content` and `POST sync/cloud` (format 3, the only format: format 2
@@ -412,6 +413,16 @@ describe("the content sync is one organisation's", () => {
       const keys = Object.keys((await download("X's Admin", "/sync/content")).json);
       expect(keys.indexOf("lessonlearningdocuments")).toBeGreaterThan(keys.indexOf("documents"));
       expect(keys.indexOf("lessonlearningdocuments")).toBeGreaterThan(keys.indexOf("lessonlearnings"));
+    });
+
+    it("the link rows are read through the caller's scope: X's, Y's and the unowned content's each give only their own (the platform's, all)", async () => {
+      const rows = async (org?: Parameters<typeof contextOfOrganisation>[0] | null) =>
+        ids(linkRows(await (org ? new LessonLearningBusiness(contextOfOrganisation(org)) : new LessonLearningBusiness()).getLessonLearningDocuments() as unknown as Row[]), "lessonlearningdocumentid");
+      expect(await rows(X)).toEqual([TX.link]);
+      expect(await rows(Y)).toEqual([TY.link]);
+      expect(await rows(MISSING_ORGANISATION)).toEqual([]);
+      // built without a context (what the platform's own readers do) it is unscoped, as the other business classes are
+      expect(await rows()).toEqual(sorted(TX.link, TY.link, TU.link));
     });
 
     it("with no link rows the key is still there, an empty list, and the student API's check accepts the payload", async () => {
