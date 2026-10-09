@@ -4,10 +4,10 @@ import joi from "joi";
  * Test support: what the student API accepts as one organisation's content (format 3).
  *
  * This is a PORT of the student API's own check, kept here so the payload this API builds is run through the same rules
- * without importing across repositories. Source: edtech-lms-rpi-api, branch `feat/organisations-s3-format3`,
- * `src/modules/import/organisation-content.validator.ts` (`validateOrganisationContent`, `CONTENT_TABLES`) and the
- * `organisation` row schema of `src/modules/import/ownership.request.validator.ts`, as of commit f7f1bf9. The same
- * rules, in the same order; the differences are only that problems are returned as a list instead of thrown as a 400,
+ * without importing across repositories. Source: edtech-lms-rpi-api, `main`,
+ * `src/modules/import/organisation-content.validator.ts` (`validateOrganisationContent`, `CONTENT_TABLES`),
+ * `src/constants/learning-items.ts` and the `organisation` row schema of `src/modules/import/ownership.request.validator.ts`,
+ * as of the learning-items change (LI-2). The same rules, in the same order; the differences are only that problems are returned as a list instead of thrown as a 400,
  * and that the messages are shortened. When the student API's validator changes, change this with it.
  *
  * Two kinds of rule about the lists of ids a row holds (`schools.curriculums`, `curriculumbaselines.schoolid`):
@@ -27,6 +27,18 @@ const UI_THEMES = ["kids", "corporate"];
 /** Control characters, and the bidirectional controls that reorder displayed text (U+202A to U+202E, U+2066 to U+2069). Zero-width joiners stay: Khmer text uses them. */
 const FORBIDDEN_IN_NAME = /[\p{Cc}\u202A-\u202E\u2066-\u2069]/u;
 const HAS_LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+/**
+ * Learning items (the student API's `src/constants/learning-items.ts`). Phase 0 knows one type, `video`: its row must
+ * name a primary document and have no body. A type the student API does not know is refused.
+ */
+const LEARNING_ITEM_TYPES = ["video"] as const;
+const LEARNING_ITEM_RULES: Record<(typeof LEARNING_ITEM_TYPES)[number], { documentRequired: boolean; bodyMustBeNull: boolean }> = {
+  video: { documentRequired: true, bodyMustBeNull: true },
+};
+/** What a link row (`lessonlearningdocuments`) may be for. */
+const LEARNING_DOCUMENT_ROLES = ["rendition", "asset"] as const;
+const isLearningItemType = (value: unknown): value is (typeof LEARNING_ITEM_TYPES)[number] =>
+  typeof value === "string" && (LEARNING_ITEM_TYPES as readonly string[]).includes(value);
 /** The serialised settings JSON may be at most this many BYTES (not characters: Khmer text is 3 bytes a character). */
 const MAX_SETTINGS_BYTES = 64 * 1024;
 
@@ -41,6 +53,7 @@ export type TableKey =
   | "levels"
   | "lessons"
   | "lessonlearnings"
+  | "lessonlearningdocuments"
   | "lessonplans"
   | "lessonpractices"
   | "lessonquizzes"
@@ -86,6 +99,12 @@ export const CONTENT_TABLES: Record<TableKey, TableSpec> = {
     kind: "inherited",
     parent: { fk: "lessonid", to: "lessons" },
     refs: [{ fk: "documentid", to: "documents", optional: true }],
+  },
+  lessonlearningdocuments: {
+    pk: "lessonlearningdocumentid",
+    kind: "inherited",
+    parent: { fk: "lessonlearningid", to: "lessonlearnings" },
+    refs: [{ fk: "documentid", to: "documents" }],
   },
   lessonplans: {
     pk: "lessonplanid",
@@ -270,6 +289,56 @@ export function contentProblems(body: unknown): string[] {
       if (missing) problems.push(`${key}: ${missing} ${ref.parent ? "hang from" : "point at"} a ${ref.to} row (${ref.fk}) that is not in the payload`);
     }
   }
+
+  // Learning items: the type, the body and the primary document follow the type's rule; a link row has a known role,
+  // a whole-number order, and is the only one of its (learning, document) pair. The student API checks nothing else of
+  // an item or a link row: in particular it ACCEPTS link rows on a `video` item (its rule for a video is about the
+  // body and the primary document only). Central's own write routes refuse them (a video item takes no extra
+  // documents), so the export of a database written through those routes never holds one; the asymmetry is deliberate
+  // (the payload contract is the student API's, the authoring rule is central's), and sync-scope.leak.spec.ts pins it.
+  let noType = 0;
+  let unknownType = 0;
+  let bodyNotNull = 0;
+  let noDocument = 0;
+  for (const row of tables.lessonlearnings ?? []) {
+    if (!isRow(row)) continue;
+    const type = row.lessonlearningtype;
+    if (typeof type !== "string" || type.length === 0) {
+      noType += 1;
+      continue;
+    }
+    if (!isLearningItemType(type)) {
+      unknownType += 1;
+      continue;
+    }
+    const rule = LEARNING_ITEM_RULES[type];
+    if (rule.bodyMustBeNull && row.lessonlearningbody !== undefined && row.lessonlearningbody !== null) bodyNotNull += 1;
+    if (rule.documentRequired && (row.documentid === undefined || row.documentid === null || row.documentid === "")) noDocument += 1;
+  }
+  if (noType) problems.push(`lessonlearnings: ${noType} with no lessonlearningtype (a string)`);
+  if (unknownType) problems.push(`lessonlearnings: ${unknownType} with a lessonlearningtype this server does not know (it knows: ${LEARNING_ITEM_TYPES.join(", ")})`);
+  if (bodyNotNull) problems.push(`lessonlearnings: ${bodyNotNull} of type video with a lessonlearningbody, which must be null for a video`);
+  if (noDocument) problems.push(`lessonlearnings: ${noDocument} with no documentid, and the type of the item needs one`);
+
+  let badRole = 0;
+  let badOrder = 0;
+  let repeatedPairs = 0;
+  const pairs = new Set<string>();
+  for (const row of tables.lessonlearningdocuments ?? []) {
+    if (!isRow(row)) continue;
+    if (typeof row.lessonlearningdocumentrole !== "string" || !(LEARNING_DOCUMENT_ROLES as readonly string[]).includes(row.lessonlearningdocumentrole)) badRole += 1;
+    const order = row.lessonlearningdocumentorder;
+    // a missing order defaults to 0 in the database; an explicit null does not (the column is NOT NULL)
+    if (order !== undefined && !(typeof order === "number" && Number.isInteger(order))) badOrder += 1;
+    if (typeof row.lessonlearningid === "string" && typeof row.documentid === "string") {
+      const pair = `${lower(row.lessonlearningid)}/${lower(row.documentid)}`;
+      if (pairs.has(pair)) repeatedPairs += 1;
+      else pairs.add(pair);
+    }
+  }
+  if (badRole) problems.push(`lessonlearningdocuments: ${badRole} with a lessonlearningdocumentrole that is not one of ${LEARNING_DOCUMENT_ROLES.join(", ")}`);
+  if (badOrder) problems.push(`lessonlearningdocuments: ${badOrder} with a lessonlearningdocumentorder that is not a whole number`);
+  if (repeatedPairs) problems.push(`lessonlearningdocuments: ${repeatedPairs} repeat a lessonlearningid and documentid pair`);
 
   for (const { table, column, to } of LISTS) {
     const list = tables[table];

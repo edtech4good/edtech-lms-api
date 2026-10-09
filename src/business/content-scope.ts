@@ -11,6 +11,7 @@ import {
   ownerOfFeedback,
   ownerOfGrade,
   ownerOfLearning,
+  ownerOfLearningDocument,
   ownerOfLesson,
   ownerOfLevel,
   ownerOfPlan,
@@ -31,6 +32,7 @@ import { documents } from "src/models/data-models/documents";
 import { documenttags } from "src/models/data-models/documenttags";
 import { feedbacks } from "src/models/data-models/feedback";
 import { grades } from "src/models/data-models/grades";
+import { lessonlearningdocuments } from "src/models/data-models/lessonlearningdocuments";
 import { lessonlearnings } from "src/models/data-models/lessonlearnings";
 import { lessonplans } from "src/models/data-models/lessonplan";
 import { lessonpracticequestions } from "src/models/data-models/lessonpracticequestions";
@@ -76,6 +78,7 @@ export type ContentKind =
   | "level"
   | "lesson"
   | "learning"
+  | "learningdocument"
   | "plan"
   | "practice"
   | "quiz"
@@ -97,6 +100,7 @@ export interface KindRows {
   level: levels;
   lesson: lessons;
   learning: lessonlearnings;
+  learningdocument: lessonlearningdocuments;
   plan: lessonplans;
   practice: lessonpractices;
   quiz: lessonquizzes;
@@ -143,6 +147,10 @@ const KINDS: Record<ContentKind, KindInfo> = {
   learning: {
     model: lessonlearnings, key: "lessonlearningid", missing: "That lesson learning item doesn't exist.", ownerOf: ownerOfLearning,
     parent: { kind: "lesson", column: "lessonid" },
+  },
+  learningdocument: {
+    model: lessonlearningdocuments, key: "lessonlearningdocumentid", missing: "That learning item document doesn't exist.", ownerOf: ownerOfLearningDocument,
+    parent: { kind: "learning", column: "lessonlearningid" },
   },
   plan: {
     model: lessonplans, key: "lessonplanid", missing: "That lesson plan doesn't exist.", ownerOf: ownerOfPlan,

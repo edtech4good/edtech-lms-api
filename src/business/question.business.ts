@@ -374,24 +374,29 @@ export class QuestionBusiness {
       let questionobject: any = {
         ...question.get({ plain: true }),
       };
+      // An item with no primary document (a type that is not one file) has no file to name: it carries none, instead of
+      // the "invalid" placeholder a missing name becomes, so the media list built from this path adds nothing for it.
       const learningdocuments = await documents.findAll({
         where: {
           documentid: {
-            [Op.in]: questionobject.lessonlearnings.map(
-              (x: any) => x.documentid
-            ),
+            [Op.in]: questionobject.lessonlearnings
+              .map((x: any) => x.documentid)
+              .filter((id: unknown) => id !== null && id !== undefined),
           },
         },
       });
 
       questionobject.lessonlearnings = questionobject.lessonlearnings.map(
-        (x: lessonlearnings & { lessonlearningfileobject: FileMeta }) => {
+        (x: lessonlearnings & { lessonlearningfileobject: FileMeta | null }) => {
           return {
             ...x,
-            lessonlearningfileobject: rawfilenameextractor(
-              learningdocuments.find((y) => y.documentid === x.documentid)
-                ?.documentname || ""
-            ),
+            lessonlearningfileobject:
+              x.documentid === null || x.documentid === undefined
+                ? null
+                : rawfilenameextractor(
+                    learningdocuments.find((y) => y.documentid === x.documentid)
+                      ?.documentname || ""
+                  ),
           };
         }
       );

@@ -13,6 +13,7 @@ import {
   ownerOfFeedback,
   ownerOfGrade,
   ownerOfLearning,
+  ownerOfLearningDocument,
   ownerOfLesson,
   ownerOfLevel,
   ownerOfPlan,
@@ -50,6 +51,7 @@ beforeEach(() => {
     db.add("levelquizquestions", { levelquizquestionid: `lq-${c}`, levelid: `lv-${c}`, questionid: `q-${c}` });
     db.add("baselinequestion", { baselinequestionid: `bq-${c}`, curriculumbaselineid: `bl-${c}`, questionid: `q-${c}` });
     db.add("documents", { documentid: `d-${c}`, organisationid: owner });
+    db.add("lessonlearningdocuments", { lessonlearningdocumentid: `ld-${c}`, lessonlearningid: `ln-${c}`, documentid: `d-${c}`, lessonlearningdocumentrole: "asset" });
   }
 });
 
@@ -60,6 +62,7 @@ describe("ownerOf...: the owner of anything in the content tree comes from its p
     ["level", ownerOfLevel, (c: string) => `lv-${c}`],
     ["lesson", ownerOfLesson, (c: string) => `ls-${c}`],
     ["learning", ownerOfLearning, (c: string) => `ln-${c}`],
+    ["learning document (link row)", ownerOfLearningDocument, (c: string) => `ld-${c}`],
     ["plan", ownerOfPlan, (c: string) => `pl-${c}`],
     ["practice", ownerOfPractice, (c: string) => `pr-${c}`],
     ["quiz", ownerOfQuiz, (c: string) => `qz-${c}`],
@@ -77,6 +80,10 @@ describe("ownerOf...: the owner of anything in the content tree comes from its p
     db.tables.levels = [];
     expect(await ownerOfLesson("ls-cx")).toBeNull();
     expect(await ownerOfFeedback("missing")).toBeNull();
+    expect(await ownerOfLearningDocument("missing")).toBeNull();
+    // a link row whose item is gone has no owner either
+    db.tables.lessonlearnings = db.tables.lessonlearnings.filter((r) => r.lessonlearningid !== "ln-cx");
+    expect(await ownerOfLearningDocument("ld-cx")).toBeNull();
   });
 
   it("feedback takes its owner from its curriculum", async () => {

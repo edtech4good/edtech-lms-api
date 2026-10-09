@@ -103,3 +103,20 @@ describe("reordering without a caller's scope", () => {
     expect(tx.rollback).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("the link rows of the sync payload", () => {
+  const link = (id: string, learning: number, order: number) => ({
+    lessonlearningdocumentid: id, lessonlearningid: idOf(learning), documentid: doc(2), lessonlearningdocumentrole: "asset", lessonlearningdocumentorder: order,
+  });
+
+  it("come in a fixed order: by item, then the row's own order, then its id (stored out of order, with a tie)", async () => {
+    db.tables.lessonlearningdocuments.length = 0;
+    db.add("lessonlearningdocuments", link("z-9", 3, 1));
+    db.add("lessonlearningdocuments", link("k-2", 2, 2));
+    db.add("lessonlearningdocuments", link("k-9", 2, 1));
+    db.add("lessonlearningdocuments", link("k-1", 2, 1)); // ties with k-9 on item and order: the id decides
+    db.add("lessonlearningdocuments", link("a-1", 1, 5));
+    const rows = await new LessonLearningBusiness().getLessonLearningDocuments();
+    expect(rows.map((r) => r.lessonlearningdocumentid)).toEqual(["a-1", "k-1", "k-9", "k-2", "z-9"]);
+  });
+});
