@@ -93,6 +93,7 @@ The demo and client seeds use fixed IDs that match the same-named seeds in edtec
 - `npm run start:dev` runs Nest in watch mode.
 - `npm run build` then `npm start` (or `npm run start:prod`, same thing) is the production path. The build lands in `build/` and both run `build/server.js`.
 - `npm run db:migrate` runs the Sequelize migrations.
+- `scripts/ci/schema-drift.sh` is the schema drift check CI runs (job `schema-drift`). On an empty database it runs every migration, dumps `SHOW CREATE TABLE`, boots the built server once and dumps again (the two must match), then fails if a model declares a table or column that no migration creates, or an index (`npm run db:check-indexes`). Central never calls `sequelize.sync()`, so the models alone create nothing. To run it locally, build first and point it at a throwaway database you have just created (it refuses one that already has tables): `DB_HOST=127.0.0.1 DB_USER=... DB_PASSWORD=... DB_NAME=scratch_db PORT=3011 scripts/ci/schema-drift.sh`.
 - `npm run lint` runs ESLint with autofix. `npm run format` runs Prettier.
 
 There is no unit test suite in this repo. The end-to-end tests that exercise this API live in [edtech-lms-ui](https://github.com/edtech4good/edtech-lms-ui) under `e2e/` and run with Playwright against a local stack.
