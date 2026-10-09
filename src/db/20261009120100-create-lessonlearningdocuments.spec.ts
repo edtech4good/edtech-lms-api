@@ -4,6 +4,8 @@
  * keys and their delete behaviour, indexes, collation), not what MySQL then does. The real-database proof is in the
  * change description.
  */
+export {};
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const migration = require("./migrations/20261009120100-create-lessonlearningdocuments");
 
