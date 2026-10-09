@@ -33,11 +33,13 @@ const COVERED = ["studentlearningsprogress.studentid", "studentgradesprogress.st
  * Every non-PRIMARY index the compiled models declare (table.name(columns)), as of this migration. CI has no MySQL to run
  * `npm run db:check-indexes`, so this pins the declared set: a NEW or CHANGED `indexes:` entry turns this red until someone
  * classifies it (add a migration for it and to EXPECTED above, list it in COVERED, or, if a migration already made it, update this list).
- * Classes: the 14 in EXPECTED are added here; the 7 in COVERED are not (an existing index leads with the column); 2 are unique and
- * already created by earlier migrations; the other 19 are created by earlier migrations.
+ * Classes: the 14 in EXPECTED are added here; the 7 in COVERED are not (an existing index leads with the column); 3 are unique and
+ * already created by earlier migrations (one by the learning-item link table's own migration); the other 20 are created by earlier migrations.
  */
 const DECLARED_SNAPSHOT = [
   "grades.curriculumid(curriculumid)",
+  "lessonlearningdocuments.lessonlearningdocuments_documentid(documentid)",
+  "lessonlearningdocuments.lessonlearningdocuments_item_document_unique(lessonlearningid,documentid) UNIQUE",
   "lessonlearnings.lessonid(lessonid)",
   "lessonplans.lessonid(lessonid)",
   "lessonpracticequestions.lessonpracticeid(lessonpracticeid)",
@@ -183,7 +185,7 @@ const named = (indexes: Map<string, Ix[]>, of: (n: string) => boolean = () => tr
   [...indexes.entries()].flatMap(([t, l]) => l.filter((i) => of(i.name)).map((i) => `${t}.${i.name}:${i.columns.join("+")}`)).sort();
 
 describe("the declared set is pinned", () => {
-  it("the compiled models declare exactly the 42 non-PRIMARY indexes in DECLARED_SNAPSHOT (a new or changed declaration needs classifying)", () => {
+  it("the compiled models declare exactly the 44 non-PRIMARY indexes in DECLARED_SNAPSHOT (a new or changed declaration needs classifying)", () => {
     const sequelize = new Sequelize("none", "none", "none", { dialect: "mysql" });
     initModels(sequelize);
     const declared: string[] = [];
@@ -197,7 +199,7 @@ describe("the declared set is pinned", () => {
       }
     }
     expect(declared.sort()).toEqual([...DECLARED_SNAPSHOT].sort());
-    expect(DECLARED_SNAPSHOT).toHaveLength(42);
+    expect(DECLARED_SNAPSHOT).toHaveLength(44);
   });
 });
 

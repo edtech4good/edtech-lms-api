@@ -11,7 +11,11 @@ export interface lessonlearningsAttributes {
   lessonlearningstatus: boolean;
   lessonid: string;
   lessonlearningorder: number;
-  documentid: string;
+  /** The item's primary document; null for an item that is not a single file (the type decides). */
+  documentid: string | null;
+  lessonlearningtype?: string;
+  /** The type's own body (null for a video item). */
+  lessonlearningbody?: object | null;
   points?: number;
   created_at?: Date;
   created_by?: string;
@@ -33,7 +37,9 @@ export class lessonlearnings extends Model<lessonlearningsAttributes, lessonlear
   lessonlearningstatus!: boolean;
   lessonid!: string;
   lessonlearningorder!: number;
-  documentid!: string;
+  documentid!: string | null;
+  lessonlearningtype!: string;
+  lessonlearningbody!: object | null;
   points!: number;
   created_at!: Date;
   created_by!: string;
@@ -83,11 +89,20 @@ export class lessonlearnings extends Model<lessonlearningsAttributes, lessonlear
     },
     documentid: {
       type: DataTypes.STRING(36),
-      allowNull: false,
+      allowNull: true,
       references: {
         model: 'documents',
         key: 'documentid'
       }
+    },
+    lessonlearningtype: {
+      type: DataTypes.STRING(16),
+      allowNull: false,
+      defaultValue: 'video'
+    },
+    lessonlearningbody: {
+      type: DataTypes.JSON,
+      allowNull: true
     },
     lessonlearningorder: {
       type: DataTypes.INTEGER,
