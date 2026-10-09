@@ -1934,17 +1934,17 @@ describe("content is confined to the caller's organisation", () => {
       }
     });
     it.each(IN_X)("%s: a video item takes no body, no extra documents and needs its document: each refused, nothing written", async (who) => {
-      const bad: Array<[object, string]> = [
-        [{ lessonlearningbody: { v: 1 } }, "lessonlearningbody"],
-        [{ lessonlearningbody: {} }, "lessonlearningbody"],
-        [{ documents: [asset(TX.document)] }, "documents"],
-        [{ documentid: null }, "documentid"],
-        [{ documentid: undefined }, "documentid"],
+      const bad: Array<[object, string, string]> = [
+        [{ lessonlearningbody: { v: 1 } }, "lessonlearningbody", "A video item has no body."],
+        [{ lessonlearningbody: {} }, "lessonlearningbody", "A video item has no body."],
+        [{ documents: [asset(TX.document)] }, "documents", "A video item takes no extra documents."],
+        [{ documentid: null }, "documentid", "A video item needs a document."],
+        [{ documentid: undefined }, "documentid", "A video item needs a document."],
       ];
-      for (const [over, field] of bad) {
+      for (const [over, field, message] of bad) {
         const res = await refuses(who, "post", `/lesson/learning/${TX.lesson}`, body(over));
         expect(res.status).toBe(400);
-        expect(fieldsOf(res)).toEqual([field]);
+        expect(res.body.fields).toEqual([expect.objectContaining({ field, message })]);
       }
     });
     it.each(IN_X)("%s: an empty documents list is no extra documents", async (who) => {
