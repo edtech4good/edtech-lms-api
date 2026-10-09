@@ -1,6 +1,6 @@
 import { DataTypes, QueryInterface, QueryTypes, Transaction } from "sequelize";
 import { addColumnIfMissing, removeColumnIfPresent } from "../migration-helpers";
-import { assertNoViolations, inStrictMode, relaxColumns, RequiredColumn, requireColumns } from "../required-columns";
+import { inStrictMode, relaxColumns, RequiredColumn, requireColumns } from "../required-columns";
 
 /**
  * LI-1 (docs/content-learning-items-design.md, section 11, step C-LI1): a lesson's learning
@@ -26,8 +26,8 @@ import { assertNoViolations, inStrictMode, relaxColumns, RequiredColumn, require
  * ## Idempotence, down()
  *
  * Every step checks before it acts, so a re-run is a no-op. `down()` is GUARDED: before any DDL
- * it throws, naming the offending ids, if any item has a type other than 'video', a body, or no
- * document (the last through `assertNoViolations`, as C8 does); otherwise it makes `documentid` NOT NULL again and drops both columns. (The link
+ * it throws once, naming the offending ids and counts, if any item has a type other than 'video', a body, or no
+ * document; otherwise it makes `documentid` NOT NULL again and drops both columns. (The link
  * table is dropped by the later migration's own `down()`, which runs first.)
  */
 const TABLE = "lessonlearnings";
@@ -79,7 +79,11 @@ async function report(queryInterface: QueryInterface, transaction: Transaction):
   console.log(`C-LI1 learnings on a document that is not a video: ${Number(notVideo[0]?.n ?? 0)}`);
 }
 
-/** Throws, before any DDL, naming the items a `down()` would lose by dropping the type or the body. (A NULL document is guarded by `assertNoViolations`.) */
+/**
+ * Throws ONCE, before any DDL, naming every item a `down()` cannot take back: one whose type is not 'video' or that holds
+ * a body (dropping the columns would lose them), and one with no document (`documentid` could not be NOT NULL again).
+ * Each reason lists its item ids (at most 50) and the exact count.
+ */
 async function assertNothingToLose(queryInterface: QueryInterface, desc: Record<string, unknown>, transaction: Transaction): Promise<void> {
   const problems: string[] = [];
   const list = async (label: string, where: string): Promise<void> => {
@@ -90,7 +94,7 @@ async function assertNothingToLose(queryInterface: QueryInterface, desc: Record<
     }
     const ids = await select(
       queryInterface,
-      `SELECT lessonlearningid AS id FROM \`${TABLE}\` WHERE ${where} ORDER BY lessonlearningid LIMIT ${LISTED}`,
+      `SELECT \`lessonlearningid\` AS id FROM \`${TABLE}\` WHERE ${where} ORDER BY \`lessonlearningid\` LIMIT ${LISTED}`,
       transaction,
     );
     problems.push(`${label}: ${n} item(s) (${ids.length < n ? `first ${ids.length} of ${n}` : `all ${n}`}): ${ids.map((r) => r.id).join(", ")}`);
@@ -101,10 +105,11 @@ async function assertNothingToLose(queryInterface: QueryInterface, desc: Record<
   if (desc[BODY]) {
     await list(`${TABLE}.${BODY} holds a body`, `\`${BODY}\` IS NOT NULL`);
   }
+  await list(`${TABLE}.documentid holds no document (it could not be required again)`, "`documentid` IS NULL");
   if (problems.length > 0) {
     throw new Error(
-      "C-LI1 (learning item type and body) down() refused, so nothing was changed. Dropping the columns would lose these items:\n" +
-        `${problems.join("\n")}\nRemove or convert them, then run down() again.`,
+      "C-LI1 (learning item type and body) down() refused, so nothing was changed. These items cannot be taken back:\n" +
+        `${problems.join("\n")}\nRemove those items, or give them a document and clear any body, then run down() again.`,
     );
   }
 }
@@ -130,7 +135,6 @@ module.exports = {
     queryInterface.sequelize.transaction(async (transaction: Transaction) => {
       const desc = await columnsOf(queryInterface);
       await assertNothingToLose(queryInterface, desc, transaction);
-      await assertNoViolations(queryInterface, "C-LI1 (learning item type and body)", DOCUMENT_COLUMN, transaction);
       await requireColumns(queryInterface, DOCUMENT_COLUMN, transaction);
       await removeColumnIfPresent(queryInterface, TABLE, BODY, transaction);
       await removeColumnIfPresent(queryInterface, TABLE, TYPE, transaction);

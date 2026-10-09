@@ -15,9 +15,11 @@ import { tableNameList, tableOptionsMatchingColumn } from "../migration-helpers"
  *
  * ## Collation
  *
- * The id columns take the charset and collation of the columns they reference, read from the real
- * tables (`tableOptionsMatchingColumn`), and the table names its charset (a foreign key between
- * columns of different collations is refused by MySQL; see migrations-name-their-collation.spec.ts).
+ * Each foreign-key column takes the charset and collation of the column it references, read from the
+ * real tables (`tableOptionsMatchingColumn`): `lessonlearningid` from `lessonlearnings.lessonlearningid`
+ * (also the table's own default, which the table names), `documentid` from `documents.documentid`,
+ * spelled on the column when it differs from the table's. A foreign key between columns of different
+ * collations is refused by MySQL; see migrations-name-their-collation.spec.ts.
  *
  * ## Idempotence, down()
  *
@@ -27,6 +29,15 @@ import { tableNameList, tableOptionsMatchingColumn } from "../migration-helpers"
 const TABLE = "lessonlearningdocuments";
 const UNIQUE_INDEX = "lessonlearningdocuments_item_document_unique";
 const DOCUMENT_INDEX = "lessonlearningdocuments_documentid";
+
+/** Charset and collation names come from information_schema; this makes them safe to spell into a column type. */
+const NAME = /^[A-Za-z0-9_]+$/;
+const varchar36 = (o: { charset: string; collate: string }): string => {
+  if (!NAME.test(o.charset) || !NAME.test(o.collate)) {
+    throw new Error(`Unexpected charset or collation: ${o.charset} / ${o.collate}`);
+  }
+  return `VARCHAR(36) CHARACTER SET ${o.charset} COLLATE ${o.collate}`;
+};
 
 async function indexNames(queryInterface: QueryInterface): Promise<Set<string>> {
   const indexes = (await queryInterface.showIndex(TABLE)) as Array<{ name?: string }>;
@@ -39,6 +50,7 @@ module.exports = {
       const names = await tableNameList(queryInterface);
       if (!names.includes(TABLE)) {
         const opts = await tableOptionsMatchingColumn(queryInterface, "lessonlearnings", "lessonlearningid");
+        const documentOpts = await tableOptionsMatchingColumn(queryInterface, "documents", "documentid");
         await queryInterface.createTable(
           TABLE,
           {
@@ -51,7 +63,7 @@ module.exports = {
               onUpdate: "CASCADE",
             },
             documentid: {
-              type: DataTypes.STRING(36),
+              type: varchar36(documentOpts),
               allowNull: false,
               references: { model: "documents", key: "documentid" },
               onDelete: "RESTRICT",

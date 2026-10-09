@@ -1935,6 +1935,12 @@ describe("content is confined to the caller's organisation", () => {
     it.each(IN_X)("%s: the type may be named as video", async (who) => {
       expect((await send(who, "post", `/lesson/learning/${TX.lesson}`, body({ lessonlearningtype: "video", lessonlearningbody: null }))).status).toBe(200);
     });
+    it.each(IN_X)("%s: the request validator itself refuses a type it does not know, before the item's rules are reached", async (who) => {
+      const res = await refuses(who, "post", `/lesson/learning/${TX.lesson}`, body({ lessonlearningtype: "document" }));
+      expect(res.status).toBe(400);
+      // the validator's own wording, not the rule table's "That learning item type isn't supported."
+      expect(res.body.fields).toEqual([{ field: "lessonlearningtype", message: "Lessonlearningtype must be one of the allowed values." }]);
+    });
     it.each(IN_X)("%s: any other type is refused, nothing written", async (who) => {
       for (const lessonlearningtype of ["document", "audio", "gallery", "cards", "package", "link", "Video", "", "x".repeat(40)]) {
         const res = await refuses(who, "post", `/lesson/learning/${TX.lesson}`, body({ lessonlearningtype }));

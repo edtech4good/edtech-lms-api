@@ -11,7 +11,7 @@ const migration = require("./migrations/20261009120100-create-lessonlearningdocu
 
 const TX = { id: "the-transaction" };
 
-const make = (opts: { tables?: string[]; indexes?: string[]; rows?: number; collation?: string } = {}) => {
+const make = (opts: { tables?: string[]; indexes?: string[]; rows?: number; collation?: string; documentCollation?: string } = {}) => {
   const tables = opts.tables ?? ["lessonlearnings", "documents"];
   return {
     showAllTables: jest.fn().mockResolvedValue(tables),
@@ -21,9 +21,10 @@ const make = (opts: { tables?: string[]; indexes?: string[]; rows?: number; coll
     dropTable: jest.fn().mockResolvedValue(undefined),
     sequelize: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      query: jest.fn((sql: string, _o?: any) =>
+      query: jest.fn((sql: string, o?: any) =>
         /INFORMATION_SCHEMA/.test(sql)
-          ? Promise.resolve([[{ cs: "utf8mb4", coll: opts.collation ?? "utf8mb4_unicode_ci" }]])
+          ? // each referenced column answers with its own collation: the items' ids and the documents' ids may differ
+            Promise.resolve([[{ cs: "utf8mb4", coll: (o?.replacements?.[0] === "documents" ? opts.documentCollation : opts.collation) ?? "utf8mb4_unicode_ci" }]])
           : /^SELECT COUNT/.test(sql)
             ? Promise.resolve([{ n: opts.rows ?? 0 }])
             : Promise.resolve([[], undefined]),
@@ -48,6 +49,8 @@ describe("C-LI2 up()", () => {
       "lessonlearningdocumentorder",
     ]);
     expect(String(cols.lessonlearningdocumentid.type)).toBe("VARCHAR(36)");
+    expect(String(cols.lessonlearningid.type)).toBe("VARCHAR(36)");
+    expect(String(cols.documentid.type)).toMatch(/^VARCHAR\(36\) CHARACTER SET utf8mb4 COLLATE \w+$/);
     expect(cols.lessonlearningdocumentid.primaryKey).toBe(true);
     expect(String(cols.lessonlearningdocumentrole.type)).toBe("VARCHAR(16)");
     expect(cols.lessonlearningdocumentrole.allowNull).toBe(false);
@@ -64,12 +67,34 @@ describe("C-LI2 up()", () => {
     expect(cols.documentid).toMatchObject({ allowNull: false, references: { model: "documents", key: "documentid" }, onDelete: "RESTRICT" });
   });
 
-  it("names the charset and collation of the table, taken from the referenced column as the database reports it", async () => {
-    const qi = make({ collation: "utf8mb4_0900_ai_ci" });
+  it("reads two different columns: the item id's collation from lessonlearnings, the document id's from documents", async () => {
+    const qi = make();
     await migration.up(qi);
-    expect(qi.createTable.mock.calls[0][2]).toEqual({ transaction: TX, charset: "utf8mb4", collate: "utf8mb4_0900_ai_ci" });
-    const read = qi.sequelize.query.mock.calls.find((c) => /INFORMATION_SCHEMA/.test(c[0]))!;
-    expect(read[1].replacements).toEqual(["lessonlearnings", "lessonlearningid"]);
+    const reads = qi.sequelize.query.mock.calls.filter((c) => /INFORMATION_SCHEMA/.test(c[0])).map((c) => c[1].replacements);
+    expect(reads).toEqual([["lessonlearnings", "lessonlearningid"], ["documents", "documentid"]]);
+  });
+
+  it("names the table's charset and collation from lessonlearnings, and gives documentid the collation documents.documentid has", async () => {
+    const qi = make({ collation: "utf8mb4_unicode_ci", documentCollation: "utf8mb4_0900_ai_ci" });
+    await migration.up(qi);
+    expect(qi.createTable.mock.calls[0][2]).toEqual({ transaction: TX, charset: "utf8mb4", collate: "utf8mb4_unicode_ci" });
+    const cols = qi.createTable.mock.calls[0][1];
+    expect(cols.documentid.type).toBe("VARCHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci");
+    // the item id has no collation of its own: it is the table's, which is the collation of lessonlearnings.lessonlearningid
+    expect(String(cols.lessonlearningid.type)).toBe("VARCHAR(36)");
+  });
+
+  it("when both referenced columns agree, so do the table and the document id", async () => {
+    const qi = make({ collation: "utf8mb4_0900_ai_ci", documentCollation: "utf8mb4_0900_ai_ci" });
+    await migration.up(qi);
+    expect(qi.createTable.mock.calls[0][2].collate).toBe("utf8mb4_0900_ai_ci");
+    expect(qi.createTable.mock.calls[0][1].documentid.type).toBe("VARCHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci");
+  });
+
+  it("refuses a charset or collation name that is not a plain identifier", async () => {
+    const qi = make({ documentCollation: "x; DROP TABLE documents" });
+    await expect(migration.up(qi)).rejects.toThrow("Unexpected charset or collation");
+    expect(qi.createTable).not.toHaveBeenCalled();
   });
 
   it("adds the unique index on (lessonlearningid, documentid) and the index on documentid, by the names the model declares", async () => {

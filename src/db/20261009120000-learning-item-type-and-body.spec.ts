@@ -52,7 +52,7 @@ const make = (opts: Opts = {}) => {
       base.statements.push(sql);
       return [{ n: opts.notVideoDocuments ?? 0 }];
     }
-    const guard = /^SELECT (COUNT\(\*\) AS n|lessonlearningid AS id) FROM `lessonlearnings` WHERE `(lessonlearningtype|lessonlearningbody)`/.exec(sql);
+    const guard = /^SELECT (COUNT\(\*\) AS n|`lessonlearningid` AS id) FROM `lessonlearnings` WHERE `(lessonlearningtype|lessonlearningbody)`/.exec(sql);
     if (guard) {
       base.statements.push(sql);
       const list = guard[2] === "lessonlearningtype" ? opts.nonVideo : opts.withBody;
@@ -195,10 +195,32 @@ describe("C-LI1 down()", () => {
     const fake = upgraded({ nullDocuments: ["item-n1", "item-n2"] });
     const err = await migration.down(fake.queryInterface).catch((e: Error) => e);
     expect(err).toBeInstanceOf(Error);
-    expect(err.message).toContain("lessonlearnings.documentid: 2 row(s) with no value (lessonlearningid, all 2): item-n1, item-n2");
+    expect(err.message).toContain("lessonlearnings.documentid holds no document (it could not be required again): 2 item(s) (all 2): item-n1, item-n2");
+    expect(err.message).not.toContain("db:check-owners");
+    expect(err.message).not.toContain("owner");
     expect(fake.alters()).toEqual([]);
     expect(fake.removed).toEqual([]);
     expect(fake.nullable()).toBe(true);
+  });
+
+  it("names every reason in ONE refusal when an item has a non-video type, another a body and another no document", async () => {
+    const fake = upgraded({ nonVideo: ["item-t"], withBody: ["item-b"], nullDocuments: ["item-n"] });
+    const err = await migration.down(fake.queryInterface).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message.split("\n").filter((l: string) => / item\(s\) \(/.test(l))).toEqual([
+      "lessonlearnings.lessonlearningtype is not 'video': 1 item(s) (all 1): item-t",
+      "lessonlearnings.lessonlearningbody holds a body: 1 item(s) (all 1): item-b",
+      "lessonlearnings.documentid holds no document (it could not be required again): 1 item(s) (all 1): item-n",
+    ]);
+    expect(fake.alters()).toEqual([]);
+    expect(fake.removed).toEqual([]);
+  });
+
+  it("lists at most 50 ids of a no-document item but counts them all", async () => {
+    const many = Array.from({ length: 52 }, (_, i) => `item-${String(i).padStart(2, "0")}`);
+    const err = await migration.down(upgraded({ nullDocuments: many }).queryInterface).catch((e: Error) => e);
+    expect(err.message).toContain("holds no document (it could not be required again): 52 item(s) (first 50 of 52)");
+    expect(err.message).not.toContain("item-50");
   });
 
   it("lists at most 50 ids of a kind but counts them all", async () => {
