@@ -76,7 +76,7 @@ for _ in $(seq 1 "$BOOT_TIMEOUT"); do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     tail -n 40 "$WORK/server.log"; echo "FAIL: the server exited during boot" >&2; exit 1
   fi
-  if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/"; then ready=1; break; fi
+  if curl -fs -o /dev/null "http://127.0.0.1:$PORT/"; then ready=1; break; fi
   sleep 1
 done
 if [ -z "$ready" ]; then
