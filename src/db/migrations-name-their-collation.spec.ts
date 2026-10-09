@@ -30,6 +30,35 @@ type Recording = {
 
 const TX = { id: "the-transaction" };
 
+/**
+ * `sequelize.escape` as the MySQL dialect does it for the values a migration
+ * can pass: a string is quoted with its quotes, backslashes and control
+ * characters escaped, a number passes through, null is NULL. Anything else
+ * (a Date, an array, an object) is not escaped here on purpose: it throws, so a
+ * migration that starts escaping one gets a clear failure instead of a wrong
+ * quoting.
+ */
+const MYSQL_ESCAPES: Record<string, string> = {
+  "\0": "\\0",
+  "\b": "\\b",
+  "\t": "\\t",
+  "\n": "\\n",
+  "\r": "\\r",
+  "\x1a": "\\Z",
+  '"': '\\"',
+  "'": "\\'",
+  "\\": "\\\\",
+};
+const fakeEscape = (value: unknown): string => {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "string") {
+    return `'${value.replace(/[\0\b\t\n\r\x1a"'\\]/g, (c) => MYSQL_ESCAPES[c])}'`;
+  }
+  throw new Error(`the fake sequelize.escape does not handle a ${typeof value}; add it to the fake`);
+};
+
 const makeRecordingQueryInterface = (rec: Recording) => {
   const query = jest.fn(async (sql: unknown) => {
     if (typeof sql === "string" && /CREATE\s+TABLE/i.test(sql)) {
@@ -39,6 +68,7 @@ const makeRecordingQueryInterface = (rec: Recording) => {
   });
   const sequelize = {
     query,
+    escape: fakeEscape,
     transaction: jest.fn(async (cb?: (t: unknown) => Promise<unknown>) => (cb ? cb(TX) : TX)),
     Sequelize,
     fn: Sequelize.fn,
