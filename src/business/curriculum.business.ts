@@ -13,14 +13,16 @@ import {
   curriculumcountryCreationAttributes,
   curriculums,
   curriculumsAttributes,
+  documents,
   grades,
+  lessonlearningdocuments,
   lessons,
   levelquizquestions,
   levels,
   schools,
   students,
 } from "../models/data-models/init-models";
-import { buildWhere } from "./../services/util.service";
+import { buildWhere, rawfilenameextractor } from "./../services/util.service";
 import { subjects } from "src/models/data-models/subjects";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedCurriculum } from "./content-scope";
@@ -328,6 +330,8 @@ export class CurriculumBusiness {
       }>;
     } = await new CurriculumBusiness().findcurriculumgrades(curriculumid);
     const files: Array<string> = [];
+    // the items whose further documents (link rows) are part of the media set too
+    const learningIds: Array<string> = [];
 
     const extractFile = (y: Array<any>) => {
       if (!Array.isArray(y)) {
@@ -372,8 +376,12 @@ export class CurriculumBusiness {
                     h.lessonquizquestions.map((q: any) => q.question)
                   );
                 }
+                // an item with no primary document carries no file object, so it adds nothing here
                 if (h?.lessonlearningfileobject?.filename) {
                   files.push(h?.lessonlearningfileobject?.filename);
+                }
+                if (typeof h?.lessonlearningid === "string") {
+                  learningIds.push(h.lessonlearningid);
                 }
               });
               return z;
@@ -393,6 +401,21 @@ export class CurriculumBusiness {
       );
     });
     await Promise.all(fc);
+
+    // the documents an item references beyond its own (renditions, assets): offline, a learner needs them too
+    if (learningIds.length > 0) {
+      const links = await lessonlearningdocuments.findAll({
+        attributes: ["documentid"],
+        where: { lessonlearningid: { [Op.in]: uniq(learningIds) } },
+      });
+      if (links.length > 0) {
+        const linked = await documents.findAll({
+          attributes: ["documentid", "documentname"],
+          where: { documentid: { [Op.in]: uniq(links.map((l) => l.documentid)) } },
+        });
+        linked.forEach((d) => files.push(rawfilenameextractor(d.documentname).filename));
+      }
+    }
 
     return uniq(files);
   }

@@ -153,6 +153,10 @@ const ASSOCS: Record<string, Record<string, Assoc>> = {
   },
   lessons: {
     level: { table: "levels", local: "levelid", remote: "levelid" },
+    // what the lesson's learning path is read through (Sequelize names a hasMany by the plural of the model)
+    lessonlearnings: { table: "lessonlearnings", local: "lessonid", remote: "lessonid", many: true },
+    lessonpractices: { table: "lessonpractices", local: "lessonid", remote: "lessonid", many: true },
+    lessonquizzes: { table: "lessonquizzes", local: "lessonid", remote: "lessonid", many: true },
     studentlessonsprogresses: { table: "studentlessonsprogress", local: "lessonid", remote: "lessonid", many: true },
   },
   lessonlearnings: {
