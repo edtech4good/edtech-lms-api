@@ -9,10 +9,9 @@ import { TokenType } from 'src/models/enums';
 import { Permission } from 'src/models/enums/permissions.enum';
 import { ResponseBoolean } from 'src/models/ResponseBoolean';
 import { BusinessValidationInterceptor } from '../../interceptors/businessvalidation.interceptor';
-import { DeleteDocument } from '../document/document.business.validator';
-import { DeleteLesson, DeleteLessonLearning, LessonLearningExists } from './lesson.business.validator';
+import { DeleteLesson, DeleteLessonLearning, DeleteLessonLearningDocument, LessonLearningExists } from './lesson.business.validator';
 import {
-  createlessonlearning, getlessonlearning, updatelessonlearning, updateorderlessonlearning,
+  createlessonlearning, getlessonlearning, reorderlessonlearning, updatelessonlearning, updateorderlessonlearning,
   updatestatuslessonlearning
 } from './lesson.learning.request.validator';
 import { showlesson } from './lesson.request.validator';
@@ -26,6 +25,23 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { assertSameOwner, ownerOfDocument, ownerOfLearning, ownerOfLesson } from "src/business/content-owner";
 import { assertInScope, findOwnedDocument, findOwnedLesson } from "src/business/content-scope";
 import { Org, OrgContext } from "src/decorators/org.decorator";
+import { DEFAULT_LEARNING_ITEM_TYPE, learningItemErrors } from "src/business/learning-item-types";
+import { ValidationException } from "src/models/ValidationException";
+
+/**
+ * The caller's own documents named by an item (its primary one and its link rows): each is theirs or the 404 an absent
+ * one gets, before anything is compared; then all must belong to the owner of `ownerOfItem`.
+ */
+const checkDocuments = async (org: OrgContext, ownerOfItem: Awaited<ReturnType<typeof ownerOfLesson>>, documentids: ReadonlyArray<string>) => {
+  for (const documentid of documentids) {
+    await findOwnedDocument(org, documentid);
+  }
+  for (const documentid of documentids) {
+    assertSameOwner(ownerOfItem, await ownerOfDocument(documentid));
+  }
+};
+const namedDocuments = (documentid: string | null | undefined, links: ReadonlyArray<{ documentid: string }> | undefined) =>
+  [...(typeof documentid === "string" ? [documentid] : []), ...(links ?? []).map((l) => l.documentid)];
 
 @ApiExtraModels(LessonBase)
 @ApiExtraModels(LessonCreateResponse)
@@ -109,18 +125,32 @@ export class LessonLearningController {
   })
   @UseInterceptors(
     new SchemaValidationInterceptor(createlessonlearning),
-    new BusinessValidationInterceptor([DeleteLesson, DeleteDocument, LessonLearningExists])
+    new BusinessValidationInterceptor([DeleteLesson, DeleteLessonLearningDocument, LessonLearningExists])
   )
   @RequirePermissions(Permission.CREATE_LESSONLEARNING)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: `lessonid`, type: () => String, required: true })
   async addlearning(@Param('lessonid') lessonid: string, @Body() lessonlearning: LessonLearningsCreate, @Org() org: OrgContext): Promise<ResponseBoolean> {
-    // the lesson in the path and the document in the body are both the caller's, or not found (before anything is compared)
+    // the lesson in the path and every document in the body are the caller's, or not found (before anything is compared);
+    // then one owner for all; then the type's own rules
     await findOwnedLesson(org, lessonid);
-    await findOwnedDocument(org, lessonlearning.documentid);
-    assertSameOwner(await ownerOfLesson(lessonid), await ownerOfDocument(lessonlearning.documentid));
-    await new LessonLearningBusiness().createLessonLearning({ ...lessonlearning, lessonid, lessonlearningid: "", lessonlearningstatus: true });
+    await checkDocuments(org, await ownerOfLesson(lessonid), namedDocuments(lessonlearning.documentid, lessonlearning.documents));
+    const type = lessonlearning.lessonlearningtype ?? DEFAULT_LEARNING_ITEM_TYPE;
+    const errors = learningItemErrors({ type, documentid: lessonlearning.documentid, body: lessonlearning.lessonlearningbody, documents: lessonlearning.documents });
+    if (errors.length > 0) {
+      throw new ValidationException(errors);
+    }
+    const { documents: _links, ...own } = lessonlearning;
+    await new LessonLearningBusiness().createLessonLearning({
+      ...own,
+      documentid: lessonlearning.documentid ?? null,
+      lessonlearningtype: type,
+      lessonlearningbody: lessonlearning.lessonlearningbody ?? null,
+      lessonid,
+      lessonlearningid: "",
+      lessonlearningstatus: true,
+    });
     return {
       error: false,
       data: true,
@@ -217,6 +247,43 @@ export class LessonLearningController {
   }
 
   @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
+  @Put('reorder/:lessonid')
+  @ApiResponse({
+    status: 200,
+    description: "Lesson learning items reordered: the order is 1..n in the order given",
+    schema: { $ref: getSchemaPath(ResponseBoolean) },
+  })
+  @ApiResponse({
+    status: 400,
+    description: "The list is not exactly the lesson's items, once each",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "The lesson or an item is not found",
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Server error',
+  })
+  @UseInterceptors(new SchemaValidationInterceptor(reorderlessonlearning))
+  @RequirePermissions(Permission.UPDATE_LESSONLEARNING)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: `lessonid`, type: () => String, required: true })
+  async reorderlearnings(
+    @Param('lessonid') lessonid: string,
+    @Body() body: { lessonlearningids: string[] },
+    @Org() org: OrgContext
+  ): Promise<ResponseBoolean> {
+    // the lesson in the path and every item in the list are the caller's, or the 404 an absent one gets; nothing is written otherwise
+    await new LessonLearningBusiness(org).reorderLessonLearnings(lessonid, body.lessonlearningids);
+    return {
+      error: false,
+      data: true,
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
   @Put(':lessonlearningid')
   @ApiResponse({
     status: 200,
@@ -241,11 +308,24 @@ export class LessonLearningController {
     @Body() lessonlearning: LessonLearningsUpdate,
     @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
-    // the learning in the path and the document in the body are both the caller's, or not found (before anything is compared)
+    // the learning in the path and every document in the body are the caller's, or not found (before anything is
+    // compared); then one owner for all; then the type's own rules, applied to the item as it will be after the update
     await assertInScope(org, "learning", lessonlearningid);
-    await findOwnedDocument(org, lessonlearning.documentid);
-    assertSameOwner(await ownerOfLearning(lessonlearningid), await ownerOfDocument(lessonlearning.documentid));
-    await new LessonLearningBusiness(org).updateLessonLearning(lessonlearningid, { ...lessonlearning, lessonlearningid, lessonlearningstatus: true, lessonlearningorder: 0 });
+    await checkDocuments(org, await ownerOfLearning(lessonlearningid), namedDocuments(lessonlearning.documentid, lessonlearning.documents));
+    const business = new LessonLearningBusiness(org);
+    const stored = await business.getLessonLearningid(lessonlearningid);
+    const type = lessonlearning.lessonlearningtype ?? stored?.lessonlearningtype ?? DEFAULT_LEARNING_ITEM_TYPE;
+    const errors = learningItemErrors({
+      type,
+      documentid: lessonlearning.documentid !== undefined ? lessonlearning.documentid : stored?.documentid,
+      body: lessonlearning.lessonlearningbody !== undefined ? lessonlearning.lessonlearningbody : stored?.lessonlearningbody,
+      documents: lessonlearning.documents,
+    });
+    if (errors.length > 0) {
+      throw new ValidationException(errors);
+    }
+    const { documents: _links, ...own } = lessonlearning;
+    await business.updateLessonLearning(lessonlearningid, { ...own, documentid: own.documentid as string | null, lessonlearningid, lessonlearningstatus: true, lessonlearningorder: 0 });
     return {
       error: false,
       data: true,

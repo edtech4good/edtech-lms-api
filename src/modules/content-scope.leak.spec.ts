@@ -1836,6 +1836,196 @@ describe("content is confined to the caller's organisation", () => {
     });
   });
 
+  // The learning slot is an ordered list of typed items (docs: learning items). One call sets a lesson's order.
+  describe("PUT /lesson/learning/reorder/:lessonid", () => {
+    const [L2, L3, LY2, LOTHER] = [uuid(7101), uuid(7102), uuid(7201), uuid(7301)];
+    const item = (id: string, lessonid: string, order: number, documentid: string) => ({
+      lessonlearningid: id, lessonid, documentid, lessonlearningname: "Learning " + id.slice(-4), lessonlearningdescription: "ពិពណ៌នា", lessonlearningorder: order, lessonlearningstatus: true,
+    });
+    const ids = (lesson: string) => db.tables.lessonlearnings.filter((x) => x.lessonid === lesson).map((x) => x.lessonlearningid).sort();
+    const orderOf = (id: string) => stored("lessonlearnings", "lessonlearningid", id).lessonlearningorder;
+    const url = (lesson: string) => `/lesson/learning/reorder/${lesson}`;
+    beforeEach(() => {
+      // X's lesson holds three items (two of them tied at 5, as an admin's typed numbers can leave them), Y's holds two, and X's other lesson one
+      db.add("lessonlearnings", item(L2, TX.lesson, 5, TX.document2));
+      db.add("lessonlearnings", item(L3, TX.lesson, 5, TX.document2));
+      db.add("lessonlearnings", item(LY2, TY.lesson, 5, TY.document2));
+      db.add("lessonlearnings", item(LOTHER, TX.lesson2, 1, TX.document2));
+    });
+    it.each(IN_X)("%s: sets the order of X's lesson's items to 1..n in the order given, and no other item changes", async (who) => {
+      const res = await send(who, "put", url(TX.lesson), { lessonlearningids: [L3, TX.learning, L2] });
+      expect(res.status).toBe(200);
+      expect(withoutReference(res.body)).toEqual({ error: false, data: true });
+      expect([orderOf(L3), orderOf(TX.learning), orderOf(L2)]).toEqual([1, 2, 3]);
+      expect(orderOf(LOTHER)).toBe(1);
+      expect(orderOf(TY.learning)).toBe(1);
+      expect(orderOf(LY2)).toBe(5);
+    });
+    it.each(IN_X)("%s: reading the lesson's items afterwards lists them in the order given", async (who) => {
+      await send(who, "put", url(TX.lesson), { lessonlearningids: [L2, L3, TX.learning] });
+      expect([orderOf(L2), orderOf(L3), orderOf(TX.learning)]).toEqual([1, 2, 3]);
+    });
+    it.each(IN_X)("%s: Y's and an unowned lesson answer as an absent one does, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(id), { lessonlearningids: [TX.learning, L2, L3] }), TY.lesson, TU.lesson)).toBe(404);
+    });
+    it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
+      expect(await asAbsentPath(who, "put", (id) => r(url(id), { lessonlearningids: [TX.learning, L2, L3] }), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+    });
+    it.each(IN_X)("%s: a list holding Y's item or an unowned one is the 404 an absent item gets, the whole request refused, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(TX.lesson), { lessonlearningids: [L3, id, TX.learning, L2] }), TY.learning, TU.learning)).toBe(404);
+    });
+    it.each(IN_X)("%s: a list holding X's item of another lesson, a missing item, or a repeated one is refused, nothing written", async (who) => {
+      for (const list of [
+        [TX.learning, L2, L3, LOTHER],
+        [TX.learning, L2, LOTHER],
+        [TX.learning, L2],
+        [TX.learning, L2, L2],
+        [TX.learning, L2, L3, L3],
+      ]) {
+        const res = await refuses(who, "put", url(TX.lesson), { lessonlearningids: list });
+        expect(res.status).toBe(400);
+      }
+    });
+    it.each(IN_X)("%s: a body that is not a list of ids is refused, nothing written", async (who) => {
+      for (const body of [{}, { lessonlearningids: "x" }, { lessonlearningids: ["not-an-id"] }, { lessonlearningids: [TX.learning], extra: 1 }]) {
+        expect((await refuses(who, "put", url(TX.lesson), body)).status).toBe(400);
+      }
+    });
+    it("a platform user not acting: any lesson's items, an unowned lesson's too", async () => {
+      expect((await send(NOT_ACTING, "put", url(TY.lesson), { lessonlearningids: [LY2, TY.learning] })).status).toBe(200);
+      expect([orderOf(LY2), orderOf(TY.learning)]).toEqual([1, 2]);
+      expect((await send(NOT_ACTING, "put", url(TU.lesson), { lessonlearningids: [TU.learning] })).status).toBe(200);
+      expect(ids(TX.lesson)).toEqual(sorted(TX.learning, L2, L3));
+    });
+    it("a platform user not acting: a lesson or an item that is not there is the 404 an absent one gets", async () => {
+      expect((await refuses(NOT_ACTING, "put", url(MISSING), { lessonlearningids: [] })).status).toBe(404);
+      expect((await refuses(NOT_ACTING, "put", url(TY.lesson), { lessonlearningids: [LY2, TY.learning, MISSING] })).status).toBe(404);
+    });
+    it("a school-user token and the server token are refused, nothing written", async () => {
+      for (const who of ["a school-user token", "a server token"] as Who[]) {
+        const res = await refuses(who, "put", url(TX.lesson), { lessonlearningids: [TX.learning, L2, L3] });
+        expect([401, 403]).toContain(res.status);
+      }
+    });
+  });
+
+  describe("learning items: type, body and documents", () => {
+    const body = (over: object = {}) => ({ documentid: TX.document2, lessonlearningname: "ថ្មី", lessonlearningdescription: "ពិពណ៌នា", lessonlearningorder: 3, ...over });
+    const updateBody = (over: object = {}) => ({ documentid: TX.document2, lessonid: TX.lesson, lessonlearningname: "ឈ្មោះថ្មី", lessonlearningdescription: "ពិពណ៌នា", ...over });
+    const asset = (documentid: string) => ({ documentid, role: "asset", order: 0 });
+    const fieldsOf = (res: request.Response) => (res.body.fields ?? []).map((f: { field: string }) => f.field);
+
+    it.each(IN_X)("%s: a new item is a video item with no body by default, and says so when read", async (who) => {
+      expect((await send(who, "post", `/lesson/learning/${TX.lesson}`, body())).status).toBe(200);
+      expect(db.createdIn("lessonlearnings")).toEqual([expect.objectContaining({ documentid: TX.document2, lessonlearningtype: "video", lessonlearningbody: null })]);
+      const read = await send(who, "get", `/lesson/learning/${TX.lesson}`);
+      expect(read.body.data.map((x: Row) => [x.lessonlearningid === TX.learning, x.lessonlearningtype, x.lessonlearningbody, x.documents])).toEqual(
+        expect.arrayContaining([[true, "video", null, []]]),
+      );
+    });
+    it.each(IN_X)("%s: the type may be named as video", async (who) => {
+      expect((await send(who, "post", `/lesson/learning/${TX.lesson}`, body({ lessonlearningtype: "video", lessonlearningbody: null }))).status).toBe(200);
+    });
+    it.each(IN_X)("%s: any other type is refused, nothing written", async (who) => {
+      for (const lessonlearningtype of ["document", "audio", "gallery", "cards", "package", "link", "Video", "", "x".repeat(40)]) {
+        const res = await refuses(who, "post", `/lesson/learning/${TX.lesson}`, body({ lessonlearningtype }));
+        expect(res.status).toBe(400);
+        expect(fieldsOf(res)).toContain("lessonlearningtype");
+      }
+    });
+    it.each(IN_X)("%s: a video item takes no body, no extra documents and needs its document: each refused, nothing written", async (who) => {
+      const bad: Array<[object, string]> = [
+        [{ lessonlearningbody: { v: 1 } }, "lessonlearningbody"],
+        [{ lessonlearningbody: {} }, "lessonlearningbody"],
+        [{ documents: [asset(TX.document)] }, "documents"],
+        [{ documentid: null }, "documentid"],
+        [{ documentid: undefined }, "documentid"],
+      ];
+      for (const [over, field] of bad) {
+        const res = await refuses(who, "post", `/lesson/learning/${TX.lesson}`, body(over));
+        expect(res.status).toBe(400);
+        expect(fieldsOf(res)).toEqual([field]);
+      }
+    });
+    it.each(IN_X)("%s: an empty documents list is no extra documents", async (who) => {
+      expect((await send(who, "post", `/lesson/learning/${TX.lesson}`, body({ documents: [] }))).status).toBe(200);
+    });
+    it.each(IN_X)("%s: a field the API does not know is refused, nothing written", async (who) => {
+      expect((await refuses(who, "post", `/lesson/learning/${TX.lesson}`, body({ lessonlearningcolour: "red" }))).status).toBe(400);
+    });
+    it.each(IN_X)("%s: a document of Y or an unowned one in documents is the 404 an absent document gets, even when the type's rules are also broken", async (who) => {
+      // ownership is checked before the type's rules: the answer does not depend on the (refused) body
+      expect(await asAbsent(who, "post", (id) => r(`/lesson/learning/${TX.lesson}`, body({ documents: [asset(id)] })), TY.document, TU.document)).toBe(404);
+      expect(await asAbsent(who, "post", (id) => r(`/lesson/learning/${TX.lesson}`, body({ documents: [asset(id)], lessonlearningbody: { v: 1 } })), TY.document, TU.document)).toBe(404);
+    });
+    it.each(IN_X)("%s: X's own document in documents is accepted past the scope check and refused by the video rule, after it", async (who) => {
+      const res = await refuses(who, "post", `/lesson/learning/${TX.lesson}`, body({ documents: [asset(TX.document)] }));
+      expect(res.status).toBe(400);
+      expect(fieldsOf(res)).toEqual(["documents"]);
+    });
+    it.each(IN_X)("%s: updating keeps the type and body when the request leaves them out, and refuses a body for a video item", async (who) => {
+      expect((await send(who, "put", `/lesson/learning/${TX.learning}`, updateBody())).status).toBe(200);
+      expect(stored("lessonlearnings", "lessonlearningid", TX.learning)).toMatchObject({ documentid: TX.document2, lessonlearningname: "ឈ្មោះថ្មី" });
+      for (const [over, field] of [
+        [{ lessonlearningbody: { v: 1 } }, "lessonlearningbody"],
+        [{ documentid: null }, "documentid"],
+        [{ documents: [asset(TX.document)] }, "documents"],
+        [{ lessonlearningtype: "document" }, "lessonlearningtype"],
+      ] as Array<[object, string]>) {
+        const res = await refuses(who, "put", `/lesson/learning/${TX.learning}`, updateBody(over));
+        expect(res.status).toBe(400);
+        expect(fieldsOf(res)).toEqual([field]);
+      }
+    });
+    it.each(IN_X)("%s: updating without a document leaves the item's document as it was", async (who) => {
+      const { documentid, ...withoutDocument } = updateBody();
+      expect(documentid).toBe(TX.document2);
+      expect((await send(who, "put", `/lesson/learning/${TX.learning}`, withoutDocument)).status).toBe(200);
+      expect(stored("lessonlearnings", "lessonlearningid", TX.learning).documentid).toBe(TX.document);
+    });
+    it.each(IN_X)("%s: a document of Y in documents on an update is the 404 an absent one gets, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(`/lesson/learning/${TX.learning}`, updateBody({ documents: [asset(id)] })), TY.document, TU.document)).toBe(404);
+    });
+
+    describe("reading", () => {
+      beforeEach(() => {
+        // an item that is not a single file (a later type): no primary document; and link rows for X's and Y's items
+        db.add("lessonlearnings", {
+          lessonlearningid: uuid(7401), lessonid: TX.lesson, documentid: null, lessonlearningtype: "gallery", lessonlearningbody: { v: 1 },
+          lessonlearningname: "Gallery", lessonlearningdescription: "ពិពណ៌នា", lessonlearningorder: 2, lessonlearningstatus: true,
+        });
+        db.add("lessonlearningdocuments", { lessonlearningdocumentid: uuid(7501), lessonlearningid: uuid(7401), documentid: TX.document2, lessonlearningdocumentrole: "asset", lessonlearningdocumentorder: 2 });
+        db.add("lessonlearningdocuments", { lessonlearningdocumentid: uuid(7502), lessonlearningid: uuid(7401), documentid: TX.document, lessonlearningdocumentrole: "asset", lessonlearningdocumentorder: 1 });
+        db.add("lessonlearningdocuments", { lessonlearningdocumentid: uuid(7503), lessonlearningid: TY.learning, documentid: TY.document, lessonlearningdocumentrole: "rendition", lessonlearningdocumentorder: 1 });
+      });
+      it.each(IN_X)("%s: an item with no document lists and reads without a crash, with its type, body and ordered documents", async (who) => {
+        const list = await send(who, "get", `/lesson/learning/${TX.lesson}`);
+        expect(list.status).toBe(200);
+        const gallery = list.body.data.find((x: Row) => x.lessonlearningid === uuid(7401));
+        expect(gallery).toMatchObject({
+          documentid: null, documentname: null, documenttypeid: null, lessonlearningtype: "gallery", lessonlearningbody: { v: 1 },
+          documents: [
+            { documentid: TX.document, role: "asset", order: 1, documentname: `doc_${TX.tag}.png`, documenttypeid: 1 },
+            { documentid: TX.document2, role: "asset", order: 2, documentname: `doc2_${TX.tag}.png`, documenttypeid: 1 },
+          ],
+        });
+        const one = await send(who, "get", `/lesson/learning/${TX.lesson}/${uuid(7401)}`);
+        expect(one.status).toBe(200);
+        expect(one.body.data).toEqual(gallery);
+      });
+      it.each(IN_X)("%s: Y's link rows never appear in X's reads", async (who) => {
+        const list = await send(who, "get", `/lesson/learning/${TX.lesson}`);
+        const shown = list.body.data.flatMap((x: Row) => (x.documents as Row[]).map((d) => d.documentid));
+        expect(shown.sort()).toEqual(sorted(TX.document, TX.document2));
+        expect(JSON.stringify(list.body)).not.toContain(TY.document);
+      });
+      it("a platform user not acting: Y's item shows its own link row", async () => {
+        const read = await send(NOT_ACTING, "get", `/lesson/learning/${TY.lesson}/${TY.learning}`);
+        expect(read.body.data.documents).toEqual([expect.objectContaining({ documentid: TY.document, role: "rendition" })]);
+      });
+    });
+  });
+
   // ───────────────────────────── lesson plans ─────────────────────────────
   describe("GET /lesson/plan/:lessonid", () => {
     it.each(IN_X)("%s: the plans of X's lesson", async (who) => {

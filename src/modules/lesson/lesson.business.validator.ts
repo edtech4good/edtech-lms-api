@@ -9,6 +9,7 @@ import { LessonQuizBusiness } from 'src/business/lessonquiz.business';
 import { LessonQuizQuestionBusiness } from 'src/business/lessonquizquestion.business';
 import { requestScope } from "src/business/content-scope";
 import { IRequest } from 'src/models/IRequest';
+import { DeleteDocument } from '../document/document.business.validator';
 
 export const CreateLesson = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const lessonexists = await new LessonBusiness(requestScope(request)).isexistsLessonName({
@@ -95,6 +96,9 @@ export const DeleteLesson = async (request: IRequest, data: any): Promise<Array<
   }
   return [];
 };
+/** The item's primary document exists in scope, when it names one (an item that is not one file has none). */
+export const DeleteLessonLearningDocument = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> =>
+  data.documentid === null || data.documentid === undefined ? [] : DeleteDocument(request, data);
 export const LessonLearningExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const levelexists = await new LessonLearningBusiness(requestScope(request)).isexistsLessonLearningAdded(data.lessonid, data.documentid, data.lessonlearningid);
   if (levelexists) {
