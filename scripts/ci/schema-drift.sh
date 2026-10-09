@@ -20,14 +20,20 @@
 # Create the database the way CI does, with the server's default collation:
 #   CREATE DATABASE scratch_db;
 #
-# Variables: DB_NAME, DB_USER, DB_PASSWORD (required); DB_HOST (127.0.0.1), DB_PORT (3306),
+# Variables: DB_NAME, DB_USER, DB_PASSWORD (required, non-empty: config.ts turns an empty
+# password into the placeholder "password", which fails loudly as access denied); DB_HOST (127.0.0.1), DB_PORT (3306),
 # PORT (3000), NODE_ENV (development: the production placeholder-secret guard is not the
-# thing under test), BOOT_TIMEOUT seconds (60).
+# thing under test), BOOT_TIMEOUT seconds (60). Set SMTP_HOST=127.0.0.1 SMTP_PORT=1 to stop the
+# boot's mail-transport check from calling out to a real mail host.
+#
+# Known limits: the dump covers base tables only (views, triggers, routines, and data changes
+# made at boot are not seen), and the models step compares table and column names only (not
+# types, nullability or defaults).
 set -euo pipefail
 
 : "${DB_NAME:?DB_NAME is required}"
 : "${DB_USER:?DB_USER is required}"
-: "${DB_PASSWORD?DB_PASSWORD is required (may be empty)}"
+: "${DB_PASSWORD:?DB_PASSWORD is required}"
 export DB_HOST="${DB_HOST:-127.0.0.1}" DB_PORT="${DB_PORT:-3306}"
 export PORT="${PORT:-3000}" NODE_ENV="${NODE_ENV:-development}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-60}"
@@ -35,11 +41,17 @@ export DB_NAME DB_USER DB_PASSWORD
 
 cd "$(dirname "$0")/../.."
 # The app takes its database from FORTYKAPICONFIG when that is set, which would bypass DB_NAME.
-if [ -n "${FORTYKAPICONFIG:-}" ] || { [ -f .env ] && grep -q '^FORTYKAPICONFIG=' .env; }; then
+if [ -n "${FORTYKAPICONFIG:-}" ] || { [ -f .env ] && grep -Eq '^[[:space:]]*FORTYKAPICONFIG[[:space:]]*=' .env; }; then
   echo "FORTYKAPICONFIG is set (environment or .env); it would override DB_NAME. Unset it for this check." >&2
   exit 2
 fi
 [ -f build/server.js ] || { echo "build/server.js is missing: run npm run build first" >&2; exit 2; }
+# Anything already answering on PORT would make the readiness poll pass for the wrong server.
+# No -f: any HTTP reply at all means the port is taken.
+if curl -s -m 2 -o /dev/null "http://127.0.0.1:$PORT/"; then
+  echo "port $PORT in use: something already answers on it; free it or set PORT" >&2
+  exit 2
+fi
 
 WORK="$(mktemp -d)"
 SERVER_PID=""
@@ -76,7 +88,7 @@ for _ in $(seq 1 "$BOOT_TIMEOUT"); do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     tail -n 40 "$WORK/server.log"; echo "FAIL: the server exited during boot" >&2; exit 1
   fi
-  if curl -fs -o /dev/null "http://127.0.0.1:$PORT/"; then ready=1; break; fi
+  if curl -fs -m 5 -o /dev/null "http://127.0.0.1:$PORT/"; then ready=1; break; fi
   sleep 1
 done
 if [ -z "$ready" ]; then
