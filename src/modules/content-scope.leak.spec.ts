@@ -1901,6 +1901,15 @@ describe("content is confined to the caller's organisation", () => {
       expect((await refuses(NOT_ACTING, "put", url(MISSING), { lessonlearningids: [] })).status).toBe(404);
       expect((await refuses(NOT_ACTING, "put", url(TY.lesson), { lessonlearningids: [LY2, TY.learning, MISSING] })).status).toBe(404);
     });
+    it("a staff user who may view learnings but not update them is refused (403), nothing written", async () => {
+      const viewer = bearer({ lmsuserid: "vw", lmsuserroles: [Role.admin], permissions: ["view_lessonlearning"], organisationid: X, isplatform: false });
+      const before = db.snapshot();
+      const res = await request(app.getHttpServer()).put(url(TX.lesson)).set("Authorization", viewer).set("Connection", "close").send({ lessonlearningids: [TX.learning, L2, L3] });
+      expect(res.status).toBe(403);
+      expect(db.snapshot()).toEqual(before);
+      const read = await request(app.getHttpServer()).get(`/lesson/learning/${TX.lesson}`).set("Authorization", viewer).set("Connection", "close");
+      expect(read.status).toBe(200);
+    });
     it("a school-user token and the server token are refused, nothing written", async () => {
       for (const who of ["a school-user token", "a server token"] as Who[]) {
         const res = await refuses(who, "put", url(TX.lesson), { lessonlearningids: [TX.learning, L2, L3] });
