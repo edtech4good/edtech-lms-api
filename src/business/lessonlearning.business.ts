@@ -181,6 +181,16 @@ export class LessonLearningBusiness {
     return await lessonlearnings.findAll({ where: await andScope(this.org, "learning", where), order });
   };
 
+  /**
+   * Every link row of the items in scope (the sync payload's `lessonlearningdocuments`), whole, in a fixed order:
+   * item, then the row's own order, then its id. Empty until an item type uses link rows.
+   */
+  getLessonLearningDocuments = async () =>
+    lessonlearningdocuments.findAll({
+      where: await andScope(this.org, "learningdocument", {}),
+      order: [["lessonlearningid", "ASC"], ["lessonlearningdocumentorder", "ASC"], ["lessonlearningdocumentid", "ASC"]],
+    });
+
   deleteLessonLearning = async (lessonlearningid: string) => {
     const tempdt = await this.getLessonLearningid(lessonlearningid);
     if (tempdt) {

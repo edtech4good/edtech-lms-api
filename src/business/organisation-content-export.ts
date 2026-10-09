@@ -36,6 +36,10 @@ import { SubjectBusiness } from "./subject.business";
  *   <every table below, an empty list when the organisation has none> }
  * ```
  *
+ * A learning item (`lessonlearnings`) ships whole: its type and body are columns of the row. The documents an item
+ * references beyond its own `documentid` ship in `lessonlearningdocuments` (a link row each), which hangs from the item
+ * and names a document of the payload; the key is always present.
+ *
  * Three kinds of table:
  *  - owned (`schools`, `curriculums`, `questions`, `documents`, `subjects`): the rows
  *    the organisation owns, each carrying its `organisationid`;
@@ -75,6 +79,7 @@ export const CONTENT_TABLE_KEYS = [
   "levels",
   "lessons",
   "lessonlearnings",
+  "lessonlearningdocuments",
   "lessonplans",
   "lessonpractices",
   "lessonquizzes",
@@ -116,6 +121,11 @@ const SHAPE: Record<ContentTableKey, Shape> = {
   levels: { pk: "levelid", parent: { fk: "gradeid", to: "grades" } },
   lessons: { pk: "lessonid", parent: { fk: "levelid", to: "levels" } },
   lessonlearnings: { pk: "lessonlearningid", parent: { fk: "lessonid", to: "lessons" }, refs: [{ fk: "documentid", to: "documents", optional: true }] },
+  lessonlearningdocuments: {
+    pk: "lessonlearningdocumentid",
+    parent: { fk: "lessonlearningid", to: "lessonlearnings" },
+    refs: [{ fk: "documentid", to: "documents" }],
+  },
   lessonplans: { pk: "lessonplanid", parent: { fk: "lessonid", to: "lessons" }, refs: [{ fk: "documentid", to: "documents", optional: true }] },
   lessonpractices: { pk: "lessonpracticeid", parent: { fk: "lessonid", to: "lessons" } },
   lessonquizzes: { pk: "lessonquizid", parent: { fk: "lessonid", to: "lessons" } },
@@ -178,6 +188,7 @@ const NOUN: Record<ContentTableKey, string> = {
   levels: "level",
   lessons: "lesson",
   lessonlearnings: "lesson learning item",
+  lessonlearningdocuments: "lesson learning item document",
   lessonplans: "lesson plan",
   lessonpractices: "lesson practice",
   lessonquizzes: "lesson quiz",
@@ -378,6 +389,7 @@ export const buildOrganisationContent = async (organisation: organisations): Pro
     levels: plain(await new LevelBusiness(org).getLevels()),
     lessons: plain(await new LessonBusiness(org).getLessons()),
     lessonlearnings: plain(await new LessonLearningBusiness(org).getLessonLearnings()),
+    lessonlearningdocuments: plain(await new LessonLearningBusiness(org).getLessonLearningDocuments()),
     lessonplans: plain(await new LessonPlanBusiness(org).getLessonPlans()),
     lessonpractices: plain(await new LessonPracticeBusiness(org).getLessonPractices()),
     lessonquizzes: plain(await new LessonQuizBusiness(org).getLessonQuizzes()),
@@ -413,5 +425,9 @@ export const buildOrganisationContent = async (organisation: organisations): Pro
     questions: checked.questions,
     documents: checked.documents,
     subjects: checked.subjects,
+    // Always present, an empty list when no item has a link row (the student API refuses a payload without the key,
+    // and one with it when it does not know it). Last, so that the two tables it hangs from (lessonlearnings and
+    // documents) come before it in the file.
+    lessonlearningdocuments: checked.lessonlearningdocuments,
   };
 };

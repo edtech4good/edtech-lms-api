@@ -10,6 +10,7 @@ import { documents } from "src/models/data-models/documents";
 import { documenttags } from "src/models/data-models/documenttags";
 import { feedbacks } from "src/models/data-models/feedback";
 import { grades } from "src/models/data-models/grades";
+import { lessonlearningdocuments } from "src/models/data-models/lessonlearningdocuments";
 import { lessonlearnings } from "src/models/data-models/lessonlearnings";
 import { lessonplans } from "src/models/data-models/lessonplan";
 import { lessonpracticequestions } from "src/models/data-models/lessonpracticequestions";
@@ -106,6 +107,11 @@ const viaLesson = (model: { findOne: (o: never) => Promise<unknown> }, key: stri
   return lessonid ? ownerOfLesson(lessonid, tx) : null;
 };
 export const ownerOfLearning = viaLesson(lessonlearnings, "lessonlearningid");
+/** A link row (an item's further documents) has no owner column: it belongs to whoever owns its learning item. */
+export const ownerOfLearningDocument = async (id: string, tx?: Tx): Promise<Owner> => {
+  const lessonlearningid = await column(lessonlearningdocuments, "lessonlearningdocumentid", id, "lessonlearningid", tx);
+  return lessonlearningid ? ownerOfLearning(lessonlearningid, tx) : null;
+};
 export const ownerOfPlan = viaLesson(lessonplans, "lessonplanid");
 export const ownerOfPractice = viaLesson(lessonpractices, "lessonpracticeid");
 export const ownerOfQuiz = viaLesson(lessonquizzes, "lessonquizid");

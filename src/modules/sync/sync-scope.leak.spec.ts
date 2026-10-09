@@ -18,6 +18,7 @@ import { StudentController } from "../students/student.controller";
 import { TeacherController } from "../teachers/teacher.controller";
 import { schools } from "src/models/data-models/school";
 import { SyncController } from "./sync.controller";
+import { confine } from "src/business/organisation-content-export";
 
 /**
  * The content sync is one organisation's: `GET sync/content` and `POST sync/cloud` (format 3, the only format: format 2
@@ -61,7 +62,7 @@ const treeOf = (owner: Owner, base: number, country: string, freeCountry: string
     subject: id(1), curriculum: id(2), grade: id(3), level: id(4), lesson: id(5), practice: id(6), quiz: id(7),
     learning: id(8), plan: id(9), document: id(10), document2: id(11), question: id(12), question2: id(13),
     practiceQuestion: id(14), quizQuestion: id(15), levelQuestion: id(16), baseline: id(17), baselineQuestion: id(18),
-    school: id(20), school2: id(21), standard: id(22), login: id(23), student: id(24), teacherLogin: id(25),
+    school: id(20), school2: id(21), standard: id(22), login: id(23), student: id(24), teacherLogin: id(25), link: id(26),
     names: { school: "សាលា " + base, school2: "សាលាទី២ " + base, curriculum: "ភាសាខ្មែរ " + base },
   };
 };
@@ -93,6 +94,8 @@ type Row = Record<string, unknown>;
 type Method = "get" | "post" | "put" | "delete";
 const ids = (rows: Row[], key: string) => rows.map((r) => r[key] as string).sort();
 const sorted = (...list: string[]) => [...list].sort();
+/** The in-memory table gives every row an `isdeleted: false` the link table does not have; the real table has no such column. */
+const linkRows = (rows: unknown) => (rows as Row[]).map(({ isdeleted, ...row }) => row);
 const withoutReference = (body: Row) => {
   const { reference, logid, stack, ...rest } = body;
   return rest;
@@ -117,7 +120,9 @@ const seedTree = (t: Tree) => {
   db.add("lessonquizzes", { lessonquizid: t.quiz, lessonid: t.lesson, lessonquizname: "Quiz " + tag, lessonquizorder: 1, lessonquizstatus: true });
   db.add("documents", { documentid: t.document, documentname: `doc_${tag}.png`, documenttypeid: 1, organisationid: o, documenttags: [] });
   db.add("documents", { documentid: t.document2, documentname: `doc2_${tag}.png`, documenttypeid: 1, organisationid: o, documenttags: [] });
-  db.add("lessonlearnings", { lessonlearningid: t.learning, lessonid: t.lesson, documentid: t.document, lessonlearningname: "Learning " + tag, lessonlearningorder: 1, lessonlearningstatus: true });
+  db.add("lessonlearnings", { lessonlearningid: t.learning, lessonid: t.lesson, documentid: t.document, lessonlearningname: "Learning " + tag, lessonlearningorder: 1, lessonlearningstatus: true, lessonlearningtype: "video", lessonlearningbody: null });
+  // a link row on a video item: central's own routes refuse one (a video takes no extra documents), the student API accepts it
+  db.add("lessonlearningdocuments", { lessonlearningdocumentid: t.link, lessonlearningid: t.learning, documentid: t.document2, lessonlearningdocumentrole: "asset", lessonlearningdocumentorder: 1 });
   db.add("lessonplans", { lessonplanid: t.plan, lessonid: t.lesson, documentid: t.document2, lessonplanname: "Plan " + tag, lessonplanorder: 1, lessonplanstatus: true });
   db.add("questions", { questionid: t.question, questionidentifier: `qi-${tag}`, questiontext: "សួស្តី", templatetypeid: 1, organisationid: o, questionstatus: true });
   db.add("questions", { questionid: t.question2, questionidentifier: `qi2-${tag}`, questiontext: "សួស្តី", templatetypeid: 1, organisationid: o, questionstatus: true });
@@ -158,6 +163,7 @@ const expectedIds = (t: Tree) => ({
   levels: [t.level],
   lessons: [t.lesson],
   lessonlearnings: [t.learning],
+  lessonlearningdocuments: [t.link],
   lessonplans: [t.plan],
   lessonpractices: [t.practice],
   lessonquizzes: [t.quiz],
@@ -168,7 +174,7 @@ const expectedIds = (t: Tree) => ({
 const PK: Record<keyof ReturnType<typeof expectedIds>, string> = {
   countries: "countryid", schools: "schoolid", standards: "standardid", subjects: "subjectid", curriculums: "curriculumid",
   questions: "questionid", documents: "documentid", curriculumbaselines: "curriculumbaselineid", baselinequestion: "baselinequestionid",
-  grades: "gradeid", levels: "levelid", lessons: "lessonid", lessonlearnings: "lessonlearningid", lessonplans: "lessonplanid",
+  grades: "gradeid", levels: "levelid", lessons: "lessonid", lessonlearnings: "lessonlearningid", lessonlearningdocuments: "lessonlearningdocumentid", lessonplans: "lessonplanid",
   lessonpractices: "lessonpracticeid", lessonquizzes: "lessonquizid", lessonpracticequestions: "lessonpracticequestionid",
   lessonquizquestions: "lessonquizquestionid", levelquizquestions: "levelquizquestionid",
 };
@@ -377,6 +383,97 @@ describe("the content sync is one organisation's", () => {
     });
   });
 
+  // ───────────────────────────── learning items in the payload ─────────────────────────────
+  // A learning item is a `lessonlearnings` row (type and body are columns of the row); the documents an item references
+  // beyond its own `documentid` are link rows in `lessonlearningdocuments`, which hang from the item and name a document
+  // of the payload. The key is always present (the student API refuses a payload without it).
+  describe("learning items in GET /sync/content", () => {
+    const LINK_KEYS = ["lessonlearningdocumentid", "lessonlearningid", "documentid", "lessonlearningdocumentrole", "lessonlearningdocumentorder"];
+
+    it("lessonlearnings rows ship whole, with the item's type and body as stored", async () => {
+      db.tables.lessonlearnings.find((r) => r.lessonlearningid === TX.learning)!.lessonlearningbody = { v: 1, note: "ខ្មែរ" };
+      const { json } = await download("X's Admin", "/sync/content");
+      const row = (json.lessonlearnings as Row[]).find((r) => r.lessonlearningid === TX.learning)!;
+      expect(row).toMatchObject({ lessonlearningtype: "video", lessonlearningbody: { v: 1, note: "ខ្មែរ" }, documentid: TX.document });
+      // the export does not judge the body: the student API's rule does, and the contract port reports it
+      expect(contentProblems(json)).toEqual(["lessonlearnings: 1 of type video with a lessonlearningbody, which must be null for a video"]);
+    });
+
+    it("lessonlearningdocuments carries X's link rows whole, and never Y's", async () => {
+      const { json, raw } = await download("X's Admin", "/sync/content");
+      expect(linkRows(json.lessonlearningdocuments)).toEqual([
+        { lessonlearningdocumentid: TX.link, lessonlearningid: TX.learning, documentid: TX.document2, lessonlearningdocumentrole: "asset", lessonlearningdocumentorder: 1 },
+      ]);
+      expect(Object.keys(linkRows(json.lessonlearningdocuments)[0]).sort()).toEqual([...LINK_KEYS].sort());
+      expect(raw).not.toContain(TY.link);
+    });
+
+    it("the key comes after the two tables it hangs from, whatever the order of the others", async () => {
+      const keys = Object.keys((await download("X's Admin", "/sync/content")).json);
+      expect(keys.indexOf("lessonlearningdocuments")).toBeGreaterThan(keys.indexOf("documents"));
+      expect(keys.indexOf("lessonlearningdocuments")).toBeGreaterThan(keys.indexOf("lessonlearnings"));
+    });
+
+    it("with no link rows the key is still there, an empty list, and the student API's check accepts the payload", async () => {
+      db.tables.lessonlearningdocuments.length = 0;
+      const { json } = await download("X's Admin", "/sync/content");
+      expect(json.lessonlearningdocuments).toEqual([]);
+      expect("lessonlearningdocuments" in json).toBe(true);
+      expect(contentProblems(json)).toEqual([]);
+    });
+
+    it("a link row on a video item is exported and accepted by the contract (the student API accepts it; central's own write routes refuse one)", async () => {
+      const { json } = await download("X's Admin", "/sync/content");
+      expect((json.lessonlearnings as Row[]).map((r) => r.lessonlearningtype)).toEqual(["video"]);
+      expect((json.lessonlearningdocuments as Row[]).map((r) => r.lessonlearningid)).toEqual([TX.learning]);
+      expect(contentProblems(json)).toEqual([]);
+    });
+
+    it("a link row that names another organisation's document stops the export (400): the table and the number of rows, no id", async () => {
+      db.tables.lessonlearningdocuments.find((r) => r.lessonlearningdocumentid === TX.link)!.documentid = TY.document;
+      const { res } = await download(NOT_ACTING, `/sync/content?organisationid=${X}`);
+      expect(res.status).toBe(400);
+      const text = (res.body as Buffer).toString("utf8");
+      expect(JSON.parse(text).errormessage).toContain("lessonlearningdocuments: 1 row names a document");
+      for (const id of [...everyIdOf(TY), ...everyIdOf(TU)]) expect(text).not.toContain(id);
+    });
+
+    it("a link row whose item is not in the payload is left out, not refused (nothing can reach it)", () => {
+      const checked = confine({
+        lessonlearnings: [],
+        documents: [{ documentid: "d1" }],
+        lessonlearningdocuments: [{ lessonlearningdocumentid: "k1", lessonlearningid: "gone", documentid: "d1" }],
+      });
+      expect(checked.lessonlearningdocuments).toEqual([]);
+    });
+
+    it("a link row with no document is refused as one that names a document that is not there", () => {
+      expect(() =>
+        confine({
+          lessonlearnings: [{ lessonlearningid: "l1" }],
+          documents: [{ documentid: "d1" }],
+          lessonlearningdocuments: [{ lessonlearningdocumentid: "k1", lessonlearningid: "l1", documentid: null }],
+        }),
+      ).toThrow("lessonlearningdocuments: 1 row names a document that is not this organisation's.");
+    });
+
+    it("the contract port refuses what the student API refuses in a link row: a role it does not know, an order that is not a whole number, a repeated pair", async () => {
+      const good = (await download("X's Admin", "/sync/content")).json;
+      const link = (change: (row: Row) => void) => {
+        const copy = JSON.parse(JSON.stringify(good));
+        change(copy.lessonlearningdocuments[0]);
+        return contentProblems(copy);
+      };
+      expect(link(() => undefined)).toEqual([]);
+      expect(link((r) => { r.lessonlearningdocumentrole = "poster"; })).toEqual([expect.stringContaining("lessonlearningdocumentrole")]);
+      expect(link((r) => { r.lessonlearningdocumentorder = 1.5; })).toEqual([expect.stringContaining("lessonlearningdocumentorder")]);
+      expect(link((r) => { r.lessonlearningdocumentorder = null; })).toEqual([expect.stringContaining("lessonlearningdocumentorder")]);
+      const twice = JSON.parse(JSON.stringify(good));
+      twice.lessonlearningdocuments.push({ ...twice.lessonlearningdocuments[0], lessonlearningdocumentid: uuid(7700) });
+      expect(contentProblems(twice)).toEqual([expect.stringContaining("repeat a lessonlearningid and documentid pair")]);
+    });
+  });
+
   // ───────────────────────────── format 2 is retired ─────────────────────────────
   // A request that sends `format` at all (any value; the admin's older body did) is a 400 that says why, and nothing is read
   // or pushed. The format is always 3.
@@ -579,6 +676,64 @@ describe("the content sync is one organisation's", () => {
       expect(ids(call.json.curriculums, "curriculumid")).toEqual([TX.curriculum]);
       expect(contentProblems(call.json)).toEqual([]);
       expect(JSON.stringify(call.json)).not.toContain(Y);
+    });
+
+    it("the file it sends holds the link rows, under the key the student API requires", async () => {
+      await send("X's Admin", "post", "/sync/cloud").expect(200);
+      expect(linkRows(pushed().json.lessonlearningdocuments)).toEqual([
+        { lessonlearningdocumentid: TX.link, lessonlearningid: TX.learning, documentid: TX.document2, lessonlearningdocumentrole: "asset", lessonlearningdocumentorder: 1 },
+      ]);
+    });
+
+    it("answers 200 { error: false, data: true } when the student API's answer carries no counts, and relays its counts (numbers only) when it does", async () => {
+      expect(withoutReference((await send("X's Admin", "post", "/sync/cloud").expect(200)).body)).toEqual({ error: false, data: true });
+      (axios.put as jest.Mock).mockResolvedValue({
+        status: 200,
+        data: {
+          error: false, data: true, organisationid: X,
+          counts: { lessonlearnings: { deleted: 1, written: 1, markedDeleted: 0 }, lessonlearningdocuments: { deleted: 0, written: 1, markedDeleted: 0 }, odd: "x", worse: { written: "7", ok: 2 } },
+        },
+      });
+      const res = await send("X's Admin", "post", "/sync/cloud").expect(200);
+      expect(res.body).toEqual({
+        error: false, data: true,
+        counts: { lessonlearnings: { deleted: 1, written: 1, markedDeleted: 0 }, lessonlearningdocuments: { deleted: 0, written: 1, markedDeleted: 0 }, worse: { ok: 2 } },
+      });
+    });
+
+    it("a student API that refuses the payload (400) has its own message and fields shown to the admin, not a generic error", async () => {
+      const message = "lessonlearningdocuments is not part of a content payload.";
+      (axios.put as jest.Mock).mockRejectedValue({
+        isAxiosError: true,
+        response: { status: 400, data: { error: true, data: false, code: "INVALID_INPUT", errormessage: message, fields: [{ field: "lessonlearningdocuments", message }, { field: 7 }], reference: "r1" } },
+      });
+      const res = await send("X's Admin", "post", "/sync/cloud");
+      expect(res.status).toBe(400);
+      expect(withoutReference(res.body)).toEqual({
+        error: true, data: false, code: "INVALID_INPUT", errormessage: message,
+        fields: [{ field: "lessonlearningdocuments", message }], hint: "Check the highlighted fields.",
+      });
+    });
+
+    it("any other refusal by the student API (the server key, a failure, a network error) keeps the generic answer: its message is not relayed", async () => {
+      for (const [rejection, status] of [
+        [{ isAxiosError: true, response: { status: 401, data: { errormessage: "the sync key is wrong: secret-detail" } } }, 500],
+        [{ isAxiosError: true, response: { status: 500, data: { errormessage: "database exploded: secret-detail" } } }, 500],
+        [{ isAxiosError: true, response: { status: 400, data: {} } }, 500],
+        [{ isAxiosError: true, message: "connect ECONNREFUSED secret-detail" }, 503],
+      ] as Array<[object, number]>) {
+        (axios.put as jest.Mock).mockRejectedValue(rejection);
+        const res = await send("X's Admin", "post", "/sync/cloud");
+        expect(res.status).toBe(status);
+        expect(JSON.stringify(res.body)).not.toContain("secret-detail");
+      }
+    });
+
+    it("a roster push that the student API refuses (400) keeps the generic answer: only the content push relays its message", async () => {
+      (axios.put as jest.Mock).mockRejectedValue({ isAxiosError: true, response: { status: 400, data: { errormessage: "row 3: secret-detail" } } });
+      const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`);
+      expect(res.status).toBe(500);
+      expect(JSON.stringify(res.body)).not.toContain("secret-detail");
     });
 
     it("X's Organisation Admin is not admitted to the push, and a school-user token is not either (403)", async () => {
