@@ -8,6 +8,7 @@ import { documenttags } from "src/models/data-models/documenttags";
 import { feedbacks } from "src/models/data-models/feedback";
 import { grades } from "src/models/data-models/grades";
 import { lessonlearnings } from "src/models/data-models/lessonlearnings";
+import { lessonlearningdocuments } from "src/models/data-models/lessonlearningdocuments";
 import { lessonplans } from "src/models/data-models/lessonplan";
 import { lessonpracticequestions } from "src/models/data-models/lessonpracticequestions";
 import { lessonpractices } from "src/models/data-models/lessonpractices";
@@ -72,6 +73,7 @@ const MODELS = {
   levels: [levels, "levelid"],
   lessons: [lessons, "lessonid"],
   lessonlearnings: [lessonlearnings, "lessonlearningid"],
+  lessonlearningdocuments: [lessonlearningdocuments, "lessonlearningdocumentid"],
   lessonplans: [lessonplans, "lessonplanid"],
   lessonpractices: [lessonpractices, "lessonpracticeid"],
   lessonquizzes: [lessonquizzes, "lessonquizid"],

@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **281** routes, **270** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
+Of **282** routes, **271** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 242 | 242 | 0 | 0 |
+| owned | 243 | 243 | 0 | 0 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 0 | 0 | 0 | 0 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **281** | **270** | **11** | **0** |
+| **all** | **282** | **271** | **11** | **0** |
 
 ## Policies
 
@@ -163,6 +163,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | PUT | `/lesson/learning/activate/:lessonlearningid` | LessonLearningController.activatelearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
 | PUT | `/lesson/learning/deactivate/:lessonlearningid` | LessonLearningController.deactivatelearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
 | PUT | `/lesson/learning/order/:lessonlearningid/:lessonlearningorder` | LessonLearningController.orderlearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
+| PUT | `/lesson/learning/reorder/:lessonid` | LessonLearningController.reorderlearnings | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonlearning] |  |
 | GET | `/lesson/plan/:lessonid` | LessonPlanController.getlearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
 | POST | `/lesson/plan/:lessonid` | LessonPlanController.addplan | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lessonlearning] |  |
 | GET | `/lesson/plan/:lessonid/:lessonplanid` | LessonPlanController.getplanbyid | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |

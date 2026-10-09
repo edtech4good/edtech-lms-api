@@ -35,6 +35,11 @@ import type {
 } from "./lessonlearnings";
 import { lessonlearnings } from "./lessonlearnings";
 import type {
+  lessonlearningdocumentsAttributes,
+  lessonlearningdocumentsCreationAttributes,
+} from "./lessonlearningdocuments";
+import { lessonlearningdocuments } from "./lessonlearningdocuments";
+import type {
   lessonpracticequestionsAttributes,
   lessonpracticequestionsCreationAttributes,
 } from "./lessonpracticequestions";
@@ -155,6 +160,7 @@ export {
   documenttags,
   grades,
   lessonlearnings,
+  lessonlearningdocuments,
   lessonpracticequestions,
   lessonpractices,
   lessonquizquestions,
@@ -200,6 +206,8 @@ export type {
   gradesCreationAttributes,
   lessonlearningsAttributes,
   lessonlearningsCreationAttributes,
+  lessonlearningdocumentsAttributes,
+  lessonlearningdocumentsCreationAttributes,
   lessonpracticequestionsAttributes,
   lessonpracticequestionsCreationAttributes,
   lessonpracticesAttributes,
@@ -260,6 +268,7 @@ export function initModels(sequelize: Sequelize) {
   documenttags.initModel(sequelize);
   grades.initModel(sequelize);
   lessonlearnings.initModel(sequelize);
+  lessonlearningdocuments.initModel(sequelize);
   lessonpracticequestions.initModel(sequelize);
   lessonpractices.initModel(sequelize);
   lessonquizquestions.initModel(sequelize);
@@ -367,6 +376,12 @@ export function initModels(sequelize: Sequelize) {
     as: "lessonlearnings",
     foreignKey: "lessonid",
   });
+  lessonlearningdocuments.belongsTo(lessonlearnings, { as: "lessonlearning", foreignKey: "lessonlearningid" });
+  lessonlearnings.hasMany(lessonlearningdocuments, {
+    as: "lessonlearningdocuments",
+    foreignKey: "lessonlearningid",
+  });
+  lessonlearningdocuments.belongsTo(documents, { as: "document", foreignKey: "documentid" });
   lessonpractices.belongsTo(lessons, { as: "lesson", foreignKey: "lessonid" });
   lessons.hasMany(lessonpractices, {
     as: "lessonpractices",
@@ -626,6 +641,7 @@ export function initModels(sequelize: Sequelize) {
     documenttags: documenttags,
     grades: grades,
     lessonlearnings: lessonlearnings,
+    lessonlearningdocuments: lessonlearningdocuments,
     lessonpracticequestions: lessonpracticequestions,
     lessonpractices: lessonpractices,
     lessonquizquestions: lessonquizquestions,

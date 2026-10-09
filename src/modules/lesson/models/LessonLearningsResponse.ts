@@ -1,13 +1,26 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IResponse } from 'src/models/IResponse';
 
+export class LessonLearningDocumentBase {
+  @ApiProperty()
+  documentid: string = '';
+  @ApiProperty()
+  role: string = '';
+  @ApiProperty()
+  order: number = 0;
+  @ApiProperty()
+  documentname: string = '';
+  @ApiProperty()
+  documenttypeid: number = 0;
+}
+
 export class LessonLearningBase {
   @ApiProperty()
   lessonlearningid: string = '';
   @ApiProperty()
   lessonid: string = '';
-  @ApiProperty()
-  documentid: string = '';
+  @ApiProperty({ nullable: true })
+  documentid: string | null = '';
   @ApiProperty()
   lessonlearningstatus: Boolean = true;
   @ApiProperty()
@@ -16,14 +29,20 @@ export class LessonLearningBase {
   lessonname: string = '';
   @ApiProperty()
   lessondescription: string = '';
-  @ApiProperty()
-  documentname: string = "";
+  @ApiProperty({ nullable: true })
+  documentname: string | null = "";
   @ApiProperty()
   lessonlearningname: string = "";
   @ApiProperty()
   lessonlearningdescription: string = "";
-  @ApiProperty()
-  documenttypeid: number = 0;
+  @ApiProperty({ nullable: true })
+  documenttypeid: number | null = 0;
+  @ApiProperty({ example: 'video' })
+  lessonlearningtype: string = 'video';
+  @ApiProperty({ nullable: true })
+  lessonlearningbody: object | null = null;
+  @ApiProperty({ type: [LessonLearningDocumentBase] })
+  documents: LessonLearningDocumentBase[] = [];
 }
 
 export class LessonLearningsResponse extends IResponse<Array<LessonLearningBase>> {
