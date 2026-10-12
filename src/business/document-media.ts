@@ -166,8 +166,56 @@ const ooxmlManifestAgrees = (manifest: string, dir: string, type: string): boole
   return false;
 };
 
+/**
+ * The most entries an archive may declare. The archive library builds an object for every entry of the central directory
+ * before one is read, so the number of entries is what the check costs (200,000 empty entries took about 2 GB of memory); it
+ * is read from the end-of-central-directory record first, without the library. Real decks and documents hold tens to a few
+ * thousand entries.
+ */
+export const MAX_ZIP_ENTRIES = 10000;
+
+const ZIP_END_SIGNATURE = 0x06054b50; // "PK\5\6": the end-of-central-directory record
+const ZIP64_LOCATOR_SIGNATURE = 0x07064b50; // "PK\6\7"
+const ZIP64_RECORD_SIGNATURE = 0x06064b50; // "PK\6\6"
+const ZIP_END_LENGTH = 22;
+const ZIP64_LOCATOR_LENGTH = 20;
+const ZIP_MAX_COMMENT = 0xffff;
+
+/**
+ * The number of entries the archive declares, found the way the archive library finds its end record (backward from the end,
+ * within the longest comment a record can have, taking a record that sits up to 20 bytes before another): the larger of the two
+ * counts the record holds. null for what cannot be counted: no end record, a record cut short, or a zip64 archive (a count that
+ * does not fit 16 bits; nothing within the upload cap needs one).
+ */
+export const declaredZipEntries = (buffer: Buffer): number | null => {
+  let at = buffer.length - ZIP_END_LENGTH;
+  const lowest = Math.max(0, at - ZIP_MAX_COMMENT);
+  let end = -1;
+  let floor = lowest;
+  for (; at >= floor; at--) {
+    if (buffer[at] !== 0x50 || at + 4 > buffer.length) {
+      continue;
+    }
+    const signature = buffer.readUInt32LE(at);
+    if (signature === ZIP_END_SIGNATURE) {
+      end = at;
+      floor = Math.max(lowest, at - ZIP64_LOCATOR_LENGTH);
+    } else if (signature === ZIP64_LOCATOR_SIGNATURE || signature === ZIP64_RECORD_SIGNATURE) {
+      return null;
+    }
+  }
+  if (end < 0 || end + ZIP_END_LENGTH > buffer.length) {
+    return null;
+  }
+  return Math.max(buffer.readUInt16LE(end + 8), buffer.readUInt16LE(end + 10));
+};
+
 /** True when the zip-based file's own entry agrees with its extension. Never throws. */
 const containerAgrees = (buffer: Buffer, container: NonNullable<DocumentFileRule["container"]>): boolean => {
+  const declared = declaredZipEntries(buffer);
+  if (declared === null || declared > MAX_ZIP_ENTRIES) {
+    return false;
+  }
   let zip: AdmZip;
   try {
     zip = new AdmZip(buffer);

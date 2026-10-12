@@ -1,3 +1,4 @@
+import AdmZip from "adm-zip";
 import {
   csvBytes, gifBytes, jpgBytes, mp3Bytes, mp4Bytes, odfBytes, ooxmlBytes, pdfBytes, pngBytes,
 } from "src/test-support/synthetic-media";
@@ -2680,6 +2681,15 @@ describe("content is confined to the caller's organisation", () => {
         const res = await upload(who, name, bytes);
         expect([res.status, res.body.code, res.body.errormessage]).toEqual([400, "FILE_REJECTED", "That file isn't the kind its name says it is."]);
       }
+      expect(uploadS3).not.toHaveBeenCalled();
+      expect(db.created).toEqual([]);
+    });
+    it.each(IN_X)("%s: an archive that declares more than 10000 entries is refused (400) whatever else it holds, nothing stored", async (who) => {
+      const flood = new AdmZip();
+      flood.addFile("[Content_Types].xml", Buffer.from('<Types><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>'));
+      for (let i = 1; i <= 10000; i++) flood.addFile(`ppt/media/e${i}.bin`, Buffer.alloc(0));
+      const res = await upload(who, "flood.pptx", flood.toBuffer());
+      expect([res.status, res.body.code, res.body.errormessage]).toEqual([400, "FILE_REJECTED", "That file isn't the kind its name says it is."]);
       expect(uploadS3).not.toHaveBeenCalled();
       expect(db.created).toEqual([]);
     });
