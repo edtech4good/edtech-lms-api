@@ -150,10 +150,13 @@ export class DocumentController {
     schema: {
       type: "object",
       properties: {
-        inputfile: {
+        file: {
           type: "string",
           format: "binary",
         },
+        documenttitle: { type: "string", description: "Optional; the file's name without its extension when left out" },
+        documentlicence: { type: "string", description: "Optional; one of the allowed ids, 'unspecified' when left out" },
+        documentattribution: { type: "string", description: "Optional; JSON text: { v: 1, author?, sourceurl?, adaptedfrom? }" },
       },
     },
   })
