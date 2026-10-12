@@ -387,6 +387,9 @@ describe("attributionResult", () => {
     ["a data: source", { v: 1, sourceurl: "data:text/html,x" }],
     ["a file: source", { v: 1, sourceurl: "file:///etc/hosts" }],
     ["a source that is not a URL", { v: 1, sourceurl: "example dot org" }],
+    ["a source the parser would complete (http:foo)", { v: 1, sourceurl: "http:foo" }],
+    ["a source with no //", { v: 1, sourceurl: "https:example.org" }],
+    ["a source with no host", { v: 1, sourceurl: "https:///" }],
     ["a control character", { v: 1, author: "a\u0000b" }],
     ["a prototype key", JSON.parse('{"v":1,"__proto__":{"x":1},"constructor":1}')],
   ])("refuses %s", (_n, input) => {

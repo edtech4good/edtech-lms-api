@@ -186,7 +186,8 @@ describe("the student API's media-library rules, as central's contract port appl
     const message = "documents: 1 row has a documentattribution that is not null or an object of version 1 with only author, sourceurl and adaptedfrom, each within its length (the sourceurl an http or https address, the whole at most 4096 bytes).";
     for (const documentattribution of [
       "text", [], { author: "no version" }, { v: 2 }, { v: 1, licence: "x" }, { v: 1, author: 5 }, { v: 1, author: "a".repeat(256) },
-      { v: 1, sourceurl: "javascript:alert(1)" }, { v: 1, sourceurl: "not a url" }, { v: 1, adaptedfrom: "a".repeat(1025) },
+      { v: 1, sourceurl: "javascript:alert(1)" }, { v: 1, sourceurl: "not a url" }, { v: 1, sourceurl: "http:foo" }, { v: 1, sourceurl: "https:example.org" },
+      { v: 1, sourceurl: "http:/example.org" }, { v: 1, sourceurl: "http://" }, { v: 1, sourceurl: "https:///" }, { v: 1, adaptedfrom: "a".repeat(1025) },
     ]) {
       expect(changed(doc({ documentattribution }))).toEqual([message]);
     }

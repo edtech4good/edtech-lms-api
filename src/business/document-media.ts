@@ -248,6 +248,8 @@ export const UNSPECIFIED_LICENCE = DEFAULT_DOCUMENT_LICENCE;
 export const MAX_TITLE_LENGTH = DOCUMENT_TITLE_MAX;
 export const MAX_ATTRIBUTION_BYTES = ATTRIBUTION_MAX_BYTES;
 const ATTRIBUTION_LIMITS = { author: ATTRIBUTION_AUTHOR_MAX, sourceurl: ATTRIBUTION_SOURCEURL_MAX, adaptedfrom: ATTRIBUTION_ADAPTEDFROM_MAX } as const;
+/** What a refused source address is told. */
+export const SOURCEURL_MESSAGE = "The attribution sourceurl must be an http or https address.";
 const ATTRIBUTION_KEYS = ["v", "author", "sourceurl", "adaptedfrom"] as const;
 // Control characters, and the line and paragraph separators: central refuses these in what a person types (the student API
 // refuses the control characters of a title; it checks no text of an attribution for them). Stricter, never looser.
@@ -323,14 +325,10 @@ export const attributionResult = (input: unknown): AttributionResult => {
       return bad(`The attribution ${key} can't contain control characters.`);
     }
     if (key === "sourceurl") {
-      let url: URL;
-      try {
-        url = new URL(text);
-      } catch {
-        return bad("The attribution sourceurl must be an http or https address.");
-      }
-      if ((url.protocol !== "http:" && url.protocol !== "https:") || /\s/.test(text)) {
-        return bad("The attribution sourceurl must be an http or https address.");
+      // the student API's own rule for an address (an absolute http(s) address with its scheme, `//` and a host), asked of its
+      // normaliser so there is one rule; central also refuses white space inside an address
+      if (/\s/.test(text) || !normaliseDocumentAttribution({ v: ATTRIBUTION_VERSION, sourceurl: text }).ok) {
+        return bad(SOURCEURL_MESSAGE);
       }
     }
     out[key] = text;
