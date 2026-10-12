@@ -152,8 +152,8 @@ const seedTree = (t: Tree) => {
   db.add("lessonpractices", { lessonpracticeid: t.practice2, lessonid: t.lesson, lessonpracticename: "Second practice " + t.tag, lessonpracticedescription: "ពិពណ៌នា", lessonpracticeorder: 2, lessonpracticestatus: true, points: 10 });
   db.add("lessonquizzes", { lessonquizid: t.quiz, lessonid: t.lesson, lessonquizname: "Quiz " + t.tag, lessonquizdescription: "ពិពណ៌នា", lessonquizorder: 1, lessonquizstatus: true, points: 10 });
   db.add("lessonquizzes", { lessonquizid: t.quiz2, lessonid: t.lesson, lessonquizname: "Second quiz " + t.tag, lessonquizdescription: "ពិពណ៌នា", lessonquizorder: 2, lessonquizstatus: true, points: 10 });
-  db.add("documents", { documentid: t.document, documentname: `doc_${t.tag}.png`, documenttypeid: 1, organisationid: o, documenttags: [], lastupdated: new Date("2026-01-01") });
-  db.add("documents", { documentid: t.document2, documentname: `doc2_${t.tag}.png`, documenttypeid: 1, organisationid: o, documenttags: [], lastupdated: new Date("2026-01-02") });
+  db.add("documents", { documentid: t.document, documentname: `doc_${t.tag}.png`, documenttypeid: 2, organisationid: o, documenttags: [], lastupdated: new Date("2026-01-01") });
+  db.add("documents", { documentid: t.document2, documentname: `doc2_${t.tag}.png`, documenttypeid: 2, organisationid: o, documenttags: [], lastupdated: new Date("2026-01-02") });
   db.add("lessonlearnings", { lessonlearningid: t.learning, lessonid: t.lesson, documentid: t.document, lessonlearningname: "Learning " + t.tag, lessonlearningdescription: "ពិពណ៌នា", lessonlearningorder: 1, lessonlearningstatus: true });
   db.add("lessonplans", { lessonplanid: t.plan, lessonid: t.lesson, documentid: t.document, lessonplanname: "Plan " + t.tag, lessonplandescription: "ពិពណ៌នា", lessonplanorder: 1, lessonplanstatus: true });
   db.add("questions", { questionid: t.question, questionidentifier: `qi-${t.tag}`, questiontext: "សួស្តី", templatetypeid: 1, organisationid: o, questiontags: [], questionstatus: true, lastupdated: new Date("2026-01-01") });
@@ -1962,6 +1962,37 @@ describe("content is confined to the caller's organisation", () => {
         expect(res.body.fields).toEqual([expect.objectContaining({ field, message })]);
       }
     });
+    // The video rule (media library phase 0): a video item's file must have the VIDEO document type (2).
+    it.each(IN_X)("%s: a video item on a document of another type is refused (400), nothing written; an mp4 is accepted", async (who) => {
+      for (const documenttypeid of [1, 5, 6, 8, 9, 10]) {
+        stored("documents", "documentid", TX.document2).documenttypeid = documenttypeid;
+        const res = await refuses(who, "post", `/lesson/learning/${TX.lesson}`, body());
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual([{ field: "documentid", message: "A video item needs a video file." }]);
+      }
+      stored("documents", "documentid", TX.document2).documenttypeid = 2;
+      expect((await send(who, "post", `/lesson/learning/${TX.lesson}`, body())).status).toBe(200);
+      expect(db.createdIn("lessonlearnings")).toHaveLength(1);
+    });
+    it.each(IN_X)("%s: updating a video item to a document of another type is refused; leaving the document out checks the stored one", async (who) => {
+      stored("documents", "documentid", TX.document2).documenttypeid = 5;
+      const toPdf = await refuses(who, "put", `/lesson/learning/${TX.learning}`, updateBody());
+      expect(toPdf.status).toBe(400);
+      expect(toPdf.body.fields).toEqual([{ field: "documentid", message: "A video item needs a video file." }]);
+      expect(stored("lessonlearnings", "lessonlearningid", TX.learning).documentid).toBe(TX.document);
+      // the request names no document: the stored one (a video) is what the rule looks at
+      const { documentid: _omit, ...withoutDocument } = updateBody();
+      expect((await send(who, "put", `/lesson/learning/${TX.learning}`, withoutDocument)).status).toBe(200);
+      // the stored document is no longer a video: the item cannot be saved again without changing it
+      stored("documents", "documentid", TX.document).documenttypeid = 6;
+      expect((await refuses(who, "put", `/lesson/learning/${TX.learning}`, withoutDocument)).status).toBe(400);
+    });
+    it.each(IN_X)("%s: Y's document on X's video item still answers as absent, before its type is compared", async (who) => {
+      stored("documents", "documentid", TY.document).documenttypeid = 5;
+      stored("documents", "documentid", TU.document).documenttypeid = 5;
+      expect(await asAbsent(who, "post", (id) => r(`/lesson/learning/${TX.lesson}`, body({ documentid: id })), TY.document, TU.document)).toBe(400);
+      expect(await asAbsent(who, "put", (id) => r(`/lesson/learning/${TX.learning}`, updateBody({ documentid: id })), TY.document, TU.document)).toBe(404);
+    });
     it.each(IN_X)("%s: an empty documents list is no extra documents", async (who) => {
       expect((await send(who, "post", `/lesson/learning/${TX.lesson}`, body({ documents: [] }))).status).toBe(200);
     });
@@ -2020,8 +2051,8 @@ describe("content is confined to the caller's organisation", () => {
         expect(gallery).toMatchObject({
           documentid: null, documentname: null, documenttypeid: null, lessonlearningtype: "gallery", lessonlearningbody: { v: 1 },
           documents: [
-            { documentid: TX.document, role: "asset", order: 1, documentname: `doc_${TX.tag}.png`, documenttypeid: 1 },
-            { documentid: TX.document2, role: "asset", order: 2, documentname: `doc2_${TX.tag}.png`, documenttypeid: 1 },
+            { documentid: TX.document, role: "asset", order: 1, documentname: `doc_${TX.tag}.png`, documenttypeid: 2 },
+            { documentid: TX.document2, role: "asset", order: 2, documentname: `doc2_${TX.tag}.png`, documenttypeid: 2 },
           ],
         });
         const one = await send(who, "get", `/lesson/learning/${TX.lesson}/${uuid(7401)}`);

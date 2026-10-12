@@ -8,7 +8,7 @@ import {
 } from "./learning-item-types";
 
 const DOC = "00000000-0000-4000-8000-000000000001";
-const video = (over: object = {}) => ({ type: "video", documentid: DOC, body: null, documents: undefined, ...over });
+const video = (over: object = {}) => ({ type: "video", documentid: DOC, documenttypeid: 2, body: null, documents: undefined, ...over });
 
 describe("learning item types: phase 0 knows video and nothing else", () => {
   it("the set is exactly video, and video is the default", () => {
@@ -32,6 +32,25 @@ describe("learning item types: phase 0 knows video and nothing else", () => {
     for (const documentid of [null, undefined]) {
       expect(learningItemErrors(video({ documentid }))).toEqual([{ field: "documentid", message: "A video item needs a document." }]);
     }
+  });
+
+  it.each([1, 3, 4, 5, 6, 7, 8, 9, 10, 0])("a video item on a document of type %s is refused, naming the field and no file", (documenttypeid) => {
+    expect(learningItemErrors(video({ documenttypeid }))).toEqual([{ field: "documentid", message: "A video item needs a video file." }]);
+  });
+
+  it("a video item whose document type was not looked up is refused rather than let through", () => {
+    for (const documenttypeid of [undefined, null]) {
+      expect(learningItemErrors(video({ documenttypeid }))).toEqual([{ field: "documentid", message: "A video item needs a video file." }]);
+    }
+  });
+
+  it("a video item with no document says it needs a document, not that its file is the wrong kind", () => {
+    expect(learningItemErrors(video({ documentid: null, documenttypeid: null }))).toEqual([{ field: "documentid", message: "A video item needs a document." }]);
+  });
+
+  it("a type whose rule lists no document types takes any (the table is the extension point)", () => {
+    const rules: Record<string, LearningItemRule> = { ...LEARNING_ITEM_TYPES, clip: { documentid: "required", body: "null", documents: "none" } };
+    expect(learningItemErrors(video({ type: "clip", documenttypeid: 5 }), rules)).toEqual([]);
   });
 
   it("a video item has no body: any body, even an empty object, is refused", () => {
