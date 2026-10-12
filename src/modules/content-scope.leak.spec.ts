@@ -1,3 +1,6 @@
+import {
+  csvBytes, gifBytes, jpgBytes, mp3Bytes, mp4Bytes, odfBytes, ooxmlBytes, pdfBytes, pngBytes,
+} from "src/test-support/synthetic-media";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import axios from "axios";
@@ -61,7 +64,6 @@ jest.mock("src/services/aws.service", () => ({
     uploadS3: (...a: unknown[]) => uploadS3(...a),
     uploadS3InFolder: jest.fn().mockResolvedValue({ Key: "k" }),
     checkExistS3Object: jest.fn().mockResolvedValue(false),
-    preSignURL: jest.fn().mockResolvedValue("https://files.invalid/signed"),
   },
 }));
 // A lesson's points are recomputed after something is added to it or removed from it; that is not under test.
@@ -2601,17 +2603,143 @@ describe("content is confined to the caller's organisation", () => {
 
   // ───────────────────────────── documents ─────────────────────────────
   describe("POST /document/upload", () => {
-    const upload = (who: Who, filename: string) =>
-      request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close").attach("file", Buffer.from("png"), filename);
-    it.each(IN_X)("%s: the document is X's", async (who) => {
+    const KHMER_TITLE = "ភ្នំពេញ";
+    const upload = (who: Who, filename: string, bytes: Buffer = pngBytes(), fields: Record<string, string> = {}) => {
+      let req = request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close");
+      for (const [name, value] of Object.entries(fields)) req = req.field(name, value);
+      return req.attach("file", bytes, filename);
+    };
+    const KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.png$/;
+    it.each(IN_X)("%s: the document is X's, stored under a generated key, with the content type of its extension", async (who) => {
       expect((await upload(who, "sample_file.png")).status).toBe(200);
-      expect(db.createdIn("documents")).toEqual([expect.objectContaining({ organisationid: X, documentname: "sample_file.png" })]);
+      const [row] = db.createdIn("documents");
+      expect(row).toEqual(expect.objectContaining({ organisationid: X, documenttypeid: 6, documenttitle: "sample_file", documentlicence: "unspecified", documentattribution: null }));
+      expect(row.documentname).toMatch(KEY);
+      expect(row.documentname).toBe(`${row.documentid}.png`);
+      expect(uploadS3).toHaveBeenCalledTimes(1);
+      expect(uploadS3).toHaveBeenCalledWith(row.documentname, expect.any(Buffer), "image/png");
     });
-    it.each(IN_X)("%s: a name another organisation's document holds is refused as any existing name is, as the file store is shared", async (who) => {
-      const own = await upload(who, "doc_tagx.png");
-      const foreign = await upload(who, "doc_tagy.png");
-      const unowned = await upload(who, "doc_tagu.png");
-      expect([own.status, foreign.status, unowned.status]).toEqual([409, 409, 409]);
+    it.each(IN_X)("%s: X and Y may upload the same file name: both succeed, with different keys that hold none of the name", async (who) => {
+      const first = await upload(who, "doc_tagx.png");
+      const second = await upload(who, "doc_tagx.png");
+      const name = await upload(who, "doc_tagy.png");
+      expect([first.status, second.status, name.status]).toEqual([200, 200, 200]);
+      const keys = db.createdIn("documents").map((d) => d.documentname as string);
+      expect(new Set(keys).size).toBe(3);
+      for (const key of keys) {
+        expect(key).toMatch(KEY);
+        expect(key).not.toContain("doc_tag");
+      }
+      expect(db.createdIn("documents").map((d) => d.documenttitle)).toEqual(["doc_tagx", "doc_tagx", "doc_tagy"]);
+    });
+    it.each(IN_X)("%s: a Khmer file name is no obstacle and becomes the title; the key holds none of it", async (who) => {
+      expect((await upload(who, `${KHMER_TITLE}.png`)).status).toBe(200);
+      const [row] = db.createdIn("documents");
+      expect(row.documenttitle).toBe(KHMER_TITLE);
+      expect(row.documentname).toMatch(KEY);
+    });
+    it.each(IN_X)("%s: a title, licence and attribution sent with the file are stored as sent", async (who) => {
+      const attribution = { v: 1, author: "ក្រុមអ្នកនិពន្ធ", sourceurl: "https://example.org/a", adaptedfrom: "Un titre" };
+      const res = await upload(who, "sample_file.png", pngBytes(), { documenttitle: `  ${KHMER_TITLE}  `, documentlicence: "CC-BY-4.0", documentattribution: JSON.stringify(attribution) });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ error: false, data: true });
+      expect(db.createdIn("documents")).toEqual([
+        expect.objectContaining({ documenttitle: KHMER_TITLE, documentlicence: "CC-BY-4.0", documentattribution: attribution }),
+      ]);
+    });
+    it.each(IN_X)("%s: every whitelisted type is accepted with its type id, content type and extension", async (who) => {
+      const files: Array<[string, Buffer, number, string]> = [
+        ["a.mp4", mp4Bytes(), 2, "video/mp4"], ["a.mp3", mp3Bytes(), 1, "audio/mpeg"], ["a.jpg", jpgBytes(), 6, "image/jpeg"],
+        ["a.JPEG", jpgBytes(), 6, "image/jpeg"], ["a.gif", gifBytes(), 6, "image/gif"], ["a.pdf", pdfBytes(), 5, "application/pdf"],
+        ["a.pptx", ooxmlBytes("pptx"), 8, "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+        ["a.odp", odfBytes("odp"), 8, "application/vnd.oasis.opendocument.presentation"],
+        ["a.docx", ooxmlBytes("docx"), 9, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+        ["a.odt", odfBytes("odt"), 9, "application/vnd.oasis.opendocument.text"],
+        ["a.xlsx", ooxmlBytes("xlsx"), 10, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+        ["a.csv", csvBytes(`ឈ្មោះ,${KHMER_TITLE}\n`), 10, "text/csv"],
+      ];
+      for (const [name, bytes, typeid, contentType] of files) {
+        expect((await upload(who, name, bytes)).status).toBe(200);
+        const row = db.createdIn("documents").slice(-1)[0];
+        expect(row.documenttypeid).toBe(typeid);
+        expect(row.documentname).toBe(`${row.documentid}.${name.split(".")[1].toLowerCase()}`);
+        expect(uploadS3).toHaveBeenLastCalledWith(row.documentname, expect.any(Buffer), contentType);
+      }
+    });
+    it.each(IN_X)("%s: a file that is not what its name says is refused (400), nothing stored", async (who) => {
+      const refused: Array<[string, Buffer]> = [
+        ["sample_file.png", Buffer.from("png")], // the old fixture: three letters
+        ["sample.pdf", pngBytes()],
+        ["sample.pptx", Buffer.concat([Buffer.from("MZ"), Buffer.alloc(64)])], // an executable under an Office name
+        ["sample.pptx", ooxmlBytes("docx")],
+        ["sample.docx", ooxmlBytes("docx", { type: "application/vnd.ms-word.document.macroEnabled.main+xml" })],
+        ["sample.odt", odfBytes("odp")],
+        ["sample.csv", Buffer.from([0x61, 0x00, 0x62])],
+      ];
+      for (const [name, bytes] of refused) {
+        const res = await upload(who, name, bytes);
+        expect([res.status, res.body.code, res.body.errormessage]).toEqual([400, "FILE_REJECTED", "That file isn't the kind its name says it is."]);
+      }
+      expect(uploadS3).not.toHaveBeenCalled();
+      expect(db.created).toEqual([]);
+    });
+    it.each(IN_X)("%s: an extension that is not on the list is refused (400), nothing stored", async (who) => {
+      for (const name of ["sample.log", "sample.doc", "sample.zip", "sample.svg", "sample.html", "sample.exe", "sample.webp", "sample"]) {
+        const res = await upload(who, name, pdfBytes());
+        expect([res.status, res.body.code]).toEqual([400, "FILE_REJECTED"]);
+      }
+      expect(uploadS3).not.toHaveBeenCalled();
+      expect(db.created).toEqual([]);
+    });
+    it.each(IN_X)("%s: a title, licence or attribution that is not allowed is refused (400), nothing stored, and the message does not repeat it", async (who) => {
+      const bad: Array<[Record<string, string>, string]> = [
+        [{ documenttitle: "ក".repeat(256) }, "documenttitle"],
+        [{ documenttitle: "a\u0000b" }, "documenttitle"],
+        [{ documentlicence: "GPL-3.0" }, "documentlicence"],
+        [{ documentlicence: "cc0-1.0" }, "documentlicence"],
+        [{ documentattribution: "not json" }, "documentattribution"],
+        [{ documentattribution: JSON.stringify({ v: 1, licence: "x" }) }, "documentattribution"],
+        [{ documentattribution: JSON.stringify({ v: 1, sourceurl: "javascript:alert(1)" }) }, "documentattribution"],
+        [{ documentattribution: JSON.stringify({ author: "no version" }) }, "documentattribution"],
+      ];
+      for (const [fields, field] of bad) {
+        const res = await upload(who, "sample_file.png", pngBytes(), fields);
+        expect(res.status).toBe(400);
+        expect((res.body.fields ?? []).map((f: { field: string }) => f.field)).toEqual([field]);
+        expect(JSON.stringify(res.body)).not.toContain("GPL");
+        expect(JSON.stringify(res.body)).not.toContain("javascript");
+      }
+      expect(uploadS3).not.toHaveBeenCalled();
+      expect(db.created).toEqual([]);
+    });
+    it.each(IN_X)("%s: a file name that cannot be a title is refused unless a title is given", async (who) => {
+      const long = `${"ក".repeat(256)}.png`;
+      expect((await upload(who, long)).status).toBe(400);
+      expect(db.created).toEqual([]);
+      expect((await upload(who, long, pngBytes(), { documenttitle: KHMER_TITLE })).status).toBe(200);
+      expect(db.createdIn("documents")[0].documenttitle).toBe(KHMER_TITLE);
+    });
+    it.each(IN_X)("%s: the browser's MIME type is not looked at", async (who) => {
+      const res = await request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close")
+        .attach("file", pdfBytes(), { filename: "sample.png", contentType: "image/png" });
+      expect(res.status).toBe(400);
+      const ok = await request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close")
+        .attach("file", pngBytes(), { filename: "sample.png", contentType: "text/html" });
+      expect(ok.status).toBe(200);
+      expect(uploadS3).toHaveBeenCalledWith(expect.any(String), expect.any(Buffer), "image/png");
+    });
+    it.each(IN_X)("%s: one line is logged for an accepted upload: the type id and the bytes, and nothing of the file, title, key or owner", async (who) => {
+      const info = jest.spyOn(Logger, "info").mockImplementation(() => Logger);
+      const bytes = pngBytes();
+      await upload(who, `${KHMER_TITLE}.png`, bytes, { documenttitle: KHMER_TITLE });
+      expect(info.mock.calls).toEqual([["Document uploaded", { documenttypeid: 6, bytes: bytes.length }]]);
+      info.mockClear();
+      await upload(who, "sample.exe", pdfBytes());
+      expect(info).not.toHaveBeenCalled();
+    });
+    it("a school-user token is refused (403) before anything is read or stored", async () => {
+      const res = await upload("a school-user token", "sample_file.png");
+      expect(res.status).toBe(403);
       expect(uploadS3).not.toHaveBeenCalled();
       expect(db.created).toEqual([]);
     });
@@ -2645,8 +2773,130 @@ describe("content is confined to the caller's organisation", () => {
     it.each(IN_X)("%s: a filter finds nothing of another organisation", async (who) => {
       expect(idsOf((await list(who, [{ key: "documentname", value: "doc_tagy.png" }])).body.data.data, "documentid")).toEqual([]);
     });
+    it.each(IN_X)("%s: each row carries the title, licence and attribution", async (who) => {
+      stored("documents", "documentid", TX.document).documenttitle = "ភ្នំពេញ";
+      stored("documents", "documentid", TX.document).documentlicence = "CC0-1.0";
+      stored("documents", "documentid", TX.document).documentattribution = { v: 1, author: "ក" };
+      const rows = (await list(who)).body.data.data as Row[];
+      const byId = (id: string) => rows.find((x) => x.documentid === id)!;
+      expect(byId(TX.document)).toEqual({
+        documentid: TX.document, documentname: `doc_${TX.tag}.png`, documenttypeid: 2, isdeleted: false, documenttags: [],
+        documenttitle: "ភ្នំពេញ", documentlicence: "CC0-1.0", documentattribution: { v: 1, author: "ក" },
+      });
+      expect(byId(TX.document2)).toMatchObject({ documenttitle: null, documentattribution: null });
+    });
+    it.each(IN_X)("%s: a documentname filter finds a document by its key or by its title, and still nothing of another organisation", async (who) => {
+      stored("documents", "documentid", TX.document).documenttitle = "ភ្នំពេញ";
+      stored("documents", "documentid", TX.document2).documenttitle = "កម្ពុជា";
+      stored("documents", "documentid", TY.document).documenttitle = "ភ្នំពេញ";
+      expect(idsOf((await list(who, [{ key: "documentname", value: "ភ្នំ" }])).body.data.data, "documentid")).toEqual([TX.document]);
+      expect(idsOf((await list(who, [{ key: "documentname", value: "doc2_tagx" }])).body.data.data, "documentid")).toEqual([TX.document2]);
+      expect(idsOf((await list(who, [{ key: "documentname", value: "កម្ពុជា" }])).body.data.data, "documentid")).toEqual([TX.document2]);
+      // comma-separated parts must each match the key or the title
+      expect(idsOf((await list(who, [{ key: "documentname", value: "doc_tagx, ភ្នំ" }])).body.data.data, "documentid")).toEqual([TX.document]);
+      expect(idsOf((await list(who, [{ key: "documentname", value: "doc_tagx, កម្ពុជា" }])).body.data.data, "documentid")).toEqual([]);
+    });
+    it.each(IN_X)("%s: the documenttypeid filter is an exact match: type 1 does not return type 10", async (who) => {
+      stored("documents", "documentid", TX.document).documenttypeid = 10;
+      stored("documents", "documentid", TX.document2).documenttypeid = 1;
+      expect(idsOf((await list(who, [{ key: "documenttypeid", value: "1" }])).body.data.data, "documentid")).toEqual([TX.document2]);
+      expect(idsOf((await list(who, [{ key: "documenttypeid", value: "10" }])).body.data.data, "documentid")).toEqual([TX.document]);
+      expect(idsOf((await list(who, [{ key: "documenttypeid", value: "1,10" }])).body.data.data, "documentid")).toEqual(sorted(TX.document, TX.document2));
+      expect(idsOf((await list(who, [{ key: "documenttypeid", value: "2" }])).body.data.data, "documentid")).toEqual([]);
+    });
+    it.each(IN_X)("%s: a documenttypeid filter that is not ids is refused (400)", async (who) => {
+      for (const value of ["abc", "1;2", "1,", "-1", "1 or 1"]) {
+        expect((await list(who, [{ key: "documenttypeid", value }])).status).toBe(400);
+      }
+    });
     it("a platform user not acting: every document, owned or not", async () => {
       expect(idsOf((await list(NOT_ACTING)).body.data.data, "documentid")).toEqual(sorted(TX.document, TX.document2, TY.document, TY.document2, TU.document, TU.document2));
+    });
+  });
+
+  describe("PUT /document/:documentid", () => {
+    const KHMER_TITLE = "កម្ពុជា";
+    const edit = (who: Who, id: string, body: object) => send(who, "put", `/document/${id}`, body);
+    it.each(IN_X)("%s: edits X's document: title, licence and attribution, and nothing else", async (who) => {
+      const before = { ...stored("documents", "documentid", TX.document) };
+      const attribution = { v: 1, author: "ក្រុម", sourceurl: "https://example.org/x" };
+      const res = await edit(who, TX.document, { documenttitle: `  ${KHMER_TITLE} `, documentlicence: "CC-BY-SA-3.0", documentattribution: attribution });
+      expect([res.status, res.body]).toEqual([200, { error: false, data: true }]);
+      const after = stored("documents", "documentid", TX.document);
+      expect(after).toMatchObject({ documenttitle: KHMER_TITLE, documentlicence: "CC-BY-SA-3.0", documentattribution: attribution });
+      for (const unchanged of ["documentname", "documenttypeid", "documents3meta", "documenttags", "organisationid", "isdeleted"]) {
+        expect(after[unchanged]).toEqual(before[unchanged]);
+      }
+      expect(after.updated_by).toBe(who === "X's Organisation Admin" ? "oa" : who === "X's Admin" ? "ad" : "p");
+    });
+    it.each(IN_X)("%s: only the fields sent change", async (who) => {
+      stored("documents", "documentid", TX.document).documenttitle = "មុន";
+      stored("documents", "documentid", TX.document).documentlicence = "CC0-1.0";
+      expect((await edit(who, TX.document, { documentlicence: "CC-BY-4.0" })).status).toBe(200);
+      expect(stored("documents", "documentid", TX.document)).toMatchObject({ documenttitle: "មុន", documentlicence: "CC-BY-4.0" });
+    });
+    it.each(IN_X)("%s: null clears the title and the attribution; the licence is cleared by setting 'unspecified', and null is refused for it", async (who) => {
+      Object.assign(stored("documents", "documentid", TX.document), { documenttitle: "មុន", documentlicence: "CC0-1.0", documentattribution: { v: 1, author: "x" } });
+      expect((await edit(who, TX.document, { documenttitle: null, documentattribution: null })).status).toBe(200);
+      expect(stored("documents", "documentid", TX.document)).toMatchObject({ documenttitle: null, documentattribution: null, documentlicence: "CC0-1.0" });
+      const nullLicence = await refuses(who, "put", `/document/${TX.document}`, { documentlicence: null });
+      expect([nullLicence.status, nullLicence.body.fields]).toEqual([400, [{ field: "documentlicence", message: "That licence isn't one of the allowed values." }]]);
+      expect((await edit(who, TX.document, { documentlicence: "unspecified" })).status).toBe(200);
+      expect(stored("documents", "documentid", TX.document).documentlicence).toBe("unspecified");
+    });
+    it.each(IN_X)("%s: Y's and an unowned document answer as an absent one does (404), changing nothing", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(`/document/${id}`, { documenttitle: "x" }), TY.document, TU.document)).toBe(404);
+    });
+    it.each(IN_X)("%s: the absent answer comes first: a body that breaks the rules gets it too", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(`/document/${id}`, { documentlicence: "nonsense", documenttypeid: 5 }), TY.document, TU.document)).toBe(404);
+    });
+    it.each(IN_X)("%s: a deleted document is as an absent one", async (who) => {
+      stored("documents", "documentid", TX.document).isdeleted = true;
+      expect((await refuses(who, "put", `/document/${TX.document}`, { documenttitle: "x" })).status).toBe(404);
+    });
+    it.each(IN_X)("%s: the document in the path is the one checked", async (who) => {
+      expect(await asAbsentPath(who, "put", (id) => r(`/document/${id}`, { documenttitle: "x" }), "documentid", TX.document, TY.document)).toBe(404);
+    });
+    it.each(IN_X)("%s: a title, licence or attribution that is not allowed is refused (400), nothing changed, and the answer does not repeat it", async (who) => {
+      const bad: Array<[object, string]> = [
+        [{ documenttitle: "" }, "documenttitle"],
+        [{ documenttitle: "   " }, "documenttitle"],
+        [{ documenttitle: "ក".repeat(256) }, "documenttitle"],
+        [{ documenttitle: "a\nb" }, "documenttitle"],
+        [{ documenttitle: 5 }, "documenttitle"],
+        [{ documentlicence: "GPL-3.0" }, "documentlicence"],
+        [{ documentlicence: "" }, "documentlicence"],
+        [{ documentattribution: { v: 1, extra: "x" } }, "documentattribution"],
+        [{ documentattribution: { v: 2 } }, "documentattribution"],
+        [{ documentattribution: { v: 1, sourceurl: "ftp://example.org" } }, "documentattribution"],
+        [{ documentattribution: "text" }, "documentattribution"],
+      ];
+      for (const [body, field] of bad) {
+        const res = await refuses(who, "put", `/document/${TX.document}`, body);
+        expect(res.status).toBe(400);
+        expect((res.body.fields ?? []).map((f: { field: string }) => f.field)).toEqual([field]);
+        expect(JSON.stringify(res.body)).not.toContain("GPL");
+        expect(JSON.stringify(res.body)).not.toContain("ftp:");
+      }
+    });
+    it.each(IN_X)("%s: the file, key, type, tags and owner cannot be sent: each field is refused (400), nothing changed", async (who) => {
+      for (const field of ["documentname", "documenttypeid", "documents3meta", "documenttags", "organisationid", "isdeleted", "documentid"]) {
+        const res = await refuses(who, "put", `/document/${TX.document}`, { documenttitle: "x", [field]: "y" });
+        expect([res.status, res.body.fields]).toEqual([400, [{ field, message: "That field can't be changed here." }]]);
+      }
+    });
+    it.each(IN_X)("%s: a body with nothing to change is refused (400)", async (who) => {
+      expect((await refuses(who, "put", `/document/${TX.document}`, {})).status).toBe(400);
+    });
+    it("a platform user not acting: any document, as the other document routes allow", async () => {
+      expect((await edit(NOT_ACTING, TY.document, { documenttitle: "ភ្នំពេញ" })).status).toBe(200);
+      expect(stored("documents", "documentid", TY.document).documenttitle).toBe("ភ្នំពេញ");
+    });
+    it("a school-user token is refused (403), changing nothing", async () => {
+      expect((await refuses("a school-user token", "put", `/document/${TX.document}`, { documenttitle: "x" })).status).toBe(403);
+    });
+    it("a server token is refused, changing nothing", async () => {
+      expect([401, 403]).toContain((await refuses("a server token", "put", `/document/${TX.document}`, { documenttitle: "x" })).status);
     });
   });
 
@@ -2690,16 +2940,6 @@ describe("content is confined to the caller's organisation", () => {
       stored("documents", "documentid", TU.document).documenttags = ["dtagu"];
       expect((await send(NOT_ACTING, "delete", `/document/tag/${TU.document}/dtagu`)).status).toBe(200);
       expect(stored("documents", "documentid", TU.document).documenttags).toEqual([]);
-    });
-  });
-
-  describe("GET /document/presign/:filename", () => {
-    it.each(IN_X)("%s: the route's own request rules refuse it (they ask for a document and a tag in the path), so no signed address is handed out", async (who) => {
-      const res = await send(who, "get", "/document/presign/some_file.png");
-      expect(res.status).toBe(400);
-    });
-    it("a platform user not acting is refused the same way", async () => {
-      expect((await send(NOT_ACTING, "get", "/document/presign/some_file.png")).status).toBe(400);
     });
   });
 
@@ -3198,17 +3438,6 @@ describe("content is confined to the caller's organisation", () => {
       const res = await send("a school-user token", method, path, method === "post" ? {} : undefined);
       expect(res.status).toBe(403);
       expect(db.snapshot()).toEqual(before);
-    });
-  });
-
-  describe("a name in the shared file store", () => {
-    it("is held by another when a live document of another organisation, or of none, has it; never for the platform, and never for a name that is free", async () => {
-      const { DocumentBusiness } = await import("src/business/document.business");
-      const asX = { organisationid: X, isplatform: false } as const;
-      const asPlatform = { organisationid: null, isplatform: true } as const;
-      const held = (org: typeof asX | typeof asPlatform | undefined, name: string) => new DocumentBusiness(org).isNameHeldByAnother(name);
-      expect([await held(asX, "doc_tagy.png"), await held(asX, "doc_tagu.png"), await held(asX, "doc_tagx.png"), await held(asX, "free_name.png")]).toEqual([true, true, false, false]);
-      expect([await held(asPlatform, "doc_tagy.png"), await held(undefined, "doc_tagy.png")]).toEqual([false, false]);
     });
   });
 });

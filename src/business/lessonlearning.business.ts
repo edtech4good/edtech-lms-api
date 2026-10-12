@@ -53,6 +53,7 @@ export class LessonLearningBusiness {
         role: link.lessonlearningdocumentrole,
         order: link.lessonlearningdocumentorder,
         documentname: doc?.documentname ?? "",
+        documenttitle: doc?.documenttitle ?? null,
         documenttypeid: doc?.documenttypeid ?? 0,
       });
       byItem.set(link.lessonlearningid, list);
@@ -78,6 +79,7 @@ export class LessonLearningBusiness {
     lessonname: x.lesson?.lessonname ?? "",
     lessondescription: x.lesson?.lessondescription ?? "",
     documentname: x.document ? x.document.documentname : null,
+    documenttitle: x.document ? x.document.documenttitle ?? null : null,
     documenttypeid: x.document ? x.document.documenttypeid : null,
     lessonlearningtype: x.lessonlearningtype ?? "video",
     lessonlearningbody: x.lessonlearningbody ?? null,

@@ -121,7 +121,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | GET | `/curriculum/tree/:curriculumid` | CurriculumController.getcurriculumtree | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
 | POST | `/document` | DocumentController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] |  |
 | DELETE | `/document/:documentid` | DocumentController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_document] |  |
-| GET | `/document/presign/:filename` | DocumentController.presignedupload | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] | The signed key must be scoped to the caller's organisation. |
+| PUT | `/document/:documentid` | DocumentController.updateMetadata | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_document] |  |
 | DELETE | `/document/tag/:documentid/:tag` | DocumentController.deleteTag | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_document_tag] |  |
 | GET | `/document/tag/:documentid/:tag` | DocumentController.addTag | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] |  |
 | POST | `/document/upload` | DocumentController.uploadFile | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_document] |  |

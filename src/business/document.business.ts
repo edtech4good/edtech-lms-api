@@ -1,13 +1,40 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { uniq } from "lodash";
 import { Op, Order, WhereOptions } from "sequelize";
-import { IPaging } from "src/models/IPaging";
+import { IFilter, IPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
 import { buildWhere } from "src/services/util.service";
 import { v4 as uuidv4 } from 'uuid';
 import { documents, documentsAttributes } from "../models/data-models/documents";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedDocument } from "./content-scope";
+import { DocumentMetadata } from "./document-media";
+
+/** The filter values that name a title as well as a key: `documentname` matches either (the key of a new upload is a uuid). */
+const parts = (value: string): string[] => value.split(",").map((v) => v.trim());
+
+/**
+ * The document list's filters. `documentname` matches the key or the title (every comma-separated part must match one of
+ * them); `documenttypeid` is an exact match on one id or a comma-separated list of ids (a substring match would return
+ * type 10 for type 1); every other filter keeps the shared substring behaviour.
+ */
+export const documentFilterWhere = (filter: IFilter[] | undefined): { and: WhereOptions<documentsAttributes>[]; others: IFilter[] } => {
+  const and: WhereOptions<documentsAttributes>[] = [];
+  const others: IFilter[] = [];
+  for (const f of filter ?? []) {
+    if (f.key === "documentname" && f.value) {
+      for (const part of parts(f.value)) {
+        and.push({ [Op.or]: [{ documentname: { [Op.like]: `%${part}%` } }, { documenttitle: { [Op.like]: `%${part}%` } }] });
+      }
+    } else if (f.key === "documenttypeid" && f.value) {
+      const ids = parts(f.value).map((v) => Number(v));
+      and.push({ documenttypeid: { [Op.in]: ids.filter((n) => Number.isInteger(n)) } });
+    } else {
+      others.push(f);
+    }
+  }
+  return { and, others };
+};
 
 /**
  * Built with the caller's context, every read and write here is limited to the documents in scope (a document of
@@ -17,7 +44,10 @@ export class DocumentBusiness {
     constructor(private readonly org?: OrgContext) {}
 
     createdocument = async (document: documentsAttributes, user: LmsUserToken) => {
-        document.documentid = uuidv4();
+        // the upload generates the id first (it is part of the stored key); every other caller lets it be made here
+        if (!document.documentid) {
+            document.documentid = uuidv4();
+        }
         document.isdeleted = false;
         document.created_by = user.lmsuserid;
         return await documents.create(document);
@@ -37,10 +67,34 @@ export class DocumentBusiness {
             offset = (limit * ((paging.pageindex || 1) - 1));
         }
 
-        where = { ...buildWhere<documentsAttributes>(paging, where) };
+        const { and, others } = documentFilterWhere(paging.filter);
+        where = { ...buildWhere<documentsAttributes>({ ...paging, filter: others }, where) };
+        if (and.length > 0) {
+            where = { ...where, [Op.and]: [...((where as { [Op.and]?: WhereOptions<documentsAttributes>[] })[Op.and] ?? []), ...and] };
+        }
         where = await andScope(this.org, "document", where);
 
         return await documents.findAndCountAll({ where, order, limit, offset });
+    };
+    /** The title, licence and attribution only: never the file, the key, the type, the tags or the owner. */
+    updatemetadata = async (documentid: string, values: DocumentMetadata, user: LmsUserToken) => {
+        const document = await this.getdocumentbyid(documentid);
+        if (!document) {
+            return false;
+        }
+        const fields: Array<keyof documentsAttributes> = [];
+        for (const key of ["documenttitle", "documentlicence", "documentattribution"] as const) {
+            if (values[key] !== undefined) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (document as any)[key] = values[key];
+                fields.push(key);
+            }
+        }
+        document.lastupdated = new Date();
+        document.updated_at = new Date();
+        document.updated_by = user.lmsuserid;
+        await document.save({ fields: [...fields, "lastupdated", "updated_at", "updated_by"] as Array<keyof documentsAttributes> });
+        return true;
     };
     getdocumentname = (documentname: string) => documents.findOne({ where: { documentname, isdeleted: false } });
     // The organisation payload (format 3): whole rows, the owner included, for the documents in scope.
@@ -108,20 +162,6 @@ export class DocumentBusiness {
         return tempdt > 0;
     };
 
-
-    /**
-     * Does a live document that is not in scope already hold this name? (Always false for the platform, and for a
-     * business class built without a caller.) The name is the document's key in the shared file store.
-     */
-    isNameHeldByAnother = async (documentname: string) => {
-        if (!this.org) {
-            return false;
-        }
-        const where: WhereOptions<documentsAttributes> = { documentname, isdeleted: false };
-        const all = await documents.count({ where });
-        const own = await documents.count({ where: await andScope(this.org, "document", where) });
-        return all > own;
-    };
 
     isexistsdocumentID = async (documentid: string) => {
         const where: WhereOptions<documentsAttributes> = {

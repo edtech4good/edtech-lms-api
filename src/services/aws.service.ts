@@ -11,7 +11,8 @@ export class AWSService {
             secretAccessKey: Config.fortyk.api.aws.secretaccesskey,
         });
     }
-    static uploadS3 = (filename: string, buffer: Buffer) => {
+    /** `contentType` is set on the stored object when given (the document upload sends one); the log zip upload sends none. */
+    static uploadS3 = (filename: string, buffer: Buffer, contentType?: string) => {
         AWSService.updateAWSConfig();
         console.log("uploading to s3 ", Config.fortyk.api.aws.s3bucketname);
         return new S3({
@@ -25,25 +26,9 @@ export class AWSService {
             Bucket: Config.fortyk.api.aws.s3bucketname,
             Key: filename,
             ACL: "public-read",
-            Body: buffer
+            Body: buffer,
+            ...(contentType ? { ContentType: contentType } : {}),
         }).promise()
-    }
-
-    static preSignURL = async (filename: string) => {
-        AWSService.updateAWSConfig();
-        return new S3({
-                            endpoint: Config.fortyk.api.aws.endpoint,
-                            s3ForcePathStyle: false,
-                            credentials: {
-                              accessKeyId: Config.fortyk.api.aws.accesskeyid,
-                              secretAccessKey: Config.fortyk.api.aws.secretaccesskey,
-                            },
-                          }).getSignedUrl('putObject', {
-            Bucket: Config.fortyk.api.aws.s3bucketname,
-            Key: filename,
-            ACL: "public-read",
-            Expires: 60 * 5,
-        });
     }
 
     static getS3Object = (filename: string) => {
