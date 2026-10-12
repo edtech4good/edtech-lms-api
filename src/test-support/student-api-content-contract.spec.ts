@@ -25,8 +25,8 @@ const payload = (): Record<string, unknown> => {
   body.levels = [{ levelid: id(3), gradeid: id(2) }];
   body.lessons = [{ lessonid: id(4), levelid: id(3) }];
   body.documents = [
-    { documentid: id(5), organisationid: ORG },
-    { documentid: id(6), organisationid: ORG },
+    { documentid: id(5), organisationid: ORG, documenttypeid: 2 },
+    { documentid: id(6), organisationid: ORG, documenttypeid: 6 },
   ];
   body.lessonlearnings = [{ lessonlearningid: id(7), lessonid: id(4), documentid: id(5), lessonlearningtype: "video", lessonlearningbody: null }];
   body.lessonlearningdocuments = [
@@ -129,5 +129,72 @@ describe("the student API's learning-item rules, as central's contract port appl
     expect(changed((b) => { delete b.lessonlearningdocuments[0].lessonlearningdocumentid; })).toEqual(["lessonlearningdocuments: 1 with no valid lessonlearningdocumentid"]);
     expect(changed((b) => { b.lessonlearningdocuments.push({ ...b.lessonlearningdocuments[0], documentid: id(5) }); })).toEqual(["lessonlearningdocuments: 1 repeat an id"]);
     expect(changed((b) => { b.lessonlearningdocuments[0].organisationid = id(77); })).toEqual(["lessonlearningdocuments: 1 belong to another organisation than the header's"]);
+  });
+});
+
+describe("the student API's media-library rules, as central's contract port applies them (ML-1 messages, word for word)", () => {
+  const doc = (over: Row) => (b: Record<string, Row[]>) => { Object.assign(b.documents[1], over); };
+  const KNOWN = "CC0-1.0, CC-BY-4.0, CC-BY-3.0, CC-BY-2.0, CC-BY-SA-4.0, CC-BY-SA-3.0, CC-BY-SA-2.0, CC-BY-NC-4.0, CC-BY-NC-3.0, CC-BY-NC-2.0, CC-BY-NC-SA-4.0, CC-BY-NC-SA-3.0, CC-BY-NC-SA-2.0, CC-BY-ND-4.0, CC-BY-ND-3.0, CC-BY-ND-2.0, CC-BY-NC-ND-4.0, CC-BY-NC-ND-3.0, CC-BY-NC-ND-2.0, LicenseRef-all-rights-reserved, unspecified";
+
+  it("a video item's document must be a VIDEO document: any other type, or none, is refused; a document outside the payload is a missing reference instead", () => {
+    for (const documenttypeid of [1, 5, 6, 8, 9, 10, 0, "2", null]) {
+      expect(changed((b) => { b.documents[0].documenttypeid = documenttypeid as never; })).toEqual([
+        "lessonlearnings: 1 row of type video points at a document that is not a video (its documenttypeid must be 2).",
+      ]);
+    }
+    expect(changed((b) => { delete b.documents[0].documenttypeid; })).toEqual([
+      "lessonlearnings: 1 row of type video points at a document that is not a video (its documenttypeid must be 2).",
+    ]);
+    expect(changed((b) => {
+      b.lessonlearnings.push({ lessonlearningid: id(10), lessonid: id(4), documentid: id(6), lessonlearningtype: "video", lessonlearningbody: null });
+    })).toEqual(["lessonlearnings: 1 row of type video points at a document that is not a video (its documenttypeid must be 2)."]);
+    expect(changed((b) => {
+      for (const n of [11, 12]) b.lessonlearnings.push({ lessonlearningid: id(n), lessonid: id(4), documentid: id(6), lessonlearningtype: "video", lessonlearningbody: null });
+    })).toEqual(["lessonlearnings: 2 rows of type video point at a document that is not a video (its documenttypeid must be 2)."]);
+    // a link row's document may be of any type (only the primary document of a video item is typed)
+    expect(changed((b) => { b.documents[1].documenttypeid = 5; })).toEqual([]);
+  });
+
+  it("a document without the three columns passes (an export from before the media library)", () => {
+    expect(contentProblems(payload())).toEqual([]);
+  });
+
+  it("a document with all three columns, well formed, passes", () => {
+    expect(changed(doc({
+      documenttitle: "ភ្នំពេញ", documentlicence: "CC-BY-NC-ND-2.0",
+      documentattribution: { v: 1, author: "ក", sourceurl: "https://example.org/a", adaptedfrom: "Un titre" },
+    }))).toEqual([]);
+    expect(changed(doc({ documenttitle: null, documentlicence: "unspecified", documentattribution: null }))).toEqual([]);
+  });
+
+  it("a title must be a string of at most 255 characters without control characters (a blank one is no title)", () => {
+    const message = "documents: 1 row has a documenttitle that is not a string of at most 255 characters without control characters.";
+    for (const documenttitle of [5, {}, [], "ក".repeat(256), "a\u0000b", "a\nb"]) {
+      expect(changed(doc({ documenttitle }))).toEqual([message]);
+    }
+    expect(changed(doc({ documenttitle: "ក".repeat(255) }))).toEqual([]);
+    expect(changed(doc({ documenttitle: "   " }))).toEqual([]);
+  });
+
+  it("a licence must be one of the 21 ids; null is never accepted", () => {
+    expect(changed(doc({ documentlicence: "GPL-3.0" }))).toEqual([`documents: 1 row has a documentlicence this server does not know (it knows: ${KNOWN}).`]);
+    expect(changed(doc({ documentlicence: "cc0-1.0" }))).toEqual([`documents: 1 row has a documentlicence this server does not know (it knows: ${KNOWN}).`]);
+    expect(changed(doc({ documentlicence: null }))).toEqual(["documents: 1 row has a null documentlicence, which is never empty (leave the key out for the default)."]);
+  });
+
+  it("an attribution must be null or an object of version 1 with only the three keys, each within its length", () => {
+    const message = "documents: 1 row has a documentattribution that is not null or an object of version 1 with only author, sourceurl and adaptedfrom, each within its length (the sourceurl an http or https address, the whole at most 4096 bytes).";
+    for (const documentattribution of [
+      "text", [], { author: "no version" }, { v: 2 }, { v: 1, licence: "x" }, { v: 1, author: 5 }, { v: 1, author: "a".repeat(256) },
+      { v: 1, sourceurl: "javascript:alert(1)" }, { v: 1, sourceurl: "not a url" }, { v: 1, adaptedfrom: "a".repeat(1025) },
+    ]) {
+      expect(changed(doc({ documentattribution }))).toEqual([message]);
+    }
+  });
+
+  it("two bad documents are counted in one line each", () => {
+    expect(changed((b) => { b.documents[0].documentlicence = "x"; b.documents[1].documentlicence = "y"; })).toEqual([
+      `documents: 2 rows have a documentlicence this server does not know (it knows: ${KNOWN}).`,
+    ]);
   });
 });

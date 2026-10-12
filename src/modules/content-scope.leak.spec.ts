@@ -2829,6 +2829,11 @@ describe("content is confined to the caller's organisation", () => {
       }
       expect(after.updated_by).toBe(who === "X's Organisation Admin" ? "oa" : who === "X's Admin" ? "ad" : "p");
     });
+    it.each(IN_X)("%s: a blank title clears it, as the student API's import would normalise it", async (who) => {
+      stored("documents", "documentid", TX.document).documenttitle = "មុន";
+      expect((await edit(who, TX.document, { documenttitle: "   " })).status).toBe(200);
+      expect(stored("documents", "documentid", TX.document).documenttitle).toBeNull();
+    });
     it.each(IN_X)("%s: only the fields sent change", async (who) => {
       stored("documents", "documentid", TX.document).documenttitle = "មុន";
       stored("documents", "documentid", TX.document).documentlicence = "CC0-1.0";
@@ -2859,8 +2864,6 @@ describe("content is confined to the caller's organisation", () => {
     });
     it.each(IN_X)("%s: a title, licence or attribution that is not allowed is refused (400), nothing changed, and the answer does not repeat it", async (who) => {
       const bad: Array<[object, string]> = [
-        [{ documenttitle: "" }, "documenttitle"],
-        [{ documenttitle: "   " }, "documenttitle"],
         [{ documenttitle: "ក".repeat(256) }, "documenttitle"],
         [{ documenttitle: "a\nb" }, "documenttitle"],
         [{ documenttitle: 5 }, "documenttitle"],

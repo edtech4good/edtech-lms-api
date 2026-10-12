@@ -119,8 +119,8 @@ const seedTree = (t: Tree) => {
   db.add("lessons", { lessonid: t.lesson, lessonname: "មេរៀន " + tag, lessonorder: 1, lessonstatus: true, levelid: t.level });
   db.add("lessonpractices", { lessonpracticeid: t.practice, lessonid: t.lesson, lessonpracticename: "Practice " + tag, lessonpracticeorder: 1, lessonpracticestatus: true });
   db.add("lessonquizzes", { lessonquizid: t.quiz, lessonid: t.lesson, lessonquizname: "Quiz " + tag, lessonquizorder: 1, lessonquizstatus: true });
-  db.add("documents", { documentid: t.document, documentname: `doc_${tag}.png`, documenttypeid: 1, organisationid: o, documenttags: [] });
-  db.add("documents", { documentid: t.document2, documentname: `doc2_${tag}.png`, documenttypeid: 1, organisationid: o, documenttags: [] });
+  db.add("documents", { documentid: t.document, documentname: `doc_${tag}.png`, documenttypeid: 2, organisationid: o, documenttags: [], documentlicence: "unspecified", documenttitle: null, documentattribution: null });
+  db.add("documents", { documentid: t.document2, documentname: `doc2_${tag}.png`, documenttypeid: 6, organisationid: o, documenttags: [], documentlicence: "unspecified", documenttitle: null, documentattribution: null });
   db.add("lessonlearnings", { lessonlearningid: t.learning, lessonid: t.lesson, documentid: t.document, lessonlearningname: "Learning " + tag, lessonlearningorder: 1, lessonlearningstatus: true, lessonlearningtype: "video", lessonlearningbody: null });
   // a link row on a video item: central's own routes refuse one (a video takes no extra documents), the student API accepts it
   db.add("lessonlearningdocuments", { lessonlearningdocumentid: t.link, lessonlearningid: t.learning, documentid: t.document2, lessonlearningdocumentrole: "asset", lessonlearningdocumentorder: 1 });
@@ -381,6 +381,42 @@ describe("the content sync is one organisation's", () => {
       expect(contentProblems(school)).not.toEqual([]);
       school.schools[0].curriculums = [7];
       expect(contentProblems(school)).not.toEqual([]);
+    });
+  });
+
+  // ───────────────────────────── the media library in the payload ─────────────────────────────
+  // `documents` rows ship whole, so the title, licence and attribution travel as stored; the student API checks them when
+  // they are present, and a video item's document must be a VIDEO document.
+  describe("the media-library columns in GET /sync/content", () => {
+    const DOCUMENT_KEYS = ["documentid", "documentname", "documenttypeid", "documenttags", "organisationid", "documentlicence", "documenttitle", "documentattribution"];
+    const documentRow = (json: Row, id: string) => (json.documents as Row[]).find((r) => r.documentid === id)!;
+
+    it("each document row carries documenttitle, documentlicence and documentattribution as stored, and X's export never carries Y's", async () => {
+      const attribution = { v: 1, author: "ក្រុម", sourceurl: "https://example.org/a" };
+      Object.assign(db.tables.documents.find((r) => r.documentid === TX.document)!, { documenttitle: "ភ្នំពេញ", documentlicence: "CC-BY-4.0", documentattribution: attribution });
+      Object.assign(db.tables.documents.find((r) => r.documentid === TY.document)!, { documenttitle: "ខេត្ត", documentlicence: "CC0-1.0", documentattribution: { v: 1, author: "Y" } });
+      const { json } = await download("X's Admin", "/sync/content");
+      expect(documentRow(json, TX.document)).toMatchObject({ documenttitle: "ភ្នំពេញ", documentlicence: "CC-BY-4.0", documentattribution: attribution });
+      expect(documentRow(json, TX.document2)).toMatchObject({ documenttitle: null, documentlicence: "unspecified", documentattribution: null });
+      for (const key of DOCUMENT_KEYS.filter((k) => !["documentid", "documentname", "documenttypeid", "documenttags", "organisationid"].includes(k))) {
+        expect(Object.keys(documentRow(json, TX.document))).toContain(key);
+      }
+      expect(JSON.stringify(json)).not.toContain("ខេត្ត");
+      expect(JSON.stringify(json)).not.toContain('"Y"');
+      expect((json.documents as Row[]).map((r) => r.documentid).sort()).toEqual(sorted(TX.document, TX.document2));
+      expect(contentProblems(json)).toEqual([]);
+    });
+
+    it("a video item on a document that is not a video makes the student API's rule report it", async () => {
+      db.tables.documents.find((r) => r.documentid === TX.document)!.documenttypeid = 5;
+      const { json } = await download("X's Admin", "/sync/content");
+      expect(contentProblems(json)).toEqual(["lessonlearnings: 1 row of type video points at a document that is not a video (its documenttypeid must be 2)."]);
+    });
+
+    it("an unknown licence or a bad attribution in the database is reported by the student API's rule, not hidden by the export", async () => {
+      Object.assign(db.tables.documents.find((r) => r.documentid === TX.document2)!, { documentlicence: "GPL-3.0", documentattribution: { v: 9 } });
+      const { json } = await download("X's Admin", "/sync/content");
+      expect(contentProblems(json)).toHaveLength(2);
     });
   });
 

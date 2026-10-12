@@ -1,7 +1,7 @@
 import AdmZip from "adm-zip";
 import zlib from "zlib";
+import { ATTRIBUTION_VERSION } from "src/constants/media-library";
 import {
-  ATTRIBUTION_VERSION,
   attributionResult,
   checkDocumentFile,
   DOCUMENT_FILE_RULES,
@@ -338,8 +338,9 @@ describe("documentMetadata: title", () => {
   it.each(["a\u0000b", "a\nb", "a\tb", "a\u007fb", "a\u0085b", "a\u2028b"])("a control character (%j) is refused without echoing the title", (title) => {
     expect(titleOf(title)).toEqual({ values: {}, errors: [{ field: "documenttitle", message: "The title can't contain control characters." }] });
   });
-  it("an empty or blank title is refused; null clears; absent leaves it alone", () => {
-    expect(titleOf("   ").errors).toEqual([{ field: "documenttitle", message: "The title can't be empty." }]);
+  it("a blank title is no title (as the student API's import normalises it); null clears; absent leaves it alone", () => {
+    expect(titleOf("   ")).toEqual({ values: { documenttitle: null }, errors: [] });
+    expect(titleOf("")).toEqual({ values: { documenttitle: null }, errors: [] });
     expect(titleOf(null)).toEqual({ values: { documenttitle: null }, errors: [] });
     expect(documentMetadata({})).toEqual({ values: {}, errors: [] });
   });

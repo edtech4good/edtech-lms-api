@@ -4,6 +4,18 @@ import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { FileType } from "src/models/enums/filetype.enum.";
 import { ValidationFieldError } from "src/models/ValidationException";
+import {
+  ATTRIBUTION_ADAPTEDFROM_MAX,
+  ATTRIBUTION_AUTHOR_MAX,
+  ATTRIBUTION_MAX_BYTES,
+  ATTRIBUTION_SOURCEURL_MAX,
+  ATTRIBUTION_VERSION,
+  DEFAULT_DOCUMENT_LICENCE,
+  DOCUMENT_LICENCES,
+  DOCUMENT_TITLE_MAX,
+  isDocumentLicence,
+  normaliseDocumentAttribution,
+} from "src/constants/media-library";
 
 /**
  * What a document upload accepts, and the rules for a document's title, licence and attribution
@@ -231,24 +243,14 @@ export const uploadSizeLog = (documenttypeid: number, bytes: number): { message:
 
 // ---- title, licence, attribution --------------------------------------------------------------------------------
 
-export const UNSPECIFIED_LICENCE = "unspecified";
-
-const CC_FAMILY = ["CC-BY", "CC-BY-SA", "CC-BY-NC", "CC-BY-NC-SA", "CC-BY-ND", "CC-BY-NC-ND"];
-const CC_VERSIONS = ["4.0", "3.0", "2.0"];
-
-/** The closed list. Adding a licence is a code change; the student API keeps the same list. */
-export const DOCUMENT_LICENCES: readonly string[] = [
-  UNSPECIFIED_LICENCE,
-  "CC0-1.0",
-  ...CC_FAMILY.flatMap((family) => CC_VERSIONS.map((version) => `${family}-${version}`)),
-  "LicenseRef-all-rights-reserved",
-];
-
-export const MAX_TITLE_LENGTH = 255;
-export const ATTRIBUTION_VERSION = 1;
-export const MAX_ATTRIBUTION_BYTES = 4 * 1024;
+/** The closed list, the bounds and the student API's own normalisers live in `src/constants/media-library.ts`. */
+export const UNSPECIFIED_LICENCE = DEFAULT_DOCUMENT_LICENCE;
+export const MAX_TITLE_LENGTH = DOCUMENT_TITLE_MAX;
+export const MAX_ATTRIBUTION_BYTES = ATTRIBUTION_MAX_BYTES;
+const ATTRIBUTION_LIMITS = { author: ATTRIBUTION_AUTHOR_MAX, sourceurl: ATTRIBUTION_SOURCEURL_MAX, adaptedfrom: ATTRIBUTION_ADAPTEDFROM_MAX } as const;
 const ATTRIBUTION_KEYS = ["v", "author", "sourceurl", "adaptedfrom"] as const;
-const ATTRIBUTION_LIMITS = { author: 255, sourceurl: 2048, adaptedfrom: 1024 } as const;
+// Control characters, and the line and paragraph separators: central refuses these in what a person types (the student API
+// refuses the control characters of a title; it checks no text of an attribution for them). Stricter, never looser.
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
@@ -261,7 +263,7 @@ export interface DocumentAttribution {
 
 const fieldError = (field: string, message: string): ValidationFieldError => ({ field, message });
 
-/** A title as typed: trimmed, 1 to 255 UTF-16 code units (as Joi counts them), no control characters, stored as sent. */
+/** A trimmed title that is kept: at most 255 UTF-16 code units (as Joi counts them), no control characters, stored as sent. */
 export const titleError = (value: string): string | null => {
   if (value.length === 0) {
     return "The title can't be empty.";
@@ -275,8 +277,7 @@ export const titleError = (value: string): string | null => {
   return null;
 };
 
-/** Is this a licence id of the list? */
-export const isDocumentLicence = (value: unknown): value is string => typeof value === "string" && DOCUMENT_LICENCES.includes(value);
+export { DOCUMENT_LICENCES, isDocumentLicence };
 
 export interface AttributionResult {
   /** The object to store: the keys that have a value, with v; null when no key has one. */
@@ -340,7 +341,12 @@ export const attributionResult = (input: unknown): AttributionResult => {
   if (Buffer.byteLength(JSON.stringify(out), "utf8") > MAX_ATTRIBUTION_BYTES) {
     return bad("The attribution is too large (4 KiB at most).");
   }
-  return { value: out, errors: [] };
+  // what is stored is what the student API's import would store from it, and it must accept it
+  const normalised = normaliseDocumentAttribution(out);
+  if (!normalised.ok) {
+    return bad("The attribution isn't allowed.");
+  }
+  return { value: normalised.value as DocumentAttribution | null, errors: [] };
 };
 
 export interface DocumentMetadataInput {
@@ -370,11 +376,12 @@ export const documentMetadata = (input: DocumentMetadataInput): { values: Docume
       errors.push(fieldError("documenttitle", "The title must be text."));
     } else {
       const title = input.documenttitle.trim();
-      const problem = titleError(title);
+      // as the student API's import normalises a title: trimmed, and nothing left is no title (the name is shown)
+      const problem = title.length === 0 ? null : titleError(title);
       if (problem) {
         errors.push(fieldError("documenttitle", problem));
       } else {
-        values.documenttitle = title;
+        values.documenttitle = title.length === 0 ? null : title;
       }
     }
   }
