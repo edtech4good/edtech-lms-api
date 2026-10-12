@@ -5,7 +5,14 @@ import { DataTypes, Model, Optional } from 'sequelize';
 export interface documentsAttributes {
   documentid: string;
   documenttypeid: number;
+  /** The file's key in the store (the whole name for rows made before generated keys; `<documentid>.<ext>` after). Not a display name. */
   documentname: string;
+  /** What a person called the file, for display; null means "show `documentname`". */
+  documenttitle?: string | null;
+  /** An id of the closed list in `src/business/document-media.ts`; 'unspecified' means not recorded. */
+  documentlicence?: string;
+  /** `{ v: 1, author?, sourceurl?, adaptedfrom? }` or null. */
+  documentattribution?: object | null;
   documents3meta?: object;
   isdeleted: boolean;
   documenttags?: object;
@@ -21,13 +28,16 @@ export interface documentsAttributes {
 
 export type documentsPk = "documentid";
 export type documentsId = documents[documentsPk];
-export type documentsOptionalAttributes = "documentid" | "documents3meta" | "isdeleted" | "documenttags" | "lastupdated";
+export type documentsOptionalAttributes = "documentid" | "documenttitle" | "documentlicence" | "documentattribution" | "documents3meta" | "isdeleted" | "documenttags" | "lastupdated";
 export type documentsCreationAttributes = Optional<documentsAttributes, documentsOptionalAttributes>;
 
 export class documents extends Model<documentsAttributes, documentsCreationAttributes> implements documentsAttributes {
   documentid!: string;
   documenttypeid!: number;
   documentname!: string;
+  documenttitle?: string | null;
+  documentlicence!: string;
+  documentattribution?: object | null;
   documents3meta?: object;
   isdeleted!: boolean;
   documenttags?: object;
@@ -55,6 +65,19 @@ export class documents extends Model<documentsAttributes, documentsCreationAttri
       documentname: {
         type: DataTypes.TEXT,
         allowNull: false
+      },
+      documenttitle: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+      },
+      documentlicence: {
+        type: DataTypes.STRING(64),
+        allowNull: false,
+        defaultValue: 'unspecified'
+      },
+      documentattribution: {
+        type: DataTypes.JSON,
+        allowNull: true
       },
       documents3meta: {
         type: DataTypes.JSON,
