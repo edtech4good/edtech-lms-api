@@ -1,3 +1,4 @@
+import { FileType } from "src/models/enums/filetype.enum.";
 import { ValidationFieldError } from "src/models/ValidationException";
 
 /**
@@ -14,12 +15,17 @@ export interface LearningItemRule {
   body: "null" | "object";
   /** Whether the item may reference documents through link rows (`documents`). */
   documents: "none" | "allowed";
+  /**
+   * The `documenttypeid`s the primary document may have. Absent: any type. A `video` item's file is played by the
+   * video player, so a document of another type on it would show an empty player and still be marked done.
+   */
+  documenttypeids?: readonly number[];
 }
 
 export const DEFAULT_LEARNING_ITEM_TYPE = "video";
 
 export const LEARNING_ITEM_TYPES: Readonly<Record<string, LearningItemRule>> = {
-  video: { documentid: "required", body: "null", documents: "none" },
+  video: { documentid: "required", body: "null", documents: "none", documenttypeids: [FileType.VIDEO] },
 };
 
 export const learningItemTypeNames = (): string[] => Object.keys(LEARNING_ITEM_TYPES);
@@ -32,6 +38,11 @@ export interface LearningItemFields {
   documentid: string | null | undefined;
   body: unknown;
   documents: ReadonlyArray<unknown> | null | undefined;
+  /**
+   * The `documenttypeid` of the primary document, looked up by the route after its ownership checks. When the item
+   * names a document and the rule limits its type, a type that is not given (not looked up) is refused too.
+   */
+  documenttypeid?: number | null;
 }
 
 const has = (value: unknown): boolean => value !== null && value !== undefined;
@@ -54,6 +65,9 @@ export const learningItemErrors = (
   }
   if (rule.documentid === "none" && has(item.documentid)) {
     errors.push({ field: "documentid", message: `A ${item.type} item has no document of its own.` });
+  }
+  if (rule.documentid !== "none" && has(item.documentid) && rule.documenttypeids && !rule.documenttypeids.includes(item.documenttypeid as number)) {
+    errors.push({ field: "documentid", message: `A ${item.type} item needs a ${item.type} file.` });
   }
   if (rule.body === "null" && has(item.body)) {
     errors.push({ field: "lessonlearningbody", message: `A ${item.type} item has no body.` });

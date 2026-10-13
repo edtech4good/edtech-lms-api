@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Put,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
@@ -32,15 +33,25 @@ import { documentsAttributes } from "src/models/data-models/documents";
 import { TokenType } from "src/models/enums";
 import { IPaging } from "src/models/IPaging";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
-import { ResponseString } from "src/models/ResponseString";
 import { AWSService } from "src/services/aws.service";
-import { filenameextractor } from "src/services/util.service";
+import { Logger } from "src/config";
+import { v4 as uuidv4 } from "uuid";
+import { ValidationException, ValidationFieldError } from "src/models/ValidationException";
+import {
+  checkDocumentFile,
+  DocumentMetadataInput,
+  documentMetadata,
+  extensionOf,
+  storageKey,
+  utf8FileName,
+  titleError,
+  UNSPECIFIED_LICENCE,
+  uploadSizeLog,
+} from "src/business/document-media";
 import { documenttagOperations, showalldocument } from ".";
 import { DocumentBusiness } from "../../business";
 import { DocumentBase } from "./models/DocumentBase";
 import { DocumentGetAllResponse } from "./models/DocumentGetAllResponse";
-// @ts-ignore
-import fileExtension from "file-extension";
 import { User } from "src/decorators/user.decorator";
 import { LmsUserToken } from "src/models/token.model";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
@@ -50,6 +61,63 @@ import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { Org, OrgContext } from "src/decorators/org.decorator";
 import { assertTagsAllowed, ownerForNewContent, ownerOfDocument } from "src/business/content-owner";
 import { findOwnedDocument } from "src/business/content-scope";
+
+const METADATA_FIELDS = ["documenttitle", "documentlicence", "documentattribution"];
+
+/** A multipart text field: one value of text, or absent (an empty one counts as absent: a form sends it blank). */
+const textField = (body: Record<string, unknown> | undefined, name: string): { text?: string; error?: ValidationFieldError } => {
+  const raw = body?.[name];
+  if (raw === undefined || raw === null) {
+    return {};
+  }
+  if (typeof raw !== "string") {
+    return { error: { field: name, message: `Send ${name} once, as text.` } };
+  }
+  return raw.trim().length === 0 ? {} : { text: raw };
+};
+
+/**
+ * The upload's optional text fields as metadata input, and what was wrong with reading them. A title not sent is the
+ * file's name without its extension (none when that is empty); a licence not sent stays 'unspecified'; the attribution
+ * is JSON text. Messages name the field and never repeat what was sent.
+ */
+const uploadFields = (body: Record<string, unknown> | undefined, originalname: string): { input: DocumentMetadataInput; errors: ValidationFieldError[] } => {
+  const input: DocumentMetadataInput = {};
+  const errors: ValidationFieldError[] = [];
+  const title = textField(body, "documenttitle");
+  if (title.error) {
+    errors.push(title.error);
+  } else if (title.text !== undefined) {
+    input.documenttitle = title.text;
+  } else {
+    const base = originalname.slice(0, originalname.length - (extensionOf(originalname).length + 1)).split(/[\\/]/).pop()?.trim() ?? "";
+    if (base.length > 0) {
+      // a file name that is not usable as a title is refused rather than cut: the person gives a title
+      if (titleError(base)) {
+        errors.push({ field: "documenttitle", message: "The file's name can't be used as its title. Give the file a title." });
+      } else {
+        input.documenttitle = base;
+      }
+    }
+  }
+  const licence = textField(body, "documentlicence");
+  if (licence.error) {
+    errors.push(licence.error);
+  } else if (licence.text !== undefined) {
+    input.documentlicence = licence.text.trim();
+  }
+  const attribution = textField(body, "documentattribution");
+  if (attribution.error) {
+    errors.push(attribution.error);
+  } else if (attribution.text !== undefined) {
+    try {
+      input.documentattribution = JSON.parse(attribution.text);
+    } catch {
+      errors.push({ field: "documentattribution", message: "The attribution must be JSON text." });
+    }
+  }
+  return { input, errors };
+};
 
 @ApiExtraModels(DocumentBase)
 @ApiTags("Document")
@@ -82,10 +150,13 @@ export class DocumentController {
     schema: {
       type: "object",
       properties: {
-        inputfile: {
+        file: {
           type: "string",
           format: "binary",
         },
+        documenttitle: { type: "string", description: "Optional; the file's name without its extension when left out" },
+        documentlicence: { type: "string", description: "Optional; one of the allowed ids, 'unspecified' when left out" },
+        documentattribution: { type: "string", description: "Optional; JSON text: { v: 1, author?, sourceurl?, adaptedfrom? }" },
       },
     },
   })
@@ -93,6 +164,7 @@ export class DocumentController {
   @ApiConsumes("multipart/form-data")
   async uploadFile(
     @UploadedFiles() files: Array<Express.Multer.File>,
+    @Body() body: Record<string, unknown> | undefined,
     @User() user: LmsUserToken,
     @Org() org: OrgContext
   ): Promise<ResponseBoolean> {
@@ -101,49 +173,40 @@ export class DocumentController {
     if (!files || files.length <= 0) {
       throw new ApiError(ErrorCode.FILE_REJECTED, "That file type isn't supported.");
     }
-    if (!files || files.length != 1) {
+    if (files.length != 1) {
       throw new ApiError(ErrorCode.FILE_REJECTED, "Upload one file at a time.");
     }
-    const filenamevalidation = (
-      (fileExtension(files[0].originalname) || "") as string
-    ).trim();
-    if (filenamevalidation.length <= 0) {
-      throw new ApiError(ErrorCode.FILE_REJECTED, "That file name isn't allowed.");
+    const file = files[0];
+    // The extension decides the type; the first bytes (and, for the zip-based formats, one entry inside) must agree.
+    // The browser's MIME type is never read. Nothing below echoes the file name.
+    const originalname = utf8FileName(file.originalname || "");
+    const accepted = checkDocumentFile(originalname, file.buffer);
+    const fields = uploadFields(body, originalname);
+    const { values, errors } = documentMetadata(fields.input);
+    if (fields.errors.length + errors.length > 0) {
+      throw new ValidationException([...fields.errors, ...errors]);
     }
-    const actualFilename = files[0].originalname.replace(
-      `.${filenamevalidation}`,
-      ""
-    ).trim();
-    if (!/^[a-zA-Z0-9_]+$/.test(actualFilename) || actualFilename.length > 25) {
-      throw new ApiError(ErrorCode.FILE_REJECTED, "File names can only use letters, numbers and _, up to 25 characters.");
-    }
-    const db = new DocumentBusiness(org);
-    const filename = filenameextractor(files[0].originalname);
-    if (filename.filetype <= 0) {
-      throw new ApiError(ErrorCode.FILE_REJECTED, "That file type isn't supported.");
-    }
-   
+    // The row's own id is part of the stored key: the key holds no text a person typed, so no two uploads can share it.
+    const documentid = uuidv4();
+    const key = storageKey(documentid, accepted.extension);
+    const s3data = await AWSService.uploadS3(key, file.buffer, accepted.contentType);
     const temp: documentsAttributes = {
-      documentname: filename.filename,
-      documentid: "",
+      documentid,
+      documentname: key,
+      documenttitle: values.documenttitle ?? null,
+      documentlicence: values.documentlicence ?? UNSPECIFIED_LICENCE,
+      documentattribution: values.documentattribution ?? null,
       isdeleted: false,
-      documenttypeid: filename.filetype,
+      documenttypeid: accepted.documenttypeid,
       lastupdated: new Date(),
       organisationid,
+      documents3meta: { ...s3data },
     };
-
-    if (await db.isexistsdocumentName(temp)) {
-      throw new ApiError(
-        ErrorCode.ALREADY_EXISTS,
-        "A file with that name already exists. Delete the old one first.",
-      );
-    }
-    const s3data = await AWSService.uploadS3(
-      filename.filename,
-      files[0].buffer
-    );
-    temp.documents3meta = { ...s3data };
-    await db.createdocument(temp, user);
+    await new DocumentBusiness(org).createdocument(temp, user);
+    // One line per accepted upload: the type id and the size in bytes, no name, title, key or owner, so that limits per
+    // type can be set from what is really uploaded.
+    const line = uploadSizeLog(accepted.documenttypeid, file.size ?? file.buffer.length);
+    Logger.info(line.message, line.meta);
     return {
       error: false,
       data: true,
@@ -218,6 +281,9 @@ export class DocumentController {
               documenttypeid: x.documenttypeid,
               isdeleted: x.isdeleted,
               documenttags: x.documenttags,
+              documenttitle: x.documenttitle ?? null,
+              documentlicence: x.documentlicence,
+              documentattribution: x.documentattribution ?? null,
             }
         ),
         total: tempresult.count,
@@ -298,41 +364,59 @@ export class DocumentController {
     };
   }
 
-  @OrgPolicy("owned", { note: "The signed key must be scoped to the caller's organisation.", enforcedBy: "src/modules/content-scope.leak.spec.ts" })
-  @Get("presign/:filename")
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
+  @Put(":documentid")
   @ApiResponse({
     status: 200,
-    description: "Presign url generated successfully",
-    schema: { $ref: getSchemaPath(ResponseString) },
+    description: "Document title, licence and attribution updated",
+    schema: { $ref: getSchemaPath(ResponseBoolean) },
   })
   @ApiResponse({
     status: 400,
-    description: "Error while generating presign url",
+    description: "The title, licence or attribution is not allowed",
   })
   @ApiResponse({
-    status: 500,
-    description: "Server error",
+    status: 404,
+    description: "No such document",
   })
-  @RequirePermissions(Permission.VIEW_DOCUMENT)
+  @RequirePermissions(Permission.CREATE_DOCUMENT)
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiParam({ name: `filename`, type: "string", required: true })
-  @UseInterceptors(new SchemaValidationInterceptor(documenttagOperations))
-  async presignedupload(
-    @Param("filename") filename: string,
+  @ApiParam({ name: `documentid`, type: "string", required: true })
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        documenttitle: { type: "string", nullable: true },
+        documentlicence: { type: "string" },
+        documentattribution: { type: "object", nullable: true },
+      },
+    },
+  })
+  async updateMetadata(
+    @Param("documentid") documentid: string,
+    @Body() body: Record<string, unknown> | undefined,
+    @User() user: LmsUserToken,
     @Org() org: OrgContext
-  ): Promise<ResponseString> {
-    // The key is a name in the one file store every organisation shares: a name that a document of another
-    // organisation (or one with no owner) already holds is refused, as an upload of an existing name is.
-    if (await new DocumentBusiness(org).isNameHeldByAnother(filename)) {
-      throw new ApiError(
-        ErrorCode.ALREADY_EXISTS,
-        "A file with that name already exists. Delete the old one first.",
-      );
+  ): Promise<ResponseBoolean> {
+    // the document in the path is the caller's, or not found (before the body is looked at)
+    await findOwnedDocument(org, documentid, { where: { isdeleted: false } });
+    const input = body && typeof body === "object" && !Array.isArray(body) ? body : {};
+    const unknown = Object.keys(input).filter((k) => !METADATA_FIELDS.includes(k));
+    if (unknown.length > 0) {
+      throw new ValidationException(unknown.map((field) => ({ field, message: "That field can't be changed here." })));
     }
+    if (Object.keys(input).length === 0) {
+      throw new ValidationException([{ field: "documenttitle", message: "Give a title, a licence or an attribution to change." }]);
+    }
+    const { values, errors } = documentMetadata(input as DocumentMetadataInput);
+    if (errors.length > 0) {
+      throw new ValidationException(errors);
+    }
+    await new DocumentBusiness(org).updatemetadata(documentid, values, user);
     return {
       error: false,
-      data: await AWSService.preSignURL(filename),
+      data: true,
     };
   }
 }

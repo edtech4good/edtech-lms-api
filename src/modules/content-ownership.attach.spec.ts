@@ -89,7 +89,7 @@ const makeFixture = (owner: string | null) => {
   db.add("lessonplans", { lessonplanid: f.plan, lessonid: f.lesson, documentid: f.document });
   db.add("curriculumbaseline", { curriculumbaselineid: f.baseline, curriculumid: f.curriculum, baselinetype: 1, baselinestatus: true });
   db.add("questions", { questionid: f.question, questionidentifier: `qi-${tag}`, organisationid: owner, questiontags: [] });
-  db.add("documents", { documentid: f.document, documentname: `doc-${tag}`, documenttypeid: 1, organisationid: owner, documenttags: [] });
+  db.add("documents", { documentid: f.document, documentname: `doc-${tag}`, documenttypeid: 2, organisationid: owner, documenttags: [] });
   db.add("questiontags", { questiontagid: uid(), questiontagname: f.qtag, organisationid: owner });
   db.add("documenttags", { documenttagid: uid(), documenttagname: f.dtag, organisationid: owner });
   db.add("schools", { schoolid: f.school, schoolname: `school-${tag}`, organisationid: owner, curriculums: [] });

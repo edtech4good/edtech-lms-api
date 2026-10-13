@@ -1,0 +1,453 @@
+import AdmZip from "adm-zip";
+import { TextDecoder } from "util";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
+import { FileType } from "src/models/enums/filetype.enum.";
+import { ValidationFieldError } from "src/models/ValidationException";
+import {
+  ATTRIBUTION_ADAPTEDFROM_MAX,
+  ATTRIBUTION_AUTHOR_MAX,
+  ATTRIBUTION_MAX_BYTES,
+  ATTRIBUTION_SOURCEURL_MAX,
+  ATTRIBUTION_VERSION,
+  DEFAULT_DOCUMENT_LICENCE,
+  DOCUMENT_LICENCES,
+  DOCUMENT_TITLE_MAX,
+  isDocumentLicence,
+  normaliseDocumentAttribution,
+} from "src/constants/media-library";
+
+/**
+ * What a document upload accepts, and the rules for a document's title, licence and attribution
+ * (docs/media-library-phase0-design.md, sections 5 and 6).
+ *
+ * The extension decides the type; the first bytes must agree with it; for the five zip-based formats one entry inside
+ * the container must agree as well. The browser's MIME type is never looked at. Nothing here echoes a file name, a title
+ * or any other text the caller sent. The shared extractor in `util.service.ts` (log import, feedback) is not used and not
+ * changed: this list is the document upload's own.
+ */
+
+// ---- the whitelist ----------------------------------------------------------------------------------------------
+
+type Check = (head: Buffer, whole: Buffer) => boolean;
+
+const startsWith = (head: Buffer, bytes: ReadonlyArray<number>, offset = 0): boolean =>
+  head.length >= offset + bytes.length && bytes.every((b, i) => head[offset + i] === b);
+const ascii = (s: string): number[] => [...s].map((c) => c.charCodeAt(0));
+
+/** A ZIP local-file header. */
+const isZip: Check = (head) => startsWith(head, [0x50, 0x4b, 0x03, 0x04]);
+
+/** Valid UTF-8 (a byte-order mark allowed) with no NUL byte; decoded in pieces so a large file is not copied whole. */
+const isText: Check = (_head, whole) => {
+  if (whole.indexOf(0) !== -1) {
+    return false;
+  }
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+  const piece = 1024 * 1024;
+  try {
+    for (let at = 0; at < whole.length; at += piece) {
+      decoder.decode(whole.subarray(at, Math.min(at + piece, whole.length)), { stream: true });
+    }
+    decoder.decode();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const OOXML_MAIN = {
+  pptx: { dir: "/ppt/", type: "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml" },
+  docx: { dir: "/word/", type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml" },
+  xlsx: { dir: "/xl/", type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml" },
+} as const;
+
+export interface DocumentFileRule {
+  documenttypeid: FileType;
+  /** Set on the stored object; chosen by the extension, never by the browser. */
+  contentType: string;
+  signature: Check;
+  /** The entry inside the container that must agree with the extension (zip-based formats only). */
+  container?: { kind: "ooxml"; dir: string; type: string } | { kind: "odf"; mimetype: string };
+}
+
+/** extension (lower case) -> rule. An extension that is not a key here is refused. */
+export const DOCUMENT_FILE_RULES: Readonly<Record<string, DocumentFileRule>> = {
+  mp4: { documenttypeid: FileType.VIDEO, contentType: "video/mp4", signature: (h) => startsWith(h, ascii("ftyp"), 4) },
+  mp3: {
+    documenttypeid: FileType.AUDIO,
+    contentType: "audio/mpeg",
+    signature: (h) => startsWith(h, ascii("ID3")) || (h.length >= 2 && h[0] === 0xff && (h[1] & 0xe0) === 0xe0),
+  },
+  jpg: { documenttypeid: FileType.IMAGE, contentType: "image/jpeg", signature: (h) => startsWith(h, [0xff, 0xd8, 0xff]) },
+  jpeg: { documenttypeid: FileType.IMAGE, contentType: "image/jpeg", signature: (h) => startsWith(h, [0xff, 0xd8, 0xff]) },
+  png: { documenttypeid: FileType.IMAGE, contentType: "image/png", signature: (h) => startsWith(h, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) },
+  gif: { documenttypeid: FileType.IMAGE, contentType: "image/gif", signature: (h) => startsWith(h, ascii("GIF87a")) || startsWith(h, ascii("GIF89a")) },
+  pdf: { documenttypeid: FileType.PDF, contentType: "application/pdf", signature: (h) => startsWith(h, ascii("%PDF-")) },
+  pptx: {
+    documenttypeid: FileType.SLIDES,
+    contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    signature: isZip,
+    container: { kind: "ooxml", ...OOXML_MAIN.pptx },
+  },
+  odp: {
+    documenttypeid: FileType.SLIDES,
+    contentType: "application/vnd.oasis.opendocument.presentation",
+    signature: isZip,
+    container: { kind: "odf", mimetype: "application/vnd.oasis.opendocument.presentation" },
+  },
+  docx: {
+    documenttypeid: FileType.DOCUMENT,
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    signature: isZip,
+    container: { kind: "ooxml", ...OOXML_MAIN.docx },
+  },
+  odt: {
+    documenttypeid: FileType.DOCUMENT,
+    contentType: "application/vnd.oasis.opendocument.text",
+    signature: isZip,
+    container: { kind: "odf", mimetype: "application/vnd.oasis.opendocument.text" },
+  },
+  xlsx: {
+    documenttypeid: FileType.SPREADSHEET,
+    contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    signature: isZip,
+    container: { kind: "ooxml", ...OOXML_MAIN.xlsx },
+  },
+  csv: { documenttypeid: FileType.SPREADSHEET, contentType: "text/csv", signature: isText },
+};
+
+/**
+ * The most an entry inside a container may declare (in the archive's directory) before it is inflated. The check reads
+ * one entry only, so what it costs is bounded by this number, whatever the archive holds. The OOXML manifest of a deck of
+ * a few hundred slides is tens of KiB, hence not "a few KiB"; the ODF `mimetype` entry is a single line.
+ */
+export const MAX_CONTENT_TYPES_ENTRY_BYTES = 256 * 1024;
+export const MAX_MIMETYPE_ENTRY_BYTES = 1024;
+
+const rejected = (message: string): ApiError => new ApiError(ErrorCode.FILE_REJECTED, message);
+const NOT_THE_KIND = "That file isn't the kind its name says it is.";
+
+/** The one entry of a zip, read only when its declared size is within `bound`; null for anything wrong with it. */
+const readEntry = (zip: AdmZip, name: string, bound: number): Buffer | null => {
+  const entry = zip.getEntry(name);
+  if (!entry || entry.isDirectory) {
+    return null;
+  }
+  if (entry.header.size > bound) {
+    return null;
+  }
+  try {
+    const data = entry.getData();
+    return data.length <= bound ? data : null;
+  } catch {
+    return null;
+  }
+};
+
+const attributesOf = (tag: string): Record<string, string> => {
+  const attributes: Record<string, string> = {};
+  const re = /([A-Za-z][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  for (let m = re.exec(tag); m; m = re.exec(tag)) {
+    attributes[m[1]] = m[2] ?? m[3];
+  }
+  return attributes;
+};
+
+/** Does `[Content_Types].xml` name a main part under `dir` with exactly the content type of this extension? */
+const ooxmlManifestAgrees = (manifest: string, dir: string, type: string): boolean => {
+  const re = /<Override\b([^>]*)>/g;
+  for (let m = re.exec(manifest); m; m = re.exec(manifest)) {
+    const a = attributesOf(m[1]);
+    if (a.ContentType === type && typeof a.PartName === "string" && a.PartName.startsWith(dir)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+/**
+ * The most entries an archive may declare. The archive library builds an object for every entry of the central directory
+ * before one is read, so the number of entries is what the check costs (200,000 empty entries took about 2 GB of memory); it
+ * is read from the end-of-central-directory record first, without the library. Real decks and documents hold tens to a few
+ * thousand entries.
+ */
+export const MAX_ZIP_ENTRIES = 10000;
+
+const ZIP_END_SIGNATURE = 0x06054b50; // "PK\5\6": the end-of-central-directory record
+const ZIP64_LOCATOR_SIGNATURE = 0x07064b50; // "PK\6\7"
+const ZIP64_RECORD_SIGNATURE = 0x06064b50; // "PK\6\6"
+const ZIP_END_LENGTH = 22;
+const ZIP64_LOCATOR_LENGTH = 20;
+const ZIP_MAX_COMMENT = 0xffff;
+
+/**
+ * The number of entries the archive declares, found the way the archive library finds its end record (backward from the end,
+ * within the longest comment a record can have, taking a record that sits up to 20 bytes before another): the larger of the two
+ * counts the record holds. null for what cannot be counted: no end record, a record cut short, or a zip64 archive (a count that
+ * does not fit 16 bits; nothing within the upload cap needs one).
+ */
+export const declaredZipEntries = (buffer: Buffer): number | null => {
+  let at = buffer.length - ZIP_END_LENGTH;
+  const lowest = Math.max(0, at - ZIP_MAX_COMMENT);
+  let end = -1;
+  let floor = lowest;
+  for (; at >= floor; at--) {
+    if (buffer[at] !== 0x50 || at + 4 > buffer.length) {
+      continue;
+    }
+    const signature = buffer.readUInt32LE(at);
+    if (signature === ZIP_END_SIGNATURE) {
+      end = at;
+      floor = Math.max(lowest, at - ZIP64_LOCATOR_LENGTH);
+    } else if (signature === ZIP64_LOCATOR_SIGNATURE || signature === ZIP64_RECORD_SIGNATURE) {
+      return null;
+    }
+  }
+  if (end < 0 || end + ZIP_END_LENGTH > buffer.length) {
+    return null;
+  }
+  return Math.max(buffer.readUInt16LE(end + 8), buffer.readUInt16LE(end + 10));
+};
+
+/** True when the zip-based file's own entry agrees with its extension. Never throws. */
+const containerAgrees = (buffer: Buffer, container: NonNullable<DocumentFileRule["container"]>): boolean => {
+  const declared = declaredZipEntries(buffer);
+  if (declared === null || declared > MAX_ZIP_ENTRIES) {
+    return false;
+  }
+  let zip: AdmZip;
+  try {
+    zip = new AdmZip(buffer);
+  } catch {
+    return false;
+  }
+  if (container.kind === "odf") {
+    const data = readEntry(zip, "mimetype", MAX_MIMETYPE_ENTRY_BYTES);
+    return data !== null && data.toString("utf8") === container.mimetype;
+  }
+  const data = readEntry(zip, "[Content_Types].xml", MAX_CONTENT_TYPES_ENTRY_BYTES);
+  return data !== null && ooxmlManifestAgrees(data.toString("utf8"), container.dir, container.type);
+};
+
+export interface AcceptedDocumentFile {
+  extension: string;
+  documenttypeid: FileType;
+  contentType: string;
+}
+
+/**
+ * The file name as the person's device wrote it. The multipart parser that the server runs on reads the bytes of a file
+ * name as Latin-1, so a name written in UTF-8 (every browser's, and curl's) arrives as one letter per byte. Those bytes
+ * are put back and read as UTF-8; a name that is not valid UTF-8 that way (or has no byte above 127) is kept as it came.
+ */
+export const utf8FileName = (received: string): string => {
+  if (/^[\u0000-\u007f]*$/.test(received) || /[^\u0000-\u00ff]/.test(received)) {
+    return received;
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(received, "latin1"));
+  } catch {
+    return received;
+  }
+};
+
+/** The lower-case extension after the last dot, or "" when the name has none. */
+export const extensionOf = (originalname: string): string => {
+  const dot = originalname.lastIndexOf(".");
+  return dot < 0 ? "" : originalname.slice(dot + 1).trim().toLowerCase();
+};
+
+/**
+ * The checks in the order of the design: the extension is on the list; the first bytes agree with it; for a zip-based
+ * format the entry inside agrees with it. Refused with FILE_REJECTED (400) and a message that names nothing of the file.
+ */
+export const checkDocumentFile = (originalname: string, buffer: Buffer): AcceptedDocumentFile => {
+  const extension = extensionOf(originalname);
+  if (extension.length === 0) {
+    throw rejected("That file name isn't allowed.");
+  }
+  const rule = Object.prototype.hasOwnProperty.call(DOCUMENT_FILE_RULES, extension) ? DOCUMENT_FILE_RULES[extension] : undefined;
+  if (!rule) {
+    throw rejected("That file type isn't supported.");
+  }
+  if (!rule.signature(buffer.subarray(0, 16), buffer)) {
+    throw rejected(NOT_THE_KIND);
+  }
+  if (rule.container && !containerAgrees(buffer, rule.container)) {
+    throw rejected(NOT_THE_KIND);
+  }
+  return { extension, documenttypeid: rule.documenttypeid, contentType: rule.contentType };
+};
+
+/** The key a stored object gets: the row's own id and the lower-case extension. No user text. */
+export const storageKey = (documentid: string, extension: string): string => `${documentid}.${extension}`;
+
+/** The structured size line of one accepted upload: the type id and the byte size, nothing else. */
+export const uploadSizeLog = (documenttypeid: number, bytes: number): { message: string; meta: { documenttypeid: number; bytes: number } } => ({
+  message: "Document uploaded",
+  meta: { documenttypeid, bytes },
+});
+
+// ---- title, licence, attribution --------------------------------------------------------------------------------
+
+/** The closed list, the bounds and the student API's own normalisers live in `src/constants/media-library.ts`. */
+export const UNSPECIFIED_LICENCE = DEFAULT_DOCUMENT_LICENCE;
+export const MAX_TITLE_LENGTH = DOCUMENT_TITLE_MAX;
+export const MAX_ATTRIBUTION_BYTES = ATTRIBUTION_MAX_BYTES;
+const ATTRIBUTION_LIMITS = { author: ATTRIBUTION_AUTHOR_MAX, sourceurl: ATTRIBUTION_SOURCEURL_MAX, adaptedfrom: ATTRIBUTION_ADAPTEDFROM_MAX } as const;
+/** What a refused source address is told. */
+export const SOURCEURL_MESSAGE = "The attribution sourceurl must be an http or https address.";
+const ATTRIBUTION_KEYS = ["v", "author", "sourceurl", "adaptedfrom"] as const;
+// Control characters, and the line and paragraph separators: central refuses these in what a person types (the student API
+// refuses the control characters of a title; it checks no text of an attribution for them). Stricter, never looser.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+
+export interface DocumentAttribution {
+  v: number;
+  author?: string;
+  sourceurl?: string;
+  adaptedfrom?: string;
+}
+
+const fieldError = (field: string, message: string): ValidationFieldError => ({ field, message });
+
+/** A trimmed title that is kept: at most 255 UTF-16 code units (as Joi counts them), no control characters, stored as sent. */
+export const titleError = (value: string): string | null => {
+  if (value.length === 0) {
+    return "The title can't be empty.";
+  }
+  if (value.length > MAX_TITLE_LENGTH) {
+    return `The title can be at most ${MAX_TITLE_LENGTH} characters.`;
+  }
+  if (CONTROL_CHARACTERS.test(value)) {
+    return "The title can't contain control characters.";
+  }
+  return null;
+};
+
+export { DOCUMENT_LICENCES, isDocumentLicence };
+
+export interface AttributionResult {
+  /** The object to store: the keys that have a value, with v; null when no key has one. */
+  value: DocumentAttribution | null;
+  errors: ValidationFieldError[];
+}
+
+/**
+ * Rules of section 6: an object; `v` is 1; only the three keys; each a string within its limit; `sourceurl` an http or
+ * https URL; an empty string is an absent key; an object with no key is null; at most 4 KiB serialised.
+ */
+export const attributionResult = (input: unknown): AttributionResult => {
+  const field = "documentattribution";
+  const bad = (message: string): AttributionResult => ({ value: null, errors: [fieldError(field, message)] });
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return bad("The attribution must be an object.");
+  }
+  const given = input as Record<string, unknown>;
+  const unknown = Object.keys(given).filter((k) => !(ATTRIBUTION_KEYS as readonly string[]).includes(k));
+  if (unknown.length > 0) {
+    return bad("The attribution has a field that isn't allowed.");
+  }
+  if (given.v !== ATTRIBUTION_VERSION) {
+    return bad(`The attribution version, v, must be ${ATTRIBUTION_VERSION}.`);
+  }
+  const out: DocumentAttribution = { v: ATTRIBUTION_VERSION };
+  for (const key of ["author", "sourceurl", "adaptedfrom"] as const) {
+    const raw = given[key];
+    if (raw === undefined || raw === null) {
+      continue;
+    }
+    if (typeof raw !== "string") {
+      return bad(`The attribution ${key} must be text.`);
+    }
+    const text = raw.trim();
+    if (text.length === 0) {
+      continue;
+    }
+    if (text.length > ATTRIBUTION_LIMITS[key]) {
+      return bad(`The attribution ${key} is too long.`);
+    }
+    if (CONTROL_CHARACTERS.test(text)) {
+      return bad(`The attribution ${key} can't contain control characters.`);
+    }
+    if (key === "sourceurl") {
+      // the student API's own rule for an address (an absolute http(s) address with its scheme, `//` and a host), asked of its
+      // normaliser so there is one rule; central also refuses white space inside an address
+      if (/\s/.test(text) || !normaliseDocumentAttribution({ v: ATTRIBUTION_VERSION, sourceurl: text }).ok) {
+        return bad(SOURCEURL_MESSAGE);
+      }
+    }
+    out[key] = text;
+  }
+  if (Object.keys(out).length === 1) {
+    return { value: null, errors: [] };
+  }
+  if (Buffer.byteLength(JSON.stringify(out), "utf8") > MAX_ATTRIBUTION_BYTES) {
+    return bad("The attribution is too large (4 KiB at most).");
+  }
+  // what is stored is what the student API's import would store from it, and it must accept it
+  const normalised = normaliseDocumentAttribution(out);
+  if (!normalised.ok) {
+    return bad("The attribution isn't allowed.");
+  }
+  return { value: normalised.value as DocumentAttribution | null, errors: [] };
+};
+
+export interface DocumentMetadataInput {
+  /** `undefined`: not given. `null`: clear it (title and attribution; a licence cannot be cleared except by 'unspecified'). */
+  documenttitle?: string | null;
+  documentlicence?: string | null;
+  documentattribution?: unknown;
+}
+
+export interface DocumentMetadata {
+  documenttitle?: string | null;
+  documentlicence?: string;
+  documentattribution?: DocumentAttribution | null;
+}
+
+/**
+ * The metadata of a PUT (and of an upload, once its text fields are parsed): only the fields given are returned, valid
+ * or refused. Messages never echo what was sent.
+ */
+export const documentMetadata = (input: DocumentMetadataInput): { values: DocumentMetadata; errors: ValidationFieldError[] } => {
+  const values: DocumentMetadata = {};
+  const errors: ValidationFieldError[] = [];
+  if (input.documenttitle !== undefined) {
+    if (input.documenttitle === null) {
+      values.documenttitle = null;
+    } else if (typeof input.documenttitle !== "string") {
+      errors.push(fieldError("documenttitle", "The title must be text."));
+    } else {
+      const title = input.documenttitle.trim();
+      // as the student API's import normalises a title: trimmed, and nothing left is no title (the name is shown)
+      const problem = title.length === 0 ? null : titleError(title);
+      if (problem) {
+        errors.push(fieldError("documenttitle", problem));
+      } else {
+        values.documenttitle = title.length === 0 ? null : title;
+      }
+    }
+  }
+  if (input.documentlicence !== undefined) {
+    if (!isDocumentLicence(input.documentlicence)) {
+      errors.push(fieldError("documentlicence", "That licence isn't one of the allowed values."));
+    } else {
+      values.documentlicence = input.documentlicence;
+    }
+  }
+  if (input.documentattribution !== undefined) {
+    if (input.documentattribution === null) {
+      values.documentattribution = null;
+    } else {
+      const result = attributionResult(input.documentattribution);
+      errors.push(...result.errors);
+      if (result.errors.length === 0) {
+        values.documentattribution = result.value;
+      }
+    }
+  }
+  return { values, errors };
+};

@@ -27,6 +27,19 @@ import { assertInScope, findOwnedDocument, findOwnedLesson } from "src/business/
 import { Org, OrgContext } from "src/decorators/org.decorator";
 import { DEFAULT_LEARNING_ITEM_TYPE, learningItemErrors } from "src/business/learning-item-types";
 import { ValidationException } from "src/models/ValidationException";
+import { documents } from "src/models/data-models/documents";
+
+/**
+ * The `documenttypeid` of the item's primary document, for the item's type rule. Called only after the ownership checks,
+ * so the document is the caller's; null for an item with no primary document.
+ */
+const typeOfDocument = async (documentid: string | null | undefined): Promise<number | null> => {
+  if (typeof documentid !== "string") {
+    return null;
+  }
+  const row = await documents.findOne({ where: { documentid }, attributes: ["documenttypeid"] });
+  return row ? row.documenttypeid : null;
+};
 
 /**
  * The caller's own documents named by an item (its primary one and its link rows): each is theirs or the 404 an absent
@@ -137,7 +150,13 @@ export class LessonLearningController {
     await findOwnedLesson(org, lessonid);
     await checkDocuments(org, await ownerOfLesson(lessonid), namedDocuments(lessonlearning.documentid, lessonlearning.documents));
     const type = lessonlearning.lessonlearningtype ?? DEFAULT_LEARNING_ITEM_TYPE;
-    const errors = learningItemErrors({ type, documentid: lessonlearning.documentid, body: lessonlearning.lessonlearningbody, documents: lessonlearning.documents });
+    const errors = learningItemErrors({
+      type,
+      documentid: lessonlearning.documentid,
+      documenttypeid: await typeOfDocument(lessonlearning.documentid),
+      body: lessonlearning.lessonlearningbody,
+      documents: lessonlearning.documents,
+    });
     if (errors.length > 0) {
       throw new ValidationException(errors);
     }
@@ -315,9 +334,11 @@ export class LessonLearningController {
     const business = new LessonLearningBusiness(org);
     const stored = await business.getLessonLearningid(lessonlearningid);
     const type = lessonlearning.lessonlearningtype ?? stored?.lessonlearningtype ?? DEFAULT_LEARNING_ITEM_TYPE;
+    const documentid = lessonlearning.documentid !== undefined ? lessonlearning.documentid : stored?.documentid;
     const errors = learningItemErrors({
       type,
-      documentid: lessonlearning.documentid !== undefined ? lessonlearning.documentid : stored?.documentid,
+      documentid,
+      documenttypeid: await typeOfDocument(documentid),
       body: lessonlearning.lessonlearningbody !== undefined ? lessonlearning.lessonlearningbody : stored?.lessonlearningbody,
       documents: lessonlearning.documents,
     });

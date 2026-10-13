@@ -1,4 +1,12 @@
 import joi from "joi";
+import {
+  DOCUMENT_LICENCES,
+  DOCUMENT_TITLE_MAX,
+  isDocumentLicence,
+  normaliseDocumentAttribution,
+  normaliseDocumentTitle,
+  VIDEO_DOCUMENT_TYPE_ID,
+} from "src/constants/media-library";
 
 /**
  * Test support: what the student API accepts as one organisation's content (format 3).
@@ -7,7 +15,9 @@ import joi from "joi";
  * without importing across repositories. Source: edtech-lms-rpi-api, `main`,
  * `src/modules/import/organisation-content.validator.ts` (`validateOrganisationContent`, `CONTENT_TABLES`),
  * `src/constants/learning-items.ts` and the `organisation` row schema of `src/modules/import/ownership.request.validator.ts`,
- * as of the learning-items change (LI-2). The same rules, in the same order; the differences are only that problems are returned as a list instead of thrown as a 400,
+ * as of the learning-items change (LI-2) and the media-library change (ML-1: a video item's document is a VIDEO document;
+ * the title, licence and attribution of a document when the row carries them; the rules and their messages are the student API's,
+ * through `src/constants/media-library.ts`, which is the same file in both repositories). The same rules, in the same order; the differences are only that problems are returned as a list instead of thrown as a 400,
  * and that the messages are shortened. When the student API's validator changes, change this with it.
  *
  * Two kinds of rule about the lists of ids a row holds (`schools.curriculums`, `curriculumbaselines.schoolid`):
@@ -300,6 +310,12 @@ export function contentProblems(body: unknown): string[] {
   let unknownType = 0;
   let bodyNotNull = 0;
   let noDocument = 0;
+  let videoNotVideo = 0;
+  // the documents of the payload by id: a video item's file must be a VIDEO document
+  const documentTypes = new Map<string, unknown>();
+  for (const doc of tables.documents ?? []) {
+    if (isRow(doc) && isId(doc.documentid)) documentTypes.set(lower(doc.documentid), doc.documenttypeid);
+  }
   for (const row of tables.lessonlearnings ?? []) {
     if (!isRow(row)) continue;
     const type = row.lessonlearningtype;
@@ -314,11 +330,50 @@ export function contentProblems(body: unknown): string[] {
     const rule = LEARNING_ITEM_RULES[type];
     if (rule.bodyMustBeNull && row.lessonlearningbody !== undefined && row.lessonlearningbody !== null) bodyNotNull += 1;
     if (rule.documentRequired && (row.documentid === undefined || row.documentid === null || row.documentid === "")) noDocument += 1;
+    // a document that is not in the payload is reported as a missing reference above, not here
+    if (type === "video" && typeof row.documentid === "string" && documentTypes.has(lower(row.documentid))) {
+      const documenttypeid = documentTypes.get(lower(row.documentid));
+      if (typeof documenttypeid !== "number" || documenttypeid !== VIDEO_DOCUMENT_TYPE_ID) videoNotVideo += 1;
+    }
   }
   if (noType) problems.push(`lessonlearnings: ${noType} with no lessonlearningtype (a string)`);
   if (unknownType) problems.push(`lessonlearnings: ${unknownType} with a lessonlearningtype this server does not know (it knows: ${LEARNING_ITEM_TYPES.join(", ")})`);
   if (bodyNotNull) problems.push(`lessonlearnings: ${bodyNotNull} of type video with a lessonlearningbody, which must be null for a video`);
   if (noDocument) problems.push(`lessonlearnings: ${noDocument} with no documentid, and the type of the item needs one`);
+  const rows = (n: number) => (n === 1 ? "1 row" : `${n} rows`);
+  if (videoNotVideo) {
+    problems.push(`lessonlearnings: ${rows(videoNotVideo)} of type video ${videoNotVideo === 1 ? "points" : "point"} at a document that is not a video (its documenttypeid must be ${VIDEO_DOCUMENT_TYPE_ID}).`);
+  }
+
+  // Documents: the media-library columns, checked only on a row that carries the column (an export from before the media
+  // library has none of them, and still imports; the licence then takes its default).
+  let badTitle = 0;
+  let nullLicence = 0;
+  let unknownLicence = 0;
+  let badAttribution = 0;
+  for (const doc of tables.documents ?? []) {
+    if (!isRow(doc)) continue;
+    if (doc.documenttitle !== undefined && !normaliseDocumentTitle(doc.documenttitle).ok) badTitle += 1;
+    if (doc.documentlicence !== undefined) {
+      if (doc.documentlicence === null) nullLicence += 1;
+      else if (!isDocumentLicence(doc.documentlicence)) unknownLicence += 1;
+    }
+    if (doc.documentattribution !== undefined && !normaliseDocumentAttribution(doc.documentattribution).ok) badAttribution += 1;
+  }
+  if (badTitle) {
+    problems.push(`documents: ${rows(badTitle)} ${badTitle === 1 ? "has" : "have"} a documenttitle that is not a string of at most ${DOCUMENT_TITLE_MAX} characters without control characters.`);
+  }
+  if (nullLicence) {
+    problems.push(`documents: ${rows(nullLicence)} ${nullLicence === 1 ? "has" : "have"} a null documentlicence, which is never empty (leave the key out for the default).`);
+  }
+  if (unknownLicence) {
+    problems.push(`documents: ${rows(unknownLicence)} ${unknownLicence === 1 ? "has" : "have"} a documentlicence this server does not know (it knows: ${DOCUMENT_LICENCES.join(", ")}).`);
+  }
+  if (badAttribution) {
+    problems.push(
+      `documents: ${rows(badAttribution)} ${badAttribution === 1 ? "has" : "have"} a documentattribution that is not null or an object of version 1 with only author, sourceurl and adaptedfrom, each within its length (the sourceurl an http or https address, the whole at most 4096 bytes).`,
+    );
+  }
 
   let badRole = 0;
   let badOrder = 0;

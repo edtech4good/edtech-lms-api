@@ -10,6 +10,8 @@ export class LessonLearningDocumentBase {
   order: number = 0;
   @ApiProperty()
   documentname: string = '';
+  @ApiProperty({ nullable: true })
+  documenttitle: string | null = null;
   @ApiProperty()
   documenttypeid: number = 0;
 }
@@ -31,6 +33,8 @@ export class LessonLearningBase {
   lessondescription: string = '';
   @ApiProperty({ nullable: true })
   documentname: string | null = "";
+  @ApiProperty({ nullable: true })
+  documenttitle: string | null = null;
   @ApiProperty()
   lessonlearningname: string = "";
   @ApiProperty()

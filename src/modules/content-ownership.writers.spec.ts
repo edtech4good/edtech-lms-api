@@ -1,3 +1,4 @@
+import { pngBytes } from "src/test-support/synthetic-media";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { sign } from "jsonwebtoken";
@@ -135,7 +136,7 @@ describe("content writers set the owner from the caller's scope", () => {
   });
 
   describe("POST /document/upload", () => {
-    const upload = (who: Who) => request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).attach("file", Buffer.from("png"), "sample_file.png");
+    const upload = (who: Who) => request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).attach("file", pngBytes(), "sample_file.png");
     it("a platform user not acting is refused (400) before anything is uploaded", async () => {
       const res = await upload("a platform user not acting");
       expect(res.status).toBe(400);
@@ -145,7 +146,7 @@ describe("content writers set the owner from the caller's scope", () => {
     });
     it.each(IN_X)("%s: the document is X's", async (who) => {
       await upload(who).expect(200);
-      expect(db.createdIn("documents")[0]).toMatchObject({ organisationid: X, documentname: "sample_file.png" });
+      expect(db.createdIn("documents")[0]).toMatchObject({ organisationid: X, documenttitle: "sample_file", documentname: expect.stringMatching(/^[0-9a-f-]{36}\.png$/) });
     });
   });
 

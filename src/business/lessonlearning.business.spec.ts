@@ -46,6 +46,14 @@ describe("reading an item with no primary document", () => {
     expect(one).toMatchObject({ lessonlearningid: idOf(3), documentid: null, documentname: null, documenttypeid: null, lessonname: "មេរៀន", lessonlearningbody: { v: 1 } });
   });
 
+  it("shows a document's title beside its name, on the item and on its link rows; null when it has none", async () => {
+    db.tables.documents.find((d) => d.documentid === doc(1))!.documenttitle = "ភ្នំពេញ";
+    const business = new LessonLearningBusiness();
+    expect((await business.getLessonLearningbyid(idOf(2)))).toMatchObject({ documentname: "one.mp4", documenttitle: "ភ្នំពេញ" });
+    expect((await business.getLessonLearningbyid(idOf(1)))!.documents.map((d) => [d.documentid, d.documenttitle])).toEqual([[doc(1), "ភ្នំពេញ"], [doc(2), null]]);
+    expect((await business.getLessonLearningbyLessonid(L))!.map((x) => [x.lessonlearningid, x.documenttitle])).toEqual([[idOf(1), null], [idOf(2), "ភ្នំពេញ"], [idOf(3), null]]);
+  });
+
   it("an absent item reads as nothing, not as an error", async () => {
     expect(await new LessonLearningBusiness().getLessonLearningbyid("00000000-0000-4000-8000-000000000999")).toBeNull();
   });
@@ -59,8 +67,8 @@ describe("reading an item with no primary document", () => {
   it("gives an item its link rows in the item's own order, each with its document's name and type", async () => {
     const one = await new LessonLearningBusiness().getLessonLearningbyid(idOf(1));
     expect(one!.documents).toEqual([
-      { documentid: doc(1), role: "asset", order: 1, documentname: "one.mp4", documenttypeid: 2 },
-      { documentid: doc(2), role: "asset", order: 2, documentname: "two.png", documenttypeid: 1 },
+      { documentid: doc(1), role: "asset", order: 1, documentname: "one.mp4", documenttitle: null, documenttypeid: 2 },
+      { documentid: doc(2), role: "asset", order: 2, documentname: "two.png", documenttitle: null, documenttypeid: 1 },
     ]);
     const other = await new LessonLearningBusiness().getLessonLearningbyid(idOf(2));
     expect(other!.documents).toEqual([]);
