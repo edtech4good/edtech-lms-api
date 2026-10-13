@@ -12,6 +12,7 @@ import { v4 } from "uuid";
 import { OrgContext } from "src/decorators/org.decorator";
 import { requireOwnedSchoolById } from "./school-scope";
 import { extractSchoolFilters, schoolIdsWhere } from "./school-filter";
+import { ownersOfSchools } from "./row-owner";
 import { andInOwnedSchools, schoolScope } from "./school-scope";
 import { studentApiAttributes } from "./student-api-payload";
 
@@ -100,12 +101,15 @@ export class TeacherBusiness {
       limit,
       offset,
     });
+    const owners = await ownersOfSchools(data.rows.map((x: schoolusers) => x.schoolid));
     return {
       count: data.count,
       rows: data.rows.map((x: schoolusers) => {
         return {
           ...x.get({ plain: true }),
           schooluserpasswordhash: undefined,
+          // the organisation of the teacher's school (the admin's platform view names it)
+          organisationid: owners.get(x.schoolid) ?? null,
         };
       }),
     };

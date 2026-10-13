@@ -28,6 +28,7 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedFeedback } from "./content-scope";
+import { andOrganisation, extractOrganisationFilter } from "./row-owner";
 import { schoolScope } from "./school-scope";
 
 interface IFileBuffer {
@@ -179,6 +180,8 @@ export class FeedbackBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
+    const { organisationid, rest: otherfilters } = extractOrganisationFilter(paging.filter);
+    paging = { ...paging, filter: otherfilters };
     buildCustomWhere(paging.filter ?? [], {key: 'countryid', fields: '$schooluser.school.countryid$', where: where});
     // A school filter arrives as a name (as the admin UI sends it) or an id; it is
     // resolved once, here, and the feedback is limited to that school's logins by id.
@@ -196,7 +199,7 @@ export class FeedbackBusiness {
       }
     }
     const allfeedbacks = await feedbacks.findAndCountAll({
-      where: await andScope(this.org, "feedback", where),
+      where: await andOrganisation(await andScope(this.org, "feedback", where), "feedback", organisationid),
       order: [["created_at", 'DESC']],
       limit,
       offset,
@@ -223,11 +226,18 @@ export class FeedbackBusiness {
         {
           model: curriculums,
           required: true,
-          attributes: ["curriculumid", "curriculumname"],
+          attributes: ["curriculumid", "curriculumname", "organisationid"],
         },
       ],
     });
-    return allfeedbacks;
+    // the curriculum's organisation (the admin's platform view names it)
+    return {
+      count: allfeedbacks.count,
+      rows: allfeedbacks.rows.map((x) => {
+        const plain = x.get({ plain: true }) as feedbacks & { curriculum?: { organisationid?: string | null } };
+        return { ...plain, organisationid: plain.curriculum?.organisationid ?? null };
+      }),
+    };
   };
 
   getfeedbackbyid = async (feedbackid: string) => {

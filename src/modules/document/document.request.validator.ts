@@ -7,7 +7,7 @@ export const showalldocument: RequestValidator = ({
     pageindex: joi.number().min(0).message("Invalid page index"),
     pagesize: joi.number().max(200).min(0).message("Invalid page size"),
     filter: joi.array().items({
-      "key": joi.string().max(10).valid("documentname", "documenttypeid", "documenttags").required(),
+      "key": joi.string().max(10).valid("documentname", "documenttypeid", "documenttags", "organisationid").required(),
       "value": joi.string().required().when("key", {
         is: "documenttypeid",
         // an exact match on one type id or a comma-separated list of them

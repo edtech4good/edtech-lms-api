@@ -192,7 +192,8 @@ export class QuestionController {
             questionheading: <QuestionHeading>data.questionheading,
             questiontext: data.questiontext,
             questiontags: [],
-            questioncorrectvalue: data.questioncorrectvalue
+            questioncorrectvalue: data.questioncorrectvalue,
+            organisationid: data.organisationid ?? null,
           }
         : undefined,
     };

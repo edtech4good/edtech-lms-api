@@ -9,6 +9,7 @@ import { documents, documentsAttributes } from "../models/data-models/documents"
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedDocument } from "./content-scope";
 import { DocumentMetadata } from "./document-media";
+import { andOrganisation, extractOrganisationFilter } from "./row-owner";
 
 /** The filter values that name a title as well as a key: `documentname` matches either (the key of a new upload is a uuid). */
 const parts = (value: string): string[] => value.split(",").map((v) => v.trim());
@@ -79,12 +80,14 @@ export class DocumentBusiness {
             offset = (limit * ((paging.pageindex || 1) - 1));
         }
 
-        const { and, others } = documentFilterWhere(paging.filter);
+        const { organisationid, rest: withoutOrganisation } = extractOrganisationFilter(paging.filter);
+        const { and, others } = documentFilterWhere(withoutOrganisation);
         where = { ...buildWhere<documentsAttributes>({ ...paging, filter: others }, where) };
         if (and.length > 0) {
             where = { ...where, [Op.and]: [...((where as { [Op.and]?: WhereOptions<documentsAttributes>[] })[Op.and] ?? []), ...and] };
         }
         where = await andScope(this.org, "document", where);
+        where = await andOrganisation(where, "document", organisationid);
 
         return await documents.findAndCountAll({ where, order, limit, offset });
     };

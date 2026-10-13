@@ -348,6 +348,7 @@ export class CurriculumBaseLineController {
                 enddate: x.enddate,
                 created_at: x.created_at,
                 schoolid: x.schoolid,
+                organisationid: x.curriculum?.organisationid ?? null,
               }
           )
         : undefined,

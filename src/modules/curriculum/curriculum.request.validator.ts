@@ -47,7 +47,7 @@ const showallcurriculum: RequestValidator = ({
     pageindex: joi.number().min(0).message("Invalid page index"),
     pagesize: joi.number().max(200).min(0).message("Invalid page size"),
     filter: joi.array().items({
-      "key": joi.string().valid("curriculumname", "curriculumdescription").required(),
+      "key": joi.string().valid("curriculumname", "curriculumdescription", "organisationid").required(),
       "value": joi.string().required(),
     }).max(5).message("Invalid filter")
   }),

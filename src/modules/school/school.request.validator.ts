@@ -72,7 +72,7 @@ export const showallschool: RequestValidator = {
     filter: joi
       .array()
       .items({
-        key: joi.string().valid("schoolname", "countryid", "curriculums").required(),
+        key: joi.string().valid("schoolname", "countryid", "curriculums", "organisationid").required(),
         value: joi.alternatives().try(joi.string().allow(''), joi.array().min(0)).required(),
       }
       )

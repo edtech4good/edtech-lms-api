@@ -6,6 +6,9 @@ import { LevelBase } from './LevelBase';
 export class LevelAllBase extends LevelBase {
   @ApiProperty()
   gradename: string = "";
+
+  @ApiProperty({ nullable: true, description: "The organisation that owns the row; null when it has no owner yet. Listed so the platform view can name it." })
+  organisationid?: string | null;
 }
 
 export class LevelGetAllResponse extends IResponse<IPagingResult<LevelAllBase>> {

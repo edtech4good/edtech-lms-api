@@ -27,6 +27,7 @@ import { OrgContext } from "src/decorators/org.decorator";
 import { schoolScope } from "./school-scope";
 import { organisationHeader, scopeOf } from "./org-scope";
 import { extractSchoolFilters, schoolIdsWhere } from "./school-filter";
+import { ownersOfSchools } from "./row-owner";
 import { hashPassword } from "src/services/password.service";
 import { LmsUserToken } from "src/models/token.model";
 import { CountryBusiness } from "./country.business";
@@ -223,6 +224,7 @@ export class StudentBusiness {
       accessdata.map((x: any) => [x.userid, x.logintime])
     );
 
+    const owners = await ownersOfSchools(data.rows.map((x) => x.schoolid));
     const rowsdata = [];
     for await (const student of data.rows) {
       const tempdata = (student as any).get({ plain: true });
@@ -238,6 +240,8 @@ export class StudentBusiness {
       });
       rowsdata.push({
         ...tempdata,
+        // the organisation of the learner's school (the admin's platform view names it)
+        organisationid: owners.get(tempdata.schoolid) ?? null,
         lastlogin: lastlogin ? lastlogin : null,
         schooluser: null,
         ...Object.fromEntries(

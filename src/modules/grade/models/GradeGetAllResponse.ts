@@ -6,6 +6,9 @@ import { GradeBase } from './GradeBase';
 export class GradeAllBase extends GradeBase {
   @ApiProperty()
   curriculumname: string = "";
+
+  @ApiProperty({ nullable: true, description: "The organisation that owns the row; null when it has no owner yet. Listed so the platform view can name it." })
+  organisationid?: string | null;
 }
 
 export class GradeGetAllResponse extends IResponse<IPagingResult<GradeAllBase>> {

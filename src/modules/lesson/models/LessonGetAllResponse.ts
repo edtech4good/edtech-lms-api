@@ -6,6 +6,9 @@ import { LessonBase } from './LessonBase';
 export class LessonAllBase extends LessonBase {
   @ApiProperty()
   levelname: string = "";
+
+  @ApiProperty({ nullable: true, description: "The organisation that owns the row; null when it has no owner yet. Listed so the platform view can name it." })
+  organisationid?: string | null;
 }
 
 export class LessonGetAllResponse extends IResponse<IPagingResult<LessonAllBase>> {

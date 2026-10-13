@@ -37,6 +37,7 @@ export const showallstudents: RequestValidator = {
             "studentfirstname",
             "schoolname",
             "schoolid",
+            "organisationid",
             "mothername",
             "fathername",
             "city",

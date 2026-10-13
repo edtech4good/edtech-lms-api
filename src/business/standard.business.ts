@@ -13,6 +13,7 @@ import { schools } from '../models/data-models/school';
 import { IMultiPaging } from '../models/IPaging';
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import { OrgContext } from "src/decorators/org.decorator";
+import { extractOrganisationFilter } from "./row-owner";
 import { andInOwnedSchools, findOwnedSchool, findOwnedStandard, requireOwnedSchoolById } from "./school-scope";
 
 export class StandardBusiness {
@@ -52,17 +53,31 @@ export class StandardBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     // The caller's schools are ANDed on the outside: a filter (which builds its own `Op.and`) cannot replace them.
-    where = await andInOwnedSchools({ ...constructWhere<standardsAttributes>(paging, where) }, org);
+    // An organisation filter is not a column of the class: it limits the rows to the schools of that organisation.
+    const { organisationid, rest } = extractOrganisationFilter(paging.filter);
+    where = await andInOwnedSchools({ ...constructWhere<standardsAttributes>({ ...paging, filter: rest }, where) }, org);
+    if (organisationid !== undefined) {
+      const inOrganisation = await schools.findAll({ attributes: ["schoolid"], where: { organisationid } });
+      where = { [Op.and]: [where, { schoolid: { [Op.in]: inOrganisation.map((s) => s.schoolid) } }] };
+    }
 
-    return await standards.findAndCountAll({ where, order, limit, offset,
+    const found = await standards.findAndCountAll({ where, order, limit, offset,
       include: [
       {
         model: schools,
         required: false,
-        attributes: ["schoolname"],
+        attributes: ["schoolname", "organisationid"],
       },
     ], 
   });
+    // the organisation of the class's school (the admin's platform view names it)
+    return {
+      count: found.count,
+      rows: found.rows.map((x) => {
+        const plain = x.get({ plain: true }) as standards & { school?: { organisationid?: string | null } };
+        return { ...plain, organisationid: plain.school?.organisationid ?? null };
+      }),
+    };
   };
   getstandardname = (standardname: string) =>
     standards.findOne({ where: { standardname, isdeleted: false } });

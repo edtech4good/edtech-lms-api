@@ -23,6 +23,7 @@ import {
 } from "../models/data-models/questions";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedQuestion } from "./content-scope";
+import { andOrganisation, extractOrganisationFilter } from "./row-owner";
 
 /**
  * Built with the caller's context, every read and write here is limited to the questions in scope (a question of
@@ -131,8 +132,10 @@ export class QuestionBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
-    where = { ...buildWhere<questionsAttributes>(paging, where) };
+    const { organisationid, rest } = extractOrganisationFilter(paging.filter);
+    where = { ...buildWhere<questionsAttributes>({ ...paging, filter: rest }, where) };
     where = await andScope(this.org, "question", where);
+    where = await andOrganisation(where, "question", organisationid);
 
     return await questions.findAndCountAll({ where, order, limit, offset });
   };
@@ -148,8 +151,11 @@ export class QuestionBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
-    where = { ...buildWhereOR<questionsAttributes>(paging, where) };
+    // The organisation is an AND on top of the OR of the other filters.
+    const { organisationid, rest } = extractOrganisationFilter(paging.filter);
+    where = { ...buildWhereOR<questionsAttributes>({ ...paging, filter: rest }, where) };
     where = await andScope(this.org, "question", where);
+    where = await andOrganisation(where, "question", organisationid);
 
     return await questions.findAndCountAll({ where, order, limit, offset });
   };

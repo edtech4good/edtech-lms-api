@@ -21,6 +21,7 @@ import { constructWhere } from "src/services/util.service";
 // import { buildWhere } from "src/services/util.service";
 import { v4 as uuidv4 } from "uuid";
 import { CurriculumBusiness } from "./curriculum.business";
+import { andOwnerColumn, extractOrganisationFilter } from "./row-owner";
 import { StudentBusiness } from "./student.business";
 
 /**
@@ -202,7 +203,8 @@ export class SchoolBusiness {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
     // The caller's scope is ANDed on the outside: a filter (which builds its own `Op.and`) cannot replace it.
-    where = andSchoolScope({ ...constructWhere<schoolsAttributes>(paging, where) }, org);
+    const { organisationid, rest } = extractOrganisationFilter(paging.filter);
+    where = andOwnerColumn(andSchoolScope({ ...constructWhere<schoolsAttributes>({ ...paging, filter: rest }, where) }, org), organisationid);
 
     const allschoolscount = await schools.findAndCountAll({ where, order, limit, offset, 
       include:[

@@ -13,6 +13,7 @@ import {
 import { buildWhere } from "../services/util.service";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedGrade } from "./content-scope";
+import { andOrganisation, extractOrganisationFilter } from "./row-owner";
 import { andInOwnedSchools } from "./school-scope";
 
 /**
@@ -119,8 +120,10 @@ export class GradeBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
-    where = { ...buildWhere<gradesAttributes>(paging, where) };
+    const { organisationid, rest } = extractOrganisationFilter(paging.filter);
+    where = { ...buildWhere<gradesAttributes>({ ...paging, filter: rest }, where) };
     where = await andScope(this.org, "grade", where);
+    where = await andOrganisation(where, "grade", organisationid);
     const data = await grades.findAndCountAll({
       where,
       order,
@@ -155,6 +158,7 @@ export class GradeBusiness {
             curriculumname: x.curriculum.curriculumname,
             passing_points: x.passing_points,
             points: x.points,
+            organisationid: x.curriculum.organisationid ?? null,
           }
       ),
     };

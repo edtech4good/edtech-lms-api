@@ -282,6 +282,19 @@ describe("staff administration is scoped to the caller's organisation", () => {
       expect(res.body.data.total).toBe(0);
     });
 
+    it("the platform can narrow the list to one organisation's accounts, and the total with it", async () => {
+      const onlyY = await api.list(callers.platform, { filter: [{ key: "organisationid", value: Y }] }).expect(200);
+      expect(idsOf(onlyY)).toEqual([ID.y1, ID.y2].sort());
+      expect(onlyY.body.data.total).toBe(2);
+      const none = await api.list(callers.platform, { filter: [{ key: "organisationid", value: "no-such-organisation" }] }).expect(200);
+      expect(idsOf(none)).toEqual([]);
+    });
+
+    it.each(IN_X)("%s: the organisation filter can only narrow the list (another organisation's id leaves nothing)", async (who) => {
+      expect(idsOf(await api.list(callers[who], { filter: [{ key: "organisationid", value: Y }] }).expect(200))).toEqual([]);
+      expect(idsOf(await api.list(callers[who], { filter: [{ key: "organisationid", value: X }] }).expect(200))).toEqual([ID.x1, ID.x2].sort());
+    });
+
     it("a disabled account is not listed, for any caller", async () => {
       byId(ID.x2).isdisabled = true;
       expect(idsOf(await api.list(callers.xAdmin).expect(200))).toEqual([ID.x1]);

@@ -61,7 +61,7 @@ const showallstandard: RequestValidator = {
     filter: joi
       .array()
       .items({
-        key: joi.string().valid("standardname","schoolid").required(),
+        key: joi.string().valid("standardname","schoolid","organisationid").required(),
         value: joi.alternatives().try(joi.string().allow(''), joi.array().min(0)).required(),
       })
       .max(5)

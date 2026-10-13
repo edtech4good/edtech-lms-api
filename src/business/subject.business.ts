@@ -12,6 +12,7 @@ import {
 import { subjects, subjectsAttributes } from "src/models/data-models/subjects";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedSubject } from "./content-scope";
+import { andOrganisation, extractOrganisationFilter } from "./row-owner";
 
 /** Built with the caller's context it is limited to the subjects in scope; built without one it is unscoped (the sync payload). */
 export class SubjectBusiness {
@@ -39,8 +40,10 @@ export class SubjectBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
-    where = { ...constructWhere<subjectsAttributes>(paging, where) };
+    const { organisationid, rest } = extractOrganisationFilter(paging.filter);
+    where = { ...constructWhere<subjectsAttributes>({ ...paging, filter: rest }, where) };
     where = await andScope(this.org, "subject", where);
+    where = await andOrganisation(where, "subject", organisationid);
 
     return await subjects.findAndCountAll({ where, order, limit, offset });
   };

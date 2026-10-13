@@ -26,6 +26,7 @@ import { buildWhere, rawfilenameextractor } from "./../services/util.service";
 import { subjects } from "src/models/data-models/subjects";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedCurriculum } from "./content-scope";
+import { andOrganisation, extractOrganisationFilter } from "./row-owner";
 import { andInOwnedSchools } from "./school-scope";
 
 /**
@@ -69,8 +70,10 @@ export class CurriculumBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
-    where = { ...buildWhere<curriculumsAttributes>(paging, where) };
+    const { organisationid, rest } = extractOrganisationFilter(paging.filter);
+    where = { ...buildWhere<curriculumsAttributes>({ ...paging, filter: rest }, where) };
     where = await andScope(this.org, "curriculum", where);
+    where = await andOrganisation(where, "curriculum", organisationid);
     const curs = await curriculums.findAndCountAll({ where, order, limit, offset });
     const curcts = await curriculumcountry.findAll();
     for await (const cur of curs.rows) {

@@ -339,7 +339,7 @@ describe("people and schools are confined to the caller's organisation", () => {
   describe("GET /school/:schoolid", () => {
     it.each(IN_X)("%s: X's school", async (who) => {
       const res = await send(who, "get", `/school/${S_X}`).expect(200);
-      expect(res.body.data).toMatchObject({ schoolid: S_X, schoolname: NAME_X });
+      expect(res.body.data).toMatchObject({ schoolid: S_X, schoolname: NAME_X, organisationid: X });
     });
     it.each(IN_X)("%s: Y's school, and the school with no organisation, are the 404 an id that is not there gets", async (who) => {
       await expectNotFoundLikeMissing(who, "get", `/school/${S_Y}`, `/school/${MISSING}`);
@@ -1559,4 +1559,49 @@ describe("people and schools are confined to the caller's organisation", () => {
       expect(db.snapshot()).toEqual(before);
     });
   });
+
+  // ───────────────────── the owning organisation on every list row ─────────────────────
+  // The admin's platform view shows which organisation owns each row and can narrow a list to one organisation.
+  describe("the owning organisation on the rows of a list", () => {
+    type Listing = { name: string; path: string; key: string; mine: string[]; theirs: string[]; unowned: string[] };
+    const LISTS: Listing[] = [
+      { name: "POST /school", path: "/school", key: "schoolid", mine: [S_X], theirs: [S_Y], unowned: [S_U] },
+      { name: "POST /standard", path: "/standard", key: "standardid", mine: [K_X], theirs: [K_Y], unowned: [K_U] },
+      { name: "POST /student", path: "/student", key: "studentid", mine: [STU_X], theirs: [STU_Y], unowned: [STU_U] },
+      { name: "POST /teacher", path: "/teacher", key: "schooluserid", mine: [TCH_X], theirs: [TCH_Y], unowned: [] },
+    ];
+    const NOT_ACTING = "a platform user not acting" as Who;
+    const ownerOfRows = (rows: Array<Record<string, unknown>>, key: string) => Object.fromEntries(rows.map((r) => [r[key] as string, r.organisationid]));
+    const listOf = (who: Who, path: string, filter: object[] = []) => send(who, "post", path, { pageindex: 1, pagesize: 50, filter });
+
+    describe.each(LISTS)("$name", ({ path, key, mine, theirs, unowned }) => {
+      it.each(IN_X)("%s: every row names X as its owner", async (who) => {
+        const res = await listOf(who, path).expect(200);
+        expect(ownerOfRows(res.body.data.data, key)).toEqual(Object.fromEntries(mine.map((id) => [id, X])));
+      });
+      it("a platform user not acting: each row names its own owner, and none for an unowned school's row", async () => {
+        const res = await listOf(NOT_ACTING, path).expect(200);
+        expect(ownerOfRows(res.body.data.data, key)).toEqual({
+          ...Object.fromEntries(mine.map((id) => [id, X])),
+          ...Object.fromEntries(theirs.map((id) => [id, Y])),
+          ...Object.fromEntries(unowned.map((id) => [id, null])),
+        });
+      });
+      it("a platform user not acting: an organisation filter narrows the list to that organisation's rows, and the total with it", async () => {
+        const res = await listOf(NOT_ACTING, path, [{ key: "organisationid", value: Y }]).expect(200);
+        expect(idsOf(res.body.data.data, key)).toEqual(sorted(...theirs));
+        expect(res.body.data.total).toBe(theirs.length);
+        expect(idsOf((await listOf(NOT_ACTING, path, [{ key: "organisationid", value: X }]).expect(200)).body.data.data, key)).toEqual(sorted(...mine));
+      });
+      it("a platform user not acting: an organisation that does not exist leaves nothing", async () => {
+        const res = await listOf(NOT_ACTING, path, [{ key: "organisationid", value: MISSING }]).expect(200);
+        expect(res.body.data.data).toEqual([]);
+      });
+      it.each(IN_X)("%s: the filter can only narrow the list, never widen it (another organisation's id leaves nothing)", async (who) => {
+        expect(idsOf((await listOf(who, path, [{ key: "organisationid", value: Y }]).expect(200)).body.data.data, key)).toEqual([]);
+        expect(idsOf((await listOf(who, path, [{ key: "organisationid", value: X }]).expect(200)).body.data.data, key)).toEqual(sorted(...mine));
+      });
+    });
+  });
+
 });

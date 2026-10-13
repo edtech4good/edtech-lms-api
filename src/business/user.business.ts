@@ -33,6 +33,7 @@ import { RolePermissionBusiness } from "./role-permission.business";
 import { andOwned, findOwned, scopeOf } from "./org-scope";
 import { organisationAfterChange, organisationForNewAccount } from "./staff-organisation";
 import { organisations } from "src/models/data-models/organisations";
+import { andOwnerColumn, extractOrganisationFilter } from "./row-owner";
 
 export class UserBusiness {
 
@@ -291,7 +292,8 @@ export class UserBusiness {
     // The caller's scope is ANDed with everything else, the filter included, so
     // nothing in the request can widen it: an organisation's caller lists only
     // its own staff, and counts only those.
-    const scopedwhere = andOwned({ ...buildWhere<lmsusersAttributes>(paging, where) }, org);
+    const { organisationid, rest } = extractOrganisationFilter(paging.filter);
+    const scopedwhere = andOwnerColumn(andOwned({ ...buildWhere<lmsusersAttributes>({ ...paging, filter: rest }, where) }, org), organisationid);
 
     const users = await lmsusers.findAndCountAll(
       {

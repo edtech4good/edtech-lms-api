@@ -95,7 +95,7 @@ const showalluser: RequestValidator = {
     filter: joi
       .array()
       .items({
-        key: joi.string().valid("lmsusername").required(),
+        key: joi.string().valid("lmsusername", "organisationid").required(),
         value: joi.string().required(),
       })
       .max(5)
