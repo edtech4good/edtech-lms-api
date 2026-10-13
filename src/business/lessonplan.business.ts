@@ -68,6 +68,7 @@ export class LessonPlanBusiness {
           lessonname: data.lesson.lessonname,
           lessondescription: data.lesson.lessondescription,
           documentname: data.document.documentname,
+          documenttitle: data.document.documenttitle ?? null,
           documenttypeid: data.document.documenttypeid,
         }
       : null;
@@ -118,6 +119,7 @@ export class LessonPlanBusiness {
               lessonname: x.lesson.lessonname,
               lessondescription: x.lesson.lessondescription,
               documentname: x.document.documentname,
+              documenttitle: x.document.documenttitle ?? null,
               documenttypeid: x.document.documenttypeid,
             }
         )
