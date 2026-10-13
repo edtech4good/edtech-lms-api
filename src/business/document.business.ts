@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { uniq } from "lodash";
-import { Op, Order, WhereOptions } from "sequelize";
+import { col, fn, Op, Order, where as sqlWhere, WhereOptions } from "sequelize";
 import { IFilter, IPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
 import { buildWhere } from "src/services/util.service";
@@ -13,10 +13,17 @@ import { DocumentMetadata } from "./document-media";
 /** The filter values that name a title as well as a key: `documentname` matches either (the key of a new upload is a uuid). */
 const parts = (value: string): string[] => value.split(",").map((v) => v.trim());
 
+/** The escape character of a tag search: `%`, `_` and itself are written literally into the pattern. */
+export const TAG_ESCAPE = "!";
+/** A tag filter value as a pattern that finds it anywhere inside a tag, with every character in it taken literally. */
+export const tagPattern = (value: string): string => `%${value.replace(/[!%_]/g, "!$&")}%`;
+
 /**
  * The document list's filters. `documentname` matches the key or the title (every comma-separated part must match one of
  * them); `documenttypeid` is an exact match on one id or a comma-separated list of ids (a substring match would return
- * type 10 for type 1); every other filter keeps the shared substring behaviour.
+ * type 10 for type 1); `documenttags` is a JSON list of text, so each comma-separated part must be found inside one of
+ * its tags (a `LIKE` on a JSON column is compared against the JSON text, with its quotes, and never matches); every
+ * other filter keeps the shared substring behaviour.
  */
 export const documentFilterWhere = (filter: IFilter[] | undefined): { and: WhereOptions<documentsAttributes>[]; others: IFilter[] } => {
   const and: WhereOptions<documentsAttributes>[] = [];
@@ -25,6 +32,10 @@ export const documentFilterWhere = (filter: IFilter[] | undefined): { and: Where
     if (f.key === "documentname" && f.value) {
       for (const part of parts(f.value)) {
         and.push({ [Op.or]: [{ documentname: { [Op.like]: `%${part}%` } }, { documenttitle: { [Op.like]: `%${part}%` } }] });
+      }
+    } else if (f.key === "documenttags" && f.value) {
+      for (const part of parts(f.value)) {
+        and.push(sqlWhere(fn("JSON_SEARCH", col("documenttags"), "one", tagPattern(part), TAG_ESCAPE), { [Op.ne]: null }));
       }
     } else if (f.key === "documenttypeid" && f.value) {
       const ids = parts(f.value).map((v) => Number(v));

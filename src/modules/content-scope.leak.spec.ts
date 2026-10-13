@@ -2847,6 +2847,34 @@ describe("content is confined to the caller's organisation", () => {
       expect(idsOf((await list(who, [{ key: "documentname", value: "doc_tagx, ភ្នំ" }])).body.data.data, "documentid")).toEqual([TX.document]);
       expect(idsOf((await list(who, [{ key: "documentname", value: "doc_tagx, កម្ពុជា" }])).body.data.data, "documentid")).toEqual([]);
     });
+    it.each(IN_X)("%s: a documenttags filter finds a document by a tag or part of one, never one it lacks, and nothing of another organisation", async (who) => {
+      stored("documents", "documentid", TX.document).documenttags = ["demo", "ភ្នំពេញ"];
+      stored("documents", "documentid", TX.document2).documenttags = ["other"];
+      stored("documents", "documentid", TY.document).documenttags = ["demo", "ភ្នំពេញ"];
+      stored("documents", "documentid", TU.document).documenttags = ["demo"];
+      const found = async (value: string) => idsOf((await list(who, [{ key: "documenttags", value }])).body.data.data, "documentid");
+      expect(await found("demo")).toEqual([TX.document]);
+      expect(await found("dem")).toEqual([TX.document]);
+      expect(await found("ភ្នំ")).toEqual([TX.document]);
+      expect(await found("xyz")).toEqual([]);
+      expect(await found("other")).toEqual([TX.document2]);
+      // comma-separated parts must each be found in a tag
+      expect(await found("demo, ភ្នំ")).toEqual([TX.document]);
+      expect(await found("demo, other")).toEqual([]);
+    });
+    it.each(IN_X)("%s: a documenttags filter takes %, _, ! and a quote literally", async (who) => {
+      stored("documents", "documentid", TX.document).documenttags = ['50%_off!', 'say "hi"'];
+      stored("documents", "documentid", TX.document2).documenttags = ["500xoffx", "say hi"];
+      const found = async (value: string) => idsOf((await list(who, [{ key: "documenttags", value }])).body.data.data, "documentid");
+      expect(await found("50%")).toEqual([TX.document]);
+      expect(await found("%")).toEqual([TX.document]);
+      expect(await found("_")).toEqual([TX.document]);
+      expect(await found("50%_off!")).toEqual([TX.document]);
+      expect(await found("0_o")).toEqual([]);
+      expect(await found("!")).toEqual([TX.document]);
+      expect(await found('"hi"')).toEqual([TX.document]);
+      expect(await found("x")).toEqual([TX.document2]);
+    });
     it.each(IN_X)("%s: the documenttypeid filter is an exact match: type 1 does not return type 10", async (who) => {
       stored("documents", "documentid", TX.document).documenttypeid = 10;
       stored("documents", "documentid", TX.document2).documenttypeid = 1;

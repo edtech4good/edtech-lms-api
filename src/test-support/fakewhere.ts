@@ -6,7 +6,9 @@ import { Op } from "sequelize";
  * `Op.or` lists; `Op.in`, `Op.ne`, `Op.not`, `Op.is`, `Op.like` with `%`; a key `$alias.column$`
  * read from an included row held under `alias`; the school-name narrowing
  * `where(fn("TRIM", col(c)), text)`, compared without regard to case as MySQL's default
- * collation does), so specs can replace a model with an in-memory table and still see the
+ * collation does; the tag search `where(fn("JSON_SEARCH", col(c), "one", pattern, escape), { [Op.ne]: null })`
+ * on a column holding a list of text, read as MySQL reads it: the pattern is a `LIKE` pattern with the escape character,
+ * compared without regard to case), so specs can replace a model with an in-memory table and still see the
  * caller's organisation limit applied.
  */
 type Row = Record<string, unknown>;
@@ -67,6 +69,26 @@ const isTrimWhere = (where: unknown): where is { attribute: { fn: string; args: 
   (where as { constructor: { name: string } }).constructor.name === "Where" &&
   (where as { attribute?: { fn?: string } }).attribute?.fn === "TRIM";
 
+// `where(fn("JSON_SEARCH", col(c), "one", pattern, escape), { [Op.ne]: null })`: is the pattern found in one of the column's texts?
+const isTagSearch = (where: unknown): where is { attribute: { fn: string; args: [{ col: string }, string, string, string?] }; logic: object } =>
+  typeof where === "object" &&
+  where !== null &&
+  (where as { constructor: { name: string } }).constructor.name === "Where" &&
+  (where as { attribute?: { fn?: string } }).attribute?.fn === "JSON_SEARCH";
+
+// a `LIKE` pattern as a regular expression: `%` is any run, `_` any one character, the escape character takes the next one literally
+const likeRegExp = (pattern: string, escape: string): RegExp => {
+  let source = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === escape && i + 1 < pattern.length) source += pattern[++i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    else if (c === "%") source += "[\\s\\S]*";
+    else if (c === "_") source += "[\\s\\S]";
+    else source += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp("^" + source + "$", "iu");
+};
+
 // a joined row holds what its include selected, and the whole stored row behind it (`__row`, not enumerable)
 const column = (from: unknown, part: string): unknown => {
   if (from === null || typeof from !== "object") return undefined;
@@ -89,6 +111,16 @@ export const rowMatches = (row: Row, where: unknown, ignoreCase: ReadonlyArray<s
   if (where === undefined || where === null) return true;
   if (isTrimWhere(where)) {
     return String(row[where.attribute.args[0].col] ?? "").trim().toLowerCase() === String(where.logic).toLowerCase();
+  }
+  if (isTagSearch(where)) {
+    const [target, mode, pattern, escape] = where.attribute.args;
+    const logic = where.logic as Record<symbol, unknown>;
+    if (mode !== "one" || logic[Op.ne] !== null || Object.getOwnPropertySymbols(logic).length !== 1) {
+      throw new Error("fakewhere: only JSON_SEARCH(.., 'one', ..) IS NOT NULL is supported");
+    }
+    const texts = row[target.col];
+    const re = likeRegExp(pattern, escape ?? "\\");
+    return Array.isArray(texts) && texts.some((t) => typeof t === "string" && re.test(t));
   }
   const clause = where as Record<string | symbol, unknown>;
   for (const key of Reflect.ownKeys(clause)) {
