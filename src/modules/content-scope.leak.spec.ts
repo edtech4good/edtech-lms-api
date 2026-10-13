@@ -3574,6 +3574,17 @@ describe("content is confined to the caller's organisation", () => {
     ];
     const ownerOfRows = (rows: Row[], key: string) => Object.fromEntries(rows.map((r) => [r[key] as string, r.organisationid]));
     const listOf = (who: Who, path: string, filter: object[] = []) => send(who, "post", path, { pageindex: 1, pagesize: 50, filter });
+    /** What an organisation filter may not be: one organisation id, nothing else. A refusal, never "no filter". */
+    const NOT_ONE_ID: Array<[string, unknown]> = [
+      ["blank", "   "],
+      ["empty", ""],
+      ["a list holding an id", [Y]],
+      ["an empty list", []],
+      ["an object", {}],
+      ["a list holding an object", [{}]],
+      ["a number", 5],
+      ["text that is not an id", "not-an-organisation-id"],
+    ];
 
     describe.each(LISTS)("$name", ({ path, key, owned }) => {
       it.each(IN_X)("%s: every row names X as its owner", async (who) => {
@@ -3597,6 +3608,19 @@ describe("content is confined to the caller's organisation", () => {
         expect(res.body.data.total).toBe(owned(TY).length);
         expect(idsOf((await listOf(NOT_ACTING, path, [{ key: "organisationid", value: X }])).body.data.data, key)).toEqual(sorted(...owned(TX)));
       });
+      it.each(NOT_ONE_ID)("an organisation filter that is %s is refused (400), for the platform too, and lists nothing", async (what, value) => {
+        // (The feedback list's request rule is switched off on main, so only the business class's strictness applies to it:
+        // text that is a well-formed string but no organisation lists nothing there.)
+        if (path === "/feedback" && what === "text that is not an id") {
+          expect((await listOf(NOT_ACTING, path, [{ key: "organisationid", value }])).body.data.data).toEqual([]);
+          return;
+        }
+        for (const who of [NOT_ACTING, ...IN_X]) {
+          const res = await listOf(who, path, [{ key: "organisationid", value }]);
+          expect(res.status).toBe(400);
+          expect(res.body.data).toBe(false);
+        }
+      });
       it("a platform user not acting: an organisation that does not exist leaves nothing", async () => {
         const res = await listOf(NOT_ACTING, path, [{ key: "organisationid", value: MISSING }]);
         expect(res.status).toBe(200);
@@ -3605,6 +3629,21 @@ describe("content is confined to the caller's organisation", () => {
       it.each(IN_X)("%s: the filter can only narrow the list, never widen it (another organisation's id leaves nothing)", async (who) => {
         expect(idsOf((await listOf(who, path, [{ key: "organisationid", value: Y }])).body.data.data, key)).toEqual([]);
         expect(idsOf((await listOf(who, path, [{ key: "organisationid", value: X }])).body.data.data, key)).toEqual(sorted(...owned(TX)));
+      });
+    });
+
+    // Lessons carry their owner but have no organisation filter: the admin narrows its whole lesson list itself.
+    describe("POST /lesson", () => {
+      it.each(IN_X)("%s: every lesson names X as its owner", async (who) => {
+        const res = await listOf(who, "/lesson");
+        expect(res.status).toBe(200);
+        expect(ownerOfRows(res.body.data.data, "lessonid")).toEqual({ [TX.lesson]: X, [TX.lesson2]: X });
+      });
+      it("a platform user not acting: each lesson names the owner of its curriculum (none for an unowned one)", async () => {
+        const res = await listOf(NOT_ACTING, "/lesson");
+        expect(ownerOfRows(res.body.data.data, "lessonid")).toEqual({
+          [TX.lesson]: X, [TX.lesson2]: X, [TY.lesson]: Y, [TY.lesson2]: Y, [TU.lesson]: null, [TU.lesson2]: null,
+        });
       });
     });
 

@@ -286,9 +286,16 @@ describe("staff administration is scoped to the caller's organisation", () => {
       const onlyY = await api.list(callers.platform, { filter: [{ key: "organisationid", value: Y }] }).expect(200);
       expect(idsOf(onlyY)).toEqual([ID.y1, ID.y2].sort());
       expect(onlyY.body.data.total).toBe(2);
-      const none = await api.list(callers.platform, { filter: [{ key: "organisationid", value: "no-such-organisation" }] }).expect(200);
+      const none = await api.list(callers.platform, { filter: [{ key: "organisationid", value: "00000000-0000-4000-8000-000000000999" }] }).expect(200);
       expect(idsOf(none)).toEqual([]);
     });
+
+    it.each([["blank", "   "], ["empty", ""], ["a list holding an id", [Y]], ["an object", {}], ["a number", 5], ["text that is not an id", "nope"]])(
+      "an organisation filter that is %s is refused (400), for the platform too",
+      async (_what, value) => {
+        await api.list(callers.platform, { filter: [{ key: "organisationid", value }] }).expect(400);
+      },
+    );
 
     it.each(IN_X)("%s: the organisation filter can only narrow the list (another organisation's id leaves nothing)", async (who) => {
       expect(idsOf(await api.list(callers[who], { filter: [{ key: "organisationid", value: Y }] }).expect(200))).toEqual([]);

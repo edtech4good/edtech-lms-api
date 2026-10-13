@@ -2,6 +2,7 @@ import joi, { SchemaMap } from "joi";
 import { IPaging } from "src/models/IPaging";
 import { emptyString } from "src/validators/custom.validator";
 import { RequestValidator } from "../../models/RequestValidator";
+import { filterValue } from "src/validators/organisation-filter";
 
 const createcountry: RequestValidator = {
   body: joi.object().keys({
@@ -50,7 +51,9 @@ const showallfeedback: RequestValidator = {
       .array()
       .items({
         key: joi.string().valid("schoolname", "schoolid", "organisationid").required(),
-        value: joi.string().required(),
+        value: filterValue(
+          joi.string().required()
+        ),
       })
       .max(5)
       .message("Invalid filter"),

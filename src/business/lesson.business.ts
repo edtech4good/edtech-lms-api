@@ -21,6 +21,7 @@ import { LessonQuizBusiness } from "./lessonquiz.business";
 import { LevelBusiness } from "./level.business";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedLesson } from "./content-scope";
+import { ownersOfLevels } from "./row-owner";
 
 /**
  * Built with the caller's context, every read and write here is limited to the lessons in scope (a lesson of another
@@ -132,11 +133,13 @@ export class LessonBusiness {
         },
       ],
     });
+    const owners = await ownersOfLevels(data.rows.map((x) => x.levelid));
     return {
       count: data.count,
       rows: data.rows.map(
         (x) =>
           <LessonAllBase>{
+            organisationid: owners.get(x.levelid) ?? null,
             levelid: x.levelid,
             lessondescription: x.lessondescription,
             isdeleted: x.isdeleted,

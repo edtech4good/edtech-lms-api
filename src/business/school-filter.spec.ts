@@ -22,6 +22,21 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
+describe("extractSchoolFilters: an organisation filter", () => {
+  it.each([["blank", "   "], ["empty", ""], ["a list", ["x"]], ["an object", {}], ["a number", 5], ["missing", undefined]])(
+    "that is %s is refused, never read as no filter (a platform caller would get every row)",
+    async (_what, value) => {
+      await expect(extractSchoolFilters([{ key: "organisationid", value }])).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    },
+  );
+  it("names the schools of that organisation, among the caller's", async () => {
+    (schools.findAll as jest.Mock).mockResolvedValue([{ schoolid: "id-9" }]);
+    const out = await extractSchoolFilters([{ key: "organisationid", value: " org-1 " }, { key: "city", value: "x" }]);
+    expect(out).toEqual({ rest: [{ key: "city", value: "x" }], schoolids: ["id-9"] });
+    expect((schools.findAll as jest.Mock).mock.calls[0][0].where[Op.and][0]).toEqual({ organisationid: "org-1" });
+  });
+});
+
 describe("extractSchoolFilters", () => {
   it("passes every filter that is not about a school through untouched, and adds no school restriction", async () => {
     const filters = [{ key: "city", value: "x" }, { key: "state", value: "y" }];

@@ -1573,6 +1573,17 @@ describe("people and schools are confined to the caller's organisation", () => {
     const NOT_ACTING = "a platform user not acting" as Who;
     const ownerOfRows = (rows: Array<Record<string, unknown>>, key: string) => Object.fromEntries(rows.map((r) => [r[key] as string, r.organisationid]));
     const listOf = (who: Who, path: string, filter: object[] = []) => send(who, "post", path, { pageindex: 1, pagesize: 50, filter });
+    /** What an organisation filter may not be: one organisation id, nothing else. A refusal, never "no filter". */
+    const NOT_ONE_ID: Array<[string, unknown]> = [
+      ["blank", "   "],
+      ["empty", ""],
+      ["a list holding an id", [Y]],
+      ["an empty list", []],
+      ["an object", {}],
+      ["a list holding an object", [{}]],
+      ["a number", 5],
+      ["text that is not an id", "not-an-organisation-id"],
+    ];
 
     describe.each(LISTS)("$name", ({ path, key, mine, theirs, unowned }) => {
       it.each(IN_X)("%s: every row names X as its owner", async (who) => {
@@ -1592,6 +1603,13 @@ describe("people and schools are confined to the caller's organisation", () => {
         expect(idsOf(res.body.data.data, key)).toEqual(sorted(...theirs));
         expect(res.body.data.total).toBe(theirs.length);
         expect(idsOf((await listOf(NOT_ACTING, path, [{ key: "organisationid", value: X }]).expect(200)).body.data.data, key)).toEqual(sorted(...mine));
+      });
+      it.each(NOT_ONE_ID)("an organisation filter that is %s is refused (400), for the platform too, and lists nothing", async (_what, value) => {
+        for (const who of [NOT_ACTING, ...IN_X]) {
+          const res = await listOf(who, path, [{ key: "organisationid", value }]);
+          expect(res.status).toBe(400);
+          expect(res.body.data).toBe(false);
+        }
       });
       it("a platform user not acting: an organisation that does not exist leaves nothing", async () => {
         const res = await listOf(NOT_ACTING, path, [{ key: "organisationid", value: MISSING }]).expect(200);

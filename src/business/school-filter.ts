@@ -1,5 +1,6 @@
 import { Op, WhereOptions } from "sequelize";
 import { schools } from "src/models/data-models/school";
+import { organisationIdOf } from "./row-owner";
 import { resolveSchoolRef } from "./school-identity";
 
 /**
@@ -59,9 +60,9 @@ export async function extractSchoolFilters<T extends SchoolFilterEntry>(
     } else if (filter.key === "schoolid" && filter.value) {
       const school = await resolveSchoolRef({ schoolid: Array.isArray(filter.value) ? filter.value[0] : filter.value }, scopeWhere);
       narrow(school ? [school.schoolid] : []);
-    } else if (filter.key === "organisationid" && filter.value) {
+    } else if (filter.key === "organisationid") {
       // The rows of one organisation: those of its schools (among the caller's, so it can only narrow the list).
-      const organisationid = String(Array.isArray(filter.value) ? filter.value[0] : filter.value).trim();
+      const organisationid = organisationIdOf(filter.value);
       const owned = await schools.findAll({
         attributes: ["schoolid"],
         where: { [Op.and]: [{ organisationid }, ...(scopeWhere ? [scopeWhere] : [])] },

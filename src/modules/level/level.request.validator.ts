@@ -2,6 +2,7 @@ import joi, { SchemaMap } from 'joi';
 import { IPaging } from 'src/models/IPaging';
 import { emptyString } from 'src/validators/custom.validator';
 import { RequestValidator } from '../../models/RequestValidator';
+import { filterValue } from "src/validators/organisation-filter";
 
 export const createlevel: RequestValidator = ({
   body: joi.object().keys({
@@ -46,7 +47,9 @@ export const showalllevel: RequestValidator = ({
     pagesize: joi.number().max(200).min(0).message("Invalid page size"),
     filter: joi.array().items({
       "key": joi.string().valid("levelname", "leveldescription", "organisationid").required(),
-      "value": joi.string().required(),
+      "value": filterValue(
+        joi.string().required()
+      ),
     }).max(5).message("Invalid filter")
   }),
 });

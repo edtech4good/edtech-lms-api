@@ -1,7 +1,10 @@
 import { Op, WhereOptions } from "sequelize";
 import { OrgContext } from "src/decorators/org.decorator";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { curriculums } from "src/models/data-models/curriculums";
 import { grades } from "src/models/data-models/grades";
+import { levels } from "src/models/data-models/levels";
 import { schools } from "src/models/data-models/school";
 import { scopeWhere, ContentKind } from "./content-scope";
 
@@ -36,6 +39,14 @@ export const ownersOfGrades = async (ids: Array<string | null | undefined>): Pro
   return new Map(rows.map((r) => [r.gradeid, byCurriculum.get(r.curriculumid) ?? null]));
 };
 
+/** The owner of each level named (its grade's). */
+export const ownersOfLevels = async (ids: Array<string | null | undefined>): Promise<OwnerById> => {
+  const wanted = distinct(ids);
+  const rows = wanted.length === 0 ? [] : await levels.findAll({ attributes: ["levelid", "gradeid"], where: { levelid: { [Op.in]: wanted } } });
+  const byGrade = await ownersOfGrades(rows.map((r) => r.gradeid));
+  return new Map(rows.map((r) => [r.levelid, byGrade.get(r.gradeid) ?? null]));
+};
+
 /** The owner of each school named (its organisation). */
 export const ownersOfSchools = async (ids: Array<string | null | undefined>): Promise<OwnerById> => {
   const wanted = distinct(ids);
@@ -51,15 +62,24 @@ export interface OrganisationFilter<T> {
 
 export const ORGANISATION_FILTER_KEY = "organisationid";
 
+/**
+ * The one organisation id an organisation filter names. A value that is not a non-blank string (blank, a list, an object, a
+ * number) is refused, never read as "no filter": that would show a platform caller every row. (The list's request rule
+ * refuses it first; this keeps a list whose rule is not applied strict too.)
+ */
+export const organisationIdOf = (value: unknown): string => {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+  throw new ApiError(ErrorCode.INVALID_INPUT, "An organisation filter is one organisation id.");
+};
+
 export const extractOrganisationFilter = <T extends { key?: string; value?: unknown }>(filter: T[] | undefined): OrganisationFilter<T> => {
   const rest: T[] = [];
   let organisationid: string | undefined;
   for (const f of filter ?? []) {
     if (f.key === ORGANISATION_FILTER_KEY) {
-      const raw = Array.isArray(f.value) ? f.value[0] : f.value;
-      if (typeof raw === "string" && raw.trim().length > 0) {
-        organisationid = raw.trim();
-      }
+      organisationid = organisationIdOf(f.value);
     } else {
       rest.push(f);
     }

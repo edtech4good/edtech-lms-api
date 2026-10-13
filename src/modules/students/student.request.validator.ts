@@ -2,6 +2,7 @@ import joi, { SchemaMap } from "joi";
 import { IPaging } from "src/models/IPaging";
 import { RequestValidator } from "../../models/RequestValidator";
 import { dateString } from "./../../validators/custom.validator";
+import { filterValue } from "src/validators/organisation-filter";
 import {
   StudentEditedImportBody,
   StudentImportBody,
@@ -49,7 +50,9 @@ export const showallstudents: RequestValidator = {
             "curriculum.curriculumname"
           )
           .required(),
-        value: joi.string().required(),
+        value: filterValue(
+          joi.string().required()
+        ),
       })
       .max(6)
       .message("Invalid filter"),
