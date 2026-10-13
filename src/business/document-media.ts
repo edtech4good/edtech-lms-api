@@ -1,5 +1,6 @@
 import AdmZip from "adm-zip";
 import { TextDecoder } from "util";
+import { ONE_FILE_MESSAGE } from "src/constants/upload-limits";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { FileType } from "src/models/enums/filetype.enum.";
@@ -63,6 +64,8 @@ const OOXML_MAIN = {
 } as const;
 
 export interface DocumentFileRule {
+  /** Set on an extension that is another spelling of a listed one (jpeg of jpg): accepted, but not named in the "supported" message. */
+  aliasOf?: string;
   documenttypeid: FileType;
   /** Set on the stored object; chosen by the extension, never by the browser. */
   contentType: string;
@@ -71,7 +74,7 @@ export interface DocumentFileRule {
   container?: { kind: "ooxml"; dir: string; type: string } | { kind: "odf"; mimetype: string };
 }
 
-/** extension (lower case) -> rule. An extension that is not a key here is refused. */
+/** extension (lower case) -> rule. An extension that is not a key here is refused. The order is the order the "supported" message lists them in. */
 export const DOCUMENT_FILE_RULES: Readonly<Record<string, DocumentFileRule>> = {
   mp4: { documenttypeid: FileType.VIDEO, contentType: "video/mp4", signature: (h) => startsWith(h, ascii("ftyp"), 4) },
   mp3: {
@@ -80,7 +83,7 @@ export const DOCUMENT_FILE_RULES: Readonly<Record<string, DocumentFileRule>> = {
     signature: (h) => startsWith(h, ascii("ID3")) || (h.length >= 2 && h[0] === 0xff && (h[1] & 0xe0) === 0xe0),
   },
   jpg: { documenttypeid: FileType.IMAGE, contentType: "image/jpeg", signature: (h) => startsWith(h, [0xff, 0xd8, 0xff]) },
-  jpeg: { documenttypeid: FileType.IMAGE, contentType: "image/jpeg", signature: (h) => startsWith(h, [0xff, 0xd8, 0xff]) },
+  jpeg: { aliasOf: "jpg", documenttypeid: FileType.IMAGE, contentType: "image/jpeg", signature: (h) => startsWith(h, [0xff, 0xd8, 0xff]) },
   png: { documenttypeid: FileType.IMAGE, contentType: "image/png", signature: (h) => startsWith(h, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) },
   gif: { documenttypeid: FileType.IMAGE, contentType: "image/gif", signature: (h) => startsWith(h, ascii("GIF87a")) || startsWith(h, ascii("GIF89a")) },
   pdf: { documenttypeid: FileType.PDF, contentType: "application/pdf", signature: (h) => startsWith(h, ascii("%PDF-")) },
@@ -90,29 +93,29 @@ export const DOCUMENT_FILE_RULES: Readonly<Record<string, DocumentFileRule>> = {
     signature: isZip,
     container: { kind: "ooxml", ...OOXML_MAIN.pptx },
   },
-  odp: {
-    documenttypeid: FileType.SLIDES,
-    contentType: "application/vnd.oasis.opendocument.presentation",
-    signature: isZip,
-    container: { kind: "odf", mimetype: "application/vnd.oasis.opendocument.presentation" },
-  },
   docx: {
     documenttypeid: FileType.DOCUMENT,
     contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     signature: isZip,
     container: { kind: "ooxml", ...OOXML_MAIN.docx },
   },
-  odt: {
-    documenttypeid: FileType.DOCUMENT,
-    contentType: "application/vnd.oasis.opendocument.text",
-    signature: isZip,
-    container: { kind: "odf", mimetype: "application/vnd.oasis.opendocument.text" },
-  },
   xlsx: {
     documenttypeid: FileType.SPREADSHEET,
     contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     signature: isZip,
     container: { kind: "ooxml", ...OOXML_MAIN.xlsx },
+  },
+  odp: {
+    documenttypeid: FileType.SLIDES,
+    contentType: "application/vnd.oasis.opendocument.presentation",
+    signature: isZip,
+    container: { kind: "odf", mimetype: "application/vnd.oasis.opendocument.presentation" },
+  },
+  odt: {
+    documenttypeid: FileType.DOCUMENT,
+    contentType: "application/vnd.oasis.opendocument.text",
+    signature: isZip,
+    container: { kind: "odf", mimetype: "application/vnd.oasis.opendocument.text" },
   },
   csv: { documenttypeid: FileType.SPREADSHEET, contentType: "text/csv", signature: isText },
 };
@@ -126,9 +129,28 @@ export const MAX_CONTENT_TYPES_ENTRY_BYTES = 256 * 1024;
 export const MAX_MIMETYPE_ENTRY_BYTES = 1024;
 
 const rejected = (message: string): ApiError => new ApiError(ErrorCode.FILE_REJECTED, message);
-const NOT_THE_KIND = "That file isn't the kind its name says it is.";
 
-/** The one entry of a zip, read only when its declared size is within `bound`; null for anything wrong with it. */
+/**
+ * The refusals of a document upload, each told in terms of what to do. The extension in a message is the lower-case
+ * extension of the whitelist rule the name matched (never the name itself); a name whose extension is not on the list is
+ * given the "not supported" message, which names the whitelist and nothing of the file.
+ */
+const supportedExtensions = (): string[] => Object.keys(DOCUMENT_FILE_RULES).filter((e) => !DOCUMENT_FILE_RULES[e].aliasOf);
+
+/** The extension is missing or not on the list. The list is built from the rule table. */
+export const unsupportedTypeMessage = (): string => {
+  const list = supportedExtensions();
+  return `This file type isn't supported. You can upload ${list.slice(0, -1).join(", ")} or ${list[list.length - 1]}.`;
+};
+/** The first bytes, or the entry inside a container, do not agree with the (whitelisted) extension. */
+export const notValidMessage = (extension: string): string =>
+  `This file isn't a valid .${extension}. Export it again as a real ${extension.toUpperCase()} and try again.`;
+/** A container that cannot be read, or is larger inside than a document needs. */
+export const damagedArchiveMessage = (extension: string): string => `This .${extension} is damaged or unusually large inside. Re-save it and try again.`;
+export const NAME_REQUIRED_MESSAGE = "The file needs a name.";
+export { ONE_FILE_MESSAGE };
+
+/** The one entry of a zip, read only when its declared size is within `bound`; null for anything wrong with it (absent, a directory, over the bound, unreadable). */
 const readEntry = (zip: AdmZip, name: string, bound: number): Buffer | null => {
   const entry = zip.getEntry(name);
   if (!entry || entry.isDirectory) {
@@ -210,24 +232,37 @@ export const declaredZipEntries = (buffer: Buffer): number | null => {
   return Math.max(buffer.readUInt16LE(end + 8), buffer.readUInt16LE(end + 10));
 };
 
-/** True when the zip-based file's own entry agrees with its extension. Never throws. */
-const containerAgrees = (buffer: Buffer, container: NonNullable<DocumentFileRule["container"]>): boolean => {
+/**
+ * How a zip-based file stands against its extension. Never throws.
+ * "damaged": the archive cannot be read as a document container (no end record, zip64, too many entries, a central
+ * directory the library cannot open, the checked entry absent, over its bound or unreadable).
+ * "mismatch": the entry was read and says it is another kind of file.
+ */
+export type ContainerState = "agrees" | "mismatch" | "damaged";
+
+const containerState = (buffer: Buffer, container: NonNullable<DocumentFileRule["container"]>): ContainerState => {
   const declared = declaredZipEntries(buffer);
   if (declared === null || declared > MAX_ZIP_ENTRIES) {
-    return false;
+    return "damaged";
   }
   let zip: AdmZip;
   try {
     zip = new AdmZip(buffer);
   } catch {
-    return false;
+    return "damaged";
   }
   if (container.kind === "odf") {
     const data = readEntry(zip, "mimetype", MAX_MIMETYPE_ENTRY_BYTES);
-    return data !== null && data.toString("utf8") === container.mimetype;
+    if (data === null) {
+      return "damaged";
+    }
+    return data.toString("utf8") === container.mimetype ? "agrees" : "mismatch";
   }
   const data = readEntry(zip, "[Content_Types].xml", MAX_CONTENT_TYPES_ENTRY_BYTES);
-  return data !== null && ooxmlManifestAgrees(data.toString("utf8"), container.dir, container.type);
+  if (data === null) {
+    return "damaged";
+  }
+  return ooxmlManifestAgrees(data.toString("utf8"), container.dir, container.type) ? "agrees" : "mismatch";
 };
 
 export interface AcceptedDocumentFile {
@@ -260,22 +295,29 @@ export const extensionOf = (originalname: string): string => {
 
 /**
  * The checks in the order of the design: the extension is on the list; the first bytes agree with it; for a zip-based
- * format the entry inside agrees with it. Refused with FILE_REJECTED (400) and a message that names nothing of the file.
+ * format the entry inside agrees with it. Refused with FILE_REJECTED (400) and a message that says what to do and names
+ * nothing of the file (the extension in it is the whitelist's own, lower case).
  */
 export const checkDocumentFile = (originalname: string, buffer: Buffer): AcceptedDocumentFile => {
-  const extension = extensionOf(originalname);
-  if (extension.length === 0) {
-    throw rejected("That file name isn't allowed.");
+  if (originalname.trim().length === 0) {
+    throw rejected(NAME_REQUIRED_MESSAGE);
   }
+  const extension = extensionOf(originalname);
   const rule = Object.prototype.hasOwnProperty.call(DOCUMENT_FILE_RULES, extension) ? DOCUMENT_FILE_RULES[extension] : undefined;
   if (!rule) {
-    throw rejected("That file type isn't supported.");
+    throw rejected(unsupportedTypeMessage());
   }
   if (!rule.signature(buffer.subarray(0, 16), buffer)) {
-    throw rejected(NOT_THE_KIND);
+    throw rejected(notValidMessage(extension));
   }
-  if (rule.container && !containerAgrees(buffer, rule.container)) {
-    throw rejected(NOT_THE_KIND);
+  if (rule.container) {
+    const state = containerState(buffer, rule.container);
+    if (state === "damaged") {
+      throw rejected(damagedArchiveMessage(extension));
+    }
+    if (state === "mismatch") {
+      throw rejected(notValidMessage(extension));
+    }
   }
   return { extension, documenttypeid: rule.documenttypeid, contentType: rule.contentType };
 };

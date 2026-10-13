@@ -42,10 +42,12 @@ import {
   DocumentMetadataInput,
   documentMetadata,
   extensionOf,
+  ONE_FILE_MESSAGE,
   storageKey,
   utf8FileName,
   titleError,
   UNSPECIFIED_LICENCE,
+  unsupportedTypeMessage,
   uploadSizeLog,
 } from "src/business/document-media";
 import { documenttagOperations, showalldocument } from ".";
@@ -171,10 +173,10 @@ export class DocumentController {
     // The owner is the organisation the caller acts in; refused before anything is uploaded.
     const organisationid = ownerForNewContent(org);
     if (!files || files.length <= 0) {
-      throw new ApiError(ErrorCode.FILE_REJECTED, "That file type isn't supported.");
+      throw new ApiError(ErrorCode.FILE_REJECTED, unsupportedTypeMessage());
     }
     if (files.length != 1) {
-      throw new ApiError(ErrorCode.FILE_REJECTED, "Upload one file at a time.");
+      throw new ApiError(ErrorCode.FILE_REJECTED, ONE_FILE_MESSAGE);
     }
     const file = files[0];
     // The extension decides the type; the first bytes (and, for the zip-based formats, one entry inside) must agree.

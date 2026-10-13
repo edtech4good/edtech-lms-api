@@ -31,3 +31,12 @@ export const UploadLimits = {
     files: 1,
   },
 } as const;
+
+/** The route whose size limit is `UploadLimits.DOCUMENT_UPLOAD` (a spec pins it to the controller's own route). */
+export const DOCUMENT_UPLOAD_ROUTE = '/document/upload';
+
+/** Told for a file over the document limit; the number comes from the limit, so the two cannot drift. */
+export const documentTooLargeMessage = (): string => `This file is larger than ${UploadLimits.DOCUMENT_UPLOAD.fileSize / (1024 * 1024)} MB.`;
+
+/** Told for a second file; every upload route here takes exactly one. */
+export const ONE_FILE_MESSAGE = 'Upload one file at a time.';

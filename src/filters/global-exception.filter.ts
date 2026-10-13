@@ -25,6 +25,7 @@ import {
   ValidationError as SequelizeValidationError,
 } from 'sequelize';
 import { Config, Logger } from '../config';
+import { DOCUMENT_UPLOAD_ROUTE, documentTooLargeMessage, ONE_FILE_MESSAGE } from '../constants/upload-limits';
 import { ApiError } from '../models/ApiError';
 import { CustomForbiddenException } from '../models/CustomForbiddenException';
 import { ErrorCode } from '../models/enums/errorcode.enum';
@@ -95,7 +96,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     const reference = generateReference();
-    const mapped = this.map(exception);
+    const mapped = this.map(exception, request);
 
     const body: IErrorResponse = {
       error: true,
@@ -129,7 +130,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
    * with the catalogue's generic message, because its message may quote
    * user input.
    */
-  private map(exception: unknown): MappedError {
+  private map(exception: unknown, request?: any): MappedError {
     const e = exception as any;
 
     if (exception instanceof ApiError) {
@@ -173,14 +174,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // PayloadTooLargeException and the other limits into
     // BadRequestException(message) - those are handled here too.
     if (e?.name === 'MulterError') {
-      const status = e.code === 'LIMIT_FILE_SIZE' ? HttpStatus.PAYLOAD_TOO_LARGE : HttpStatus.BAD_REQUEST;
-      return this.fromCatalogue(ErrorCode.FILE_REJECTED, { status, logDetail: 'classonly' });
+      if (e.code === 'LIMIT_FILE_SIZE') {
+        return this.tooLarge(request);
+      }
+      if (e.code === 'LIMIT_FILE_COUNT') {
+        return this.fromCatalogue(ErrorCode.FILE_REJECTED, { message: ONE_FILE_MESSAGE, status: HttpStatus.BAD_REQUEST, logDetail: 'classonly' });
+      }
+      return this.fromCatalogue(ErrorCode.FILE_REJECTED, { status: HttpStatus.BAD_REQUEST, logDetail: 'classonly' });
     }
     if (exception instanceof PayloadTooLargeException) {
-      return this.fromCatalogue(ErrorCode.FILE_REJECTED, { status: HttpStatus.PAYLOAD_TOO_LARGE, logDetail: 'classonly' });
+      return this.tooLarge(request);
     }
     if (exception instanceof HttpException && exception.getStatus() === 400 && MULTER_MESSAGES.has(exception.message)) {
-      return this.fromCatalogue(ErrorCode.FILE_REJECTED, { status: HttpStatus.BAD_REQUEST, logDetail: 'classonly' });
+      // Every upload route here takes exactly one file, so "Too many files" is always "send one".
+      const message = exception.message === 'Too many files' ? ONE_FILE_MESSAGE : undefined;
+      return this.fromCatalogue(ErrorCode.FILE_REJECTED, { message, status: HttpStatus.BAD_REQUEST, logDetail: 'classonly' });
     }
     // busboy (under multer) on a truncated/malformed multipart body: a plain
     // Error, which would otherwise be a 500.
@@ -254,6 +262,16 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     return this.fromCatalogue(ErrorCode.INTERNAL);
+  }
+
+  /**
+   * An upload over the multer size limit: 413. The document upload's own limit is told in its message (built from
+   * `UploadLimits`); the other upload routes have other limits and keep the catalogue's wording.
+   */
+  private tooLarge(request: any): MappedError {
+    const route = this.routeFor(request) ?? '';
+    const message = route.endsWith(DOCUMENT_UPLOAD_ROUTE) ? documentTooLargeMessage() : undefined;
+    return this.fromCatalogue(ErrorCode.FILE_REJECTED, { message, status: HttpStatus.PAYLOAD_TOO_LARGE, logDetail: 'classonly' });
   }
 
   private isBodyParserError(exception: unknown): boolean {
