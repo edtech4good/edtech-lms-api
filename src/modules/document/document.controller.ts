@@ -39,15 +39,16 @@ import { v4 as uuidv4 } from "uuid";
 import { ValidationException, ValidationFieldError } from "src/models/ValidationException";
 import {
   checkDocumentFile,
+  DOCUMENT_FILE_RULES,
   DocumentMetadataInput,
   documentMetadata,
   extensionOf,
+  NO_FILE_MESSAGE,
   ONE_FILE_MESSAGE,
   storageKey,
   utf8FileName,
   titleError,
   UNSPECIFIED_LICENCE,
-  unsupportedTypeMessage,
   uploadSizeLog,
 } from "src/business/document-media";
 import { documenttagOperations, showalldocument } from ".";
@@ -92,7 +93,11 @@ const uploadFields = (body: Record<string, unknown> | undefined, originalname: s
   } else if (title.text !== undefined) {
     input.documenttitle = title.text;
   } else {
-    const base = originalname.slice(0, originalname.length - (extensionOf(originalname).length + 1)).split(/[\\/]/).pop()?.trim() ?? "";
+    // the name is trimmed first; its extension is cut only when it is one of the whitelist's (the upload was checked already)
+    const name = originalname.trim();
+    const dot = name.lastIndexOf(".");
+    const whitelisted = dot >= 0 && Object.prototype.hasOwnProperty.call(DOCUMENT_FILE_RULES, extensionOf(name));
+    const base = (whitelisted ? name.slice(0, dot) : name).split(/[\\/]/).pop()?.trim() ?? "";
     if (base.length > 0) {
       // a file name that is not usable as a title is refused rather than cut: the person gives a title
       if (titleError(base)) {
@@ -173,7 +178,7 @@ export class DocumentController {
     // The owner is the organisation the caller acts in; refused before anything is uploaded.
     const organisationid = ownerForNewContent(org);
     if (!files || files.length <= 0) {
-      throw new ApiError(ErrorCode.FILE_REJECTED, unsupportedTypeMessage());
+      throw new ApiError(ErrorCode.FILE_REJECTED, NO_FILE_MESSAGE);
     }
     if (files.length != 1) {
       throw new ApiError(ErrorCode.FILE_REJECTED, ONE_FILE_MESSAGE);

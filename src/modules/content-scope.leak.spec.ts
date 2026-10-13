@@ -2622,6 +2622,11 @@ describe("content is confined to the caller's organisation", () => {
       expect(uploadS3).toHaveBeenCalledTimes(1);
       expect(uploadS3).toHaveBeenCalledWith(row.documentname, expect.any(Buffer), "image/png");
     });
+    it.each(IN_X)("%s: a file name with spaces around it gives the title without them and without the extension", async (who) => {
+      expect((await upload(who, "a.png ")).status).toBe(200);
+      expect((await upload(who, " lesson one.PNG")).status).toBe(200);
+      expect(db.createdIn("documents").map((r) => r.documenttitle)).toEqual(["a", "lesson one"]);
+    });
     it.each(IN_X)("%s: X and Y may upload the same file name: both succeed, with different keys that hold none of the name", async (who) => {
       const first = await upload(who, "doc_tagx.png");
       const second = await upload(who, "doc_tagx.png");
@@ -2709,7 +2714,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(uploadS3).not.toHaveBeenCalled();
       expect(db.created).toEqual([]);
     });
-    it.each(IN_X)("%s: two files, or no file, are refused (400) with a message that says what to send, nothing stored", async (who) => {
+    it.each(IN_X)("%s: two files, no file, or a name of only spaces are refused (400) with a message that says what to send, nothing stored", async (who) => {
       const two = await request(app.getHttpServer())
         .post("/document/upload")
         .set("Authorization", callers[who])
@@ -2717,16 +2722,19 @@ describe("content is confined to the caller's organisation", () => {
         .attach("file", pngBytes(), "a.png")
         .attach("file2", pngBytes(), "b.png");
       expect([two.status, two.body.code, two.body.errormessage]).toEqual([400, "FILE_REJECTED", "Upload one file at a time."]);
-      const none = await request(app.getHttpServer())
-        .post("/document/upload")
-        .set("Authorization", callers[who])
-        .set("Connection", "close")
-        .field("documenttitle", "no file here");
-      expect([none.status, none.body.code, none.body.errormessage]).toEqual([
-        400,
-        "FILE_REJECTED",
-        "This file type isn't supported. You can upload mp4, mp3, jpg, png, gif, pdf, pptx, docx, xlsx, odp, odt or csv.",
-      ]);
+      const post = () => request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close");
+      const noFile: Array<[string, request.Test]> = [
+        ["fields only", post().field("documenttitle", "no file here")],
+        ["an empty POST", post()],
+        ["a JSON body", post().send({ documenttitle: "no file here" })],
+        ["a file part with no file name", post().attach("file", pngBytes(), "")],
+      ];
+      for (const [, req] of noFile) {
+        const res = await req;
+        expect([res.status, res.body.code, res.body.errormessage]).toEqual([400, "FILE_REJECTED", "Choose a file to upload."]);
+      }
+      const unnamed = await upload(who, "  ", pngBytes());
+      expect([unnamed.status, unnamed.body.code, unnamed.body.errormessage]).toEqual([400, "FILE_REJECTED", "The file needs a name."]);
       expect(uploadS3).not.toHaveBeenCalled();
       expect(db.created).toEqual([]);
     });

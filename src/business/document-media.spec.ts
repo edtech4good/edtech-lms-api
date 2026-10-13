@@ -257,9 +257,24 @@ describe("inside the container: odp, odt", () => {
   it("a spreadsheet package named odt is refused (.ods is not on the list)", () => {
     expect(refusal("a.odt", odfBytes("ods")).message).toBe(NOT_VALID("odt"));
   });
-  it("an OOXML package named odp is refused, and an ODF package named pptx", () => {
-    expect(refusal("a.odp", ooxmlBytes("pptx")).message).toBe(DAMAGED("odp"));
-    expect(refusal("a.pptx", odfBytes("odp")).message).toBe(DAMAGED("pptx"));
+  it("an OOXML package named odp, and an ODF package named pptx, docx or xlsx, are another kind of file, not damaged ones", () => {
+    expect(refusal("a.odp", ooxmlBytes("pptx")).message).toBe(NOT_VALID("odp"));
+    expect(refusal("a.odt", ooxmlBytes("docx")).message).toBe(NOT_VALID("odt"));
+    expect(refusal("a.pptx", odfBytes("odp")).message).toBe(NOT_VALID("pptx"));
+    expect(refusal("a.docx", odfBytes("odt")).message).toBe(NOT_VALID("docx"));
+    expect(refusal("a.xlsx", odfBytes("ods")).message).toBe(NOT_VALID("xlsx"));
+  });
+  it("a zip with neither manifest, or with only an unrelated mimetype, stays damaged", () => {
+    const neither = new AdmZip();
+    neither.addFile("hello.txt", Buffer.from("hi"));
+    expect(refusal("a.pptx", neither.toBuffer()).message).toBe(DAMAGED("pptx"));
+    expect(refusal("a.odp", neither.toBuffer()).message).toBe(DAMAGED("odp"));
+    const plain = new AdmZip();
+    plain.addFile("mimetype", Buffer.from("text/plain"));
+    expect(refusal("a.pptx", plain.toBuffer()).message).toBe(DAMAGED("pptx"));
+    const directory = new AdmZip();
+    directory.addFile("[Content_Types].xml/", Buffer.alloc(0));
+    expect(refusal("a.odp", directory.toBuffer()).message).toBe(DAMAGED("odp"));
   });
   it("no mimetype entry, or one with text after the media type, is refused", () => {
     expect(refusal("a.odt", odfBytes("odt", { mimetype: null })).message).toBe(DAMAGED("odt"));

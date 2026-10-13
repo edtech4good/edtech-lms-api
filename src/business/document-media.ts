@@ -148,6 +148,8 @@ export const notValidMessage = (extension: string): string =>
 /** A container that cannot be read, or is larger inside than a document needs. */
 export const damagedArchiveMessage = (extension: string): string => `This .${extension} is damaged or unusually large inside. Re-save it and try again.`;
 export const NAME_REQUIRED_MESSAGE = "The file needs a name.";
+/** The request carried no file at all (only fields, an empty body, a JSON body, or a part with no file name). */
+export const NO_FILE_MESSAGE = "Choose a file to upload.";
 export { ONE_FILE_MESSAGE };
 
 /** The one entry of a zip, read only when its declared size is within `bound`; null for anything wrong with it (absent, a directory, over the bound, unreadable). */
@@ -235,10 +237,28 @@ export const declaredZipEntries = (buffer: Buffer): number | null => {
 /**
  * How a zip-based file stands against its extension. Never throws.
  * "damaged": the archive cannot be read as a document container (no end record, zip64, too many entries, a central
- * directory the library cannot open, the checked entry absent, over its bound or unreadable).
- * "mismatch": the entry was read and says it is another kind of file.
+ * directory the library cannot open, the checked entry absent (and no manifest of the other family either), over its bound
+ * or unreadable).
+ * "mismatch": the entry was read and says it is another kind of file, or the archive holds the other family's manifest.
  */
 export type ContainerState = "agrees" | "mismatch" | "damaged";
+
+/** The media types an ODF package's `mimetype` entry starts with. */
+const ODF_MEDIA_PREFIX = "application/vnd.oasis.opendocument.";
+
+/**
+ * A readable zip that holds the OTHER family's manifest than the extension's own entry: an ODF package under an Office Open XML name
+ * (a `mimetype` entry with an ODF media type), or an Office Open XML package under an ODF name (a `[Content_Types].xml` entry).
+ * It is a good file of another kind, not a damaged one.
+ */
+const isOtherFamily = (zip: AdmZip, container: NonNullable<DocumentFileRule["container"]>): boolean => {
+  if (container.kind === "odf") {
+    const other = zip.getEntry("[Content_Types].xml");
+    return !!other && !other.isDirectory;
+  }
+  const data = readEntry(zip, "mimetype", MAX_MIMETYPE_ENTRY_BYTES);
+  return data !== null && data.toString("utf8").startsWith(ODF_MEDIA_PREFIX);
+};
 
 const containerState = (buffer: Buffer, container: NonNullable<DocumentFileRule["container"]>): ContainerState => {
   const declared = declaredZipEntries(buffer);
@@ -254,13 +274,13 @@ const containerState = (buffer: Buffer, container: NonNullable<DocumentFileRule[
   if (container.kind === "odf") {
     const data = readEntry(zip, "mimetype", MAX_MIMETYPE_ENTRY_BYTES);
     if (data === null) {
-      return "damaged";
+      return !zip.getEntry("mimetype") && isOtherFamily(zip, container) ? "mismatch" : "damaged";
     }
     return data.toString("utf8") === container.mimetype ? "agrees" : "mismatch";
   }
   const data = readEntry(zip, "[Content_Types].xml", MAX_CONTENT_TYPES_ENTRY_BYTES);
   if (data === null) {
-    return "damaged";
+    return !zip.getEntry("[Content_Types].xml") && isOtherFamily(zip, container) ? "mismatch" : "damaged";
   }
   return ooxmlManifestAgrees(data.toString("utf8"), container.dir, container.type) ? "agrees" : "mismatch";
 };
