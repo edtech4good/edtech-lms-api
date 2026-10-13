@@ -59,6 +59,7 @@ import { User } from "src/decorators/user.decorator";
 import { LmsUserToken } from "src/models/token.model";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
+import { DeclaredSizeGuard } from "src/guards/declaredSize.guard";
 import { Permission } from "src/models/enums/permissions.enum";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { Org, OrgContext } from "src/decorators/org.decorator";
@@ -154,7 +155,8 @@ export class DocumentController {
     description: "File too large",
   })
   @RequirePermissions(Permission.CREATE_DOCUMENT)
-  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  // the declared size is checked after who may upload and before multer reads the body (guards run before interceptors)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard, DeclaredSizeGuard(UploadLimits.DOCUMENT_UPLOAD.fileSize))
   @HttpCode(HttpStatus.OK)
   @ApiBody({
     schema: {

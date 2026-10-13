@@ -2738,6 +2738,27 @@ describe("content is confined to the caller's organisation", () => {
       expect(uploadS3).not.toHaveBeenCalled();
       expect(db.created).toEqual([]);
     });
+    describe("a declared size over the limit is refused before the body is read", () => {
+      // 201 MB declared, a few bytes sent, and a body multer would call malformed: only a check ahead of multer answers 413
+      const declared = (who: Who, length: number | string) =>
+        request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close")
+          .set("Content-Type", "multipart/form-data").set("Content-Length", String(length)).send("tiny");
+      it.each(IN_X)("%s: a Content-Length of 201 MB is 413 with the 200 MB wording, nothing stored or sent", async (who) => {
+        const res = await declared(who, 201 * 1024 * 1024);
+        expect([res.status, res.body.code, res.body.errormessage]).toEqual([413, "FILE_REJECTED", "This file is larger than 200 MB."]);
+        expect(uploadS3).not.toHaveBeenCalled();
+        expect(db.created).toEqual([]);
+      });
+      it.each(IN_X)("%s: a small request is not refused on its size: the same body without the declared 201 MB reaches multer (400)", async (who) => {
+        const res = await request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close")
+          .set("Content-Type", "multipart/form-data").send("tiny");
+        expect(res.status).toBe(400); // multer's own answer to a body that is not multipart
+        expect(res.body.errormessage).not.toBe("This file is larger than 200 MB.");
+      });
+      it("who may upload is decided first: a school-user token is 403, not 413", async () => {
+        expect((await declared("a school-user token", 201 * 1024 * 1024)).status).toBe(403);
+      });
+    });
     it("the filter's 200 MB wording is bound to this route (the controller's own path)", () => {
       const joined = `/${Reflect.getMetadata("path", DocumentController)}/${Reflect.getMetadata("path", DocumentController.prototype.uploadFile)}`;
       expect(joined.replace(/\/+/g, "/")).toBe(DOCUMENT_UPLOAD_ROUTE);

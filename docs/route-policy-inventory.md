@@ -124,7 +124,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | PUT | `/document/:documentid` | DocumentController.updateMetadata | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_document] |  |
 | DELETE | `/document/tag/:documentid/:tag` | DocumentController.deleteTag | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_document_tag] |  |
 | GET | `/document/tag/:documentid/:tag` | DocumentController.addTag | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] |  |
-| POST | `/document/upload` | DocumentController.uploadFile | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_document] |  |
+| POST | `/document/upload` | DocumentController.uploadFile | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_document], DeclaredSizeGuard |  |
 | POST | `/documenttag` | DocumentTagController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_documenttag] |  |
 | DELETE | `/documenttag/:documenttagid` | DocumentTagController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_documenttag] |  |
 | GET | `/documenttag/:documenttagid` | DocumentTagController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_documenttag] |  |
