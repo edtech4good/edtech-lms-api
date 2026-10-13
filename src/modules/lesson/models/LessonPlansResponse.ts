@@ -18,6 +18,8 @@ export class LessonPlanBase {
   lessondescription: string = '';
   @ApiProperty()
   documentname: string = "";
+  @ApiProperty({ nullable: true })
+  documenttitle: string | null = null;
   @ApiProperty()
   lessonplanname: string = "";
   @ApiProperty()

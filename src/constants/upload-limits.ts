@@ -40,3 +40,17 @@ export const documentTooLargeMessage = (): string => `This file is larger than $
 
 /** Told for a second file; every upload route here takes exactly one. */
 export const ONE_FILE_MESSAGE = 'Upload one file at a time.';
+
+/**
+ * What a multipart body holds besides the file: the boundary lines, the part headers (with the file name) and the text
+ * fields (title, licence, attribution: a few KiB at most). A request that declares more than the limit plus this much
+ * cannot hold a file within the limit.
+ */
+export const MULTIPART_OVERHEAD_ALLOWANCE = 64 * 1024;
+
+/**
+ * Does a `Content-Length` header declare a body that cannot hold a file of at most `fileSize` bytes? A header that is
+ * absent or is not a plain number says nothing (a chunked body has none): multer's own limit decides those.
+ */
+export const declaresMoreThanFits = (contentLength: string | undefined, fileSize: number): boolean =>
+  typeof contentLength === 'string' && /^\d+$/.test(contentLength.trim()) && Number(contentLength) > fileSize + MULTIPART_OVERHEAD_ALLOWANCE;

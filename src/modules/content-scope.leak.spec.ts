@@ -2738,6 +2738,27 @@ describe("content is confined to the caller's organisation", () => {
       expect(uploadS3).not.toHaveBeenCalled();
       expect(db.created).toEqual([]);
     });
+    describe("a declared size over the limit is refused before the body is read", () => {
+      // 201 MB declared, a few bytes sent, and a body multer would call malformed: only a check ahead of multer answers 413
+      const declared = (who: Who, length: number | string) =>
+        request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close")
+          .set("Content-Type", "multipart/form-data").set("Content-Length", String(length)).send("tiny");
+      it.each(IN_X)("%s: a Content-Length of 201 MB is 413 with the 200 MB wording, nothing stored or sent", async (who) => {
+        const res = await declared(who, 201 * 1024 * 1024);
+        expect([res.status, res.body.code, res.body.errormessage]).toEqual([413, "FILE_REJECTED", "This file is larger than 200 MB."]);
+        expect(uploadS3).not.toHaveBeenCalled();
+        expect(db.created).toEqual([]);
+      });
+      it.each(IN_X)("%s: a small request is not refused on its size: the same body without the declared 201 MB reaches multer (400)", async (who) => {
+        const res = await request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close")
+          .set("Content-Type", "multipart/form-data").send("tiny");
+        expect(res.status).toBe(400); // multer's own answer to a body that is not multipart
+        expect(res.body.errormessage).not.toBe("This file is larger than 200 MB.");
+      });
+      it("who may upload is decided first: a school-user token is 403, not 413", async () => {
+        expect((await declared("a school-user token", 201 * 1024 * 1024)).status).toBe(403);
+      });
+    });
     it("the filter's 200 MB wording is bound to this route (the controller's own path)", () => {
       const joined = `/${Reflect.getMetadata("path", DocumentController)}/${Reflect.getMetadata("path", DocumentController.prototype.uploadFile)}`;
       expect(joined.replace(/\/+/g, "/")).toBe(DOCUMENT_UPLOAD_ROUTE);
@@ -2761,6 +2782,19 @@ describe("content is confined to the caller's organisation", () => {
         expect(JSON.stringify(res.body)).not.toContain("javascript");
       }
       expect(uploadS3).not.toHaveBeenCalled();
+      expect(db.created).toEqual([]);
+    });
+    it.each(IN_X)("%s: the refusals name the field by its label, and keep its key in fields[]", async (who) => {
+      const said = async (fields: Record<string, string>) => (await upload(who, "sample_file.png", pngBytes(), fields)).body.fields;
+      expect(await said({ documentattribution: JSON.stringify({ v: 1, sourceurl: "javascript:alert(1)" }) })).toEqual([
+        { field: "documentattribution", message: "The source address must start with http:// or https://." },
+      ]);
+      expect(await said({ documentattribution: JSON.stringify({ v: 1, adaptedfrom: 5 }) })).toEqual([
+        { field: "documentattribution", message: "The adapted-from must be text." },
+      ]);
+      const twice = await request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close")
+        .field("documenttitle", "one").field("documenttitle", "two").attach("file", pngBytes(), "sample_file.png");
+      expect([twice.status, twice.body.fields]).toEqual([400, [{ field: "documenttitle", message: "Send the title once, as text." }]]);
       expect(db.created).toEqual([]);
     });
     it.each(IN_X)("%s: a file name that cannot be a title is refused unless a title is given", async (who) => {
@@ -2847,6 +2881,37 @@ describe("content is confined to the caller's organisation", () => {
       expect(idsOf((await list(who, [{ key: "documentname", value: "doc_tagx, ភ្នំ" }])).body.data.data, "documentid")).toEqual([TX.document]);
       expect(idsOf((await list(who, [{ key: "documentname", value: "doc_tagx, កម្ពុជា" }])).body.data.data, "documentid")).toEqual([]);
     });
+    it.each(IN_X)("%s: a documenttags filter finds a document by a tag or part of one, never one it lacks, and nothing of another organisation", async (who) => {
+      stored("documents", "documentid", TX.document).documenttags = ["demo", "ភ្នំពេញ"];
+      stored("documents", "documentid", TX.document2).documenttags = ["other"];
+      stored("documents", "documentid", TY.document).documenttags = ["demo", "ភ្នំពេញ"];
+      stored("documents", "documentid", TU.document).documenttags = ["demo"];
+      const found = async (value: string) => idsOf((await list(who, [{ key: "documenttags", value }])).body.data.data, "documentid");
+      expect(await found("demo")).toEqual([TX.document]);
+      expect(await found("dem")).toEqual([TX.document]);
+      expect(await found("ភ្នំ")).toEqual([TX.document]);
+      expect(await found("xyz")).toEqual([]);
+      expect(await found("DEM")).toEqual([TX.document]);
+      expect(await found("Demo")).toEqual([TX.document]);
+      expect(await found("OTHER")).toEqual([TX.document2]);
+      expect(await found("other")).toEqual([TX.document2]);
+      // comma-separated parts must each be found in a tag
+      expect(await found("demo, ភ្នំ")).toEqual([TX.document]);
+      expect(await found("demo, other")).toEqual([]);
+    });
+    it.each(IN_X)("%s: a documenttags filter takes %, _, ! and a quote literally", async (who) => {
+      stored("documents", "documentid", TX.document).documenttags = ['50%_off!', 'say "hi"'];
+      stored("documents", "documentid", TX.document2).documenttags = ["500xoffx", "say hi"];
+      const found = async (value: string) => idsOf((await list(who, [{ key: "documenttags", value }])).body.data.data, "documentid");
+      expect(await found("50%")).toEqual([TX.document]);
+      expect(await found("%")).toEqual([TX.document]);
+      expect(await found("_")).toEqual([TX.document]);
+      expect(await found("50%_off!")).toEqual([TX.document]);
+      expect(await found("0_o")).toEqual([]);
+      expect(await found("!")).toEqual([TX.document]);
+      expect(await found('"hi"')).toEqual([TX.document]);
+      expect(await found("x")).toEqual([TX.document2]);
+    });
     it.each(IN_X)("%s: the documenttypeid filter is an exact match: type 1 does not return type 10", async (who) => {
       stored("documents", "documentid", TX.document).documenttypeid = 10;
       stored("documents", "documentid", TX.document2).documenttypeid = 1;
@@ -2932,6 +2997,17 @@ describe("content is confined to the caller's organisation", () => {
         expect(JSON.stringify(res.body)).not.toContain("GPL");
         expect(JSON.stringify(res.body)).not.toContain("ftp:");
       }
+    });
+    it.each(IN_X)("%s: the refusals name the field by its label, and keep its key in fields[]", async (who) => {
+      const fieldsOf = async (body: object) => (await refuses(who, "put", `/document/${TX.document}`, body)).body.fields;
+      expect(await fieldsOf({ documentattribution: { v: 1, sourceurl: "ftp://example.org" } })).toEqual([
+        { field: "documentattribution", message: "The source address must start with http:// or https://." },
+      ]);
+      expect(await fieldsOf({ documentattribution: { v: 1, adaptedfrom: "a".repeat(1025) } })).toEqual([
+        { field: "documentattribution", message: "The adapted-from is too long." },
+      ]);
+      expect(await fieldsOf({ documenttitle: 5 })).toEqual([{ field: "documenttitle", message: "The title must be text." }]);
+      expect(await fieldsOf({ documentlicence: "GPL-3.0" })).toEqual([{ field: "documentlicence", message: "That licence isn't one of the allowed values." }]);
     });
     it.each(IN_X)("%s: the file, key, type, tags and owner cannot be sent: each field is refused (400), nothing changed", async (who) => {
       for (const field of ["documentname", "documenttypeid", "documents3meta", "documenttags", "organisationid", "isdeleted", "documentid"]) {

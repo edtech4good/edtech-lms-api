@@ -359,7 +359,9 @@ export const MAX_TITLE_LENGTH = DOCUMENT_TITLE_MAX;
 export const MAX_ATTRIBUTION_BYTES = ATTRIBUTION_MAX_BYTES;
 const ATTRIBUTION_LIMITS = { author: ATTRIBUTION_AUTHOR_MAX, sourceurl: ATTRIBUTION_SOURCEURL_MAX, adaptedfrom: ATTRIBUTION_ADAPTEDFROM_MAX } as const;
 /** What a refused source address is told. */
-export const SOURCEURL_MESSAGE = "The attribution sourceurl must be an http or https address.";
+export const SOURCEURL_MESSAGE = "The source address must start with http:// or https://.";
+/** How a person reads the attribution's three texts (the refusals name them so; the `field` of a refusal stays the request's key). */
+const ATTRIBUTION_LABELS = { author: "author", sourceurl: "source address", adaptedfrom: "adapted-from" } as const;
 const ATTRIBUTION_KEYS = ["v", "author", "sourceurl", "adaptedfrom"] as const;
 // Control characters, and the line and paragraph separators: central refuses these in what a person types (the student API
 // refuses the control characters of a title; it checks no text of an attribution for them). Stricter, never looser.
@@ -413,7 +415,7 @@ export const attributionResult = (input: unknown): AttributionResult => {
     return bad("The attribution has a field that isn't allowed.");
   }
   if (given.v !== ATTRIBUTION_VERSION) {
-    return bad(`The attribution version, v, must be ${ATTRIBUTION_VERSION}.`);
+    return bad(`The attribution version must be ${ATTRIBUTION_VERSION}.`);
   }
   const out: DocumentAttribution = { v: ATTRIBUTION_VERSION };
   for (const key of ["author", "sourceurl", "adaptedfrom"] as const) {
@@ -422,17 +424,17 @@ export const attributionResult = (input: unknown): AttributionResult => {
       continue;
     }
     if (typeof raw !== "string") {
-      return bad(`The attribution ${key} must be text.`);
+      return bad(`The ${ATTRIBUTION_LABELS[key]} must be text.`);
     }
     const text = raw.trim();
     if (text.length === 0) {
       continue;
     }
     if (text.length > ATTRIBUTION_LIMITS[key]) {
-      return bad(`The attribution ${key} is too long.`);
+      return bad(`The ${ATTRIBUTION_LABELS[key]} is too long.`);
     }
     if (CONTROL_CHARACTERS.test(text)) {
-      return bad(`The attribution ${key} can't contain control characters.`);
+      return bad(`The ${ATTRIBUTION_LABELS[key]} can't contain control characters.`);
     }
     if (key === "sourceurl") {
       // the student API's own rule for an address (an absolute http(s) address with its scheme, `//` and a host), asked of its

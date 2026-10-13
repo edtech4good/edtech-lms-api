@@ -59,6 +59,7 @@ import { User } from "src/decorators/user.decorator";
 import { LmsUserToken } from "src/models/token.model";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
+import { DeclaredSizeGuard } from "src/guards/declaredSize.guard";
 import { Permission } from "src/models/enums/permissions.enum";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { Org, OrgContext } from "src/decorators/org.decorator";
@@ -67,6 +68,9 @@ import { findOwnedDocument } from "src/business/content-scope";
 
 const METADATA_FIELDS = ["documenttitle", "documentlicence", "documentattribution"];
 
+/** How a person reads each of the metadata fields (a refusal names it so; its `field` stays the request's key). */
+const FIELD_LABELS: Record<string, string> = { documenttitle: "title", documentlicence: "licence", documentattribution: "attribution" };
+
 /** A multipart text field: one value of text, or absent (an empty one counts as absent: a form sends it blank). */
 const textField = (body: Record<string, unknown> | undefined, name: string): { text?: string; error?: ValidationFieldError } => {
   const raw = body?.[name];
@@ -74,7 +78,7 @@ const textField = (body: Record<string, unknown> | undefined, name: string): { t
     return {};
   }
   if (typeof raw !== "string") {
-    return { error: { field: name, message: `Send ${name} once, as text.` } };
+    return { error: { field: name, message: `Send the ${FIELD_LABELS[name] ?? "value"} once, as text.` } };
   }
   return raw.trim().length === 0 ? {} : { text: raw };
 };
@@ -151,7 +155,10 @@ export class DocumentController {
     description: "File too large",
   })
   @RequirePermissions(Permission.CREATE_DOCUMENT)
-  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  // the declared size is checked after who may upload and before multer reads the body (guards run before interceptors);
+  // memory stays flat for a client that stops sending at the 413 and churns about +130 MB (released later) for one that
+  // sends the whole body to be drained, against multer's ~577 MB peak when it buffers an over-limit file
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard, DeclaredSizeGuard(UploadLimits.DOCUMENT_UPLOAD.fileSize))
   @HttpCode(HttpStatus.OK)
   @ApiBody({
     schema: {
