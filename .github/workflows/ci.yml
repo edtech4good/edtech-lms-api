@@ -15,7 +15,7 @@ concurrency:
 jobs:
   # Required check. Install, build, and now unit tests: this PR adds the
   # first executable Jest suite (jest.config.js) and its own `test` script.
-  # Lint is still a Phase 0 repair (no ESLint config exists) and remains out.
+  # Lint tooling was removed (no ESLint config existed).
   ci:
     runs-on: ubuntu-latest
     timeout-minutes: 10
