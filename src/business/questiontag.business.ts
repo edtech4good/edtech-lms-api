@@ -10,6 +10,7 @@ import {
 } from "../models/data-models/init-models";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedQuestionTag } from "./content-scope";
+import { andOrganisation, extractOrganisationFilter } from "./row-owner";
 
 /**
  * Built with the caller's context, every read and write here is limited to the rows in scope (a row of another
@@ -41,8 +42,10 @@ export class QuestionTagBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
-    where = { ...buildWhere<questiontagsAttributes>(paging, where) };
+    const { organisationid, rest } = extractOrganisationFilter(paging.filter);
+    where = { ...buildWhere<questiontagsAttributes>({ ...paging, filter: rest }, where) };
     where = await andScope(this.org, "questiontag", where);
+    where = await andOrganisation(where, "questiontag", organisationid);
 
     return await questiontags.findAndCountAll({ where, order, limit, offset });
   };

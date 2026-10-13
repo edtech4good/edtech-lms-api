@@ -2,6 +2,7 @@ import joi, { SchemaMap } from "joi";
 import { IPaging } from "src/models/IPaging";
 import { emptyString, passwordvalidator } from "src/validators/custom.validator";
 import { RequestValidator } from "../../models/RequestValidator";
+import { filterValue } from "src/validators/organisation-filter";
 
 /** Role ids are 8-character strings today; the bounds only keep a request from sending oversized values. */
 const ROLE_ID_MAX_LENGTH = 36;
@@ -95,8 +96,10 @@ const showalluser: RequestValidator = {
     filter: joi
       .array()
       .items({
-        key: joi.string().valid("lmsusername").required(),
-        value: joi.string().required(),
+        key: joi.string().valid("lmsusername", "organisationid").required(),
+        value: filterValue(
+          joi.string().required()
+        ),
       })
       .max(5)
       .message("Invalid filter"),

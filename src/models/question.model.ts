@@ -35,5 +35,7 @@ export class Question {
     questioncorrectvalue: number = 0;
     @ApiProperty()
     questionfeedback?: object;
+    @ApiProperty({ nullable: true, description: "The organisation that owns the row; null when it has no owner yet. Shown by the admin's platform view." })
+    organisationid?: string | null;
 }
 

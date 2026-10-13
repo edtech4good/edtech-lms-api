@@ -25,6 +25,12 @@ or its curriculum). The boundary is enforced in code, route by route:
 - `src/business/org-scope.ts` — `scopeOf(org)`: `platform` (a platform user not
   acting), `organisation`, or a 403 for no scope. `src/business/school-scope.ts`
   and `content-scope.ts` — `findOwned*`, `andScope`, `andInOwnedSchools`.
+- **Every owned list row names its owner** (`organisationid`, null for an unowned row), so the admin's
+  platform view can show it. Every paged owned list accepts `{ key: "organisationid", value: <one uuid> }` in its
+  filter (`src/business/row-owner.ts`, rule `src/validators/organisation-filter.ts`): a blank, a list, an object, a
+  number or text that is not an id is a 400, never "no filter". The filter is ANDed with the caller's scope: it
+  can only narrow a list. Lessons and baselines carry the owner but have no such filter: the admin narrows its
+  whole lesson and baseline lists itself.
 - **A row of another organisation answers exactly as a missing row does**
   (same status and body). Lists leave it out. A write to it writes nothing.
 - **A row with no owner yet is visible to the platform only.**

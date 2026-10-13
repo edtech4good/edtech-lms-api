@@ -2,6 +2,7 @@ import joi, { SchemaMap } from "joi";
 import { IPaging } from "src/models/IPaging";
 import { RequestValidator } from "../../models/RequestValidator";
 import { TeacherImportBody } from "./models/teachersimport";
+import { filterValue } from "src/validators/organisation-filter";
 
 export const importTeachers: RequestValidator = {
   body: joi.object().keys(<SchemaMap<TeacherImportBody>>{
@@ -37,10 +38,13 @@ export const showallteachers: RequestValidator = {
           .valid(
             "schoolname",
             "schoolid",
+            "organisationid",
             "schoolusername",
           )
           .required(),
-        value: joi.string().required(),
+        value: filterValue(
+          joi.string().required()
+        ),
       })
       .max(6)
       .message("Invalid filter"),

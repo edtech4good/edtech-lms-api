@@ -328,7 +328,7 @@ describe("content is confined to the caller's organisation", () => {
     it.each(IN_X)("%s: X's curriculum", async (who) => {
       const res = await send(who, "get", `/curriculum/${TX.curriculum}`);
       expect(res.status).toBe(200);
-      expect(res.body.data).toMatchObject({ curriculumid: TX.curriculum, curriculumname: "ភាសាខ្មែរក" });
+      expect(res.body.data).toMatchObject({ curriculumid: TX.curriculum, curriculumname: "ភាសាខ្មែរក", organisationid: X });
     });
     it.each(IN_X)("%s: Y's curriculum and an unowned one answer as an absent one does", async (who) => {
       expect(await asAbsent(who, "get", (id) => r(`/curriculum/${id}`), TY.curriculum, TU.curriculum)).toBe(400);
@@ -339,6 +339,10 @@ describe("content is confined to the caller's organisation", () => {
     it("a platform user not acting: any curriculum, an unowned one too", async () => {
       expect((await send(NOT_ACTING, "get", `/curriculum/${TY.curriculum}`)).body.data.curriculumid).toBe(TY.curriculum);
       expect((await send(NOT_ACTING, "get", `/curriculum/${TU.curriculum}`)).body.data.curriculumid).toBe(TU.curriculum);
+    });
+    it("a platform user not acting: the curriculum names its owner (none for an unowned one)", async () => {
+      expect((await send(NOT_ACTING, "get", `/curriculum/${TY.curriculum}`)).body.data.organisationid).toBe(Y);
+      expect((await send(NOT_ACTING, "get", `/curriculum/${TU.curriculum}`)).body.data.organisationid).toBeNull();
     });
   });
 
@@ -1643,7 +1647,7 @@ describe("content is confined to the caller's organisation", () => {
     it.each(IN_X)("%s: X's lesson", async (who) => {
       const res = await send(who, "get", `/lesson/${TX.lesson}`);
       expect(res.status).toBe(200);
-      expect(res.body.data).toMatchObject({ lessonid: TX.lesson, levelid: TX.level, levelname: "កម្រិតទី១tagx" });
+      expect(res.body.data).toMatchObject({ lessonid: TX.lesson, levelid: TX.level, levelname: "កម្រិតទី១tagx", organisationid: X });
     });
     it.each(IN_X)("%s: Y's and an unowned lesson answer as an absent one does", async (who) => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/${id}`), TY.lesson, TU.lesson)).toBe(400);
@@ -1653,6 +1657,10 @@ describe("content is confined to the caller's organisation", () => {
     });
     it("a platform user not acting: any lesson", async () => {
       expect((await send(NOT_ACTING, "get", `/lesson/${TU.lesson}`)).body.data.lessonid).toBe(TU.lesson);
+    });
+    it("a platform user not acting: the lesson names the owner of its curriculum (none for an unowned one)", async () => {
+      expect((await send(NOT_ACTING, "get", `/lesson/${TY.lesson}`)).body.data.organisationid).toBe(Y);
+      expect((await send(NOT_ACTING, "get", `/lesson/${TU.lesson}`)).body.data.organisationid).toBeNull();
     });
   });
 
@@ -2266,7 +2274,7 @@ describe("content is confined to the caller's organisation", () => {
     it.each(IN_X)("%s: X's question", async (who) => {
       const res = await send(who, "get", `/question/${TX.question}`);
       expect(res.status).toBe(200);
-      expect(res.body.data).toMatchObject({ questionid: TX.question, questionidentifier: "qi-tagx" });
+      expect(res.body.data).toMatchObject({ questionid: TX.question, questionidentifier: "qi-tagx", organisationid: X });
     });
     it.each(IN_X)("%s: Y's and an unowned question answer as an absent one does", async (who) => {
       expect(await asAbsent(who, "get", (id) => r(`/question/${id}`), TY.question, TU.question)).toBe(400);
@@ -2276,6 +2284,10 @@ describe("content is confined to the caller's organisation", () => {
     });
     it("a platform user not acting: any question", async () => {
       expect((await send(NOT_ACTING, "get", `/question/${TU.question}`)).body.data.questionid).toBe(TU.question);
+    });
+    it("a platform user not acting: the question names its owner (none for an unowned one)", async () => {
+      expect((await send(NOT_ACTING, "get", `/question/${TY.question}`)).body.data.organisationid).toBe(Y);
+      expect((await send(NOT_ACTING, "get", `/question/${TU.question}`)).body.data.organisationid).toBeNull();
     });
   });
 
@@ -2866,7 +2878,7 @@ describe("content is confined to the caller's organisation", () => {
       const byId = (id: string) => rows.find((x) => x.documentid === id)!;
       expect(byId(TX.document)).toEqual({
         documentid: TX.document, documentname: `doc_${TX.tag}.png`, documenttypeid: 2, isdeleted: false, documenttags: [],
-        documenttitle: "ភ្នំពេញ", documentlicence: "CC0-1.0", documentattribution: { v: 1, author: "ក" },
+        documenttitle: "ភ្នំពេញ", documentlicence: "CC0-1.0", documentattribution: { v: 1, author: "ក" }, organisationid: X,
       });
       expect(byId(TX.document2)).toMatchObject({ documenttitle: null, documentattribution: null });
     });
@@ -3540,6 +3552,113 @@ describe("content is confined to the caller's organisation", () => {
       const res = await send("a server token", method, path, method === "post" ? {} : undefined);
       expect(res.status).toBe(401);
       expect(db.snapshot()).toEqual(before);
+    });
+  });
+
+
+  // ───────────────────── the owning organisation on every list row ─────────────────────
+  // The admin's platform view shows which organisation owns each row and can narrow a list to one organisation.
+  describe("the owning organisation on the rows of a list", () => {
+    type Listing = { name: string; path: string; key: string; owned: (t: Tree) => string[] };
+    const LISTS: Listing[] = [
+      { name: "POST /document", path: "/document", key: "documentid", owned: (t) => [t.document, t.document2] },
+      { name: "POST /documenttag", path: "/documenttag", key: "documenttagid", owned: (t) => [t.documentTag] },
+      { name: "POST /questiontag", path: "/questiontag", key: "questiontagid", owned: (t) => [t.questionTag] },
+      { name: "POST /curriculum", path: "/curriculum", key: "curriculumid", owned: (t) => [t.curriculum, t.curriculum2] },
+      { name: "POST /subject", path: "/subject", key: "subjectid", owned: (t) => [t.subject, t.subject2] },
+      { name: "POST /question", path: "/question", key: "questionid", owned: (t) => [t.question, t.question2] },
+      { name: "POST /question/search", path: "/question/search", key: "questionid", owned: (t) => [t.question, t.question2] },
+      { name: "POST /grade", path: "/grade", key: "gradeid", owned: (t) => [t.grade, t.grade2] },
+      { name: "POST /level", path: "/level", key: "levelid", owned: (t) => [t.level, t.level2] },
+      { name: "POST /feedback", path: "/feedback", key: "feedbackid", owned: (t) => [t.feedback] },
+    ];
+    const ownerOfRows = (rows: Row[], key: string) => Object.fromEntries(rows.map((r) => [r[key] as string, r.organisationid]));
+    const listOf = (who: Who, path: string, filter: object[] = []) => send(who, "post", path, { pageindex: 1, pagesize: 50, filter });
+    /** What an organisation filter may not be: one organisation id, nothing else. A refusal, never "no filter". */
+    const NOT_ONE_ID: Array<[string, unknown]> = [
+      ["blank", "   "],
+      ["empty", ""],
+      ["a list holding an id", [Y]],
+      ["an empty list", []],
+      ["an object", {}],
+      ["a list holding an object", [{}]],
+      ["a number", 5],
+      ["text that is not an id", "not-an-organisation-id"],
+    ];
+
+    describe.each(LISTS)("$name", ({ path, key, owned }) => {
+      it.each(IN_X)("%s: every row names X as its owner", async (who) => {
+        const res = await listOf(who, path);
+        expect(res.status).toBe(200);
+        expect(ownerOfRows(res.body.data.data, key)).toEqual(Object.fromEntries(owned(TX).map((id) => [id, X])));
+      });
+      it("a platform user not acting: each row names its own owner, and none for an unowned row", async () => {
+        const res = await listOf(NOT_ACTING, path);
+        expect(res.status).toBe(200);
+        expect(ownerOfRows(res.body.data.data, key)).toEqual({
+          ...Object.fromEntries(owned(TX).map((id) => [id, X])),
+          ...Object.fromEntries(owned(TY).map((id) => [id, Y])),
+          ...Object.fromEntries(owned(TU).map((id) => [id, null])),
+        });
+      });
+      it("a platform user not acting: an organisation filter narrows the list to that organisation's rows, and the total with it", async () => {
+        const res = await listOf(NOT_ACTING, path, [{ key: "organisationid", value: Y }]);
+        expect(res.status).toBe(200);
+        expect(idsOf(res.body.data.data, key)).toEqual(sorted(...owned(TY)));
+        expect(res.body.data.total).toBe(owned(TY).length);
+        expect(idsOf((await listOf(NOT_ACTING, path, [{ key: "organisationid", value: X }])).body.data.data, key)).toEqual(sorted(...owned(TX)));
+      });
+      it.each(NOT_ONE_ID)("an organisation filter that is %s is refused (400), for the platform too, and lists nothing", async (what, value) => {
+        // (The feedback list's request rule is switched off on main, so only the business class's strictness applies to it:
+        // text that is a well-formed string but no organisation lists nothing there.)
+        if (path === "/feedback" && what === "text that is not an id") {
+          expect((await listOf(NOT_ACTING, path, [{ key: "organisationid", value }])).body.data.data).toEqual([]);
+          return;
+        }
+        for (const who of [NOT_ACTING, ...IN_X]) {
+          const res = await listOf(who, path, [{ key: "organisationid", value }]);
+          expect(res.status).toBe(400);
+          expect(res.body.data).toBe(false);
+        }
+      });
+      it("a platform user not acting: an organisation that does not exist leaves nothing", async () => {
+        const res = await listOf(NOT_ACTING, path, [{ key: "organisationid", value: MISSING }]);
+        expect(res.status).toBe(200);
+        expect(res.body.data.data).toEqual([]);
+      });
+      it.each(IN_X)("%s: the filter can only narrow the list, never widen it (another organisation's id leaves nothing)", async (who) => {
+        expect(idsOf((await listOf(who, path, [{ key: "organisationid", value: Y }])).body.data.data, key)).toEqual([]);
+        expect(idsOf((await listOf(who, path, [{ key: "organisationid", value: X }])).body.data.data, key)).toEqual(sorted(...owned(TX)));
+      });
+    });
+
+    // Lessons carry their owner but have no organisation filter: the admin narrows its whole lesson list itself.
+    describe("POST /lesson", () => {
+      it.each(IN_X)("%s: every lesson names X as its owner", async (who) => {
+        const res = await listOf(who, "/lesson");
+        expect(res.status).toBe(200);
+        expect(ownerOfRows(res.body.data.data, "lessonid")).toEqual({ [TX.lesson]: X, [TX.lesson2]: X });
+      });
+      it("a platform user not acting: each lesson names the owner of its curriculum (none for an unowned one)", async () => {
+        const res = await listOf(NOT_ACTING, "/lesson");
+        expect(ownerOfRows(res.body.data.data, "lessonid")).toEqual({
+          [TX.lesson]: X, [TX.lesson2]: X, [TY.lesson]: Y, [TY.lesson2]: Y, [TU.lesson]: null, [TU.lesson2]: null,
+        });
+      });
+    });
+
+    describe("GET /curriculumbaseline/all", () => {
+      it.each(IN_X)("%s: every baseline names X as its owner", async (who) => {
+        const res = await send(who, "get", "/curriculumbaseline/all");
+        expect(res.status).toBe(200);
+        expect(ownerOfRows(res.body.data, "curriculumbaselineid")).toEqual({ [TX.baseline]: X, [TX.baseline2]: X });
+      });
+      it("a platform user not acting: each baseline names its owner", async () => {
+        const res = await send(NOT_ACTING, "get", "/curriculumbaseline/all");
+        expect(ownerOfRows(res.body.data, "curriculumbaselineid")).toEqual({
+          [TX.baseline]: X, [TX.baseline2]: X, [TY.baseline]: Y, [TY.baseline2]: Y, [TU.baseline]: null, [TU.baseline2]: null,
+        });
+      });
     });
   });
 

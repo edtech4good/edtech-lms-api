@@ -25,5 +25,8 @@ export class DocumentBase {
 
   @ApiProperty({ nullable: true, description: "{ v: 1, author?, sourceurl?, adaptedfrom? } or null" })
   documentattribution: object | null = null;
+
+  @ApiProperty({ nullable: true, description: "The organisation that owns the row; null when it has no owner yet. Listed so the platform view can name it." })
+  organisationid?: string | null;
 }
 

@@ -13,6 +13,7 @@ import {
 import { buildWhere } from "../services/util.service";
 import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedLevel } from "./content-scope";
+import { andOrganisation, extractOrganisationFilter, ownersOfGrades } from "./row-owner";
 
 /**
  * Built with the caller's context, every read and write here is limited to the levels in scope (a level of another
@@ -99,8 +100,10 @@ export class LevelBusiness {
     if ((paging.pageindex || 1) > 1) {
       offset = limit * ((paging.pageindex || 1) - 1);
     }
-    where = { ...buildWhere<levelsAttributes>(paging, where) };
+    const { organisationid, rest } = extractOrganisationFilter(paging.filter);
+    where = { ...buildWhere<levelsAttributes>({ ...paging, filter: rest }, where) };
     where = await andScope(this.org, "level", where);
+    where = await andOrganisation(where, "level", organisationid);
     const data = await levels.findAndCountAll({
       where,
       order,
@@ -122,11 +125,13 @@ export class LevelBusiness {
         },
       ],
     });
+    const owners = await ownersOfGrades(data.rows.map((x) => x.gradeid));
     return {
       count: data.count,
       rows: data.rows.map(
         (x) =>
           <LevelAllBase>{
+            organisationid: owners.get(x.gradeid) ?? null,
             gradeid: x.gradeid,
             leveldescription: x.leveldescription,
             isdeleted: x.isdeleted,

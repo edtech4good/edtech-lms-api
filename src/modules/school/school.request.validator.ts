@@ -2,6 +2,7 @@ import joi, { SchemaMap } from "joi";
 import { IPaging } from "src/models/IPaging";
 import { emptyString } from "src/validators/custom.validator";
 import { RequestValidator } from "../../models/RequestValidator";
+import { filterValue } from "src/validators/organisation-filter";
 
 export const getschoolstudents: RequestValidator = {
   params: joi.object().keys({
@@ -72,8 +73,10 @@ export const showallschool: RequestValidator = {
     filter: joi
       .array()
       .items({
-        key: joi.string().valid("schoolname", "countryid", "curriculums").required(),
-        value: joi.alternatives().try(joi.string().allow(''), joi.array().min(0)).required(),
+        key: joi.string().valid("schoolname", "countryid", "curriculums", "organisationid").required(),
+        value: filterValue(
+          joi.alternatives().try(joi.string().allow(''), joi.array().min(0)).required()
+        ),
       }
       )
       .max(5)

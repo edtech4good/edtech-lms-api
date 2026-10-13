@@ -1,5 +1,6 @@
 import { Op, WhereOptions } from "sequelize";
 import { schools } from "src/models/data-models/school";
+import { organisationIdOf } from "./row-owner";
 import { resolveSchoolRef } from "./school-identity";
 
 /**
@@ -13,6 +14,9 @@ import { resolveSchoolRef } from "./school-identity";
  * means exactly what it meant, and nothing here ties a learner to a school by
  * name. `{ key: "schoolid", value: "<id>" }` is also accepted (exact; an unknown
  * id is a 404).
+ *
+ * `{ key: "organisationid", value: "<id>" }` limits the rows to the schools of that organisation (an unknown id
+ * matches nothing).
  *
  * Several comma-separated terms must all match the one school's name (as the
  * old per-column filter required of the learner's `schoolname`).
@@ -56,6 +60,14 @@ export async function extractSchoolFilters<T extends SchoolFilterEntry>(
     } else if (filter.key === "schoolid" && filter.value) {
       const school = await resolveSchoolRef({ schoolid: Array.isArray(filter.value) ? filter.value[0] : filter.value }, scopeWhere);
       narrow(school ? [school.schoolid] : []);
+    } else if (filter.key === "organisationid") {
+      // The rows of one organisation: those of its schools (among the caller's, so it can only narrow the list).
+      const organisationid = organisationIdOf(filter.value);
+      const owned = await schools.findAll({
+        attributes: ["schoolid"],
+        where: { [Op.and]: [{ organisationid }, ...(scopeWhere ? [scopeWhere] : [])] },
+      });
+      narrow(owned.map((s) => s.schoolid));
     } else {
       rest.push(filter);
     }

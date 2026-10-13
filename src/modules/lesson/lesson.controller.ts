@@ -284,7 +284,8 @@ export class LessonController {
     const data = await new LessonBusiness(org).getLessonbyid(lessonid);
     return {
       error: false,
-      data: data ? data : undefined,
+      // a lesson takes its owner from its curriculum (the admin names it in the lesson's header)
+      data: data ? { ...data, organisationid: await ownerOfLesson(lessonid) } : undefined,
     };
   }
 

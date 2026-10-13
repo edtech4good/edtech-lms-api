@@ -298,6 +298,7 @@ export class DocumentController {
               documenttitle: x.documenttitle ?? null,
               documentlicence: x.documentlicence,
               documentattribution: x.documentattribution ?? null,
+              organisationid: x.organisationid ?? null,
             }
         ),
         total: tempresult.count,
