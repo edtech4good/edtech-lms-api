@@ -6,9 +6,10 @@ import { Op } from "sequelize";
  * `Op.or` lists; `Op.in`, `Op.ne`, `Op.not`, `Op.is`, `Op.like` with `%`; a key `$alias.column$`
  * read from an included row held under `alias`; the school-name narrowing
  * `where(fn("TRIM", col(c)), text)`, compared without regard to case as MySQL's default
- * collation does; the tag search `where(fn("JSON_SEARCH", col(c), "one", pattern, escape), { [Op.ne]: null })`
- * on a column holding a list of text, read as MySQL reads it: the pattern is a `LIKE` pattern with the escape character,
- * compared without regard to case), so specs can replace a model with an in-memory table and still see the
+ * collation does; the tag search
+ * `where(fn("JSON_SEARCH", fn("LOWER", cast(col(c), "CHAR")), "one", fn("LOWER", pattern), escape), { [Op.ne]: null })`
+ * on a column holding a list of text: MySQL lowers both the stored list and the pattern, and the pattern is a `LIKE`
+ * pattern with the escape character, so it is read here as one compared without regard to case), so specs can replace a model with an in-memory table and still see the
  * caller's organisation limit applied.
  */
 type Row = Record<string, unknown>;
@@ -69,8 +70,10 @@ const isTrimWhere = (where: unknown): where is { attribute: { fn: string; args: 
   (where as { constructor: { name: string } }).constructor.name === "Where" &&
   (where as { attribute?: { fn?: string } }).attribute?.fn === "TRIM";
 
-// `where(fn("JSON_SEARCH", col(c), "one", pattern, escape), { [Op.ne]: null })`: is the pattern found in one of the column's texts?
-const isTagSearch = (where: unknown): where is { attribute: { fn: string; args: [{ col: string }, string, string, string?] }; logic: object } =>
+// `where(fn("JSON_SEARCH", fn("LOWER", cast(col(c), "CHAR")), "one", fn("LOWER", pattern), escape), { [Op.ne]: null })`:
+// is the pattern found, whatever the case, in one of the column's texts?
+type TagSearchArgs = [{ args: [{ val: { col: string } }] }, string, { args: [string] }, string?];
+const isTagSearch = (where: unknown): where is { attribute: { fn: string; args: TagSearchArgs }; logic: object } =>
   typeof where === "object" &&
   where !== null &&
   (where as { constructor: { name: string } }).constructor.name === "Where" &&
@@ -86,6 +89,7 @@ const likeRegExp = (pattern: string, escape: string): RegExp => {
     else if (c === "_") source += "[\\s\\S]";
     else source += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
+  // "i": the real predicate lowers the stored list and the pattern both
   return new RegExp("^" + source + "$", "iu");
 };
 
@@ -113,7 +117,9 @@ export const rowMatches = (row: Row, where: unknown, ignoreCase: ReadonlyArray<s
     return String(row[where.attribute.args[0].col] ?? "").trim().toLowerCase() === String(where.logic).toLowerCase();
   }
   if (isTagSearch(where)) {
-    const [target, mode, pattern, escape] = where.attribute.args;
+    const [lowered, mode, loweredPattern, escape] = where.attribute.args;
+    const target = lowered.args[0].val;
+    const pattern = loweredPattern.args[0];
     const logic = where.logic as Record<symbol, unknown>;
     if (mode !== "one" || logic[Op.ne] !== null || Object.getOwnPropertySymbols(logic).length !== 1) {
       throw new Error("fakewhere: only JSON_SEARCH(.., 'one', ..) IS NOT NULL is supported");

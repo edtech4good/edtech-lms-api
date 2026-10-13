@@ -2790,7 +2790,7 @@ describe("content is confined to the caller's organisation", () => {
         { field: "documentattribution", message: "The source address must start with http:// or https://." },
       ]);
       expect(await said({ documentattribution: JSON.stringify({ v: 1, adaptedfrom: 5 }) })).toEqual([
-        { field: "documentattribution", message: "Adapted from must be text." },
+        { field: "documentattribution", message: "The adapted-from must be text." },
       ]);
       const twice = await request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close")
         .field("documenttitle", "one").field("documenttitle", "two").attach("file", pngBytes(), "sample_file.png");
@@ -2891,6 +2891,9 @@ describe("content is confined to the caller's organisation", () => {
       expect(await found("dem")).toEqual([TX.document]);
       expect(await found("ភ្នំ")).toEqual([TX.document]);
       expect(await found("xyz")).toEqual([]);
+      expect(await found("DEM")).toEqual([TX.document]);
+      expect(await found("Demo")).toEqual([TX.document]);
+      expect(await found("OTHER")).toEqual([TX.document2]);
       expect(await found("other")).toEqual([TX.document2]);
       // comma-separated parts must each be found in a tag
       expect(await found("demo, ភ្នំ")).toEqual([TX.document]);
@@ -3001,7 +3004,7 @@ describe("content is confined to the caller's organisation", () => {
         { field: "documentattribution", message: "The source address must start with http:// or https://." },
       ]);
       expect(await fieldsOf({ documentattribution: { v: 1, adaptedfrom: "a".repeat(1025) } })).toEqual([
-        { field: "documentattribution", message: "Adapted from is too long." },
+        { field: "documentattribution", message: "The adapted-from is too long." },
       ]);
       expect(await fieldsOf({ documenttitle: 5 })).toEqual([{ field: "documenttitle", message: "The title must be text." }]);
       expect(await fieldsOf({ documentlicence: "GPL-3.0" })).toEqual([{ field: "documentlicence", message: "That licence isn't one of the allowed values." }]);

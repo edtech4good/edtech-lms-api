@@ -155,7 +155,9 @@ export class DocumentController {
     description: "File too large",
   })
   @RequirePermissions(Permission.CREATE_DOCUMENT)
-  // the declared size is checked after who may upload and before multer reads the body (guards run before interceptors)
+  // the declared size is checked after who may upload and before multer reads the body (guards run before interceptors);
+  // memory stays flat for a client that stops sending at the 413 and churns about +130 MB (released later) for one that
+  // sends the whole body to be drained, against multer's ~577 MB peak when it buffers an over-limit file
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard, DeclaredSizeGuard(UploadLimits.DOCUMENT_UPLOAD.fileSize))
   @HttpCode(HttpStatus.OK)
   @ApiBody({

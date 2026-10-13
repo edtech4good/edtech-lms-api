@@ -15,11 +15,15 @@ const matches = (tags: unknown, value: string) => rowMatches({ documenttags: tag
 
 describe("the document list's documenttags filter", () => {
   it("asks the JSON column for a text containing the tag, not a LIKE on the JSON text", () => {
-    expect(tagSql("demo")).toBe("(JSON_SEARCH(`documenttags`, 'one', '%demo%', '!') IS NOT NULL)");
+    expect(tagSql("demo")).toBe("(JSON_SEARCH(LOWER(CAST(`documenttags` AS CHAR)), 'one', LOWER('%demo%'), '!') IS NOT NULL)");
     expect(tagSql("demo, dem")).toBe(
-      "(JSON_SEARCH(`documenttags`, 'one', '%demo%', '!') IS NOT NULL AND JSON_SEARCH(`documenttags`, 'one', '%dem%', '!') IS NOT NULL)",
+      "(JSON_SEARCH(LOWER(CAST(`documenttags` AS CHAR)), 'one', LOWER('%demo%'), '!') IS NOT NULL AND JSON_SEARCH(LOWER(CAST(`documenttags` AS CHAR)), 'one', LOWER('%dem%'), '!') IS NOT NULL)",
     );
     expect(tagSql("demo")).not.toMatch(/LIKE/);
+  });
+
+  it("lowers the stored list and the pattern both, so the search ignores case", () => {
+    expect(tagSql("Demo")).toMatch(/JSON_SEARCH\(LOWER\(CAST\(`documenttags` AS CHAR\)\), 'one', LOWER\('%Demo%'\), '!'\)/);
   });
 
   it("takes the filter out of the shared substring filter", () => {
@@ -34,12 +38,12 @@ describe("the document list's documenttags filter", () => {
 
   it("writes %, _ and the escape character literally into the pattern", () => {
     expect(tagPattern("a%b_c!d")).toBe("%a!%b!_c!!d%");
-    expect(tagSql("a%b_c!d")).toBe("(JSON_SEARCH(`documenttags`, 'one', '%a!%b!_c!!d%', '!') IS NOT NULL)");
+    expect(tagSql("a%b_c!d")).toBe("(JSON_SEARCH(LOWER(CAST(`documenttags` AS CHAR)), 'one', LOWER('%a!%b!_c!!d%'), '!') IS NOT NULL)");
   });
 
   it("keeps a quote, a backslash and an injection attempt inside the SQL string", () => {
-    expect(tagSql(`x' OR 1=1 --`)).toBe("(JSON_SEARCH(`documenttags`, 'one', '%x\\' OR 1=1 --%', '!') IS NOT NULL)");
-    expect(tagSql('a"b\\c')).toBe("(JSON_SEARCH(`documenttags`, 'one', '%a\\\"b\\\\c%', '!') IS NOT NULL)");
+    expect(tagSql(`x' OR 1=1 --`)).toBe("(JSON_SEARCH(LOWER(CAST(`documenttags` AS CHAR)), 'one', LOWER('%x\\' OR 1=1 --%'), '!') IS NOT NULL)");
+    expect(tagSql('a"b\\c')).toBe("(JSON_SEARCH(LOWER(CAST(`documenttags` AS CHAR)), 'one', LOWER('%a\\\"b\\\\c%'), '!') IS NOT NULL)");
   });
 
   it("finds a document by a tag, by part of one, and not by one it lacks", () => {
@@ -47,6 +51,9 @@ describe("the document list's documenttags filter", () => {
     expect(matches(["demo"], "dem")).toBe(true);
     expect(matches(["demo"], "emo")).toBe(true);
     expect(matches(["demo"], "xyz")).toBe(false);
+    expect(matches(["demo"], "DEM")).toBe(true);
+    expect(matches(["Demo"], "demo")).toBe(true);
+    expect(matches(["ABC"], "bc")).toBe(true);
     expect(matches([], "demo")).toBe(false);
     expect(matches(null, "demo")).toBe(false);
   });
