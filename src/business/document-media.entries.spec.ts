@@ -13,7 +13,9 @@ jest.mock("adm-zip", () => {
 });
 const opened = AdmZip as unknown as jest.Mock;
 
-const REFUSED = "That file isn't the kind its name says it is.";
+// Too many entries, an end record that cannot be read, zip64: the archive is told it is damaged or unusually large (not that it is another kind).
+const DAMAGED = (ext: string) => `This .${ext} is damaged or unusually large inside. Re-save it and try again.`;
+const REFUSED = DAMAGED("pptx");
 
 /** A pptx whose manifest is right and that holds `total` entries in all (the rest empty, stored). */
 const withEntries = (total: number): Buffer => {
@@ -110,7 +112,7 @@ describe("the bound on the number of entries, applied before the archive is open
   it.each(["a.docx", "a.xlsx", "a.odp", "a.odt"])("%s: an archive over the bound is refused before it is opened, whatever its manifest", (name) => {
     const bytes = withEntries(10001);
     opened.mockClear();
-    expect(refusalOf(name, bytes)).toBe(REFUSED);
+    expect(refusalOf(name, bytes)).toBe(DAMAGED(name.split(".")[1]));
     expect(opened).not.toHaveBeenCalled();
   });
   it("a count that is a lie: a small archive whose record says 65000 is refused unopened", () => {

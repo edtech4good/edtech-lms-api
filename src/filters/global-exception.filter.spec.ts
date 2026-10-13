@@ -20,6 +20,7 @@ import { Config, Logger } from '../config';
 import { ApiError } from '../models/ApiError';
 import { ErrorCode } from '../models/enums/errorcode.enum';
 import { ValidationException } from '../models/ValidationException';
+import { documentTooLargeMessage, UploadLimits } from '../constants/upload-limits';
 
 describe('GlobalExceptionFilter', () => {
   it('should be defined', () => {
@@ -257,6 +258,50 @@ describe('GlobalExceptionFilter', () => {
       const body = catchAndGetBody(unexpected);
       expect(statusMock).toHaveBeenCalledWith(400);
       expect(body.code).toBe(ErrorCode.FILE_REJECTED);
+    });
+
+    describe('what an upload refusal tells the person', () => {
+      const documentUpload = { route: { path: '/document/upload' } };
+      const otherUpload = { route: { path: '/log/import' } };
+      const sizeErrors: Array<[string, () => unknown]> = [
+        ['Nest PayloadTooLargeException', () => new PayloadTooLargeException('File too large')],
+        [
+          'a raw MulterError',
+          () => Object.assign(new Error('File too large'), { name: 'MulterError', code: 'LIMIT_FILE_SIZE' }),
+        ],
+      ];
+      it.each(sizeErrors)('%s on the document upload: 413 FILE_REJECTED, "This file is larger than 200 MB."', (_n, make) => {
+        const body = catchAndGetBody(make(), documentUpload);
+        expect(statusMock).toHaveBeenCalledWith(413);
+        expect(body.code).toBe(ErrorCode.FILE_REJECTED);
+        expect(body.errormessage).toBe('This file is larger than 200 MB.');
+      });
+      it.each(sizeErrors)('%s on another upload route: 413 with the catalogue wording (its limit is not 200 MB)', (_n, make) => {
+        const body = catchAndGetBody(make(), otherUpload);
+        expect(statusMock).toHaveBeenCalledWith(413);
+        expect(body.errormessage).toBe("That file can't be used.");
+        expect(catchAndGetBody(make()).errormessage).toBe("That file can't be used.");
+      });
+      it('the size in the message is the document limit, in MB', () => {
+        expect(UploadLimits.DOCUMENT_UPLOAD.fileSize).toBe(200 * 1024 * 1024);
+        expect(documentTooLargeMessage()).toBe('This file is larger than 200 MB.');
+      });
+      it.each([documentUpload, otherUpload, {}])('"Too many files" (Nest-transformed) is "Upload one file at a time." with status 400', (request) => {
+        const body = catchAndGetBody(new BadRequestException('Too many files'), request);
+        expect(statusMock).toHaveBeenCalledWith(400);
+        expect(body.code).toBe(ErrorCode.FILE_REJECTED);
+        expect(body.errormessage).toBe('Upload one file at a time.');
+      });
+      it('a raw MulterError LIMIT_FILE_COUNT is "Upload one file at a time." with status 400', () => {
+        const body = catchAndGetBody(Object.assign(new Error('Too many files'), { name: 'MulterError', code: 'LIMIT_FILE_COUNT' }));
+        expect(statusMock).toHaveBeenCalledWith(400);
+        expect(body.errormessage).toBe('Upload one file at a time.');
+      });
+      it.each(['Unexpected field', 'Too many parts', 'Field name too long', 'Too many fields'])('other multer limit "%s" keeps the catalogue wording', (msg) => {
+        const body = catchAndGetBody(new BadRequestException(msg), documentUpload);
+        expect(statusMock).toHaveBeenCalledWith(400);
+        expect(body.errormessage).toBe("That file can't be used.");
+      });
     });
 
     it.each(['Unexpected field', 'Too many files'])('Nest-transformed multer "%s" is FILE_REJECTED 400', (msg) => {

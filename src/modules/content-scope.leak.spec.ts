@@ -22,6 +22,8 @@ import { BaselinequestionModule } from "./baselinequestion/baselinequestion.modu
 import { CurriculumBaseLineModule } from "./curriculumbaseline/curriculumbaseline.module";
 import { CurriculumModule } from "./curriculum/curriculum.module";
 import { DocumentModule } from "./document/document.module";
+import { DocumentController } from "./document/document.controller";
+import { DOCUMENT_UPLOAD_ROUTE } from "src/constants/upload-limits";
 import { DocumentTagModule } from "./documenttag/documenttag.module";
 import { ExportModule } from "./export/export.module";
 import { FeedbackModule } from "./feedback/feedback.module";
@@ -2620,6 +2622,11 @@ describe("content is confined to the caller's organisation", () => {
       expect(uploadS3).toHaveBeenCalledTimes(1);
       expect(uploadS3).toHaveBeenCalledWith(row.documentname, expect.any(Buffer), "image/png");
     });
+    it.each(IN_X)("%s: a file name with spaces around it gives the title without them and without the extension", async (who) => {
+      expect((await upload(who, "a.png ")).status).toBe(200);
+      expect((await upload(who, " lesson one.PNG")).status).toBe(200);
+      expect(db.createdIn("documents").map((r) => r.documenttitle)).toEqual(["a", "lesson one"]);
+    });
     it.each(IN_X)("%s: X and Y may upload the same file name: both succeed, with different keys that hold none of the name", async (who) => {
       const first = await upload(who, "doc_tagx.png");
       const second = await upload(who, "doc_tagx.png");
@@ -2668,18 +2675,20 @@ describe("content is confined to the caller's organisation", () => {
       }
     });
     it.each(IN_X)("%s: a file that is not what its name says is refused (400), nothing stored", async (who) => {
-      const refused: Array<[string, Buffer]> = [
-        ["sample_file.png", Buffer.from("png")], // the old fixture: three letters
-        ["sample.pdf", pngBytes()],
-        ["sample.pptx", Buffer.concat([Buffer.from("MZ"), Buffer.alloc(64)])], // an executable under an Office name
-        ["sample.pptx", ooxmlBytes("docx")],
-        ["sample.docx", ooxmlBytes("docx", { type: "application/vnd.ms-word.document.macroEnabled.main+xml" })],
-        ["sample.odt", odfBytes("odp")],
-        ["sample.csv", Buffer.from([0x61, 0x00, 0x62])],
+      const NOT_VALID = (ext: string) => `This file isn't a valid .${ext}. Export it again as a real ${ext.toUpperCase()} and try again.`;
+      const refused: Array<[string, Buffer, string]> = [
+        ["sample_file.png", Buffer.from("png"), NOT_VALID("png")], // the old fixture: three letters
+        ["sample.pdf", pngBytes(), NOT_VALID("pdf")],
+        ["sample.pptx", Buffer.concat([Buffer.from("MZ"), Buffer.alloc(64)]), NOT_VALID("pptx")], // an executable under an Office name
+        ["sample.pptx", ooxmlBytes("docx"), NOT_VALID("pptx")],
+        ["sample.docx", ooxmlBytes("docx", { type: "application/vnd.ms-word.document.macroEnabled.main+xml" }), NOT_VALID("docx")],
+        ["sample.odt", odfBytes("odp"), NOT_VALID("odt")],
+        ["sample.csv", Buffer.from([0x61, 0x00, 0x62]), NOT_VALID("csv")],
+        ["evil<script>.png", pdfBytes(), NOT_VALID("png")], // nothing of the name comes back
       ];
-      for (const [name, bytes] of refused) {
+      for (const [name, bytes, message] of refused) {
         const res = await upload(who, name, bytes);
-        expect([res.status, res.body.code, res.body.errormessage]).toEqual([400, "FILE_REJECTED", "That file isn't the kind its name says it is."]);
+        expect([res.status, res.body.code, res.body.errormessage]).toEqual([400, "FILE_REJECTED", message]);
       }
       expect(uploadS3).not.toHaveBeenCalled();
       expect(db.created).toEqual([]);
@@ -2689,17 +2698,49 @@ describe("content is confined to the caller's organisation", () => {
       flood.addFile("[Content_Types].xml", Buffer.from('<Types><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>'));
       for (let i = 1; i <= 10000; i++) flood.addFile(`ppt/media/e${i}.bin`, Buffer.alloc(0));
       const res = await upload(who, "flood.pptx", flood.toBuffer());
-      expect([res.status, res.body.code, res.body.errormessage]).toEqual([400, "FILE_REJECTED", "That file isn't the kind its name says it is."]);
+      expect([res.status, res.body.code, res.body.errormessage]).toEqual([400, "FILE_REJECTED", "This .pptx is damaged or unusually large inside. Re-save it and try again."]);
       expect(uploadS3).not.toHaveBeenCalled();
       expect(db.created).toEqual([]);
     });
     it.each(IN_X)("%s: an extension that is not on the list is refused (400), nothing stored", async (who) => {
       for (const name of ["sample.log", "sample.doc", "sample.zip", "sample.svg", "sample.html", "sample.exe", "sample.webp", "sample"]) {
         const res = await upload(who, name, pdfBytes());
-        expect([res.status, res.body.code]).toEqual([400, "FILE_REJECTED"]);
+        expect([res.status, res.body.code, res.body.errormessage]).toEqual([
+          400,
+          "FILE_REJECTED",
+          "This file type isn't supported. You can upload mp4, mp3, jpg, png, gif, pdf, pptx, docx, xlsx, odp, odt or csv.",
+        ]);
       }
       expect(uploadS3).not.toHaveBeenCalled();
       expect(db.created).toEqual([]);
+    });
+    it.each(IN_X)("%s: two files, no file, or a name of only spaces are refused (400) with a message that says what to send, nothing stored", async (who) => {
+      const two = await request(app.getHttpServer())
+        .post("/document/upload")
+        .set("Authorization", callers[who])
+        .set("Connection", "close")
+        .attach("file", pngBytes(), "a.png")
+        .attach("file2", pngBytes(), "b.png");
+      expect([two.status, two.body.code, two.body.errormessage]).toEqual([400, "FILE_REJECTED", "Upload one file at a time."]);
+      const post = () => request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close");
+      const noFile: Array<[string, request.Test]> = [
+        ["fields only", post().field("documenttitle", "no file here")],
+        ["an empty POST", post()],
+        ["a JSON body", post().send({ documenttitle: "no file here" })],
+        ["a file part with no file name", post().attach("file", pngBytes(), "")],
+      ];
+      for (const [, req] of noFile) {
+        const res = await req;
+        expect([res.status, res.body.code, res.body.errormessage]).toEqual([400, "FILE_REJECTED", "Choose a file to upload."]);
+      }
+      const unnamed = await upload(who, "  ", pngBytes());
+      expect([unnamed.status, unnamed.body.code, unnamed.body.errormessage]).toEqual([400, "FILE_REJECTED", "The file needs a name."]);
+      expect(uploadS3).not.toHaveBeenCalled();
+      expect(db.created).toEqual([]);
+    });
+    it("the filter's 200 MB wording is bound to this route (the controller's own path)", () => {
+      const joined = `/${Reflect.getMetadata("path", DocumentController)}/${Reflect.getMetadata("path", DocumentController.prototype.uploadFile)}`;
+      expect(joined.replace(/\/+/g, "/")).toBe(DOCUMENT_UPLOAD_ROUTE);
     });
     it.each(IN_X)("%s: a title, licence or attribution that is not allowed is refused (400), nothing stored, and the message does not repeat it", async (who) => {
       const bad: Array<[Record<string, string>, string]> = [

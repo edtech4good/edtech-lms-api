@@ -10,6 +10,7 @@ import {
   extensionOf,
   MAX_CONTENT_TYPES_ENTRY_BYTES,
   storageKey,
+  unsupportedTypeMessage,
   uploadSizeLog,
   utf8FileName,
 } from "./document-media";
@@ -20,6 +21,10 @@ import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 
 const KHMER_NAME = "ភ្នំពេញ";
+// The texts are written out here, not built from the module's builders, so a change to the wording turns a test red.
+const NOT_VALID = (ext: string) => `This file isn't a valid .${ext}. Export it again as a real ${ext.toUpperCase()} and try again.`;
+const DAMAGED = (ext: string) => `This .${ext} is damaged or unusually large inside. Re-save it and try again.`;
+const UNSUPPORTED = "This file type isn't supported. You can upload mp4, mp3, jpg, png, gif, pdf, pptx, docx, xlsx, odp, odt or csv.";
 const accepted = (name: string, bytes: Buffer) => checkDocumentFile(name, bytes);
 const refusal = (name: string, bytes: Buffer): ApiError => {
   try {
@@ -56,7 +61,7 @@ describe("the document whitelist: extension -> type id, content type, signature"
     expect(accepted(`SAMPLE.${ext.toUpperCase()}`, make()).extension).toBe(ext);
   });
   it.each(cases.filter((c) => c[0] !== "csv"))("%s: the same name with an empty file is refused", (ext) => {
-    expect(refusal(`sample.${ext}`, Buffer.alloc(0)).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal(`sample.${ext}`, Buffer.alloc(0)).message).toBe(NOT_VALID(ext));
   });
   it("a Khmer file name is no obstacle: only the extension is read", () => {
     expect(accepted(`${KHMER_NAME}.pdf`, pdfBytes()).documenttypeid).toBe(5);
@@ -65,19 +70,23 @@ describe("the document whitelist: extension -> type id, content type, signature"
     "the extension %s is refused as not supported, whatever the bytes",
     (ext) => {
       const err = refusal(`sample.${ext}`, pdfBytes());
-      expect(err.message).toBe("That file type isn't supported.");
+      expect(err.message).toBe(UNSUPPORTED);
       expect(err.code).toBe(ErrorCode.FILE_REJECTED);
     },
   );
   it.each(["constructor", "__proto__", "toString", "hasOwnProperty"])("the extension %s is no key of the list", (ext) => {
-    expect(refusal(`sample.${ext}`, pdfBytes()).message).toBe("That file type isn't supported.");
+    expect(refusal(`sample.${ext}`, pdfBytes()).message).toBe(UNSUPPORTED);
   });
-  it("a name with no extension is refused", () => {
-    expect(refusal("sample", pdfBytes()).message).toBe("That file name isn't allowed.");
-    expect(refusal("sample.", pdfBytes()).message).toBe("That file name isn't allowed.");
+  it("a name with no extension is refused as a type that is not supported", () => {
+    expect(refusal("sample", pdfBytes()).message).toBe(UNSUPPORTED);
+    expect(refusal("sample.", pdfBytes()).message).toBe(UNSUPPORTED);
+  });
+  it("a name that is empty or only white space is told it needs a name", () => {
+    expect(refusal("", pdfBytes()).message).toBe("The file needs a name.");
+    expect(refusal("  ", pdfBytes()).message).toBe("The file needs a name.");
   });
   it("only the last extension counts", () => {
-    expect(refusal("sample.pdf.exe", pdfBytes()).message).toBe("That file type isn't supported.");
+    expect(refusal("sample.pdf.exe", pdfBytes()).message).toBe(UNSUPPORTED);
     expect(accepted("sample.exe.pdf", pdfBytes()).extension).toBe("pdf");
   });
   it("extensionOf", () => {
@@ -104,7 +113,7 @@ describe("the first bytes must agree with the extension", () => {
     ["a file shorter than its signature", "sample.png", Buffer.from([0x89, 0x50])],
   ])("%s is refused before anything is stored", (_n, name, bytes) => {
     const err = refusal(name, bytes);
-    expect(err.message).toBe("That file isn't the kind its name says it is.");
+    expect(err.message).toBe(NOT_VALID(name.split(".")[1]));
     expect(err.code).toBe(ErrorCode.FILE_REJECTED);
   });
 
@@ -115,15 +124,15 @@ describe("the first bytes must agree with the extension", () => {
     ["a lone 0xFF byte", Buffer.from([0xff]), false],
   ])("mp3: %s", (_n, bytes, ok) => {
     if (ok) expect(accepted("a.mp3", bytes).documenttypeid).toBe(1);
-    else expect(refusal("a.mp3", bytes).message).toBe("That file isn't the kind its name says it is.");
+    else expect(refusal("a.mp3", bytes).message).toBe(NOT_VALID("mp3"));
   });
 
   it("mp4: the ftyp box must sit at offset 4", () => {
-    expect(refusal("a.mp4", Buffer.concat([Buffer.from("ftyp"), Buffer.alloc(8)])).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.mp4", Buffer.concat([Buffer.from("ftyp"), Buffer.alloc(8)])).message).toBe(NOT_VALID("mp4"));
   });
   it("gif: both versions are accepted, a bare GIF is not", () => {
     expect(accepted("a.gif", Buffer.from("GIF87a....")).documenttypeid).toBe(6);
-    expect(refusal("a.gif", Buffer.from("GIF....")).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.gif", Buffer.from("GIF....")).message).toBe(NOT_VALID("gif"));
   });
 });
 
@@ -143,12 +152,12 @@ describe("csv: valid UTF-8 with no NUL byte", () => {
     ["UTF-16 text", Buffer.from("a,b\n", "utf16le")],
     ["a binary file", Buffer.from([0xff, 0xfe, 0x00, 0x01])],
   ])("refuses %s", (_n, bytes) => {
-    expect(refusal("a.csv", bytes).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.csv", bytes).message).toBe(NOT_VALID("csv"));
   });
   it("checks the whole file, not just its start", () => {
     const bytes = Buffer.concat([Buffer.alloc(3 * 1024 * 1024, 0x61), Buffer.from([0x80])]);
-    expect(refusal("a.csv", bytes).message).toBe("That file isn't the kind its name says it is.");
-    expect(refusal("a.csv", Buffer.concat([Buffer.alloc(3 * 1024 * 1024, 0x61), Buffer.from([0])])).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.csv", bytes).message).toBe(NOT_VALID("csv"));
+    expect(refusal("a.csv", Buffer.concat([Buffer.alloc(3 * 1024 * 1024, 0x61), Buffer.from([0])])).message).toBe(NOT_VALID("csv"));
   });
   it("a multi-byte letter that straddles a piece boundary is not a refusal", () => {
     const khmer = Buffer.from("ក", "utf8");
@@ -162,7 +171,7 @@ describe("inside the container: pptx, docx, xlsx", () => {
   it.each(kinds.flatMap((a) => kinds.filter((b) => b !== a).map((b) => [a, b] as const)))(
     "a %s package named .%s is refused",
     (actual, named) => {
-      expect(refusal(`sample.${named}`, ooxmlBytes(actual)).message).toBe("That file isn't the kind its name says it is.");
+      expect(refusal(`sample.${named}`, ooxmlBytes(actual)).message).toBe(NOT_VALID(named));
     },
   );
   it.each([
@@ -172,36 +181,36 @@ describe("inside the container: pptx, docx, xlsx", () => {
     ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml"],
     ["xlsx", "application/vnd.ms-excel.sheet.macroEnabled.main+xml"],
   ] as const)("a renamed macro-enabled or template %s (main part %s) is refused", (kind, type) => {
-    expect(refusal(`sample.${kind}`, ooxmlBytes(kind, { type })).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal(`sample.${kind}`, ooxmlBytes(kind, { type })).message).toBe(NOT_VALID(kind));
   });
   it("the main content type under another folder than the extension's is refused", () => {
-    expect(refusal("a.pptx", ooxmlBytes("pptx", { part: "/word/presentation.xml" })).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.pptx", ooxmlBytes("pptx", { part: "/word/presentation.xml" })).message).toBe(NOT_VALID("pptx"));
   });
   it("a manifest that mentions the right type only in a Default (not an Override of a main part) is refused", () => {
     const manifest = `<Types><Default Extension="xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>`;
-    expect(refusal("a.pptx", ooxmlBytes("pptx", { manifest })).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.pptx", ooxmlBytes("pptx", { manifest })).message).toBe(NOT_VALID("pptx"));
   });
   it("single quotes and attribute order in the manifest are fine", () => {
     const manifest = `<Types><Override ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml' PartName='/xl/workbook.xml'/></Types>`;
     expect(accepted("a.xlsx", ooxmlBytes("xlsx", { manifest })).documenttypeid).toBe(10);
   });
   it("a package with no [Content_Types].xml is refused", () => {
-    expect(refusal("a.docx", ooxmlBytes("docx", { manifest: null })).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.docx", ooxmlBytes("docx", { manifest: null })).message).toBe(DAMAGED("docx"));
   });
   it("a file with a zip header and nothing after it (a damaged archive) is refused", () => {
     const damaged = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(200, 7)]);
-    expect(refusal("a.pptx", damaged).message).toBe("That file isn't the kind its name says it is.");
-    expect(refusal("a.odp", damaged).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.pptx", damaged).message).toBe(DAMAGED("pptx"));
+    expect(refusal("a.odp", damaged).message).toBe(DAMAGED("odp"));
   });
   it("a package cut short is refused", () => {
     const whole = ooxmlBytes("pptx");
-    expect(refusal("a.pptx", whole.subarray(0, whole.length - 10)).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.pptx", whole.subarray(0, whole.length - 10)).message).toBe(DAMAGED("pptx"));
   });
   it("a directory entry named [Content_Types].xml is not a manifest", () => {
     const zip = new AdmZip();
     zip.addFile("[Content_Types].xml/", Buffer.alloc(0));
     zip.addFile("ppt/presentation.xml", Buffer.from("<xml/>"));
-    expect(refusal("a.pptx", zip.toBuffer()).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.pptx", zip.toBuffer()).message).toBe(DAMAGED("pptx"));
   });
 
   describe("the entry is read once, and only when its declared size is within the bound", () => {
@@ -212,7 +221,7 @@ describe("inside the container: pptx, docx, xlsx", () => {
       const bytes = ooxmlBytes("pptx", { manifest: big });
       expect(bytes.length).toBeLessThan(2000); // it compresses to almost nothing: the declared size is what is checked
       const inflated = inflations();
-      expect(refusal("a.pptx", bytes).message).toBe("That file isn't the kind its name says it is.");
+      expect(refusal("a.pptx", bytes).message).toBe(DAMAGED("pptx"));
       expect(inflated).not.toHaveBeenCalled();
     });
     it("a manifest exactly at the bound is read, once", () => {
@@ -229,7 +238,7 @@ describe("inside the container: pptx, docx, xlsx", () => {
       const central = lying.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
       lying.writeUInt32LE(100, central + 24); // the directory's uncompressed size
       lying.writeUInt32LE(100, lying.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04])) + 22); // and the local header's
-      expect(refusal("a.pptx", lying).message).toBe("That file isn't the kind its name says it is.");
+      expect(refusal("a.pptx", lying).message).toBe(DAMAGED("pptx"));
     });
     it("no other entry is read", () => {
       const bytes = ooxmlBytes("docx", { extra: { "word/media/a.png": pngBytes(), "customXml/item1.xml": Buffer.from("<x/>") } });
@@ -242,43 +251,129 @@ describe("inside the container: pptx, docx, xlsx", () => {
 
 describe("inside the container: odp, odt", () => {
   it("odt named odp, and odp named odt, are refused", () => {
-    expect(refusal("a.odp", odfBytes("odt")).message).toBe("That file isn't the kind its name says it is.");
-    expect(refusal("a.odt", odfBytes("odp")).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.odp", odfBytes("odt")).message).toBe(NOT_VALID("odp"));
+    expect(refusal("a.odt", odfBytes("odp")).message).toBe(NOT_VALID("odt"));
   });
   it("a spreadsheet package named odt is refused (.ods is not on the list)", () => {
-    expect(refusal("a.odt", odfBytes("ods")).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.odt", odfBytes("ods")).message).toBe(NOT_VALID("odt"));
   });
-  it("an OOXML package named odp is refused, and an ODF package named pptx", () => {
-    expect(refusal("a.odp", ooxmlBytes("pptx")).message).toBe("That file isn't the kind its name says it is.");
-    expect(refusal("a.pptx", odfBytes("odp")).message).toBe("That file isn't the kind its name says it is.");
+  it("an OOXML package named odp, and an ODF package named pptx, docx or xlsx, are another kind of file, not damaged ones", () => {
+    expect(refusal("a.odp", ooxmlBytes("pptx")).message).toBe(NOT_VALID("odp"));
+    expect(refusal("a.odt", ooxmlBytes("docx")).message).toBe(NOT_VALID("odt"));
+    expect(refusal("a.pptx", odfBytes("odp")).message).toBe(NOT_VALID("pptx"));
+    expect(refusal("a.docx", odfBytes("odt")).message).toBe(NOT_VALID("docx"));
+    expect(refusal("a.xlsx", odfBytes("ods")).message).toBe(NOT_VALID("xlsx"));
+  });
+  it("a zip with neither manifest, or with only an unrelated mimetype, stays damaged", () => {
+    const neither = new AdmZip();
+    neither.addFile("hello.txt", Buffer.from("hi"));
+    expect(refusal("a.pptx", neither.toBuffer()).message).toBe(DAMAGED("pptx"));
+    expect(refusal("a.odp", neither.toBuffer()).message).toBe(DAMAGED("odp"));
+    const plain = new AdmZip();
+    plain.addFile("mimetype", Buffer.from("text/plain"));
+    expect(refusal("a.pptx", plain.toBuffer()).message).toBe(DAMAGED("pptx"));
+    const directory = new AdmZip();
+    directory.addFile("[Content_Types].xml/", Buffer.alloc(0));
+    expect(refusal("a.odp", directory.toBuffer()).message).toBe(DAMAGED("odp"));
   });
   it("no mimetype entry, or one with text after the media type, is refused", () => {
-    expect(refusal("a.odt", odfBytes("odt", { mimetype: null })).message).toBe("That file isn't the kind its name says it is.");
-    expect(refusal("a.odt", odfBytes("odt", { mimetype: "application/vnd.oasis.opendocument.text\n" })).message).toBe("That file isn't the kind its name says it is.");
-    expect(refusal("a.odt", odfBytes("odt", { mimetype: "application/vnd.oasis.opendocument.text-template" })).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.odt", odfBytes("odt", { mimetype: null })).message).toBe(DAMAGED("odt"));
+    expect(refusal("a.odt", odfBytes("odt", { mimetype: "application/vnd.oasis.opendocument.text\n" })).message).toBe(NOT_VALID("odt"));
+    expect(refusal("a.odt", odfBytes("odt", { mimetype: "application/vnd.oasis.opendocument.text-template" })).message).toBe(NOT_VALID("odt"));
   });
   it("a mimetype entry that declares a large size is refused without being inflated", () => {
     const bytes = odfBytes("odt", { mimetype: "application/vnd.oasis.opendocument.text" + " ".repeat(5000) });
     const inflated = jest.spyOn(zlib, "inflateRawSync");
-    expect(refusal("a.odt", bytes).message).toBe("That file isn't the kind its name says it is.");
+    expect(refusal("a.odt", bytes).message).toBe(DAMAGED("odt"));
     expect(inflated).not.toHaveBeenCalled();
   });
 });
 
 afterEach(() => jest.restoreAllMocks());
 
-describe("no refusal names the file", () => {
-  it("none of the messages carries the name or an extension", () => {
+describe("no refusal echoes what the person typed", () => {
+  it("none of the messages carries the name (an extension in a message is the whitelist's, in lower case)", () => {
     const messages = [
       refusal(`${KHMER_NAME}.exe`, pdfBytes()).message,
       refusal(`${KHMER_NAME}.pdf`, pngBytes()).message,
       refusal(`${KHMER_NAME}`, pngBytes()).message,
       refusal(`${KHMER_NAME}.pptx`, ooxmlBytes("docx")).message,
+      refusal(`${KHMER_NAME}.pptx`, ooxmlBytes("pptx", { manifest: null })).message,
     ];
     for (const m of messages) {
       expect(m).not.toContain(KHMER_NAME);
-      expect(m).not.toMatch(/\.(exe|pdf|pptx)/);
     }
+    // a refused extension is not echoed either: the list is the whitelist's, which has no "exe"
+    expect(messages[0]).toBe(UNSUPPORTED);
+    expect(messages[0]).not.toContain("exe");
+  });
+  it("a name with markup and wrong bytes: the message says .png (the whitelist's), and carries nothing of the name", () => {
+    const err = refusal("evil<script>.png", pdfBytes());
+    expect(err.message).toBe(NOT_VALID("png"));
+    expect(err.message).not.toContain("<");
+    expect(err.message).not.toContain("evil");
+    expect(err.message).not.toContain("script");
+    expect(err.code).toBe(ErrorCode.FILE_REJECTED);
+  });
+  it("an upper-case or mixed-case extension is told in lower case, and the shouted form is the whitelist's, not the name's", () => {
+    expect(refusal("PHOTO.PnG", pdfBytes()).message).toBe("This file isn't a valid .png. Export it again as a real PNG and try again.");
+    expect(refusal("deck.PPTX", Buffer.from("not a zip")).message).toBe("This file isn't a valid .pptx. Export it again as a real PPTX and try again.");
+  });
+  it("a name with markup and an extension that is not on the list gets the list and nothing of the name", () => {
+    const err = refusal("evil<script>.exe", pdfBytes());
+    expect(err.message).toBe(UNSUPPORTED);
+    expect(err.message).not.toContain("<");
+  });
+});
+
+describe("the refusal messages, case by case", () => {
+  it("a wrong signature for a whitelisted extension: the content-mismatch message", () => {
+    expect(refusal("a.png", pdfBytes()).message).toBe("This file isn't a valid .png. Export it again as a real PNG and try again.");
+  });
+  it("a container that says it is another kind: the content-mismatch message, not the damaged one", () => {
+    expect(refusal("a.docx", ooxmlBytes("pptx")).message).toBe("This file isn't a valid .docx. Export it again as a real DOCX and try again.");
+  });
+  it("a container that cannot be read: the damaged message, which is not the mismatch message", () => {
+    const damaged = refusal("a.docx", ooxmlBytes("docx", { manifest: null })).message;
+    expect(damaged).toBe("This .docx is damaged or unusually large inside. Re-save it and try again.");
+    expect(damaged).not.toBe(refusal("a.docx", ooxmlBytes("pptx")).message);
+  });
+  it("an extension that is not on the list, and a name without one: the supported message", () => {
+    expect(refusal("a.exe", pdfBytes()).message).toBe("This file type isn't supported. You can upload mp4, mp3, jpg, png, gif, pdf, pptx, docx, xlsx, odp, odt or csv.");
+    expect(refusal("a", pdfBytes()).message).toBe(UNSUPPORTED);
+  });
+  it("every refusal is FILE_REJECTED", () => {
+    for (const [name, bytes] of [["a.png", pdfBytes()], ["a.exe", pdfBytes()], ["a.pptx", Buffer.alloc(0)], ["", pdfBytes()]] as const) {
+      expect(refusal(name, Buffer.from(bytes)).code).toBe(ErrorCode.FILE_REJECTED);
+    }
+  });
+});
+
+describe("the sentence of supported types comes from the rule table", () => {
+  const listed = () => Object.keys(DOCUMENT_FILE_RULES).filter((e) => !DOCUMENT_FILE_RULES[e].aliasOf);
+  const sentence = () => unsupportedTypeMessage();
+
+  it("is the whitelist, in the table's order, and the text Jesse chose", () => {
+    expect(listed()).toEqual(["mp4", "mp3", "jpg", "png", "gif", "pdf", "pptx", "docx", "xlsx", "odp", "odt", "csv"]);
+    expect(sentence()).toBe("This file type isn't supported. You can upload mp4, mp3, jpg, png, gif, pdf, pptx, docx, xlsx, odp, odt or csv.");
+  });
+  it("names every extension of the table that is not an alias, and no other (jpeg is accepted as jpg and is not listed twice)", () => {
+    const named = sentence().replace(/^.*You can upload /, "").replace(/\.$/, "").split(/, | or /);
+    expect(named).toEqual(listed());
+    expect(DOCUMENT_FILE_RULES.jpeg.aliasOf).toBe("jpg");
+    expect(accepted("a.jpeg", jpgBytes()).extension).toBe("jpeg");
+  });
+  it("follows the table: an extension taken out of it is gone from the sentence, one put in is in it", () => {
+    const rules = DOCUMENT_FILE_RULES as Record<string, unknown>;
+    const csv = rules.csv;
+    delete rules.csv;
+    try {
+      expect(sentence()).toBe("This file type isn't supported. You can upload mp4, mp3, jpg, png, gif, pdf, pptx, docx, xlsx, odp or odt.");
+      expect(refusal("a.csv", csvBytes()).message).toBe(sentence());
+    } finally {
+      rules.csv = csv;
+    }
+    expect(sentence()).toContain(" odt or csv.");
   });
 });
 

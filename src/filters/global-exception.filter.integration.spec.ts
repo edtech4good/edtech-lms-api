@@ -140,6 +140,17 @@ describe('GlobalExceptionFilter (integration, real Express pipeline and real log
     expect(res.body.code).toBe('FILE_REJECTED');
   });
 
+  it('two files on an upload route (real multer) are FILE_REJECTED 400 "Upload one file at a time."', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/probe/upload')
+      .attach('file', Buffer.from('tiny'), 'a.txt')
+      .attach('file', Buffer.from('tiny'), 'b.txt');
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('FILE_REJECTED');
+    expect(res.body.errormessage).toBe('Upload one file at a time.');
+  });
+
   it('an upload in an unexpected multipart field is FILE_REJECTED 400, field name not logged', async () => {
     const res = await request(app.getHttpServer())
       .post('/probe/upload')
