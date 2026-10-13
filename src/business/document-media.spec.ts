@@ -510,3 +510,30 @@ describe("attributionResult", () => {
     expect(documentMetadata({ documentattribution: { v: 9 } })).toEqual({ values: {}, errors: expect.any(Array) });
   });
 });
+
+describe("the metadata refusals name a field by its label, never by its id", () => {
+  // Written out, so a change to the wording turns a test red. The `field` of each refusal stays the request's key.
+  const attributionMessage = (attribution: unknown) => attributionResult(attribution).errors;
+  it.each([
+    ["a source that is not an http(s) address", { v: 1, sourceurl: "ftp://example.org" }, "The source address must start with http:// or https://."],
+    ["a source with white space", { v: 1, sourceurl: "https://exa mple.org" }, "The source address must start with http:// or https://."],
+    ["a source that is not text", { v: 1, sourceurl: 5 }, "Source address must be text."],
+    ["a source that is too long", { v: 1, sourceurl: `https://e.org/${"a".repeat(2040)}` }, "Source address is too long."],
+    ["a source with a control character", { v: 1, sourceurl: "https://e.org/\u0001" }, "Source address can't contain control characters."],
+    ["an author that is not text", { v: 1, author: 5 }, "Author must be text."],
+    ["an author that is too long", { v: 1, author: "a".repeat(256) }, "Author is too long."],
+    ["an author with a control character", { v: 1, author: "a\u0000b" }, "Author can't contain control characters."],
+    ["an adapted-from that is not text", { v: 1, adaptedfrom: [] }, "Adapted from must be text."],
+    ["an adapted-from that is too long", { v: 1, adaptedfrom: "a".repeat(1025) }, "Adapted from is too long."],
+    ["an adapted-from with a control character", { v: 1, adaptedfrom: "a\u001fb" }, "Adapted from can't contain control characters."],
+    ["a version that is not 1", { v: 2, author: "a" }, "The attribution version must be 1."],
+    ["an unknown key", { v: 1, licence: "CC0-1.0" }, "The attribution has a field that isn't allowed."],
+  ])("%s", (_name, input, message) => {
+    expect(attributionMessage(input)).toEqual([{ field: "documentattribution", message }]);
+    expect(message).not.toMatch(/sourceurl|adaptedfrom|documentattribution/);
+  });
+  it("the title and licence messages carry no id either", () => {
+    expect(documentMetadata({ documenttitle: 5 as unknown as string }).errors).toEqual([{ field: "documenttitle", message: "The title must be text." }]);
+    expect(documentMetadata({ documentlicence: "x" }).errors).toEqual([{ field: "documentlicence", message: "That licence isn't one of the allowed values." }]);
+  });
+});

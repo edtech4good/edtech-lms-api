@@ -2763,6 +2763,19 @@ describe("content is confined to the caller's organisation", () => {
       expect(uploadS3).not.toHaveBeenCalled();
       expect(db.created).toEqual([]);
     });
+    it.each(IN_X)("%s: the refusals name the field by its label, and keep its key in fields[]", async (who) => {
+      const said = async (fields: Record<string, string>) => (await upload(who, "sample_file.png", pngBytes(), fields)).body.fields;
+      expect(await said({ documentattribution: JSON.stringify({ v: 1, sourceurl: "javascript:alert(1)" }) })).toEqual([
+        { field: "documentattribution", message: "The source address must start with http:// or https://." },
+      ]);
+      expect(await said({ documentattribution: JSON.stringify({ v: 1, adaptedfrom: 5 }) })).toEqual([
+        { field: "documentattribution", message: "Adapted from must be text." },
+      ]);
+      const twice = await request(app.getHttpServer()).post("/document/upload").set("Authorization", callers[who]).set("Connection", "close")
+        .field("documenttitle", "one").field("documenttitle", "two").attach("file", pngBytes(), "sample_file.png");
+      expect([twice.status, twice.body.fields]).toEqual([400, [{ field: "documenttitle", message: "Send the title once, as text." }]]);
+      expect(db.created).toEqual([]);
+    });
     it.each(IN_X)("%s: a file name that cannot be a title is refused unless a title is given", async (who) => {
       const long = `${"ក".repeat(256)}.png`;
       expect((await upload(who, long)).status).toBe(400);
@@ -2960,6 +2973,17 @@ describe("content is confined to the caller's organisation", () => {
         expect(JSON.stringify(res.body)).not.toContain("GPL");
         expect(JSON.stringify(res.body)).not.toContain("ftp:");
       }
+    });
+    it.each(IN_X)("%s: the refusals name the field by its label, and keep its key in fields[]", async (who) => {
+      const fieldsOf = async (body: object) => (await refuses(who, "put", `/document/${TX.document}`, body)).body.fields;
+      expect(await fieldsOf({ documentattribution: { v: 1, sourceurl: "ftp://example.org" } })).toEqual([
+        { field: "documentattribution", message: "The source address must start with http:// or https://." },
+      ]);
+      expect(await fieldsOf({ documentattribution: { v: 1, adaptedfrom: "a".repeat(1025) } })).toEqual([
+        { field: "documentattribution", message: "Adapted from is too long." },
+      ]);
+      expect(await fieldsOf({ documenttitle: 5 })).toEqual([{ field: "documenttitle", message: "The title must be text." }]);
+      expect(await fieldsOf({ documentlicence: "GPL-3.0" })).toEqual([{ field: "documentlicence", message: "That licence isn't one of the allowed values." }]);
     });
     it.each(IN_X)("%s: the file, key, type, tags and owner cannot be sent: each field is refused (400), nothing changed", async (who) => {
       for (const field of ["documentname", "documenttypeid", "documents3meta", "documenttags", "organisationid", "isdeleted", "documentid"]) {

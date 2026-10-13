@@ -67,6 +67,9 @@ import { findOwnedDocument } from "src/business/content-scope";
 
 const METADATA_FIELDS = ["documenttitle", "documentlicence", "documentattribution"];
 
+/** How a person reads each of the metadata fields (a refusal names it so; its `field` stays the request's key). */
+const FIELD_LABELS: Record<string, string> = { documenttitle: "title", documentlicence: "licence", documentattribution: "attribution" };
+
 /** A multipart text field: one value of text, or absent (an empty one counts as absent: a form sends it blank). */
 const textField = (body: Record<string, unknown> | undefined, name: string): { text?: string; error?: ValidationFieldError } => {
   const raw = body?.[name];
@@ -74,7 +77,7 @@ const textField = (body: Record<string, unknown> | undefined, name: string): { t
     return {};
   }
   if (typeof raw !== "string") {
-    return { error: { field: name, message: `Send ${name} once, as text.` } };
+    return { error: { field: name, message: `Send the ${FIELD_LABELS[name] ?? "value"} once, as text.` } };
   }
   return raw.trim().length === 0 ? {} : { text: raw };
 };
