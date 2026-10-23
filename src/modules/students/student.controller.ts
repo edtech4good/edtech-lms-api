@@ -31,7 +31,6 @@ import { json2csv } from "json-2-csv";
 import { pushToCloud, studentsFile } from "src/business/cloud-push";
 import { assertEnrolmentFits } from "src/business/content-owner";
 import { findOwnedSchool, findOwnedStandard, findOwnedStudent, resolveOwnedSchoolRef } from "src/business/school-scope";
-import { scopeOf } from "src/business/org-scope";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { StudentBusiness } from "src/business/student.business";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
@@ -241,9 +240,9 @@ export class StudentController {
     try {
       // The school must be one of the caller's (live; unknown or not theirs: 404), before anything is written or pushed.
       school = await findOwnedSchool(org, _body.schoolid, { transaction: tnx, field: "schoolid" });
-      // A class the learners are put in must be a class of that school (the platform, not acting as an
-      // organisation, is not limited).
-      if (_body.standard && scopeOf(org).kind !== "platform") {
+      // A class the learners are put in must be a class of that school, for the platform as for an organisation's
+      // admin: one that is not there is refused here (404), never left to the database's foreign key.
+      if (_body.standard) {
         await findOwnedStandard(org, _body.standard, tnx, school.schoolid);
       }
       // Enrolling is a link between the school and each curriculum: refused, before anything is written, when they have different owners

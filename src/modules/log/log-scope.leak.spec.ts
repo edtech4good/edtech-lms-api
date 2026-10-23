@@ -61,6 +61,12 @@ const TCH_NO_SCHOOL = uuid(423);
 const SP_X = uuid(601); // a stored result of an X learner
 const SP_Y = uuid(602); // a stored result of a Y learner
 const MISSING = uuid(999);
+// content the progress rows point at: held by this server (a foreign key in the database)
+const CUR = uuid(801);
+const GRADE = uuid(802);
+const LEVEL = uuid(803);
+const LESSON = uuid(804);
+const LESSON_GONE = uuid(805); // deleted here, still held: a learner's history of it is kept
 
 const db = new ContentFake();
 const transaction = { commit: jest.fn(), rollback: jest.fn(), LOCK: { SHARE: "SHARE", UPDATE: "UPDATE" } };
@@ -80,9 +86,9 @@ const rows = {
   result: (s: string, _l: string, questions: Row[] = []) => ({ studentprogressid: next(), studentid: s, ispass: 1, studentprogressreferenceid: next(), starttime: "2026-09-01T01:00:00.000Z", progresstype: 1, resultpercentage: 100, marks: 1, points: 1, fullpoints: 1, scores: 1, studentprogressquestions: questions }),
   studentactives: (s: string) => ({ studentactiveid: next(), studentid: s, referenceid: next(), referencetype: 1 }),
   studentlearningprogress: (s: string, l: string) => ({ studentlearningprogressid: next(), studentid: s, userid: l, lessonlearningid: next(), progress: 1 }),
-  studentgradesprogress: (s: string) => ({ studentgradeprogressid: next(), studentid: s, gradeid: next(), curriculumid: next(), completed: 1 }),
-  studentlevelsprogress: (s: string) => ({ studentlevelprogressid: next(), studentid: s, levelid: next(), gradeid: next(), curid: next(), completed: 1 }),
-  studentlessonsprogress: (s: string) => ({ studentlessonprogressid: next(), studentid: s, lessonid: next(), levelid: next(), gradeid: next(), curid: next(), completed: 1 }),
+  studentgradesprogress: (s: string) => ({ studentgradeprogressid: next(), studentid: s, gradeid: GRADE, curriculumid: CUR, completed: 1 }),
+  studentlevelsprogress: (s: string) => ({ studentlevelprogressid: next(), studentid: s, levelid: LEVEL, gradeid: GRADE, curid: CUR, completed: 1 }),
+  studentlessonsprogress: (s: string) => ({ studentlessonprogressid: next(), studentid: s, lessonid: LESSON, levelid: LEVEL, gradeid: GRADE, curid: CUR, completed: 1 }),
   studentpoints: (s: string) => ({ studentpointid: next(), studentid: s, levelid: next(), lessonid: next(), totalgradepoints: 1 }),
   studentappusages: (_s: string, login: string) => ({ studentappusageid: next(), schooluserid: login, time_spent: 30 }),
 } as const;
@@ -157,6 +163,11 @@ const seed = () => {
   for (const id of [USR_X_GONE, USR_Y_GONE]) db.tables.schoolusers.find((u) => u.schooluserid === id)!.isdeleted = true;
   learner(STU_Y, USR_Y, S_Y);
   learner(STU_U, USR_U, S_U);
+  db.add("curriculums", { curriculumid: CUR, curriculumname: "Content", isdeleted: false });
+  db.add("grades", { gradeid: GRADE, curriculumid: CUR, isdeleted: false });
+  db.add("levels", { levelid: LEVEL, gradeid: GRADE, isdeleted: false });
+  db.add("lessons", { lessonid: LESSON, levelid: LEVEL, isdeleted: false });
+  db.add("lessons", { lessonid: LESSON_GONE, levelid: LEVEL, isdeleted: true });
   db.add("studentprogress", { studentprogressid: SP_X, studentid: STU_X, ispass: 1 });
   db.add("studentprogress", { studentprogressid: SP_Y, studentid: STU_Y, ispass: 1 });
 };
@@ -231,6 +242,102 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
 
     it("a teacher of Y's school may not upload X's learners", async () => {
       await refused(teacher(TCH_Y), logOf(["result", "x"], ["access", "x"]));
+    });
+
+    describe("progress that names content", () => {
+      const MISSING_WORD: Array<[Kind, string, string, string]> = [
+        ["studentgradesprogress", "curriculumid", "curriculum", "studentgradesprogress"],
+        ["studentgradesprogress", "gradeid", "grade", "studentgradesprogress"],
+        ["studentlevelsprogress", "curid", "curriculum", "studentlevelsprogress"],
+        ["studentlevelsprogress", "gradeid", "grade", "studentlevelsprogress"],
+        ["studentlevelsprogress", "levelid", "level", "studentlevelsprogress"],
+        ["studentlessonsprogress", "curid", "curriculum", "studentlessonsprogress"],
+        ["studentlessonsprogress", "gradeid", "grade", "studentlessonsprogress"],
+        ["studentlessonsprogress", "levelid", "level", "studentlessonsprogress"],
+        ["studentlessonsprogress", "lessonid", "lesson", "studentlessonsprogress"],
+      ];
+      it.each(MISSING_WORD)("a %s row whose %s names content this server does not hold refuses the whole upload (400), naming the table, the row and the kind of content, never an id", async (kind, column, word, table) => {
+        const logdata = logOf(["result", "x"], [kind, "x"], [kind, "x"]);
+        const rowsOfKind = logdata.log.progress[kind];
+        (rowsOfKind[1] as Row)[column] = uuid(31415);
+        const res = await refused(teacher(TCH_X), logdata);
+        expect(res.body.errormessage).toBe(`That file has progress for content this server doesn't have (${table} row 2: ${word}).`);
+        expect(res.body.hint).toBe("Bring the content to this server first, then upload the file again.");
+        expect(JSON.stringify(res.body)).not.toContain(uuid(31415));
+      });
+
+      it("an absent or non-text reference is a reference to nothing: refused", async () => {
+        for (const value of [undefined, null, "", 7]) {
+          const logdata = logOf(["studentlessonsprogress", "x"]);
+          (logdata.log.progress.studentlessonsprogress[0] as Row).lessonid = value;
+          const res = await refused(teacher(TCH_X), logdata);
+          expect(res.body.errormessage).toContain("studentlessonsprogress row 1: lesson");
+        }
+      });
+
+      it("names every missing kind of a row once, in column order, and every offending row of every table", async () => {
+        const logdata = logOf(["studentgradesprogress", "x"], ["studentlevelsprogress", "x"], ["studentlessonsprogress", "x"]);
+        (logdata.log.progress.studentgradesprogress[0] as Row).curriculumid = uuid(31415);
+        const lessonRow = logdata.log.progress.studentlessonsprogress[0] as Row;
+        lessonRow.curid = uuid(31415);
+        lessonRow.lessonid = uuid(31416);
+        const res = await refused(teacher(TCH_X), logdata);
+        expect(res.body.errormessage).toBe("That file has progress for content this server doesn't have (studentgradesprogress row 1: curriculum; studentlessonsprogress row 1: curriculum, lesson).");
+      });
+
+      it("lists the first 10 offending rows and counts the rest", async () => {
+        const logdata = logOf();
+        for (let i = 0; i < 13; i += 1) {
+          const row = rows.studentlessonsprogress(STU_X);
+          row.lessonid = uuid(32000 + i);
+          logdata.log.progress.studentlessonsprogress.push(row);
+        }
+        const res = await refused(teacher(TCH_X), logdata);
+        expect(res.body.errormessage).toContain("studentlessonsprogress row 10: lesson");
+        expect(res.body.errormessage).not.toContain("row 11");
+        expect(res.body.errormessage).toMatch(/, and 3 more\)\.$/);
+      });
+
+      it("one dangling row refuses the valid rows of the same upload: nothing is stored", async () => {
+        const logdata = logOf(["studentlessonsprogress", "x"], ["studentlessonsprogress", "x"]);
+        (logdata.log.progress.studentlessonsprogress[1] as Row).gradeid = uuid(31415);
+        await refused(teacher(TCH_X), logdata);
+        expect(db.createdIn("studentlessonsprogress")).toEqual([]);
+      });
+
+      it("content deleted on this server is still held: a learner's history of it is imported", async () => {
+        const logdata = logOf(["studentlessonsprogress", "x"]);
+        (logdata.log.progress.studentlessonsprogress[0] as Row).lessonid = LESSON_GONE;
+        expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
+      });
+
+      it("the ids are compared without regard to case, as the database does", async () => {
+        const logdata = logOf(["studentlessonsprogress", "x"]);
+        (logdata.log.progress.studentlessonsprogress[0] as Row).curid = CUR.toUpperCase();
+        expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
+      });
+
+      it("a points row that comes without its totals is stored with 0 for them, not refused", async () => {
+        const logdata = logOf(["studentpoints", "x"], ["studentpoints", "x"]);
+        const [a, b] = logdata.log.progress.studentpoints as Row[];
+        a.totalgradepoints = null;
+        a.scores = undefined;
+        delete b.totalgradepoints;
+        const res = await upload(teacher(TCH_X), logdata);
+        expect(res.status).toBe(200);
+        const stored = db.createdIn("studentpoints") as Row[];
+        expect(stored).toHaveLength(2);
+        for (const row of stored) {
+          expect(row).toMatchObject({ scores: 0, totalgradepoints: 0, totallearningpoints: 0, totallevelpoints: 0, totalpracticepoints: 0, totalquizpoints: 0 });
+        }
+      });
+
+      it("a total the row does carry is stored as it is", async () => {
+        const logdata = logOf(["studentpoints", "x"]);
+        Object.assign(logdata.log.progress.studentpoints[0], { scores: 9, totalgradepoints: 8, totallearningpoints: 7, totallevelpoints: 6, totalpracticepoints: 5, totalquizpoints: 4 });
+        expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
+        expect(db.createdIn("studentpoints")[0]).toMatchObject({ scores: 9, totalgradepoints: 8, totallearningpoints: 7, totallevelpoints: 6, totalpracticepoints: 5, totalquizpoints: 4 });
+      });
     });
 
     it("an upload with no rows is accepted: it names no learner", async () => {
