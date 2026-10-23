@@ -43,7 +43,9 @@ import { tableNameList } from "../migration-helpers";
  *
  * Drops the 19 keys by name, then the six indexes by name (in that order: an index a key uses cannot
  * be dropped, which is also why this must come off before `20261008140000-model-indexes` does), then
- * makes the 14 columns nullable again. It never touches an index it does not own.
+ * makes the 14 columns nullable again. It drops each of the six index names if an index of exactly that
+ * name is there, and never touches `20261008140000-model-indexes`' indexes. (A name cannot say who made the
+ * index: one that was there before `up()` and made it skip the create is dropped too.)
  */
 
 interface ColumnRow {

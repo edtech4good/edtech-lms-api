@@ -516,6 +516,32 @@ describe("down()", () => {
     expect(f.calls).toEqual([]);
   });
 
+  it("when up() skipped an index because one of that name was already there, down() succeeds and drops that name (a name cannot say who made it), nothing else", async () => {
+    const indexes = migratedIndexes();
+    indexes.get("feedbacks")!.push({ name: "created_by", columns: ["created_by"] });
+    const f = makeQI({ indexes });
+    await migration.up(f.qi);
+    expect(alters(f.log).filter((s) => /ADD INDEX `created_by`/.test(s) && /`feedbacks`/.test(s))).toEqual([]);
+    f.log.length = 0;
+    await migration.down(f.qi);
+    expect(alters(f.log).filter((s) => /DROP INDEX/.test(s)).sort()).toEqual(
+      NEW_INDEXES.map((k) => `ALTER TABLE \`${k.split(".")[0]}\` DROP INDEX \`${k.split(".")[1]}\``).sort(),
+    );
+    expect(ixList(f.indexes)).toEqual(ixList(migratedIndexes()));
+  });
+
+  it("when up() skipped an index because another index already led with the column, down() succeeds and leaves that index alone", async () => {
+    const indexes = migratedIndexes();
+    indexes.get("feedbacks")!.push({ name: "feedbacks_created_by", columns: ["created_by", "curriculumid"] });
+    const f = makeQI({ indexes });
+    await migration.up(f.qi);
+    f.log.length = 0;
+    await migration.down(f.qi);
+    expect(alters(f.log).filter((s) => /DROP INDEX `created_by`/.test(s) && /`feedbacks`/.test(s))).toEqual([]);
+    expect(indexes.get("feedbacks")!.some((i) => i.name === "feedbacks_created_by")).toBe(true);
+    expect(f.keys).toEqual([]);
+  });
+
   it("up, down, up ends where the first up did", async () => {
     const f = makeQI();
     await migration.up(f.qi);
