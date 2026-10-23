@@ -26,7 +26,7 @@ import { v4 as uuidv4 } from "uuid";
  */
 const POINT_TOTALS = ["scores", "totalgradepoints", "totallearningpoints", "totallevelpoints", "totalpracticepoints", "totalquizpoints"] as const;
 export const withPointTotals = <T extends object>(row: T): T => {
-  const filled: Record<string, unknown> = { ...row };
+  const filled: Record<string, unknown> = { ...(row as Record<string, unknown>) };
   for (const column of POINT_TOTALS) {
     if (filled[column] === undefined || filled[column] === null) filled[column] = 0;
   }
