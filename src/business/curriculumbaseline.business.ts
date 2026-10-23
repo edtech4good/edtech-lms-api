@@ -357,12 +357,15 @@ export class CurriculumBaseLineBusiness {
   }
 
   async getStudentBaselineEndlineResults(curriculumbaselineid: string) {
+    // The column is polymorphic (a quiz, a practice or a baseline): no foreign key, so no `references`.
     curriculumbaseline.hasMany(studentprogress, {
       foreignKey: "studentprogressreferenceid",
       sourceKey: "curriculumbaselineid",
+      constraints: false,
     });
     studentprogress.belongsTo(curriculumbaseline, {
         foreignKey: "studentprogressreferenceid",
+        constraints: false,
     });
     const totalquestions = await baselinequestion.count({
       where: {
