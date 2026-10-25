@@ -75,7 +75,7 @@ const makeFixture = (owner: string | null) => {
   const f = {
     owner,
     curriculum: uid(), grade: uid(), level: uid(), lesson: uid(), practice: uid(), quiz: uid(), baseline: uid(),
-    question: uid(), document: uid(), subject: uid(), learning: uid(), plan: uid(), school: uid(),
+    question: uid(), document: uid(), subject: uid(), learning: uid(), plan: uid(), school: uid(), standard: uid(),
     qtag: `q${tag}`, dtag: `d${tag}`,
   };
   db.add("curriculums", { curriculumid: f.curriculum, curriculumname: `c-${tag}`, curriculumstatus: true, organisationid: owner, subjectid: f.subject });
@@ -93,6 +93,8 @@ const makeFixture = (owner: string | null) => {
   db.add("questiontags", { questiontagid: uid(), questiontagname: f.qtag, organisationid: owner });
   db.add("documenttags", { documenttagid: uid(), documenttagname: f.dtag, organisationid: owner });
   db.add("schools", { schoolid: f.school, schoolname: `school-${tag}`, organisationid: owner, curriculums: [] });
+  // a class of the school: `students.standard` is a foreign key, so the import names a class that is there
+  db.add("standards", { standardid: f.standard, standardname: `class-${tag}`, schoolid: f.school, isdeleted: false });
   return f;
 };
 
@@ -408,7 +410,7 @@ describe("attaching refuses a cross-owner link", () => {
       city: "ភ្នំពេញ", country: "Cambodia", dateofjoin: "01-01-2026", studentfirstname: `សុខា${n}`, genderid: "1", state: "Phnom Penh",
       schoolusername: `learner${n}`, schooluserpasswordhash: "pass1234",
     });
-    const importBody = (school: Fx, curriculums: Fx[]) => ({ curriculumid: curriculums.map((c) => c.curriculum), schoolid: school.school, standard: "Class A", students: [row(1)] });
+    const importBody = (school: Fx, curriculums: Fx[]) => ({ curriculumid: curriculums.map((c) => c.curriculum), schoolid: school.school, standard: school.standard, students: [row(1)] });
     matrix("POST /student/create (the import)", "students", (school, curriculum) => call("post", "/student/create", importBody(school, [curriculum]), asPlatform));
 
     it("a second curriculum of another owner among the first stops the whole import (400), nothing is written", async () => {

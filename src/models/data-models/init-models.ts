@@ -693,12 +693,17 @@ const setupreportrelationship = () => {
   studentlessonsprogress.belongsTo(lessons, {
       foreignKey: "lessonid",
   });
+  // studentprogressreferenceid is POLYMORPHIC: it holds the id of a lesson quiz, a lesson practice or a
+  // baseline, by `progresstype`. The association is read by the reports, but it can have no foreign key,
+  // so `constraints: false` keeps Sequelize from recording a `references` on the column.
   lessonquizzes.hasMany(studentprogress, {
     foreignKey: "studentprogressreferenceid",
     sourceKey: "lessonquizid",
+    constraints: false,
   });
   studentprogress.belongsTo(lessonquizzes, {
       foreignKey: "studentprogressreferenceid",
+      constraints: false,
   });
   students.hasMany(studentprogress, {
       foreignKey: "studentid",

@@ -64,6 +64,12 @@ or its curriculum). The boundary is enforced in code, route by route:
   columns (`20261008140000-model-indexes`). `npm run db:check-indexes` compares
   the compiled models with a migrated database and must report nothing MISSING.
   A declared unique index also needs a duplicate guard before it is added.
+- Nineteen references the models declare are foreign keys in the database
+  (`20261023120000-foreign-keys-and-not-nulls`, list in `src/db/foreign-keys.ts`; ON DELETE RESTRICT,
+  ON UPDATE CASCADE), and fourteen columns the models require are NOT NULL there. A writer of one of those
+  columns refuses first, with a message, before it writes (`PUT log/import` checks the content its
+  progress rows name; `POST student/create` checks the class), so the database's own refusal is never the answer.
+  `studentprogress.studentprogressreferenceid` is polymorphic (quiz, practice or baseline) and has no key.
 - The CI job `schema-drift` (`scripts/ci/schema-drift.sh`) builds an empty MySQL 8.0
   database from the migrations alone, boots the built server once and fails if boot
   changed the schema, or if a model declares a table, column or index no migration

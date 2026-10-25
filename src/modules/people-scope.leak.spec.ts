@@ -731,6 +731,19 @@ describe("people and schools are confined to the caller's organisation", () => {
       await send(who, "post", "/student/create", body(S_Y, CUR_Y, K_Y)).expect(200);
       expect(db.createdIn("students")[0]).toMatchObject({ schoolid: S_Y, schoolname: NAME_Y });
     });
+    // `students.standard` is a foreign key to the classes: a class that is not there is refused here for every caller, never left to the database
+    it.each([...WHOLE_PLATFORM, "a server token" as Who])("%s: a class that is not there is the same 404 an organisation's admin gets, and nothing is written", async (who) => {
+      const inX = await refuses("X's Admin" as Who, "post", "/student/create", body(S_X, CUR_X, MISSING));
+      const res = await refuses(who, "post", "/student/create", body(S_Y, CUR_Y, MISSING));
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(inX));
+      db.nothingCreated();
+    });
+    it.each([...WHOLE_PLATFORM, "a server token" as Who])("%s: a class of another school is refused as one that is not there (404), nothing is written", async (who) => {
+      const res = await refuses(who, "post", "/student/create", body(S_Y, CUR_Y, K_X));
+      expect(res.status).toBe(404);
+      db.nothingCreated();
+    });
   });
 
   describe("DELETE /student/:schooluserid", () => {

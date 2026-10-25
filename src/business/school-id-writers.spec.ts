@@ -159,10 +159,27 @@ describe("StudentController.createall (POST /student/create)", () => {
       },
     ],
   };
+  // the class named in the body is checked for the platform too (`students.standard` is a foreign key)
+  beforeEach(() => {
+    jest.spyOn(standards, "findOne").mockResolvedValue({ standardid: "std1" } as never);
+  });
   const echoUsers = () =>
     jest
       .spyOn(schoolusers, "bulkCreate")
       .mockImplementation((async (rows: Array<{ schoolusername: string; schooluserid: string }>) => rows) as never);
+
+  it("refuses a class that is not there (404) before anything is written, for the platform too", async () => {
+    (standards.findOne as jest.Mock).mockResolvedValue(null);
+    const users = jest.spyOn(schoolusers, "bulkCreate").mockResolvedValue([] as never);
+    const learners = jest.spyOn(students, "bulkCreate").mockResolvedValue([] as never);
+
+    await expect(new StudentController().createall(body as never, false, "true", PLATFORM)).rejects.toMatchObject({ status: 404 });
+
+    expect(users).not.toHaveBeenCalled();
+    expect(learners).not.toHaveBeenCalled();
+    expect(tnx.rollback).toHaveBeenCalled();
+    expect(tnx.commit).not.toHaveBeenCalled();
+  });
 
   it("writes the school's id AND name on both the login and the learner, from the one school row", async () => {
     const users = echoUsers();

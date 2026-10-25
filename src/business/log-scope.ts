@@ -2,6 +2,10 @@ import { Op } from "sequelize";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { STAFF_SCHOOL_ROLES } from "src/models/enums/school.role.enum";
+import { curriculums } from "src/models/data-models/curriculums";
+import { grades } from "src/models/data-models/grades";
+import { lessons } from "src/models/data-models/lessons";
+import { levels } from "src/models/data-models/levels";
 import { rpiuseraccess } from "src/models/data-models/rpiuseraccess";
 import { schoolusers } from "src/models/data-models/schoolusers";
 import { studentactives } from "src/models/data-models/studentactives";
@@ -223,4 +227,76 @@ export const assertLogRowsInSchool = async (teacher: schoolusers, logdata: unkno
   // question belongs to now
   for (const id of uploadedParents) if (!parentOwner.has(id)) throw outsideSchool();
   for (const q of storedQuestions) if (!parentOwner.has(storedId(q.studentprogressid))) throw outsideSchool();
+};
+
+/** The content a progress row points at: the column, what a person calls it, the table that holds it and its key. */
+type ContentRef = { column: string; word: string; model: { findAll: (o: object) => Promise<object[]> }; key: string };
+const CURRICULUM = (column: string): ContentRef => ({ column, word: "curriculum", model: curriculums, key: "curriculumid" });
+const GRADE: ContentRef = { column: "gradeid", word: "grade", model: grades, key: "gradeid" };
+const LEVEL: ContentRef = { column: "levelid", word: "level", model: levels, key: "levelid" };
+const LESSON: ContentRef = { column: "lessonid", word: "lesson", model: lessons, key: "lessonid" };
+
+/** The progress tables that point at content (each column is a foreign key in the database), and where their rows are in the upload. */
+const CONTENT_TABLES: Array<{ table: string; rows: (log: unknown) => Row[]; refs: ContentRef[] }> = [
+  { table: "studentgradesprogress", rows: progressRows("studentgradesprogress"), refs: [CURRICULUM("curriculumid"), GRADE] },
+  { table: "studentlevelsprogress", rows: progressRows("studentlevelsprogress"), refs: [CURRICULUM("curid"), GRADE, LEVEL] },
+  { table: "studentlessonsprogress", rows: progressRows("studentlessonsprogress"), refs: [CURRICULUM("curid"), GRADE, LEVEL, LESSON] },
+];
+
+/** How many offending rows the refusal lists; the rest are counted. */
+const LISTED_ROWS = 10;
+
+/**
+ * Refuses the upload when a progress row names a curriculum, grade, level or lesson this server does not hold
+ * (the database holds a foreign key from each of those columns to its content). It runs before any row is written,
+ * and the message names each row by its table and position in the file (1 is the first) and says which content is
+ * missing, never an id: the whole upload is refused, nothing is stored, and the teacher is told to bring the
+ * content to this server first. Content that was deleted here but is still stored counts as held: a learner's
+ * history of it is kept. An absent or non-text value is a reference to nothing.
+ */
+export const assertLogRowsNameKnownContent = async (logdata: unknown, chunkSize = LOOKUP_CHUNK): Promise<void> => {
+  const log = (logdata as { log?: unknown } | null | undefined)?.log;
+  if (log === undefined || log === null) return;
+  const text = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value.toLowerCase() : null);
+
+  // what the upload names, per content table (by key column)
+  const named = new Map<ContentRef["model"], { key: string; ids: Set<string> }>();
+  for (const t of CONTENT_TABLES) {
+    for (const row of t.rows(log)) {
+      for (const ref of t.refs) {
+        const id = text(row[ref.column]);
+        if (id === null) continue;
+        const entry = named.get(ref.model) ?? { key: ref.key, ids: new Set<string>() };
+        entry.ids.add(id);
+        named.set(ref.model, entry);
+      }
+    }
+  }
+  // the ones this server holds
+  const held = new Map<ContentRef["model"], Set<string>>();
+  for (const [model, { key, ids }] of named) {
+    const found = await findInChunks(ids, async (chunk) => (await model.findAll({ attributes: [key], where: { [key]: { [Op.in]: chunk } } })) as unknown as Row[], chunkSize);
+    held.set(model, new Set(found.map((r) => storedId(r[key]))));
+  }
+  const missing: string[] = [];
+  let count = 0;
+  for (const t of CONTENT_TABLES) {
+    t.rows(log).forEach((row, at) => {
+      const words = t.refs.filter((ref) => {
+        const id = text(row[ref.column]);
+        return id === null || !held.get(ref.model)?.has(id);
+      }).map((ref) => ref.word);
+      if (words.length === 0) return;
+      count += 1;
+      if (missing.length < LISTED_ROWS) missing.push(`${t.table} row ${at + 1}: ${[...new Set(words)].join(", ")}`);
+    });
+  }
+  if (count > 0) {
+    const more = count > missing.length ? `, and ${count - missing.length} more` : "";
+    throw new ApiError(
+      ErrorCode.FILE_REJECTED,
+      `That file has progress for content this server doesn't have (${missing.join("; ")}${more}).`,
+      { hint: "Bring the content to this server first, then upload the file again." },
+    );
+  }
 };

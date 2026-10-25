@@ -19,6 +19,20 @@ import { validateFile } from "src/services/util.service";
 import { File } from "unzipper";
 import { v4 as uuidv4 } from "uuid";
 
+/**
+ * The six totals of a points row are required here (NOT NULL), while the student API lets them be empty. A row that comes
+ * without one (an older row) means "no points": it is stored as 0, as the student API's own writer does, rather than
+ * refusing the teacher's whole upload for one old row.
+ */
+const POINT_TOTALS = ["scores", "totalgradepoints", "totallearningpoints", "totallevelpoints", "totalpracticepoints", "totalquizpoints"] as const;
+export const withPointTotals = <T extends object>(row: T): T => {
+  const filled: Record<string, unknown> = { ...(row as Record<string, unknown>) };
+  for (const column of POINT_TOTALS) {
+    if (filled[column] === undefined || filled[column] === null) filled[column] = 0;
+  }
+  return filled as T;
+};
+
 export interface studentprogresslog {
   studentactives: Array<studentactives>;
   studentlearningprogress: Array<studentlearningprogress>;
@@ -139,7 +153,7 @@ export class LogBusiness {
         "scores",
       ],
     });
-    await studentpoints.bulkCreate(progress.studentpoints, {
+    await studentpoints.bulkCreate(progress.studentpoints.map(withPointTotals), {
       transaction: this._transaction,
       updateOnDuplicate: [
         "studentid",
