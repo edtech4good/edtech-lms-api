@@ -144,7 +144,7 @@ const opt = (i, text, correct, extra = {}) => ({
 // generic i18n fallback still renders when questionfeedback is absent.
 const Q1_FEEDBACK = JSON.stringify({
   correctmessage: "ល្អណាស់! អ្នកយល់ច្បាស់ហើយ។",
-  incorrectmessage: "សាកល្បងម្តងទៀត ហើយពិនិត្យមេរៀនឡើងវិញ។",
+  incorrectmessage: "សាកល្បងម្តងទៀត សូមពិនិត្យមេរៀនឡើងវិញ។",
 });
 
 const QUESTIONS = [
