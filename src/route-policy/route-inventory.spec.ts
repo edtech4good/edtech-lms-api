@@ -56,11 +56,11 @@ import {
 
 // Pinned on purpose. When you add or remove a route, update these numbers AND
 // run `npm run routes:policy -- --write` to refresh the committed files.
-const EXPECTED_TOTAL = 282;
+const EXPECTED_TOTAL = 288;
 const EXPECTED_BY_POLICY = {
   public: 11,
   self: 5,
-  owned: 243,
+  owned: 249,
   platform: 18,
   server: 0,
   global: 5,
@@ -69,13 +69,13 @@ const EXPECTED_BY_POLICY = {
 // How the routes divide by enforcement, stated explicitly (they sum to the
 // total):
 //  - enforced: by a guard (self 5 + global 5 + platform with PlatformGuard 18
-//    = 28), or, for an owned or server route, by the spec it names (243 owned,
-//    listed below, + 0 server = 243) = 271
+//    = 28), or, for an owned or server route, by the spec it names (249 owned,
+//    listed below, + 0 server = 249) = 277
 //  - not applicable (public): 11
 //  - pending the organisation boundary: owned or server without a proving spec
 //    0 + platform without PlatformGuard 0 = 0
 const EXPECTED_ENFORCED_BY_GUARD = 28;
-const EXPECTED_ENFORCED_BY_SPEC = 243;
+const EXPECTED_ENFORCED_BY_SPEC = 249;
 const EXPECTED_ENFORCED = EXPECTED_ENFORCED_BY_GUARD + EXPECTED_ENFORCED_BY_SPEC;
 const EXPECTED_NOT_APPLICABLE = 11;
 const EXPECTED_PENDING = 0;
@@ -279,10 +279,12 @@ const EXPECTED_OWNED_ENFORCED = [
   "PUT /grade/:gradeid",
   "PUT /grade/activate/:gradeid",
   "PUT /grade/deactivate/:gradeid",
+  "PUT /grade/reorder/:curriculumid",
   "PUT /import/:schoolname/teachers",
   "PUT /lesson/:lessonid",
   "PUT /lesson/activate/:lessonid",
   "PUT /lesson/deactivate/:lessonid",
+  "PUT /lesson/reorder/:levelid",
   "PUT /lesson/learning/:lessonlearningid",
   "PUT /lesson/learning/activate/:lessonlearningid",
   "PUT /lesson/learning/deactivate/:lessonlearningid",
@@ -296,6 +298,7 @@ const EXPECTED_OWNED_ENFORCED = [
   "PUT /lesson/practice/activate/:lessonpracticeid",
   "PUT /lesson/practice/deactivate/:lessonpracticeid",
   "PUT /lesson/practice/order/:lessonpracticeid/:lessonpracticeorder",
+  "PUT /lesson/practice/reorder/:lessonid",
   "PUT /lesson/practice/question/activate/:lessonpracticequestionid",
   "PUT /lesson/practice/question/deactivate/:lessonpracticequestionid",
   "PUT /lesson/practice/question/order/:lessonpracticequestionid/:lessonpracticequestionorder",
@@ -306,6 +309,7 @@ const EXPECTED_OWNED_ENFORCED = [
   "PUT /lesson/quiz/question/activate/:lessonquizquestionid",
   "PUT /lesson/quiz/question/deactivate/:lessonquizquestionid",
   "PUT /lesson/quiz/question/order/:lessonquizquestionid/:lessonquizquestionorder",
+  "PUT /lesson/quiz/reorder/:lessonid",
   "PUT /level/:levelid",
   "PUT /level/activate/:levelid",
   "PUT /level/deactivate/:levelid",
@@ -313,6 +317,7 @@ const EXPECTED_OWNED_ENFORCED = [
   "PUT /level/quiz/question/deactivate/:levelquizquestionid",
   "PUT /level/quiz/question/order/:levelquizquestionid/:levelquizquestionorder",
   "PUT /level/quiz/question/setlesson/:levelquizquestionid",
+  "PUT /level/reorder/:gradeid",
   "PUT /question/:questionid",
   "PUT /question/:questionid/questionidentifier/:questionidentifier",
   "PUT /question/activate/:questionid",
@@ -320,6 +325,7 @@ const EXPECTED_OWNED_ENFORCED = [
   "PUT /questiontag/:questiontagid",
   "PUT /school-contribute/updateschooldashboard/:schoolcontributeid",
   "PUT /school-contribute/updateschoolname/:schoolid",
+  "PUT /school/labels/:schoolid",
   "PUT /school/update/:schoolid",
   "PUT /standard/:standardid",
   "PUT /student/update",
@@ -420,7 +426,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("pending enforcement", () => {
-    it("divides the routes into 271 enforced (28 by a guard, 243 by a proving spec), 11 not applicable (public) and 0 pending", () => {
+    it("divides the routes into 277 enforced (28 by a guard, 249 by a proving spec), 11 not applicable (public) and 0 pending", () => {
       const count = (state: string) => routes.filter((r) => enforcementState(r) === state).length;
       expect(count("yes")).toBe(EXPECTED_ENFORCED);
       expect(count("n/a")).toBe(EXPECTED_NOT_APPLICABLE);
@@ -452,7 +458,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("owned routes proved by a spec", () => {
-    it("the enforced owned routes are exactly the 243 named ones", () => {
+    it("the enforced owned routes are exactly the 249 named ones", () => {
       const enforced = routes.filter((r) => r.policy === "owned" && enforcementState(r) === "yes");
       expect(enforced.map(key).sort()).toEqual([...EXPECTED_OWNED_ENFORCED].sort());
       expect(enforced).toHaveLength(EXPECTED_OWNED_ENFORCED.length);

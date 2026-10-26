@@ -48,7 +48,7 @@ import {
   deletelesson,
   showalllesson,
   showlesson,
-  updatelesson,
+  updatelesson, reorderlesson
 } from "./lesson.request.validator";
 import { LessonBase, LessonCreateResponse } from "./models/LessonBase";
 import {
@@ -286,6 +286,43 @@ export class LessonController {
       error: false,
       // a lesson takes its owner from its curriculum (the admin names it in the lesson's header)
       data: data ? { ...data, organisationid: await ownerOfLesson(lessonid) } : undefined,
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
+  @Put("reorder/:levelid")
+  @ApiResponse({
+    status: 200,
+    description: "Lessons reordered: the order is 1..n in the order given",
+    schema: { $ref: getSchemaPath(ResponseBoolean) },
+  })
+  @ApiResponse({
+    status: 400,
+    description: "The list is not exactly the level's lessons, once each",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "The level or a lesson is not found",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @UseInterceptors(new SchemaValidationInterceptor(reorderlesson))
+  @RequirePermissions(Permission.UPDATE_LESSON)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: `levelid`, type: "string", required: true })
+  async reorderlessons(
+    @Param("levelid") levelid: string,
+    @Body() body: { lessonids: string[] },
+    @Org() org: OrgContext,
+  ): Promise<ResponseBoolean> {
+    // the level in the path and every id in the list are the caller's, or the 404 an absent one gets; nothing is written otherwise
+    await new LessonBusiness(org).reorderLessons(levelid, body.lessonids);
+    return {
+      error: false,
+      data: true,
     };
   }
 

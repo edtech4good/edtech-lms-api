@@ -1,3 +1,4 @@
+import { reorderList } from "src/validators/reorder-list";
 import joi, { SchemaMap } from "joi";
 import { IPaging } from "src/models/IPaging";
 import { emptyString } from "src/validators/custom.validator";
@@ -78,3 +79,4 @@ export const showalllesson: RequestValidator = {
       .message("Invalid filter"),
   }),
 };
+export const reorderlesson: RequestValidator = reorderList("levelid", "Level ID", "lessonids", "Lesson IDs");

@@ -1,3 +1,4 @@
+import { reorderList } from "src/validators/reorder-list";
 import joi from 'joi';
 import { RequestValidator } from '../../models/RequestValidator';
 
@@ -82,3 +83,4 @@ export const updateorderlessonquizquestion: RequestValidator = {
     lessonquizquestionorder: joi.number().required().label("Question order"),
   }),
 };
+export const reorderlessonquiz: RequestValidator = reorderList("lessonid", "Lesson ID", "lessonquizids", "Lesson Quiz IDs");

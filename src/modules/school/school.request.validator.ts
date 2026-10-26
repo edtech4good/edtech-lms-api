@@ -3,6 +3,8 @@ import { IPaging } from "src/models/IPaging";
 import { emptyString } from "src/validators/custom.validator";
 import { RequestValidator } from "../../models/RequestValidator";
 import { filterValue } from "src/validators/organisation-filter";
+import { LABEL_PRESET_NAMES, MAX_LABEL_LENGTH } from "src/constants/tier-labels";
+import { isPlainDisplayText } from "../organisation/organisation.request.validator";
 
 export const getschoolstudents: RequestValidator = {
   params: joi.object().keys({
@@ -82,4 +84,40 @@ export const showallschool: RequestValidator = {
       .max(5)
       .message("Invalid filter"),
   }),
+};
+
+/**
+ * One label text: not empty once trimmed, no control or bidirectional characters, at least one letter or digit.
+ * Khmer text is accepted as it is typed (marks and joiners are kept); this code writes none.
+ */
+const labelText = joi
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_LABEL_LENGTH)
+  .custom((value: string, helpers: joi.CustomHelpers) => (isPlainDisplayText(value) ? value : helpers.error("string.pattern.base")));
+
+const tierLabel = joi.object({
+  en: joi.object({ one: labelText.required(), other: labelText.required() }).required(),
+  km: labelText,
+});
+
+/**
+ * The tier labels of a school (`PUT /school/labels/:schoolid`): a preset by name, the school's own label for any of the
+ * four tiers, and whether a tier holding one item is hidden. Every key is optional but at least one is sent; `null`
+ * clears a preset or the school's own labels. The list of tiers is closed.
+ */
+export const updateschoollabels: RequestValidator = {
+  params: joi.object().keys({
+    schoolid: joi.string().required().uuid().label("School ID"),
+  }),
+  body: joi
+    .object()
+    .keys({
+      labelPreset: joi.string().valid(...LABEL_PRESET_NAMES).allow(null),
+      labels: joi.object({ curriculum: tierLabel, grade: tierLabel, level: tierLabel, lesson: tierLabel }).allow(null),
+      hideSingleItemTiers: joi.boolean().strict(),
+    })
+    .min(1)
+    .messages({ "object.min": "needs at least one of labelPreset, labels or hideSingleItemTiers." }),
 };

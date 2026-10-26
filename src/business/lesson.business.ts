@@ -1,3 +1,4 @@
+import { reorderChildren } from "./reorder-children";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -20,7 +21,7 @@ import { LessonPracticeBusiness } from "./lessonpractice.business";
 import { LessonQuizBusiness } from "./lessonquiz.business";
 import { LevelBusiness } from "./level.business";
 import { OrgContext } from "src/decorators/org.decorator";
-import { andScope, findOwnedLesson } from "./content-scope";
+import { andScope, findOwnedLesson, findOwnedLevel } from "./content-scope";
 import { ownersOfLevels } from "./row-owner";
 
 /**
@@ -387,5 +388,31 @@ export class LessonBusiness {
       }
     }
     return true;
+  };
+
+  /**
+   * Sets the order of a level's lessons to 1..n in the order given, in one call. The level in the path is the caller's,
+   * or the 404 an absent one gets; the list must hold every one of its lessons once each (reorder-children.ts).
+   */
+  reorderLessons = async (levelid: string, lessonids: string[]) => {
+    if (this.org) {
+      await findOwnedLevel(this.org, levelid);
+    }
+    return reorderChildren(
+      this.org,
+      {
+        kind: "lesson",
+        model: lessons,
+        idColumn: "lessonid",
+        parentColumn: "levelid",
+        orderColumn: "lessonorder",
+        field: "lessonids",
+        noun: "lesson",
+        parentNoun: "level",
+        softDelete: true,
+      },
+      levelid,
+      lessonids,
+    );
   };
 }

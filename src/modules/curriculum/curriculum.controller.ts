@@ -23,7 +23,7 @@ import {
   ApiTags,
   getSchemaPath,
 } from "@nestjs/swagger";
-import { orderBy } from "lodash";
+import { buildCurriculumTree } from "src/business/curriculum-tree";
 import { LessonPracticeBusiness } from "src/business/lessonpractice.business";
 import { LessonQuizBusiness } from "src/business/lessonquiz.business";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
@@ -353,53 +353,7 @@ export class CurriculumController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   async tree(@Org() org: OrgContext) {
-    const curriculums = await new CurriculumBusiness(org).getCurriculums();
-    const grades = await new GradeBusiness(org).getGrades();
-    const levels = await new LevelBusiness(org).getLevels();
-    const lessons = await new LessonBusiness(org).getLessons();
-    const lessonquizzes = await new LessonQuizBusiness(org).getLessonQuizzes();
-    const lessonpractices =
-      await new LessonPracticeBusiness(org).getLessonPractices();
-    const data = curriculums.map((curriculum) => {
-      const tempc: any = { ...curriculum.toJSON() };
-      tempc.grades = grades
-        .filter((x) => x.curriculumid === curriculum.curriculumid)
-        .map((grade) => {
-          const tempg: any = { ...grade.toJSON() };
-          tempg.levels = orderBy(
-            levels
-              .filter((x) => x.gradeid === grade.gradeid)
-              .map((level) => {
-                const templev: any = { ...level.toJSON() };
-                templev.lessons = orderBy(
-                  lessons
-                    .filter((x) => x.levelid === level.levelid)
-                    .map((lesson) => ({
-                      ...lesson.toJSON(),
-                      quizzes: orderBy(
-                        lessonquizzes
-                          .filter((x) => x.lessonid === lesson.lessonid)
-                          .map((x) => x.toJSON()),
-                        "lessonquizorder"
-                      ),
-                      practices: orderBy(
-                        lessonpractices
-                          .filter((x) => x.lessonid === lesson.lessonid)
-                          .map((x) => x.toJSON()),
-                        "lessonpracticeorder"
-                      ),
-                    })),
-                  "lessonorder"
-                );
-                return templev;
-              }),
-            "levelorder"
-          );
-          return tempg;
-        });
-      return tempc;
-    });
-
+    const data = await buildCurriculumTree(org);
     return {
       error: false,
       data: data,
@@ -434,55 +388,7 @@ export class CurriculumController {
   ): Promise<any> {
     // the path row is checked on its own (a curriculum of another organisation is not found, as an absent one is not)
     await assertInScope(org, "curriculum", curriculumid);
-    const curriculums = await new CurriculumBusiness(org).getCurriculums();
-    const grades = await new GradeBusiness(org).getGrades();
-    const levels = await new LevelBusiness(org).getLevels();
-    const lessons = await new LessonBusiness(org).getLessons();
-    const lessonquizzes = await new LessonQuizBusiness(org).getLessonQuizzes();
-    const lessonpractices =
-      await new LessonPracticeBusiness(org).getLessonPractices();
-    const data = curriculums
-      .filter((x) => x.curriculumid === curriculumid)
-      .map((curriculum) => {
-        const tempc: any = { ...curriculum.toJSON() };
-        tempc.grades = grades
-          .filter((x) => x.curriculumid === curriculum.curriculumid)
-          .map((grade) => {
-            const tempg: any = { ...grade.toJSON() };
-            tempg.levels = orderBy(
-              levels
-                .filter((x) => x.gradeid === grade.gradeid)
-                .map((level) => {
-                  const templev: any = { ...level.toJSON() };
-                  templev.lessons = orderBy(
-                    lessons
-                      .filter((x) => x.levelid === level.levelid)
-                      .map((lesson) => ({
-                        ...lesson.toJSON(),
-                        quizzes: orderBy(
-                          lessonquizzes
-                            .filter((x) => x.lessonid === lesson.lessonid)
-                            .map((x) => x.toJSON()),
-                          "lessonquizorder"
-                        ),
-                        practices: orderBy(
-                          lessonpractices
-                            .filter((x) => x.lessonid === lesson.lessonid)
-                            .map((x) => x.toJSON()),
-                          "lessonpracticeorder"
-                        ),
-                      })),
-                    "lessonorder"
-                  );
-                  return templev;
-                }),
-              "levelorder"
-            );
-            return tempg;
-          });
-        return tempc;
-      });
-
+    const data = await buildCurriculumTree(org, curriculumid);
     return {
       error: false,
       data: data,

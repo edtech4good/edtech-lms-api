@@ -40,7 +40,7 @@ import {
   getlessonquiz,
   updatelessonquiz,
   updateorderlessonquiz,
-  updatestatuslessonquiz,
+  updatestatuslessonquiz, reorderlessonquiz
 } from "./lesson.quiz.request.validator";
 import { showlesson } from "./lesson.request.validator";
 import { LessonBase, LessonCreateResponse } from "./models/LessonBase";
@@ -284,6 +284,43 @@ export class LessonQuizController {
       lessonquizid,
       lessonquizorder
     );
+    return {
+      error: false,
+      data: true,
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
+  @Put("reorder/:lessonid")
+  @ApiResponse({
+    status: 200,
+    description: "Lesson quizzes reordered: the order is 1..n in the order given",
+    schema: { $ref: getSchemaPath(ResponseBoolean) },
+  })
+  @ApiResponse({
+    status: 400,
+    description: "The list is not exactly the lesson's quizzes, once each",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "The lesson or a quiz is not found",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @UseInterceptors(new SchemaValidationInterceptor(reorderlessonquiz))
+  @RequirePermissions(Permission.UPDATE_LESSONQUIZ)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: `lessonid`, type: "string", required: true })
+  async reorderquizzes(
+    @Param("lessonid") lessonid: string,
+    @Body() body: { lessonquizids: string[] },
+    @Org() org: OrgContext,
+  ): Promise<ResponseBoolean> {
+    // the lesson in the path and every id in the list are the caller's, or the 404 an absent one gets; nothing is written otherwise
+    await new LessonQuizBusiness(org).reorderLessonQuizzes(lessonid, body.lessonquizids);
     return {
       error: false,
       data: true,

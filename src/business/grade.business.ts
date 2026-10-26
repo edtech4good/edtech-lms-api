@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { reorderChildren } from "./reorder-children";
 import { Op, WhereOptions } from "sequelize";
 import { IPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
@@ -12,7 +13,7 @@ import {
 } from "../models/data-models/init-models";
 import { buildWhere } from "../services/util.service";
 import { OrgContext } from "src/decorators/org.decorator";
-import { andScope, findOwnedGrade } from "./content-scope";
+import { andScope, findOwnedCurriculum, findOwnedGrade } from "./content-scope";
 import { andOrganisation, extractOrganisationFilter } from "./row-owner";
 import { andInOwnedSchools } from "./school-scope";
 
@@ -286,5 +287,31 @@ export class GradeBusiness {
     };
     const tempdt = await grades.count({ where: await andScope(this.org, "grade", where) });
     return tempdt > 0;
+  };
+
+  /**
+   * Sets the order of a curriculum's grades to 1..n in the order given, in one call. The curriculum in the path is the caller's,
+   * or the 404 an absent one gets; the list must hold every one of its grades once each (reorder-children.ts).
+   */
+  reorderGrades = async (curriculumid: string, gradeids: string[]) => {
+    if (this.org) {
+      await findOwnedCurriculum(this.org, curriculumid);
+    }
+    return reorderChildren(
+      this.org,
+      {
+        kind: "grade",
+        model: grades,
+        idColumn: "gradeid",
+        parentColumn: "curriculumid",
+        orderColumn: "gradeorder",
+        field: "gradeids",
+        noun: "grade",
+        parentNoun: "curriculum",
+        softDelete: true,
+      },
+      curriculumid,
+      gradeids,
+    );
   };
 }

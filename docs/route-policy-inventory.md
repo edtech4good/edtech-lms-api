@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **282** routes, **271** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
+Of **288** routes, **277** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 243 | 243 | 0 | 0 |
+| owned | 249 | 249 | 0 | 0 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 0 | 0 | 0 | 0 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **282** | **271** | **11** | **0** |
+| **all** | **288** | **277** | **11** | **0** |
 
 ## Policies
 
@@ -145,6 +145,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | POST | `/grade/create` | GradeController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_grade] |  |
 | GET | `/grade/curriculum/:curriculumid` | GradeController.getGradeByCurriculum | owned | yes | `src/modules/content-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) |  |
 | PUT | `/grade/deactivate/:gradeid` | GradeController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), AccessGuard(ACCESS), CheckPermissionsGuard[update_grade] |  |
+| PUT | `/grade/reorder/:curriculumid` | GradeController.reordergrades | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_grade] |  |
 | PUT | `/import/:schoolname/teachers` | ImportController.putteachers | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_import, update_import] |  |
 | POST | `/lesson` | LessonController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lesson] |  |
 | DELETE | `/lesson/:lessonid` | LessonController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_lesson] |  |
@@ -154,6 +155,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | GET | `/lesson/all` | LessonController.getAllLessons | owned | yes | `src/modules/content-scope.leak.spec.ts` |  | yes | AccessGuard(ACCESS) |  |
 | POST | `/lesson/create` | LessonController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lesson] |  |
 | PUT | `/lesson/deactivate/:lessonid` | LessonController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lesson] |  |
+| PUT | `/lesson/reorder/:levelid` | LessonController.reorderlessons | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lesson] |  |
 | POST | `/lesson/update_reward_points` | LessonController.autoupdatelessonprogresspoints | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_lesson] | Bulk recompute across all organisations; platform only. |
 | GET | `/lesson/learning/:lessonid` | LessonLearningController.getlearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_lessonlearning] |  |
 | POST | `/lesson/learning/:lessonid` | LessonLearningController.addlearning | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_lessonlearning] |  |
@@ -180,6 +182,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | PUT | `/lesson/practice/activate/:lessonpracticeid` | LessonPracticeController.activatepractice | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
 | PUT | `/lesson/practice/deactivate/:lessonpracticeid` | LessonPracticeController.deactivatepractice | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
 | PUT | `/lesson/practice/order/:lessonpracticeid/:lessonpracticeorder` | LessonPracticeController.orderpractice | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
+| PUT | `/lesson/practice/reorder/:lessonid` | LessonPracticeController.reorderpractices | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonpractice] |  |
 | GET | `/lesson/practice/question/:lessonpracticeid` | LessonPracticeQuestionController.getpracticequestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
 | POST | `/lesson/practice/question/:lessonpracticeid/:questionid/:lessonpracticequestionorder` | LessonPracticeQuestionController.addpracticequestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
 | DELETE | `/lesson/practice/question/:lessonpracticequestionid` | LessonPracticeQuestionController.deletepracticequestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_practice_question] |  |
@@ -194,6 +197,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | PUT | `/lesson/quiz/activate/:lessonquizid` | LessonQuizController.activatequiz | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
 | PUT | `/lesson/quiz/deactivate/:lessonquizid` | LessonQuizController.deactivatequiz | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
 | PUT | `/lesson/quiz/order/:lessonquizid/:lessonquizorder` | LessonQuizController.orderquiz | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
+| PUT | `/lesson/quiz/reorder/:lessonid` | LessonQuizController.reorderquizzes | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_lessonquiz] |  |
 | GET | `/lesson/quiz/question/:lessonquizid` | LessonQuizQuestionController.getquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
 | POST | `/lesson/quiz/question/:lessonquizid/:questionid/:lessonquizquestionorder` | LessonQuizQuestionController.addquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
 | DELETE | `/lesson/quiz/question/:lessonquizquestionid` | LessonQuizQuestionController.deletequizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[edit_quiz_question] |  |
@@ -208,6 +212,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | GET | `/level/all` | LevelController.getAllLevels | owned | yes | `src/modules/content-scope.leak.spec.ts` |  | yes | AccessGuard(ACCESS) |  |
 | POST | `/level/create` | LevelController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_level] |  |
 | PUT | `/level/deactivate/:levelid` | LevelController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_level] |  |
+| PUT | `/level/reorder/:gradeid` | LevelController.reorderlevels | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_level] |  |
 | POST | `/level/update_quiz_points` | LevelController.autoupdatelessonprogresspoints | platform | yes |  |  |  | AccessGuard(ACCESS), PlatformGuard, CheckPermissionsGuard[update_level] | Bulk recompute across all organisations; platform only. |
 | GET | `/level/quiz/question/:levelid` | LevelQuizQuestionController.getquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_level_quiz] |  |
 | POST | `/level/quiz/question/:levelid/:questionid/:levelquizquestionorder` | LevelQuizQuestionController.addquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_level_quiz_question] |  |
@@ -311,6 +316,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | GET | `/school/country/:countryid/curriculum/:curriculumid` | SchoolController.getSchoolCurriculum | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
 | POST | `/school/create` | SchoolController.createschool | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_school] |  |
 | GET | `/school/curriculumid` | SchoolController.getSchoolsCurriculum | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_school] |  |
+| PUT | `/school/labels/:schoolid` | SchoolController.updatelabels | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_school] |  |
 | PUT | `/school/update/:schoolid` | SchoolController.update | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), AccessGuard(ACCESS), CheckPermissionsGuard[update_school] |  |
 | POST | `/standard` | StandardController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_standard] |  |
 | DELETE | `/standard/:standardid` | StandardController.delete | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_standard] |  |

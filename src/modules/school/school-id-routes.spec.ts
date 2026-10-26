@@ -55,15 +55,25 @@ afterEach(() => jest.restoreAllMocks());
 
 describe("GET /school/branding (public: fails open to the default)", () => {
   const branding = (schoolname: unknown, schoolid: unknown) => new SchoolController().getBranding(schoolname, schoolid);
-  const DEFAULT = { error: false, data: { uitheme: "kids", brandingconfig: null } };
+  // beside the branding it always returned, the resolved tier labels of a school with none of its own: the platform default
+  const LABELS = {
+    labelsresolved: {
+      curriculum: { en: { one: "Curriculum", other: "Curricula" } },
+      grade: { en: { one: "Grade", other: "Grades" } },
+      level: { en: { one: "Level", other: "Levels" } },
+      lesson: { en: { one: "Lesson", other: "Lessons" } },
+    },
+    hideSingleItemTiers: false,
+  };
+  const DEFAULT = { error: false, data: { uitheme: "kids", brandingconfig: null, ...LABELS } };
 
   it("by id (new)", async () => {
-    expect(await branding(undefined, SAMPLE.schoolid)).toEqual({ error: false, data: { uitheme: "corporate", brandingconfig: { logo: "x" } } });
+    expect(await branding(undefined, SAMPLE.schoolid)).toEqual({ error: false, data: { uitheme: "corporate", brandingconfig: { logo: "x" }, ...LABELS } });
   });
 
   it("by name, as the learner app sends the stored name today: resolved to the id, then read by id", async () => {
-    expect(await branding("Sample School", undefined)).toEqual({ error: false, data: { uitheme: "corporate", brandingconfig: { logo: "x" } } });
-    expect(await branding("sample school ", undefined)).toEqual({ error: false, data: { uitheme: "corporate", brandingconfig: { logo: "x" } } });
+    expect(await branding("Sample School", undefined)).toEqual({ error: false, data: { uitheme: "corporate", brandingconfig: { logo: "x" }, ...LABELS } });
+    expect(await branding("sample school ", undefined)).toEqual({ error: false, data: { uitheme: "corporate", brandingconfig: { logo: "x" }, ...LABELS } });
     // the school row itself is read by id
     expect(schools.findOne).toHaveBeenCalledWith(expect.objectContaining({ where: { schoolid: SAMPLE.schoolid, isdeleted: false } }));
   });
@@ -72,7 +82,7 @@ describe("GET /school/branding (public: fails open to the default)", () => {
     expect(await branding("Nowhere", undefined)).toEqual(DEFAULT);
     expect(await branding(undefined, "99999999-9999-4999-8999-999999999999")).toEqual(DEFAULT);
     expect(await branding("សាលាគរូ", undefined)).toEqual(DEFAULT);
-    expect(await branding("សាលាគំរូ", undefined)).toEqual({ error: false, data: { uitheme: "kids", brandingconfig: null } });
+    expect(await branding("សាលាគំរូ", undefined)).toEqual({ error: false, data: { uitheme: "kids", brandingconfig: null, ...LABELS } });
   });
 
   it("anything that is not a non-empty string skips the lookup and gets the default", async () => {

@@ -3,6 +3,7 @@ import { IPaging } from 'src/models/IPaging';
 import { emptyString } from 'src/validators/custom.validator';
 import { RequestValidator } from '../../models/RequestValidator';
 import { filterValue } from "src/validators/organisation-filter";
+import { reorderList } from "src/validators/reorder-list";
 
 const creategrade: RequestValidator = ({
   body: joi.object().keys({
@@ -59,4 +60,5 @@ const showallgrade: RequestValidator = ({
 });
 
 export { creategrade, updategrade, deletegrade, showgrade, showallgrade, showgradebycurriculum };
-
+const reordergrade: RequestValidator = reorderList("curriculumid", "Curriculum ID", "gradeids", "Grade IDs");
+export { reordergrade };

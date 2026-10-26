@@ -18,7 +18,7 @@ import { Org, OrgContext, OrgOrServer, OrgOrSchoolUser } from "src/decorators/or
 import { assertInScope, findOwnedCurriculum } from "src/business/content-scope";
 import { BusinessValidationInterceptor } from '../../interceptors/businessvalidation.interceptor';
 import { CreateGrade, DeleteGrade, EditGrade } from './grade.business.validator';
-import { creategrade, deletegrade, showallgrade, showgrade, showgradebycurriculum, updategrade } from "./grade.request.validator";
+import { creategrade, deletegrade, showallgrade, showgrade, showgradebycurriculum, updategrade, reordergrade } from "./grade.request.validator";
 import { GradeBase, GradeCreateResponse } from './models/GradeBase';
 import { GradeGetAllByCurriculumResponse, GradeGetAllResponse, GradeGetResponse } from './models/GradeGetAllResponse';
 import { GradeRequest } from './models/GradeRequest';
@@ -266,6 +266,43 @@ export class GradeController {
     return {
       error: false,
       data: data ? data : undefined
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
+  @Put('reorder/:curriculumid')
+  @ApiResponse({
+    status: 200,
+    description: "Grades reordered: the order is 1..n in the order given",
+    schema: { $ref: getSchemaPath(ResponseBoolean) },
+  })
+  @ApiResponse({
+    status: 400,
+    description: "The list is not exactly the curriculum's grades, once each",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "The curriculum or a grade is not found",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @UseInterceptors(new SchemaValidationInterceptor(reordergrade))
+  @RequirePermissions(Permission.UPDATE_GRADE)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: `curriculumid`, type: "string", required: true })
+  async reordergrades(
+    @Param('curriculumid') curriculumid: string,
+    @Body() body: { gradeids: string[] },
+    @Org() org: OrgContext,
+  ): Promise<ResponseBoolean> {
+    // the curriculum in the path and every id in the list are the caller's, or the 404 an absent one gets; nothing is written otherwise
+    await new GradeBusiness(org).reorderGrades(curriculumid, body.gradeids);
+    return {
+      error: false,
+      data: true,
     };
   }
 

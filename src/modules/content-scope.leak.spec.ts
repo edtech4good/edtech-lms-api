@@ -1931,6 +1931,531 @@ describe("content is confined to the caller's organisation", () => {
     });
   });
 
+  // One call sets the order of ALL the live grades of a curriculum: 1..n in the order given (the rules of a lesson's learning items).
+  describe("PUT /grade/reorder/:curriculumid", () => {
+    const [EXTRA, OTHER_PARENT_KID, EMPTY_PARENT, DELETED] = [uuid(11101), uuid(11102), uuid(11104), uuid(11103)];
+    const url = (parent: string) => `/grade/reorder/${parent}`;
+    const body = (list: string[]) => ({ gradeids: list });
+    const row = (id: string, parentid: string, order: number) => ({ gradeid: id, curriculumid: parentid, gradename: "Extra " + id.slice(-4), gradeorder: order, gradestatus: true, passing_points: 8 });
+    const KIDS = [TX.grade, TX.grade2];
+    const ALL = [...KIDS, EXTRA];
+    const orderOf = (id: string) => stored("grades", "gradeid", id).gradeorder;
+    beforeEach(() => {
+      // the curriculum holds a third grade (its number ties with the first, as an admin's typed numbers can leave them); a sibling curriculum
+      // holds one of its own; a third curriculum holds none
+      db.add("grades", row(EXTRA, TX.curriculum, 1));
+      db.add("grades", row(OTHER_PARENT_KID, TX.curriculum2, 1));
+      db.add("grades", { ...row(DELETED, TX.curriculum, 9), isdeleted: true });
+      db.add("curriculums", { curriculumid: EMPTY_PARENT, curriculumname: "Empty " + EMPTY_PARENT.slice(-4), organisationid: X, subjectid: TX.subject, curriculumstatus: true });
+    });
+    /** The tables as they stood, with only the order of the named grades changed to 1..n in the order given. */
+    const afterReorder = (before: Record<string, Row[]>, list: string[]) => {
+      const expected = JSON.parse(JSON.stringify(before)) as Record<string, Row[]>;
+      for (const [index, id] of list.entries()) expected.grades.find((r) => r.gradeid === id)!.gradeorder = index + 1;
+      return expected;
+    };
+    it.each(IN_X)("%s: sets the order of X's curriculum's grades to 1..n in the order given, and nothing else changes", async (who) => {
+      const list = [EXTRA, ...[...KIDS].reverse()];
+      const before = db.snapshot();
+      const res = await send(who, "put", url(TX.curriculum), body(list));
+      expect(res.status).toBe(200);
+      expect(withoutReference(res.body)).toEqual({ error: false, data: true });
+      expect(list.map(orderOf)).toEqual([1, 2, 3]);
+      // the sibling curriculum's grade, Y's and the unowned ones are where they were
+      expect(db.snapshot()).toEqual(afterReorder(before, list));
+    });
+    it.each(IN_X)("%s: a deleted grade is not part of the set: left out it is fine, named it is refused", async (who) => {
+      const named = await refuses(who, "put", url(TX.curriculum), body([...ALL, DELETED]));
+      expect(named.status).toBe(400);
+      expect(named.body.fields).toEqual([{ field: "gradeids", message: "The list must hold every grade of this curriculum, once each, and nothing else: 1 not in this curriculum." }]);
+      const res = await send(who, "put", url(TX.curriculum), body([EXTRA, ...[...KIDS].reverse()]));
+      expect(res.status).toBe(200);
+      expect(orderOf(DELETED)).toBe(9);
+      expect(stored("grades", "gradeid", DELETED).isdeleted).toBe(true);
+    });
+    it.each(IN_X)("%s: a curriculum with no grades takes an empty list and writes nothing", async (who) => {
+      const before = db.snapshot();
+      const res = await send(who, "put", url(EMPTY_PARENT), body([]));
+      expect(res.status).toBe(200);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it.each(IN_X)("%s: Y's and an unowned curriculum answer as an absent one does, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(id), body(ALL)), TY.curriculum, TU.curriculum)).toBe(404);
+    });
+    it.each(IN_X)("%s: the curriculum in the path is the one checked", async (who) => {
+      expect(await asAbsentPath(who, "put", (id) => r(url(id), body(ALL)), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
+    });
+    it.each(IN_X)("%s: a list holding Y's grade or an unowned one is the 404 an absent grade gets, the whole request refused, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(TX.curriculum), body([id, ...ALL])), TY.grade, TU.grade)).toBe(404);
+    });
+    it.each(IN_X)("%s: a partial list is refused with what is wrong counted, and nothing is written", async (who) => {
+      const res = await refuses(who, "put", url(TX.curriculum), body([EXTRA, KIDS[0]]));
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "gradeids", message: "The list must hold every grade of this curriculum, once each, and nothing else: 1 missing." }]);
+      const none = await refuses(who, "put", url(TX.curriculum), body([]));
+      expect(none.status).toBe(400);
+      expect(none.body.fields).toEqual([{ field: "gradeids", message: "The list must hold every grade of this curriculum, once each, and nothing else: 3 missing." }]);
+    });
+    it.each(IN_X)("%s: X's grade of another curriculum is refused, with a left-out one counted too; nothing is written", async (who) => {
+      const res = await refuses(who, "put", url(TX.curriculum), body([...ALL, OTHER_PARENT_KID]));
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "gradeids", message: "The list must hold every grade of this curriculum, once each, and nothing else: 1 not in this curriculum." }]);
+      const both = await refuses(who, "put", url(TX.curriculum), body([EXTRA, OTHER_PARENT_KID, KIDS[0]]));
+      expect(both.status).toBe(400);
+      expect(both.body.fields).toEqual([{ field: "gradeids", message: "The list must hold every grade of this curriculum, once each, and nothing else: 1 missing, 1 not in this curriculum." }]);
+    });
+    it.each(IN_X)("%s: a repeated grade is refused, nothing written", async (who) => {
+      for (const list of [[...ALL, EXTRA], [EXTRA, EXTRA, KIDS[0]]]) {
+        expect((await refuses(who, "put", url(TX.curriculum), body(list))).status).toBe(400);
+      }
+    });
+    it.each(IN_X)("%s: a body that is not a list of ids is refused, nothing written", async (who) => {
+      for (const bad of [{}, { gradeids: "x" }, { gradeids: ["not-an-id"] }, { gradeids: [EXTRA], extra: 1 }, { gradeids: null }]) {
+        expect((await refuses(who, "put", url(TX.curriculum), bad)).status).toBe(400);
+      }
+      expect((await refuses(who, "put", url("not-an-id"), body(ALL))).status).toBe(400);
+    });
+    it("a platform user not acting: any curriculum's grades, an unowned curriculum's too", async () => {
+      expect((await send(NOT_ACTING, "put", url(TY.curriculum), body([TY.grade2, TY.grade]))).status).toBe(200);
+      expect([orderOf(TY.grade2), orderOf(TY.grade)]).toEqual([1, 2]);
+      expect((await send(NOT_ACTING, "put", url(TU.curriculum), body([TU.grade2, TU.grade]))).status).toBe(200);
+      expect([orderOf(TU.grade2), orderOf(TU.grade)]).toEqual([1, 2]);
+    });
+    it("a platform user not acting: a curriculum or a grade that is not there is the 404 an absent one gets", async () => {
+      expect((await refuses(NOT_ACTING, "put", url(MISSING), body([]))).status).toBe(404);
+      expect((await refuses(NOT_ACTING, "put", url(TX.curriculum), body([...ALL, MISSING]))).status).toBe(404);
+    });
+    it("a staff user who may view but not update is refused (403), nothing written", async () => {
+      const viewer = bearer({ lmsuserid: "vw", lmsuserroles: [Role.admin], permissions: ["view_curriculum"], organisationid: X, isplatform: false });
+      const before = db.snapshot();
+      const res = await request(app.getHttpServer()).put(url(TX.curriculum)).set("Authorization", viewer).set("Connection", "close").send(body(ALL));
+      expect(res.status).toBe(403);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it("a school-user token and the server token are refused, nothing written", async () => {
+      for (const who of ["a school-user token", "a server token"] as Who[]) {
+        const res = await refuses(who, "put", url(TX.curriculum), body(ALL));
+        expect([401, 403]).toContain(res.status);
+      }
+    });
+  });
+
+  // One call sets the order of ALL the live levels of a grade: 1..n in the order given (the rules of a lesson's learning items).
+  describe("PUT /level/reorder/:gradeid", () => {
+    const [EXTRA, OTHER_PARENT_KID, EMPTY_PARENT, DELETED] = [uuid(12101), uuid(12102), uuid(12104), uuid(12103)];
+    const url = (parent: string) => `/level/reorder/${parent}`;
+    const body = (list: string[]) => ({ levelids: list });
+    const row = (id: string, parentid: string, order: number) => ({ levelid: id, gradeid: parentid, levelname: "Extra " + id.slice(-4), levelorder: order, levelstatus: true, quiz_points: 100, passing_points: 0 });
+    const KIDS = [TX.level, TX.level2];
+    const ALL = [...KIDS, EXTRA];
+    const orderOf = (id: string) => stored("levels", "levelid", id).levelorder;
+    beforeEach(() => {
+      // the grade holds a third level (its number ties with the first, as an admin's typed numbers can leave them); a sibling grade
+      // holds one of its own; a third grade holds none
+      db.add("levels", row(EXTRA, TX.grade, 1));
+      db.add("levels", row(OTHER_PARENT_KID, TX.grade2, 1));
+      db.add("levels", { ...row(DELETED, TX.grade, 9), isdeleted: true });
+      db.add("grades", { gradeid: EMPTY_PARENT, curriculumid: TX.curriculum, gradename: "Empty " + EMPTY_PARENT.slice(-4), gradeorder: 9, gradestatus: true, passing_points: 8 });
+    });
+    /** The tables as they stood, with only the order of the named levels changed to 1..n in the order given. */
+    const afterReorder = (before: Record<string, Row[]>, list: string[]) => {
+      const expected = JSON.parse(JSON.stringify(before)) as Record<string, Row[]>;
+      for (const [index, id] of list.entries()) expected.levels.find((r) => r.levelid === id)!.levelorder = index + 1;
+      return expected;
+    };
+    it.each(IN_X)("%s: sets the order of X's grade's levels to 1..n in the order given, and nothing else changes", async (who) => {
+      const list = [EXTRA, ...[...KIDS].reverse()];
+      const before = db.snapshot();
+      const res = await send(who, "put", url(TX.grade), body(list));
+      expect(res.status).toBe(200);
+      expect(withoutReference(res.body)).toEqual({ error: false, data: true });
+      expect(list.map(orderOf)).toEqual([1, 2, 3]);
+      // the sibling grade's level, Y's and the unowned ones are where they were
+      expect(db.snapshot()).toEqual(afterReorder(before, list));
+    });
+    it.each(IN_X)("%s: a deleted level is not part of the set: left out it is fine, named it is refused", async (who) => {
+      const named = await refuses(who, "put", url(TX.grade), body([...ALL, DELETED]));
+      expect(named.status).toBe(400);
+      expect(named.body.fields).toEqual([{ field: "levelids", message: "The list must hold every level of this grade, once each, and nothing else: 1 not in this grade." }]);
+      const res = await send(who, "put", url(TX.grade), body([EXTRA, ...[...KIDS].reverse()]));
+      expect(res.status).toBe(200);
+      expect(orderOf(DELETED)).toBe(9);
+      expect(stored("levels", "levelid", DELETED).isdeleted).toBe(true);
+    });
+    it.each(IN_X)("%s: a grade with no levels takes an empty list and writes nothing", async (who) => {
+      const before = db.snapshot();
+      const res = await send(who, "put", url(EMPTY_PARENT), body([]));
+      expect(res.status).toBe(200);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it.each(IN_X)("%s: Y's and an unowned grade answer as an absent one does, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(id), body(ALL)), TY.grade, TU.grade)).toBe(404);
+    });
+    it.each(IN_X)("%s: the grade in the path is the one checked", async (who) => {
+      expect(await asAbsentPath(who, "put", (id) => r(url(id), body(ALL)), "gradeid", TX.grade, TY.grade)).toBe(404);
+    });
+    it.each(IN_X)("%s: a list holding Y's level or an unowned one is the 404 an absent level gets, the whole request refused, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(TX.grade), body([id, ...ALL])), TY.level, TU.level)).toBe(404);
+    });
+    it.each(IN_X)("%s: a partial list is refused with what is wrong counted, and nothing is written", async (who) => {
+      const res = await refuses(who, "put", url(TX.grade), body([EXTRA, KIDS[0]]));
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "levelids", message: "The list must hold every level of this grade, once each, and nothing else: 1 missing." }]);
+      const none = await refuses(who, "put", url(TX.grade), body([]));
+      expect(none.status).toBe(400);
+      expect(none.body.fields).toEqual([{ field: "levelids", message: "The list must hold every level of this grade, once each, and nothing else: 3 missing." }]);
+    });
+    it.each(IN_X)("%s: X's level of another grade is refused, with a left-out one counted too; nothing is written", async (who) => {
+      const res = await refuses(who, "put", url(TX.grade), body([...ALL, OTHER_PARENT_KID]));
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "levelids", message: "The list must hold every level of this grade, once each, and nothing else: 1 not in this grade." }]);
+      const both = await refuses(who, "put", url(TX.grade), body([EXTRA, OTHER_PARENT_KID, KIDS[0]]));
+      expect(both.status).toBe(400);
+      expect(both.body.fields).toEqual([{ field: "levelids", message: "The list must hold every level of this grade, once each, and nothing else: 1 missing, 1 not in this grade." }]);
+    });
+    it.each(IN_X)("%s: a repeated level is refused, nothing written", async (who) => {
+      for (const list of [[...ALL, EXTRA], [EXTRA, EXTRA, KIDS[0]]]) {
+        expect((await refuses(who, "put", url(TX.grade), body(list))).status).toBe(400);
+      }
+    });
+    it.each(IN_X)("%s: a body that is not a list of ids is refused, nothing written", async (who) => {
+      for (const bad of [{}, { levelids: "x" }, { levelids: ["not-an-id"] }, { levelids: [EXTRA], extra: 1 }, { levelids: null }]) {
+        expect((await refuses(who, "put", url(TX.grade), bad)).status).toBe(400);
+      }
+      expect((await refuses(who, "put", url("not-an-id"), body(ALL))).status).toBe(400);
+    });
+    it("a platform user not acting: any grade's levels, an unowned grade's too", async () => {
+      expect((await send(NOT_ACTING, "put", url(TY.grade), body([TY.level2, TY.level]))).status).toBe(200);
+      expect([orderOf(TY.level2), orderOf(TY.level)]).toEqual([1, 2]);
+      expect((await send(NOT_ACTING, "put", url(TU.grade), body([TU.level2, TU.level]))).status).toBe(200);
+      expect([orderOf(TU.level2), orderOf(TU.level)]).toEqual([1, 2]);
+    });
+    it("a platform user not acting: a grade or a level that is not there is the 404 an absent one gets", async () => {
+      expect((await refuses(NOT_ACTING, "put", url(MISSING), body([]))).status).toBe(404);
+      expect((await refuses(NOT_ACTING, "put", url(TX.grade), body([...ALL, MISSING]))).status).toBe(404);
+    });
+    it("a staff user who may view but not update is refused (403), nothing written", async () => {
+      const viewer = bearer({ lmsuserid: "vw", lmsuserroles: [Role.admin], permissions: ["view_curriculum"], organisationid: X, isplatform: false });
+      const before = db.snapshot();
+      const res = await request(app.getHttpServer()).put(url(TX.grade)).set("Authorization", viewer).set("Connection", "close").send(body(ALL));
+      expect(res.status).toBe(403);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it("a school-user token and the server token are refused, nothing written", async () => {
+      for (const who of ["a school-user token", "a server token"] as Who[]) {
+        const res = await refuses(who, "put", url(TX.grade), body(ALL));
+        expect([401, 403]).toContain(res.status);
+      }
+    });
+  });
+
+  // One call sets the order of ALL the live lessons of a level: 1..n in the order given (the rules of a lesson's learning items).
+  describe("PUT /lesson/reorder/:levelid", () => {
+    const [EXTRA, OTHER_PARENT_KID, EMPTY_PARENT, DELETED] = [uuid(13101), uuid(13102), uuid(13104), uuid(13103)];
+    const url = (parent: string) => `/lesson/reorder/${parent}`;
+    const body = (list: string[]) => ({ lessonids: list });
+    const row = (id: string, parentid: string, order: number) => ({ lessonid: id, levelid: parentid, lessonname: "Extra " + id.slice(-4), lessonorder: order, lessonstatus: true, total_points: 100, passing_points: 0 });
+    const KIDS = [TX.lesson, TX.lesson2];
+    const ALL = [...KIDS, EXTRA];
+    const orderOf = (id: string) => stored("lessons", "lessonid", id).lessonorder;
+    beforeEach(() => {
+      // the level holds a third lesson (its number ties with the first, as an admin's typed numbers can leave them); a sibling level
+      // holds one of its own; a third level holds none
+      db.add("lessons", row(EXTRA, TX.level, 1));
+      db.add("lessons", row(OTHER_PARENT_KID, TX.level2, 1));
+      db.add("lessons", { ...row(DELETED, TX.level, 9), isdeleted: true });
+      db.add("levels", { levelid: EMPTY_PARENT, gradeid: TX.grade, levelname: "Empty " + EMPTY_PARENT.slice(-4), levelorder: 9, levelstatus: true, quiz_points: 100, passing_points: 0 });
+    });
+    /** The tables as they stood, with only the order of the named lessons changed to 1..n in the order given. */
+    const afterReorder = (before: Record<string, Row[]>, list: string[]) => {
+      const expected = JSON.parse(JSON.stringify(before)) as Record<string, Row[]>;
+      for (const [index, id] of list.entries()) expected.lessons.find((r) => r.lessonid === id)!.lessonorder = index + 1;
+      return expected;
+    };
+    it.each(IN_X)("%s: sets the order of X's level's lessons to 1..n in the order given, and nothing else changes", async (who) => {
+      const list = [EXTRA, ...[...KIDS].reverse()];
+      const before = db.snapshot();
+      const res = await send(who, "put", url(TX.level), body(list));
+      expect(res.status).toBe(200);
+      expect(withoutReference(res.body)).toEqual({ error: false, data: true });
+      expect(list.map(orderOf)).toEqual([1, 2, 3]);
+      // the sibling level's lesson, Y's and the unowned ones are where they were
+      expect(db.snapshot()).toEqual(afterReorder(before, list));
+    });
+    it.each(IN_X)("%s: a deleted lesson is not part of the set: left out it is fine, named it is refused", async (who) => {
+      const named = await refuses(who, "put", url(TX.level), body([...ALL, DELETED]));
+      expect(named.status).toBe(400);
+      expect(named.body.fields).toEqual([{ field: "lessonids", message: "The list must hold every lesson of this level, once each, and nothing else: 1 not in this level." }]);
+      const res = await send(who, "put", url(TX.level), body([EXTRA, ...[...KIDS].reverse()]));
+      expect(res.status).toBe(200);
+      expect(orderOf(DELETED)).toBe(9);
+      expect(stored("lessons", "lessonid", DELETED).isdeleted).toBe(true);
+    });
+    it.each(IN_X)("%s: a level with no lessons takes an empty list and writes nothing", async (who) => {
+      const before = db.snapshot();
+      const res = await send(who, "put", url(EMPTY_PARENT), body([]));
+      expect(res.status).toBe(200);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it.each(IN_X)("%s: Y's and an unowned level answer as an absent one does, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(id), body(ALL)), TY.level, TU.level)).toBe(404);
+    });
+    it.each(IN_X)("%s: the level in the path is the one checked", async (who) => {
+      expect(await asAbsentPath(who, "put", (id) => r(url(id), body(ALL)), "levelid", TX.level, TY.level)).toBe(404);
+    });
+    it.each(IN_X)("%s: a list holding Y's lesson or an unowned one is the 404 an absent lesson gets, the whole request refused, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(TX.level), body([id, ...ALL])), TY.lesson, TU.lesson)).toBe(404);
+    });
+    it.each(IN_X)("%s: a partial list is refused with what is wrong counted, and nothing is written", async (who) => {
+      const res = await refuses(who, "put", url(TX.level), body([EXTRA, KIDS[0]]));
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "lessonids", message: "The list must hold every lesson of this level, once each, and nothing else: 1 missing." }]);
+      const none = await refuses(who, "put", url(TX.level), body([]));
+      expect(none.status).toBe(400);
+      expect(none.body.fields).toEqual([{ field: "lessonids", message: "The list must hold every lesson of this level, once each, and nothing else: 3 missing." }]);
+    });
+    it.each(IN_X)("%s: X's lesson of another level is refused, with a left-out one counted too; nothing is written", async (who) => {
+      const res = await refuses(who, "put", url(TX.level), body([...ALL, OTHER_PARENT_KID]));
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "lessonids", message: "The list must hold every lesson of this level, once each, and nothing else: 1 not in this level." }]);
+      const both = await refuses(who, "put", url(TX.level), body([EXTRA, OTHER_PARENT_KID, KIDS[0]]));
+      expect(both.status).toBe(400);
+      expect(both.body.fields).toEqual([{ field: "lessonids", message: "The list must hold every lesson of this level, once each, and nothing else: 1 missing, 1 not in this level." }]);
+    });
+    it.each(IN_X)("%s: a repeated lesson is refused, nothing written", async (who) => {
+      for (const list of [[...ALL, EXTRA], [EXTRA, EXTRA, KIDS[0]]]) {
+        expect((await refuses(who, "put", url(TX.level), body(list))).status).toBe(400);
+      }
+    });
+    it.each(IN_X)("%s: a body that is not a list of ids is refused, nothing written", async (who) => {
+      for (const bad of [{}, { lessonids: "x" }, { lessonids: ["not-an-id"] }, { lessonids: [EXTRA], extra: 1 }, { lessonids: null }]) {
+        expect((await refuses(who, "put", url(TX.level), bad)).status).toBe(400);
+      }
+      expect((await refuses(who, "put", url("not-an-id"), body(ALL))).status).toBe(400);
+    });
+    it("a platform user not acting: any level's lessons, an unowned level's too", async () => {
+      expect((await send(NOT_ACTING, "put", url(TY.level), body([TY.lesson2, TY.lesson]))).status).toBe(200);
+      expect([orderOf(TY.lesson2), orderOf(TY.lesson)]).toEqual([1, 2]);
+      expect((await send(NOT_ACTING, "put", url(TU.level), body([TU.lesson2, TU.lesson]))).status).toBe(200);
+      expect([orderOf(TU.lesson2), orderOf(TU.lesson)]).toEqual([1, 2]);
+    });
+    it("a platform user not acting: a level or a lesson that is not there is the 404 an absent one gets", async () => {
+      expect((await refuses(NOT_ACTING, "put", url(MISSING), body([]))).status).toBe(404);
+      expect((await refuses(NOT_ACTING, "put", url(TX.level), body([...ALL, MISSING]))).status).toBe(404);
+    });
+    it("a staff user who may view but not update is refused (403), nothing written", async () => {
+      const viewer = bearer({ lmsuserid: "vw", lmsuserroles: [Role.admin], permissions: ["view_curriculum"], organisationid: X, isplatform: false });
+      const before = db.snapshot();
+      const res = await request(app.getHttpServer()).put(url(TX.level)).set("Authorization", viewer).set("Connection", "close").send(body(ALL));
+      expect(res.status).toBe(403);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it("a school-user token and the server token are refused, nothing written", async () => {
+      for (const who of ["a school-user token", "a server token"] as Who[]) {
+        const res = await refuses(who, "put", url(TX.level), body(ALL));
+        expect([401, 403]).toContain(res.status);
+      }
+    });
+  });
+
+  // One call sets the order of ALL the live quizs of a lesson: 1..n in the order given (the rules of a lesson's learning items).
+  describe("PUT /lesson/quiz/reorder/:lessonid", () => {
+    const [EXTRA, OTHER_PARENT_KID, EMPTY_PARENT] = [uuid(14101), uuid(14102), uuid(14104)];
+    const url = (parent: string) => `/lesson/quiz/reorder/${parent}`;
+    const body = (list: string[]) => ({ lessonquizids: list });
+    const row = (id: string, parentid: string, order: number) => ({ lessonquizid: id, lessonid: parentid, lessonquizname: "Extra " + id.slice(-4), lessonquizdescription: "d", lessonquizorder: order, lessonquizstatus: true, points: 10 });
+    const KIDS = [TX.quiz, TX.quiz2];
+    const ALL = [...KIDS, EXTRA];
+    const orderOf = (id: string) => stored("lessonquizzes", "lessonquizid", id).lessonquizorder;
+    beforeEach(() => {
+      // the lesson holds a third quiz (its number ties with the first, as an admin's typed numbers can leave them); a sibling lesson
+      // holds one of its own; a third lesson holds none
+      db.add("lessonquizzes", row(EXTRA, TX.lesson, 1));
+      db.add("lessonquizzes", row(OTHER_PARENT_KID, TX.lesson2, 1));
+      db.add("lessons", { lessonid: EMPTY_PARENT, levelid: TX.level, lessonname: "Empty " + EMPTY_PARENT.slice(-4), lessonorder: 9, lessonstatus: true, total_points: 100, passing_points: 0 });
+    });
+    /** The tables as they stood, with only the order of the named quizs changed to 1..n in the order given. */
+    const afterReorder = (before: Record<string, Row[]>, list: string[]) => {
+      const expected = JSON.parse(JSON.stringify(before)) as Record<string, Row[]>;
+      for (const [index, id] of list.entries()) expected.lessonquizzes.find((r) => r.lessonquizid === id)!.lessonquizorder = index + 1;
+      return expected;
+    };
+    it.each(IN_X)("%s: sets the order of X's lesson's quizs to 1..n in the order given, and nothing else changes", async (who) => {
+      const list = [EXTRA, ...[...KIDS].reverse()];
+      const before = db.snapshot();
+      const res = await send(who, "put", url(TX.lesson), body(list));
+      expect(res.status).toBe(200);
+      expect(withoutReference(res.body)).toEqual({ error: false, data: true });
+      expect(list.map(orderOf)).toEqual([1, 2, 3]);
+      // the sibling lesson's quiz, Y's and the unowned ones are where they were
+      expect(db.snapshot()).toEqual(afterReorder(before, list));
+    });
+    it.each(IN_X)("%s: a lesson with no quizs takes an empty list and writes nothing", async (who) => {
+      const before = db.snapshot();
+      const res = await send(who, "put", url(EMPTY_PARENT), body([]));
+      expect(res.status).toBe(200);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it.each(IN_X)("%s: Y's and an unowned lesson answer as an absent one does, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(id), body(ALL)), TY.lesson, TU.lesson)).toBe(404);
+    });
+    it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
+      expect(await asAbsentPath(who, "put", (id) => r(url(id), body(ALL)), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+    });
+    it.each(IN_X)("%s: a list holding Y's quiz or an unowned one is the 404 an absent quiz gets, the whole request refused, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(TX.lesson), body([id, ...ALL])), TY.quiz, TU.quiz)).toBe(404);
+    });
+    it.each(IN_X)("%s: a partial list is refused with what is wrong counted, and nothing is written", async (who) => {
+      const res = await refuses(who, "put", url(TX.lesson), body([EXTRA, KIDS[0]]));
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "lessonquizids", message: "The list must hold every quiz of this lesson, once each, and nothing else: 1 missing." }]);
+      const none = await refuses(who, "put", url(TX.lesson), body([]));
+      expect(none.status).toBe(400);
+      expect(none.body.fields).toEqual([{ field: "lessonquizids", message: "The list must hold every quiz of this lesson, once each, and nothing else: 3 missing." }]);
+    });
+    it.each(IN_X)("%s: X's quiz of another lesson is refused, with a left-out one counted too; nothing is written", async (who) => {
+      const res = await refuses(who, "put", url(TX.lesson), body([...ALL, OTHER_PARENT_KID]));
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "lessonquizids", message: "The list must hold every quiz of this lesson, once each, and nothing else: 1 not in this lesson." }]);
+      const both = await refuses(who, "put", url(TX.lesson), body([EXTRA, OTHER_PARENT_KID, KIDS[0]]));
+      expect(both.status).toBe(400);
+      expect(both.body.fields).toEqual([{ field: "lessonquizids", message: "The list must hold every quiz of this lesson, once each, and nothing else: 1 missing, 1 not in this lesson." }]);
+    });
+    it.each(IN_X)("%s: a repeated quiz is refused, nothing written", async (who) => {
+      for (const list of [[...ALL, EXTRA], [EXTRA, EXTRA, KIDS[0]]]) {
+        expect((await refuses(who, "put", url(TX.lesson), body(list))).status).toBe(400);
+      }
+    });
+    it.each(IN_X)("%s: a body that is not a list of ids is refused, nothing written", async (who) => {
+      for (const bad of [{}, { lessonquizids: "x" }, { lessonquizids: ["not-an-id"] }, { lessonquizids: [EXTRA], extra: 1 }, { lessonquizids: null }]) {
+        expect((await refuses(who, "put", url(TX.lesson), bad)).status).toBe(400);
+      }
+      expect((await refuses(who, "put", url("not-an-id"), body(ALL))).status).toBe(400);
+    });
+    it("a platform user not acting: any lesson's quizs, an unowned lesson's too", async () => {
+      expect((await send(NOT_ACTING, "put", url(TY.lesson), body([TY.quiz2, TY.quiz]))).status).toBe(200);
+      expect([orderOf(TY.quiz2), orderOf(TY.quiz)]).toEqual([1, 2]);
+      expect((await send(NOT_ACTING, "put", url(TU.lesson), body([TU.quiz2, TU.quiz]))).status).toBe(200);
+      expect([orderOf(TU.quiz2), orderOf(TU.quiz)]).toEqual([1, 2]);
+    });
+    it("a platform user not acting: a lesson or a quiz that is not there is the 404 an absent one gets", async () => {
+      expect((await refuses(NOT_ACTING, "put", url(MISSING), body([]))).status).toBe(404);
+      expect((await refuses(NOT_ACTING, "put", url(TX.lesson), body([...ALL, MISSING]))).status).toBe(404);
+    });
+    it("a staff user who may view but not update is refused (403), nothing written", async () => {
+      const viewer = bearer({ lmsuserid: "vw", lmsuserroles: [Role.admin], permissions: ["view_curriculum"], organisationid: X, isplatform: false });
+      const before = db.snapshot();
+      const res = await request(app.getHttpServer()).put(url(TX.lesson)).set("Authorization", viewer).set("Connection", "close").send(body(ALL));
+      expect(res.status).toBe(403);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it("a school-user token and the server token are refused, nothing written", async () => {
+      for (const who of ["a school-user token", "a server token"] as Who[]) {
+        const res = await refuses(who, "put", url(TX.lesson), body(ALL));
+        expect([401, 403]).toContain(res.status);
+      }
+    });
+  });
+
+  // One call sets the order of ALL the live practices of a lesson: 1..n in the order given (the rules of a lesson's learning items).
+  describe("PUT /lesson/practice/reorder/:lessonid", () => {
+    const [EXTRA, OTHER_PARENT_KID, EMPTY_PARENT] = [uuid(15101), uuid(15102), uuid(15104)];
+    const url = (parent: string) => `/lesson/practice/reorder/${parent}`;
+    const body = (list: string[]) => ({ lessonpracticeids: list });
+    const row = (id: string, parentid: string, order: number) => ({ lessonpracticeid: id, lessonid: parentid, lessonpracticename: "Extra " + id.slice(-4), lessonpracticedescription: "d", lessonpracticeorder: order, lessonpracticestatus: true, points: 10 });
+    const KIDS = [TX.practice, TX.practice2];
+    const ALL = [...KIDS, EXTRA];
+    const orderOf = (id: string) => stored("lessonpractices", "lessonpracticeid", id).lessonpracticeorder;
+    beforeEach(() => {
+      // the lesson holds a third practice (its number ties with the first, as an admin's typed numbers can leave them); a sibling lesson
+      // holds one of its own; a third lesson holds none
+      db.add("lessonpractices", row(EXTRA, TX.lesson, 1));
+      db.add("lessonpractices", row(OTHER_PARENT_KID, TX.lesson2, 1));
+      db.add("lessons", { lessonid: EMPTY_PARENT, levelid: TX.level, lessonname: "Empty " + EMPTY_PARENT.slice(-4), lessonorder: 9, lessonstatus: true, total_points: 100, passing_points: 0 });
+    });
+    /** The tables as they stood, with only the order of the named practices changed to 1..n in the order given. */
+    const afterReorder = (before: Record<string, Row[]>, list: string[]) => {
+      const expected = JSON.parse(JSON.stringify(before)) as Record<string, Row[]>;
+      for (const [index, id] of list.entries()) expected.lessonpractices.find((r) => r.lessonpracticeid === id)!.lessonpracticeorder = index + 1;
+      return expected;
+    };
+    it.each(IN_X)("%s: sets the order of X's lesson's practices to 1..n in the order given, and nothing else changes", async (who) => {
+      const list = [EXTRA, ...[...KIDS].reverse()];
+      const before = db.snapshot();
+      const res = await send(who, "put", url(TX.lesson), body(list));
+      expect(res.status).toBe(200);
+      expect(withoutReference(res.body)).toEqual({ error: false, data: true });
+      expect(list.map(orderOf)).toEqual([1, 2, 3]);
+      // the sibling lesson's practice, Y's and the unowned ones are where they were
+      expect(db.snapshot()).toEqual(afterReorder(before, list));
+    });
+    it.each(IN_X)("%s: a lesson with no practices takes an empty list and writes nothing", async (who) => {
+      const before = db.snapshot();
+      const res = await send(who, "put", url(EMPTY_PARENT), body([]));
+      expect(res.status).toBe(200);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it.each(IN_X)("%s: Y's and an unowned lesson answer as an absent one does, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(id), body(ALL)), TY.lesson, TU.lesson)).toBe(404);
+    });
+    it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
+      expect(await asAbsentPath(who, "put", (id) => r(url(id), body(ALL)), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+    });
+    it.each(IN_X)("%s: a list holding Y's practice or an unowned one is the 404 an absent practice gets, the whole request refused, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(TX.lesson), body([id, ...ALL])), TY.practice, TU.practice)).toBe(404);
+    });
+    it.each(IN_X)("%s: a partial list is refused with what is wrong counted, and nothing is written", async (who) => {
+      const res = await refuses(who, "put", url(TX.lesson), body([EXTRA, KIDS[0]]));
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "lessonpracticeids", message: "The list must hold every practice of this lesson, once each, and nothing else: 1 missing." }]);
+      const none = await refuses(who, "put", url(TX.lesson), body([]));
+      expect(none.status).toBe(400);
+      expect(none.body.fields).toEqual([{ field: "lessonpracticeids", message: "The list must hold every practice of this lesson, once each, and nothing else: 3 missing." }]);
+    });
+    it.each(IN_X)("%s: X's practice of another lesson is refused, with a left-out one counted too; nothing is written", async (who) => {
+      const res = await refuses(who, "put", url(TX.lesson), body([...ALL, OTHER_PARENT_KID]));
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual([{ field: "lessonpracticeids", message: "The list must hold every practice of this lesson, once each, and nothing else: 1 not in this lesson." }]);
+      const both = await refuses(who, "put", url(TX.lesson), body([EXTRA, OTHER_PARENT_KID, KIDS[0]]));
+      expect(both.status).toBe(400);
+      expect(both.body.fields).toEqual([{ field: "lessonpracticeids", message: "The list must hold every practice of this lesson, once each, and nothing else: 1 missing, 1 not in this lesson." }]);
+    });
+    it.each(IN_X)("%s: a repeated practice is refused, nothing written", async (who) => {
+      for (const list of [[...ALL, EXTRA], [EXTRA, EXTRA, KIDS[0]]]) {
+        expect((await refuses(who, "put", url(TX.lesson), body(list))).status).toBe(400);
+      }
+    });
+    it.each(IN_X)("%s: a body that is not a list of ids is refused, nothing written", async (who) => {
+      for (const bad of [{}, { lessonpracticeids: "x" }, { lessonpracticeids: ["not-an-id"] }, { lessonpracticeids: [EXTRA], extra: 1 }, { lessonpracticeids: null }]) {
+        expect((await refuses(who, "put", url(TX.lesson), bad)).status).toBe(400);
+      }
+      expect((await refuses(who, "put", url("not-an-id"), body(ALL))).status).toBe(400);
+    });
+    it("a platform user not acting: any lesson's practices, an unowned lesson's too", async () => {
+      expect((await send(NOT_ACTING, "put", url(TY.lesson), body([TY.practice2, TY.practice]))).status).toBe(200);
+      expect([orderOf(TY.practice2), orderOf(TY.practice)]).toEqual([1, 2]);
+      expect((await send(NOT_ACTING, "put", url(TU.lesson), body([TU.practice2, TU.practice]))).status).toBe(200);
+      expect([orderOf(TU.practice2), orderOf(TU.practice)]).toEqual([1, 2]);
+    });
+    it("a platform user not acting: a lesson or a practice that is not there is the 404 an absent one gets", async () => {
+      expect((await refuses(NOT_ACTING, "put", url(MISSING), body([]))).status).toBe(404);
+      expect((await refuses(NOT_ACTING, "put", url(TX.lesson), body([...ALL, MISSING]))).status).toBe(404);
+    });
+    it("a staff user who may view but not update is refused (403), nothing written", async () => {
+      const viewer = bearer({ lmsuserid: "vw", lmsuserroles: [Role.admin], permissions: ["view_curriculum"], organisationid: X, isplatform: false });
+      const before = db.snapshot();
+      const res = await request(app.getHttpServer()).put(url(TX.lesson)).set("Authorization", viewer).set("Connection", "close").send(body(ALL));
+      expect(res.status).toBe(403);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it("a school-user token and the server token are refused, nothing written", async () => {
+      for (const who of ["a school-user token", "a server token"] as Who[]) {
+        const res = await refuses(who, "put", url(TX.lesson), body(ALL));
+        expect([401, 403]).toContain(res.status);
+      }
+    });
+  });
+
   describe("learning items: type, body and documents", () => {
     const body = (over: object = {}) => ({ documentid: TX.document2, lessonlearningname: "ថ្មី", lessonlearningdescription: "ពិពណ៌នា", lessonlearningorder: 3, ...over });
     const updateBody = (over: object = {}) => ({ documentid: TX.document2, lessonid: TX.lesson, lessonlearningname: "ឈ្មោះថ្មី", lessonlearningdescription: "ពិពណ៌នា", ...over });

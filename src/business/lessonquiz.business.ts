@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { reorderChildren } from "./reorder-children";
 import { Op, WhereOptions } from 'sequelize';
 import { LessonQuizBase } from 'src/modules/lesson/models/LessonQuizResponse';
 import { v4 as uuidv4 } from 'uuid';
@@ -217,4 +218,30 @@ export class LessonQuizBusiness {
             lesson.save({ fields: ["quizzes_points"] });
         }
       }
+
+  /**
+   * Sets the order of a lesson's quizzes to 1..n in the order given, in one call. The lesson in the path is the caller's,
+   * or the 404 an absent one gets; the list must hold every one of its quizs once each (reorder-children.ts).
+   */
+  reorderLessonQuizzes = async (lessonid: string, lessonquizids: string[]) => {
+    if (this.org) {
+      await findOwnedLesson(this.org, lessonid);
+    }
+    return reorderChildren(
+      this.org,
+      {
+        kind: "quiz",
+        model: lessonquizzes,
+        idColumn: "lessonquizid",
+        parentColumn: "lessonid",
+        orderColumn: "lessonquizorder",
+        field: "lessonquizids",
+        noun: "quiz",
+        parentNoun: "lesson",
+        softDelete: false,
+      },
+      lessonid,
+      lessonquizids,
+    );
+  };
 }

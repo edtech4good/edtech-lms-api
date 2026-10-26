@@ -32,7 +32,7 @@ import {
   BusinessValidationInterceptor,
   SchemaValidationInterceptor,
 } from "src/interceptors";
-import type { SchoolWrite } from "src/business/school.business";
+import type { SchoolLabelChanges, SchoolWrite } from "src/business/school.business";
 import { Role, TokenType } from "src/models/enums";
 import { Permission } from "src/models/enums/permissions.enum";
 import { IMultiPaging } from "src/models/IPaging";
@@ -53,7 +53,9 @@ import {
   showschool,
   showschoolscurriculum,
   updateschool,
+  updateschoollabels,
 } from "./school.request.validator";
+import { withResolvedLabels, resolveTierLabels } from "../../business/tier-labels";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
 @ApiTags("School")
@@ -93,7 +95,7 @@ export class SchoolController {
     @Query("schoolname") schoolname: unknown,
     @Query("schoolid") schoolid: unknown
   ): Promise<any> {
-    const defaultBranding = { uitheme: "kids", brandingconfig: null };
+    const defaultBranding = { uitheme: "kids", brandingconfig: null, ...resolveTierLabels(null) };
     // Express parses `?schoolname[x]=1` into an object, not a string; that
     // would reach Sequelize's `where` and throw. Anything that isn't a
     // non-empty string skips the query entirely and fails open to the
@@ -120,6 +122,7 @@ export class SchoolController {
       data: {
         uitheme: school.uitheme ?? "kids",
         brandingconfig: school.brandingconfig ?? null,
+        ...resolveTierLabels(school.brandingconfig),
       },
     };
   }
@@ -361,9 +364,10 @@ export class SchoolController {
     @Param("schoolid") schoolid: string,
     @Org() org: OrgContext,
   ): Promise<SchoolCreateResponse> {
+    // the school as stored, and beside it the tier labels a client shows (the preset and the school's own, resolved)
     return {
       error: false,
-      data: await findOwnedSchool(org, schoolid),
+      data: withResolvedLabels((await findOwnedSchool(org, schoolid)).toJSON()),
     };
   }
 
@@ -404,6 +408,45 @@ export class SchoolController {
     return {
       error: false,
       data: data ? data : undefined,
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
+  @Put("labels/:schoolid")
+  @ApiResponse({
+    status: 200,
+    description: "School tier labels updated: the school with its resolved labels",
+    schema: { $ref: getSchemaPath(SchoolCreateResponse) },
+  })
+  @ApiResponse({
+    status: 400,
+    description: "The labels are not valid",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "The school is not found",
+  })
+  @UseInterceptors(new SchemaValidationInterceptor(updateschoollabels))
+  @RequirePermissions(Permission.UPDATE_SCHOOL)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: `schoolid`, type: "string", required: true })
+  async updatelabels(
+    @Param("schoolid") schoolid: string,
+    @Body() body: SchoolLabelChanges,
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
+  ): Promise<SchoolCreateResponse> {
+    // the keys are named one by one: what is passed on is never the request object itself
+    const row = await new SchoolBusiness().updateLabels(
+      schoolid,
+      { labelPreset: body.labelPreset, labels: body.labels, hideSingleItemTiers: body.hideSingleItemTiers },
+      user,
+      org,
+    );
+    return {
+      error: false,
+      data: withResolvedLabels(row.toJSON()),
     };
   }
 
