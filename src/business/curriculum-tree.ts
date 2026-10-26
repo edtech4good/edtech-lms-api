@@ -43,8 +43,8 @@ const toMap = (grouped: unknown, key: string): Map<unknown, number> =>
  * Every node also carries counts, so a client can show them without reading the children:
  *  - `childcount` on a curriculum, a grade and a level: the number of its direct children that are not deleted
  *    (grades, levels, lessons); on a lesson, `{ learnings, practices, quizzes }`.
- *  - `enrolmentcount` on a curriculum: the number of non-deleted students of the caller's schools whose
- *    `curriculumid` is it.
+ *  - `enrolmentcount` on a curriculum: the number of non-deleted students of the caller's schools enrolled on it: it is in
+ *    the learner's `curriculumids` list, or the learner has no list (NULL) and `curriculumid` is it.
  * The counts come from the lists already read, plus one grouped count for learning items (the tree does not list them)
  * and one for students: no query per node. The fields that were here before are unchanged; the counts are added after them.
  *
@@ -82,19 +82,23 @@ export const buildCurriculumTree = async (org: OrgContext, only?: string) => {
           }),
           "lessonid",
         );
-  const enrolledIn =
-    shown.length === 0
-      ? new Map<unknown, number>()
-      : toMap(
-          await students.count({
-            where: await andInOwnedSchools(
-              only === undefined ? { isdeleted: false } : { isdeleted: false, curriculumid: only },
-              org,
-            ),
-            group: ["curriculumid"],
-          }),
-          "curriculumid",
-        );
+  // The enrolment of record is the learner's `curriculumids` list (a roster update writes only the list and leaves
+  // `curriculumid` as it was); a learner with no list yet is on `curriculumid`. One grouped query returns the distinct
+  // (curriculumid, curriculumids) pairs of the caller's live learners with how many have each; the tally is made here.
+  const enrolledIn = new Map<unknown, number>();
+  if (shown.length > 0) {
+    const pairs = (await students.count({
+      where: await andInOwnedSchools({ isdeleted: false }, org),
+      group: ["curriculumid", "curriculumids"],
+    })) as unknown as GroupedCount;
+    for (const pair of pairs) {
+      const listed = pair.curriculumids;
+      const ids = new Set<unknown>(Array.isArray(listed) ? listed.filter((id) => typeof id === "string") : listed == null ? [pair.curriculumid] : []);
+      for (const id of ids) {
+        enrolledIn.set(id, (enrolledIn.get(id) ?? 0) + Number(pair.count));
+      }
+    }
+  }
 
   return shown.map((curriculum) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -105,7 +105,8 @@ const tierLabel = joi.object({
 /**
  * The tier labels of a school (`PUT /school/labels/:schoolid`): a preset by name, the school's own label for any of the
  * four tiers, and whether a tier holding one item is hidden. Every key is optional but at least one is sent; `null`
- * clears a preset or the school's own labels. The list of tiers is closed.
+ * clears a preset or the school's own labels. The list of tiers is closed. The labels sent replace the school's own
+ * labels as a set and each tier whole (deliberate: the admin sends the full set).
  */
 export const updateschoollabels: RequestValidator = {
   params: joi.object().keys({

@@ -497,7 +497,8 @@ describe("people and schools are confined to the caller's organisation", () => {
       expect(cleared.body.data.labelsresolved).toEqual(COMPANY);
       const noPreset = await send(who, "put", url(S_X), { labelPreset: null }).expect(200);
       expect(noPreset.body.data.labelsresolved).toEqual(PLATFORM_DEFAULT);
-      expect(schoolRow(S_X).brandingconfig).toEqual({});
+      // nothing of branding is left: the column is NULL again, not an empty object
+      expect(schoolRow(S_X).brandingconfig).toBeNull();
     });
     it.each(IN_X)("%s: the hide switch is stored and read back resolved; the school's logo and display name are left as they were", async (who) => {
       schoolRow(S_X).brandingconfig = { logourl: "https://example.org/logo.png", displayname: "School X" };
@@ -505,8 +506,24 @@ describe("people and schools are confined to the caller's organisation", () => {
       expect(res.body.data.hideSingleItemTiers).toBe(true);
       expect(res.body.data.labelsresolved).toEqual(PLATFORM_DEFAULT);
       expect(schoolRow(S_X).brandingconfig).toEqual({ logourl: "https://example.org/logo.png", displayname: "School X", hideSingleItemTiers: true });
+      // "off" is the same as absent: the key goes, the school's logo and display name stay
       await send(who, "put", url(S_X), { hideSingleItemTiers: false }).expect(200);
-      expect((schoolRow(S_X).brandingconfig as Row).hideSingleItemTiers).toBe(false);
+      expect(schoolRow(S_X).brandingconfig).toEqual({ logourl: "https://example.org/logo.png", displayname: "School X" });
+    });
+    it.each(IN_X)("%s: clearing the last label key leaves the column NULL, so the school has no branding of its own; any other key keeps it", async (who) => {
+      await send(who, "put", url(S_X), { labelPreset: "company", labels: { level: { en: { one: "Stage", other: "Stages" } } }, hideSingleItemTiers: true }).expect(200);
+      const cleared = await send(who, "put", url(S_X), { labelPreset: null, labels: null, hideSingleItemTiers: false }).expect(200);
+      expect(schoolRow(S_X).brandingconfig).toBeNull();
+      expect(cleared.body.data.brandingconfig).toBeNull();
+      expect(cleared.body.data.labelsresolved).toEqual(PLATFORM_DEFAULT);
+      // an empty set of labels counts as none
+      await send(who, "put", url(S_X), { labels: { level: { en: { one: "Stage", other: "Stages" } } } }).expect(200);
+      await send(who, "put", url(S_X), { labels: {} }).expect(200);
+      expect(schoolRow(S_X).brandingconfig).toBeNull();
+      // a school with a logo keeps its branding
+      schoolRow(S_X).brandingconfig = { logourl: "https://example.org/logo.png", hideSingleItemTiers: true };
+      await send(who, "put", url(S_X), { hideSingleItemTiers: false }).expect(200);
+      expect(schoolRow(S_X).brandingconfig).toEqual({ logourl: "https://example.org/logo.png" });
     });
     it.each(IN_X)("%s: the public branding read returns the resolved labels beside the branding it always returned", async (who) => {
       await send(who, "put", url(S_X), { labelPreset: "company", hideSingleItemTiers: true }).expect(200);

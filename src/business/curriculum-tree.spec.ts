@@ -67,6 +67,13 @@ const seed = () => {
   db.add("students", { studentid: id(83), schoolid: SX, curriculumid: C1, isdeleted: true });
   db.add("students", { studentid: id(84), schoolid: SX, curriculumid: C2 });
   db.add("students", { studentid: id(85), schoolid: SY, curriculumid: C1 });
+  // the enrolment of record is the list `curriculumids`: a learner on two curricula (the first is `curriculumid`), a learner
+  // reassigned by a roster update (the list says C2, `curriculumid` still says C1), a list that names a curriculum twice, and
+  // a deleted learner with a list
+  db.add("students", { studentid: id(86), schoolid: SX, curriculumid: C1, curriculumids: [C1, C2] });
+  db.add("students", { studentid: id(87), schoolid: SX, curriculumid: C1, curriculumids: [C2] });
+  db.add("students", { studentid: id(88), schoolid: SX, curriculumid: C1, curriculumids: [C1, C1] });
+  db.add("students", { studentid: id(89), schoolid: SX, curriculumid: C1, curriculumids: [C1, C2], isdeleted: true });
 };
 
 beforeEach(() => {
@@ -181,7 +188,7 @@ describe("the curriculum tree", () => {
       {
         curriculum: "Reading",
         childcount: 2,
-        enrolmentcount: 2,
+        enrolmentcount: 4,
         grades: [
           {
             grade: "Grade one",
@@ -206,23 +213,38 @@ describe("the curriculum tree", () => {
           { grade: "Grade gone", childcount: 0, levels: [] },
         ],
       },
-      { curriculum: "Maths", childcount: 0, enrolmentcount: 1, grades: [] },
+      { curriculum: "Maths", childcount: 0, enrolmentcount: 3, grades: [] },
     ]);
   });
 
-  it("counts a learner once for the curriculum they are on, and only the caller's schools' learners", async () => {
+  it("counts a learner once for each curriculum on their list, and only the caller's schools' learners", async () => {
     const asX = await buildCurriculumTree(orgX);
     const byName = (list: any[]) => list.map((c) => [c.curriculumname, c.enrolmentcount]).sort((a, b) => a[0].localeCompare(b[0]));
-    expect(byName(asX)).toEqual([["Maths", 1], ["Reading", 2]]);
+    expect(byName(asX)).toEqual([["Maths", 3], ["Reading", 4]]);
     // a platform user not acting sees every school's learners and Y's curriculum as well
     const all = await buildCurriculumTree(platform);
-    expect(byName(all)).toEqual([["Maths", 1], ["Other", 0], ["Reading", 3]]);
+    expect(byName(all)).toEqual([["Maths", 3], ["Other", 0], ["Reading", 5]]);
     const theirs = all.find((c) => c.curriculumid === C3);
     expect(countsOf([theirs])[0].grades[0]).toEqual({
       grade: "Their grade",
       childcount: 1,
       levels: [{ level: "Their level", childcount: 1, lessons: [{ lesson: "Their lesson", childcount: { learnings: 1, practices: 1, quizzes: 1 } }] }],
     });
+  });
+
+  it("counts by the learner's curriculumids list: on two curricula counts under both, a reassigned learner under the new one only, a learner with no list under curriculumid", async () => {
+    const enrolled = async (org: OrgContext) => Object.fromEntries((await buildCurriculumTree(org)).map((c) => [c.curriculumid, c.enrolmentcount]));
+    // start from X's school having exactly these learners: the two without a list (C1), one on both, one reassigned to C2
+    db.tables.students = db.tables.students.filter((s) => [id(81), id(82), id(86), id(87)].includes(s.studentid as string));
+    expect(await enrolled(orgX)).toEqual({ [C1]: 3, [C2]: 2 });
+    // the reassigned learner moves back by a roster update that writes only the list
+    db.tables.students.find((s) => s.studentid === id(87))!.curriculumids = [C1];
+    expect(await enrolled(orgX)).toEqual({ [C1]: 4, [C2]: 1 });
+    // a learner whose list is not there yet is counted on curriculumid
+    db.tables.students.find((s) => s.studentid === id(87))!.curriculumids = null;
+    expect(await enrolled(orgX)).toEqual({ [C1]: 4, [C2]: 1 });
+    db.tables.students.find((s) => s.studentid === id(87))!.curriculumid = C2;
+    expect(await enrolled(orgX)).toEqual({ [C1]: 3, [C2]: 2 });
   });
 
   it("never lets another organisation's rows into a count", async () => {

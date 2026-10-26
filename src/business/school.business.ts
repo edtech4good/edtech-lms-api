@@ -362,7 +362,8 @@ export class SchoolBusiness {
   };
   /**
    * Sets the school's tier labels inside its `brandingconfig` (the preset, its own labels, the hide switch) and leaves
-   * every other key there (logo, display name) as it was. What is stored is built from the named keys only, never from
+   * every other key there (logo, display name) as it was. The labels a request sends replace the school's own labels AS A SET and
+   * each tier WHOLE (deliberate: the admin sends the full set). What is stored is built from the named keys only, never from
    * the request object itself. Another organisation's school, an unowned one and a missing one are the same 404.
    */
   updateLabels = async (schoolid: string, changes: SchoolLabelChanges, user: LmsUserToken, org: OrgContext) => {
@@ -393,9 +394,19 @@ export class SchoolBusiness {
         next.labels = own;
       }
       if (typeof changes.hideSingleItemTiers === "boolean") {
-        next.hideSingleItemTiers = changes.hideSingleItemTiers;
+        // only `true` is stored: "off" is the same as absent
+        if (changes.hideSingleItemTiers) {
+          next.hideSingleItemTiers = true;
+        } else {
+          delete next.hideSingleItemTiers;
+        }
       }
-      row.brandingconfig = next;
+      if (typeof next.labels === "object" && next.labels !== null && Object.keys(next.labels).length === 0) {
+        delete next.labels;
+      }
+      // with no branding key left the column is NULL, not `{}`: the school is back to having none of its own, so the
+      // student side falls back to its organisation's branding
+      row.brandingconfig = Object.keys(next).length === 0 ? null : next;
       row.updated_at = new Date();
       row.updated_by = user.lmsuserid;
       await row.save({ fields: ["brandingconfig", "updated_at", "updated_by"], transaction });
