@@ -48,7 +48,7 @@ import {
   deletelevel,
   showalllevel,
   showlevel,
-  updatelevel,
+  updatelevel, reorderlevel
 } from "./level.request.validator";
 import { LevelBase, LevelCreateResponse } from "./models/LevelBase";
 import {
@@ -279,6 +279,43 @@ export class LevelController {
     return {
       error: false,
       data: data ? data : undefined,
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
+  @Put("reorder/:gradeid")
+  @ApiResponse({
+    status: 200,
+    description: "Levels reordered: the order is 1..n in the order given",
+    schema: { $ref: getSchemaPath(ResponseBoolean) },
+  })
+  @ApiResponse({
+    status: 400,
+    description: "The list is not exactly the grade's levels, once each",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "The grade or a level is not found",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @UseInterceptors(new SchemaValidationInterceptor(reorderlevel))
+  @RequirePermissions(Permission.UPDATE_LEVEL)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: `gradeid`, type: "string", required: true })
+  async reorderlevels(
+    @Param("gradeid") gradeid: string,
+    @Body() body: { levelids: string[] },
+    @Org() org: OrgContext,
+  ): Promise<ResponseBoolean> {
+    // the grade in the path and every id in the list are the caller's, or the 404 an absent one gets; nothing is written otherwise
+    await new LevelBusiness(org).reorderLevels(gradeid, body.levelids);
+    return {
+      error: false,
+      data: true,
     };
   }
 

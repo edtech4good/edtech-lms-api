@@ -205,7 +205,7 @@ interface FindOptions {
   include?: IncludeSpec[];
   attributes?: unknown;
   order?: unknown;
-  group?: string;
+  group?: string | string[];
   limit?: number;
   offset?: number;
   raw?: boolean;
@@ -396,7 +396,21 @@ export class ContentFake {
         const page = o?.limit === undefined ? found : found.slice(o.offset ?? 0, (o.offset ?? 0) + o.limit);
         return { rows: page, count: found.length };
       }) as never);
-      jest.spyOn(m, "count" as never).mockImplementation((async (o?: FindOptions) => (o?.include ? find(o).length : match(o?.where).length)) as never);
+      // `count` with `group` is a list of `{ <grouped column>: value, count }`, one per value found, as Sequelize returns it
+      jest.spyOn(m, "count" as never).mockImplementation((async (o?: FindOptions) => {
+        if (o?.group !== undefined) {
+          const columns = Array.isArray(o.group) ? o.group : [o.group];
+          const groups = new Map<string, Row>();
+          for (const row of match(o.where)) {
+            const key = JSON.stringify(columns.map((c) => row[c]));
+            const group = groups.get(key) ?? { ...Object.fromEntries(columns.map((c) => [c, row[c]])), count: 0 };
+            group.count = (group.count as number) + 1;
+            groups.set(key, group);
+          }
+          return [...groups.values()];
+        }
+        return o?.include ? find(o).length : match(o?.where).length;
+      }) as never);
       jest.spyOn(m, "create" as never).mockImplementation((async (attrs: Row) => {
         const row = { ...attrs };
         this.created.push({ table: name, row });

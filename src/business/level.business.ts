@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { reorderChildren } from "./reorder-children";
 import { col, fn, Op, WhereOptions } from "sequelize";
 import { IPaging } from "src/models/IPaging";
 import { LmsUserToken } from "src/models/token.model";
@@ -12,7 +13,7 @@ import {
 } from "../models/data-models/init-models";
 import { buildWhere } from "../services/util.service";
 import { OrgContext } from "src/decorators/org.decorator";
-import { andScope, findOwnedLevel } from "./content-scope";
+import { andScope, findOwnedGrade, findOwnedLevel } from "./content-scope";
 import { andOrganisation, extractOrganisationFilter, ownersOfGrades } from "./row-owner";
 
 /**
@@ -309,5 +310,31 @@ export class LevelBusiness {
       //await tempdt.reload();
       await new LevelBusiness().updateLevelPoints(tempdt);
     }
+  };
+
+  /**
+   * Sets the order of a grade's levels to 1..n in the order given, in one call. The grade in the path is the caller's,
+   * or the 404 an absent one gets; the list must hold every one of its levels once each (reorder-children.ts).
+   */
+  reorderLevels = async (gradeid: string, levelids: string[]) => {
+    if (this.org) {
+      await findOwnedGrade(this.org, gradeid);
+    }
+    return reorderChildren(
+      this.org,
+      {
+        kind: "level",
+        model: levels,
+        idColumn: "levelid",
+        parentColumn: "gradeid",
+        orderColumn: "levelorder",
+        field: "levelids",
+        noun: "level",
+        parentNoun: "grade",
+        softDelete: true,
+      },
+      gradeid,
+      levelids,
+    );
   };
 }

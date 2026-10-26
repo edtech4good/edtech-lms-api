@@ -40,7 +40,7 @@ import {
   getlessonpractice,
   updatelessonpractice,
   updateorderlessonpractice,
-  updatestatuslessonpractice,
+  updatestatuslessonpractice, reorderlessonpractice
 } from "./lesson.practice.request.validator";
 import { showlesson } from "./lesson.request.validator";
 import { LessonBase, LessonCreateResponse } from "./models/LessonBase";
@@ -288,6 +288,43 @@ export class LessonPracticeController {
       lessonpracticeid,
       lessonpracticeorder
     );
+    return {
+      error: false,
+      data: true,
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
+  @Put("reorder/:lessonid")
+  @ApiResponse({
+    status: 200,
+    description: "Lesson practices reordered: the order is 1..n in the order given",
+    schema: { $ref: getSchemaPath(ResponseBoolean) },
+  })
+  @ApiResponse({
+    status: 400,
+    description: "The list is not exactly the lesson's practices, once each",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "The lesson or a practice is not found",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @UseInterceptors(new SchemaValidationInterceptor(reorderlessonpractice))
+  @RequirePermissions(Permission.UPDATE_LESSONPRACTICE)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: `lessonid`, type: "string", required: true })
+  async reorderpractices(
+    @Param("lessonid") lessonid: string,
+    @Body() body: { lessonpracticeids: string[] },
+    @Org() org: OrgContext,
+  ): Promise<ResponseBoolean> {
+    // the lesson in the path and every id in the list are the caller's, or the 404 an absent one gets; nothing is written otherwise
+    await new LessonPracticeBusiness(org).reorderLessonPractices(lessonid, body.lessonpracticeids);
     return {
       error: false,
       data: true,

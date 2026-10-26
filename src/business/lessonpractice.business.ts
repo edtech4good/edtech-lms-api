@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { reorderChildren } from "./reorder-children";
 import { Op, WhereOptions } from 'sequelize';
 import { LessonPracticeBase } from 'src/modules/lesson/models/LessonPracticesResponse';
 import { v4 as uuidv4 } from 'uuid';
@@ -217,4 +218,30 @@ export class LessonPracticeBusiness {
             lesson.save({ fields: ["practices_points"] });
         }
       }
+
+  /**
+   * Sets the order of a lesson's practices to 1..n in the order given, in one call. The lesson in the path is the caller's,
+   * or the 404 an absent one gets; the list must hold every one of its practices once each (reorder-children.ts).
+   */
+  reorderLessonPractices = async (lessonid: string, lessonpracticeids: string[]) => {
+    if (this.org) {
+      await findOwnedLesson(this.org, lessonid);
+    }
+    return reorderChildren(
+      this.org,
+      {
+        kind: "practice",
+        model: lessonpractices,
+        idColumn: "lessonpracticeid",
+        parentColumn: "lessonid",
+        orderColumn: "lessonpracticeorder",
+        field: "lessonpracticeids",
+        noun: "practice",
+        parentNoun: "lesson",
+        softDelete: false,
+      },
+      lessonid,
+      lessonpracticeids,
+    );
+  };
 }

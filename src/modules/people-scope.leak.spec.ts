@@ -432,6 +432,187 @@ describe("people and schools are confined to the caller's organisation", () => {
     });
   });
 
+  // The tier labels of a school: a preset by name, its own labels, a hide switch; read back resolved (tier-labels.ts).
+  // The Khmer text used here is a fixture already in this file (a school's name): this code writes none.
+  describe("PUT /school/labels/:schoolid", () => {
+    const PLATFORM_DEFAULT = {
+      curriculum: { en: { one: "Curriculum", other: "Curricula" } },
+      grade: { en: { one: "Grade", other: "Grades" } },
+      level: { en: { one: "Level", other: "Levels" } },
+      lesson: { en: { one: "Lesson", other: "Lessons" } },
+    };
+    const COMPANY = {
+      curriculum: { en: { one: "Programme", other: "Programmes" } },
+      grade: { en: { one: "Track", other: "Tracks" } },
+      level: { en: { one: "Module", other: "Modules" } },
+      lesson: { en: { one: "Lesson", other: "Lessons" } },
+    };
+    const schoolRow = (id: string) => db.tables.schools.find((s) => s.schoolid === id)!;
+    const url = (id: string) => `/school/labels/${id}`;
+    const KM = NAME_X;
+    /** The tables as they stood, with the school's labels columns left out: what a labels call may not touch. */
+    const withoutLabelColumns = (tables: Record<string, Row[]>) => {
+      const copy = JSON.parse(JSON.stringify(tables)) as Record<string, Row[]>;
+      for (const s of copy.schools) {
+        delete s.brandingconfig;
+        delete s.updated_at;
+        delete s.updated_by;
+      }
+      return copy;
+    };
+
+    it.each(IN_X)("%s: a school with no labels set resolves to the platform default", async (who) => {
+      const res = await send(who, "get", `/school/${S_X}`).expect(200);
+      expect(res.body.data.labelsresolved).toEqual(PLATFORM_DEFAULT);
+      expect(res.body.data.hideSingleItemTiers).toBe(false);
+      // the fields the school had are still there, as they were
+      expect(res.body.data).toMatchObject({ schoolid: S_X, schoolname: NAME_X, organisationid: X, countryid: C1 });
+    });
+    it.each(IN_X)("%s: the Company preset, chosen by name, resolves to Programme, Track, Module, Lesson; nothing else of the database changes", async (who) => {
+      const before = db.snapshot();
+      const res = await send(who, "put", url(S_X), { labelPreset: "company" });
+      expect(res.status).toBe(200);
+      expect(res.body.data.labelsresolved).toEqual(COMPANY);
+      expect(res.body.data.brandingconfig).toEqual({ labelPreset: "company" });
+      expect(schoolRow(S_X).brandingconfig).toEqual({ labelPreset: "company" });
+      expect(withoutLabelColumns(db.snapshot())).toEqual(withoutLabelColumns(before));
+      // read back
+      const read = await send(who, "get", `/school/${S_X}`).expect(200);
+      expect(read.body.data.labelsresolved).toEqual(COMPANY);
+    });
+    it.each(IN_X)("%s: a label of the school's own wins over the preset, for that tier only, and the Khmer text is kept exactly as sent", async (who) => {
+      await send(who, "put", url(S_X), { labelPreset: "company" }).expect(200);
+      const res = await send(who, "put", url(S_X), { labels: { level: { en: { one: "Stage", other: "Stages" }, km: KM } } });
+      expect(res.status).toBe(200);
+      expect(res.body.data.labelsresolved).toEqual({ ...COMPANY, level: { en: { one: "Stage", other: "Stages" }, km: KM } });
+      expect(((schoolRow(S_X).brandingconfig as Row).labels as Row).level).toEqual({ en: { one: "Stage", other: "Stages" }, km: KM });
+      // the preset is kept beside the labels
+      expect((schoolRow(S_X).brandingconfig as Row).labelPreset).toBe("company");
+    });
+    it.each(IN_X)("%s: the labels a school sends replace its earlier own labels whole; null clears them, and null clears the preset", async (who) => {
+      await send(who, "put", url(S_X), { labelPreset: "company", labels: { level: { en: { one: "Stage", other: "Stages" } }, grade: { en: { one: "Strand", other: "Strands" } } } }).expect(200);
+      const second = await send(who, "put", url(S_X), { labels: { grade: { en: { one: "Strand", other: "Strands" } } } }).expect(200);
+      expect(second.body.data.labelsresolved).toEqual({ ...COMPANY, grade: { en: { one: "Strand", other: "Strands" } } });
+      const cleared = await send(who, "put", url(S_X), { labels: null }).expect(200);
+      expect(cleared.body.data.labelsresolved).toEqual(COMPANY);
+      const noPreset = await send(who, "put", url(S_X), { labelPreset: null }).expect(200);
+      expect(noPreset.body.data.labelsresolved).toEqual(PLATFORM_DEFAULT);
+      // nothing of branding is left: the column is NULL again, not an empty object
+      expect(schoolRow(S_X).brandingconfig).toBeNull();
+    });
+    it.each(IN_X)("%s: the hide switch is stored and read back resolved; the school's logo and display name are left as they were", async (who) => {
+      schoolRow(S_X).brandingconfig = { logourl: "https://example.org/logo.png", displayname: "School X" };
+      const res = await send(who, "put", url(S_X), { hideSingleItemTiers: true }).expect(200);
+      expect(res.body.data.hideSingleItemTiers).toBe(true);
+      expect(res.body.data.labelsresolved).toEqual(PLATFORM_DEFAULT);
+      expect(schoolRow(S_X).brandingconfig).toEqual({ logourl: "https://example.org/logo.png", displayname: "School X", hideSingleItemTiers: true });
+      // "off" is the same as absent: the key goes, the school's logo and display name stay
+      await send(who, "put", url(S_X), { hideSingleItemTiers: false }).expect(200);
+      expect(schoolRow(S_X).brandingconfig).toEqual({ logourl: "https://example.org/logo.png", displayname: "School X" });
+    });
+    it.each(IN_X)("%s: clearing the last label key leaves the column NULL, so the school has no branding of its own; any other key keeps it", async (who) => {
+      await send(who, "put", url(S_X), { labelPreset: "company", labels: { level: { en: { one: "Stage", other: "Stages" } } }, hideSingleItemTiers: true }).expect(200);
+      const cleared = await send(who, "put", url(S_X), { labelPreset: null, labels: null, hideSingleItemTiers: false }).expect(200);
+      expect(schoolRow(S_X).brandingconfig).toBeNull();
+      expect(cleared.body.data.brandingconfig).toBeNull();
+      expect(cleared.body.data.labelsresolved).toEqual(PLATFORM_DEFAULT);
+      // an empty set of labels counts as none
+      await send(who, "put", url(S_X), { labels: { level: { en: { one: "Stage", other: "Stages" } } } }).expect(200);
+      await send(who, "put", url(S_X), { labels: {} }).expect(200);
+      expect(schoolRow(S_X).brandingconfig).toBeNull();
+      // a school with a logo keeps its branding
+      schoolRow(S_X).brandingconfig = { logourl: "https://example.org/logo.png", hideSingleItemTiers: true };
+      await send(who, "put", url(S_X), { hideSingleItemTiers: false }).expect(200);
+      expect(schoolRow(S_X).brandingconfig).toEqual({ logourl: "https://example.org/logo.png" });
+    });
+    it.each(IN_X)("%s: the public branding read returns the resolved labels beside the branding it always returned", async (who) => {
+      await send(who, "put", url(S_X), { labelPreset: "company", hideSingleItemTiers: true }).expect(200);
+      const res = await request(app.getHttpServer()).get(`/school/branding?schoolid=${S_X}`).set("Connection", "close").expect(200);
+      expect(withoutReference(res.body)).toEqual({
+        error: false,
+        data: {
+          uitheme: "kids",
+          brandingconfig: { labelPreset: "company", hideSingleItemTiers: true },
+          labelsresolved: COMPANY,
+          hideSingleItemTiers: true,
+        },
+      });
+      const unknown = await request(app.getHttpServer()).get(`/school/branding?schoolid=${MISSING}`).set("Connection", "close").expect(200);
+      expect(withoutReference(unknown.body)).toEqual({
+        error: false,
+        data: { uitheme: "kids", brandingconfig: null, labelsresolved: PLATFORM_DEFAULT, hideSingleItemTiers: false },
+      });
+    });
+    it.each(IN_X)("%s: a bad shape is a 400 naming the field, nothing written", async (who) => {
+      const long = "x".repeat(61);
+      const cases: Array<[object, string, string]> = [
+        [{ labelPreset: "club" }, "labelPreset", "LabelPreset must be one of the allowed values."],
+        [{ labels: { level: { en: { one: "Stage" } } } }, "labels.level.en.other", "Enter a value for labels.level.en.other."],
+        [{ labels: { level: { km: KM } } }, "labels.level.en", "Enter a value for labels.level.en."],
+        [{ labels: { level: { en: { one: "", other: "Stages" } } } }, "labels.level.en.one", "Labels.level.en.one can't be empty."],
+        [{ labels: { level: { en: { one: long, other: "Stages" } } } }, "labels.level.en.one", "Labels.level.en.one must be no more than 60 characters."],
+        [{ labels: { grade: { en: { one: "Strand", other: "Stra\u0000nds" } } } }, "labels.grade.en.other", "Labels.grade.en.other isn't in a valid format."],
+        [{ labels: { grade: { en: { one: "‮Strand", other: "Strands" } } } }, "labels.grade.en.one", "Labels.grade.en.one isn't in a valid format."],
+        [{ labels: { grade: { en: { one: "---", other: "Strands" } } } }, "labels.grade.en.one", "Labels.grade.en.one isn't in a valid format."],
+        [{ labels: { lesson: { en: { one: "Part", other: "Parts" }, km: 5 } } }, "labels.lesson.km", "Labels.lesson.km isn't valid."],
+        [{ labels: { lesson: { en: { one: "Part", other: 7 } } } }, "labels.lesson.en.other", "Labels.lesson.en.other isn't valid."],
+        [{ labels: "x" }, "labels", "Labels must be of type object"],
+        [{ hideSingleItemTiers: "yes" }, "hideSingleItemTiers", "HideSingleItemTiers must be true or false."],
+        [{ labels: { cohort: { en: { one: "Cohort", other: "Cohorts" } } } }, "body", "This request contains a field that isn't allowed."],
+        [{ labelPreset: "company", colour: "red" }, "body", "This request contains a field that isn't allowed."],
+        [{}, "body", "Body needs at least one of labelPreset, labels or hideSingleItemTiers."],
+      ];
+      for (const [bad, field, message] of cases) {
+        const res = await refuses(who, "put", url(S_X), bad);
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual([{ field, message }]);
+      }
+    });
+    it.each(IN_X)("%s: what is stored is built from the named keys only: other keys of the body reach neither the row nor the prototype", async (who) => {
+      const res = await request(app.getHttpServer())
+        .put(url(S_X))
+        .set("Authorization", callers[who])
+        .set("Content-Type", "application/json")
+        .set("Connection", "close")
+        .send('{"labelPreset":"company","__proto__":{"labels":{"level":{"en":{"one":"x","other":"y"}}}}}');
+      expect(res.status).toBe(200);
+      expect(schoolRow(S_X).brandingconfig).toEqual({ labelPreset: "company" });
+      expect(Object.keys(schoolRow(S_X).brandingconfig as object)).toEqual(["labelPreset"]);
+      expect(({} as Row).labels).toBeUndefined();
+      expect(res.body.data.labelsresolved).toEqual(COMPANY);
+    });
+    it.each(IN_X)("%s: Y's school and the school with no organisation are the 404 an id that is not there gets, unchanged", async (who) => {
+      await expectNotFoundLikeMissing(who, "put", url(S_Y), url(MISSING), { labelPreset: "company" });
+      await expectNotFoundLikeMissing(who, "put", url(S_U), url(MISSING), { labelPreset: "company" });
+    });
+    it.each(IN_X)("%s: the school in the path is the one checked", async (who) => {
+      const { res, none } = await pathRowChecked(who, "put", `${url(S_Y)}?schoolid=${S_X}`, `${url(MISSING)}?schoolid=${S_X}`, { labelPreset: "company" });
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(none));
+    });
+    it("a platform user not acting: any school's labels, one with no organisation too", async () => {
+      for (const id of [S_X, S_Y, S_U]) {
+        const res = await send("a platform user not acting", "put", url(id), { labelPreset: "company" }).expect(200);
+        expect(res.body.data.labelsresolved).toEqual(COMPANY);
+        expect(schoolRow(id).brandingconfig).toEqual({ labelPreset: "company" });
+      }
+    });
+    it("a platform user not acting: a school that is not there is the 404 an absent one gets", async () => {
+      expect((await refuses("a platform user not acting", "put", url(MISSING), { labelPreset: "company" })).status).toBe(404);
+    });
+    it("a staff user who may view schools but not update them is refused (403), nothing written", async () => {
+      const viewer = bearer({ lmsuserid: "vw", lmsuserroles: [Role.admin], permissions: ["view_school"], organisationid: X, isplatform: false });
+      const before = db.snapshot();
+      const res = await request(app.getHttpServer()).put(url(S_X)).set("Authorization", viewer).set("Connection", "close").send({ labelPreset: "company" });
+      expect(res.status).toBe(403);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it("the server token is refused, nothing written", async () => {
+      const res = await refuses("a server token", "put", url(S_X), { labelPreset: "company" });
+      expect([401, 403]).toContain(res.status);
+    });
+  });
+
   describe("DELETE /school/:schoolid", () => {
     it.each(IN_X)("%s: the row in the path is the one checked: Y's school, with X's own school named in the request, is the 404 a missing school gets, unchanged", async (who) => {
       const { res, none } = await pathRowChecked(who, "delete", `/school/${S_Y}`, `/school/${MISSING}`, { schoolid: uuid(211) });

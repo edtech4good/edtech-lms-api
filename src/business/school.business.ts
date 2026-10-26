@@ -23,6 +23,7 @@ import { v4 as uuidv4 } from "uuid";
 import { CurriculumBusiness } from "./curriculum.business";
 import { andOwnerColumn, extractOrganisationFilter } from "./row-owner";
 import { StudentBusiness } from "./student.business";
+import { TIERS, TierLabel } from "src/constants/tier-labels";
 
 /**
  * What a create or edit of a school carries in: the school's own columns, and the organisation the request ASKED for
@@ -30,6 +31,16 @@ import { StudentBusiness } from "./student.business";
  * decided here (`schoolOrganisation`), never taken from the request as it stands.
  */
 export type SchoolWrite = Omit<schoolsAttributes, "organisationid"> & { organisationid?: string | null };
+
+/**
+ * What a labels update may change (school.request.validator.ts `updateschoollabels` has checked the shape): a key that
+ * is absent is left as it is; `null` clears a preset or the school's own labels.
+ */
+export interface SchoolLabelChanges {
+  labelPreset?: string | null;
+  labels?: Partial<Record<(typeof TIERS)[number], TierLabel>> | null;
+  hideSingleItemTiers?: boolean;
+}
 
 /** Every curriculum in `ids` must have the school's owner (see `assertSameOwner`). */
 const assertCurriculumsFitOwner = async (owner: string | null | undefined, ids: unknown, transaction: Transaction) => {
@@ -344,6 +355,63 @@ export class SchoolBusiness {
       }
       await transaction.commit();
       return tempdt;
+    } catch (e) {
+      await rollbackQuietly(transaction);
+      throw e;
+    }
+  };
+  /**
+   * Sets the school's tier labels inside its `brandingconfig` (the preset, its own labels, the hide switch) and leaves
+   * every other key there (logo, display name) as it was. The labels a request sends replace the school's own labels AS A SET and
+   * each tier WHOLE (deliberate: the admin sends the full set). What is stored is built from the named keys only, never from
+   * the request object itself. Another organisation's school, an unowned one and a missing one are the same 404.
+   */
+  updateLabels = async (schoolid: string, changes: SchoolLabelChanges, user: LmsUserToken, org: OrgContext) => {
+    scopeOf(org);
+    const transaction = await dbinstance.getdbinstance().transaction();
+    try {
+      const row = await findOwnedSchool(org, schoolid, { transaction, lock: Transaction.LOCK.UPDATE });
+      const stored = row.brandingconfig;
+      const next: Record<string, unknown> =
+        typeof stored === "object" && stored !== null && !Array.isArray(stored) ? Object.fromEntries(Object.entries(stored)) : {};
+      if (changes.labelPreset === null) {
+        delete next.labelPreset;
+      } else if (typeof changes.labelPreset === "string") {
+        next.labelPreset = changes.labelPreset;
+      }
+      if (changes.labels === null) {
+        delete next.labels;
+      } else if (changes.labels !== undefined) {
+        const own: Record<string, TierLabel> = {};
+        for (const tier of TIERS) {
+          const label = changes.labels[tier];
+          if (label !== undefined) {
+            const one = label.en.one.trim();
+            const other = label.en.other.trim();
+            own[tier] = label.km === undefined ? { en: { one, other } } : { en: { one, other }, km: label.km.trim() };
+          }
+        }
+        next.labels = own;
+      }
+      if (typeof changes.hideSingleItemTiers === "boolean") {
+        // only `true` is stored: "off" is the same as absent
+        if (changes.hideSingleItemTiers) {
+          next.hideSingleItemTiers = true;
+        } else {
+          delete next.hideSingleItemTiers;
+        }
+      }
+      if (typeof next.labels === "object" && next.labels !== null && Object.keys(next.labels).length === 0) {
+        delete next.labels;
+      }
+      // with no branding key left the column is NULL, not `{}`: the school is back to having none of its own, so the
+      // student side falls back to its organisation's branding
+      row.brandingconfig = Object.keys(next).length === 0 ? null : next;
+      row.updated_at = new Date();
+      row.updated_by = user.lmsuserid;
+      await row.save({ fields: ["brandingconfig", "updated_at", "updated_by"], transaction });
+      await transaction.commit();
+      return row;
     } catch (e) {
       await rollbackQuietly(transaction);
       throw e;
