@@ -60,6 +60,14 @@ export const ErrorCatalogue: Record<ErrorCode, ErrorCatalogueEntry> = {
     // a device, so the result-save wording in the spec does not apply here.
     hint: 'Try again in a few minutes.',
   },
+  // The student server answered this server's request with 401 or 403 (the server key, or a role it does not
+  // allow). Never 401 or 403 itself: those mean the CALLER's session or role, and a client (the admin) acts on
+  // them by signing the person out.
+  [ErrorCode.BAD_GATEWAY]: {
+    status: HttpStatus.BAD_GATEWAY,
+    errormessage: "The student server refused this server's request.",
+    hint: 'This is a setup problem between the two servers, not your sign-in. Contact support with the reference.',
+  },
   [ErrorCode.INTERNAL]: {
     status: HttpStatus.INTERNAL_SERVER_ERROR,
     errormessage: 'Something went wrong on our side.',

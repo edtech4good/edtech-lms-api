@@ -211,6 +211,37 @@ describe('GlobalExceptionFilter', () => {
       expect(body.code).toBe(ErrorCode.INTERNAL);
     });
 
+    it.each([401, 403])('an axios error whose response is the student server\'s %i maps to BAD_GATEWAY 502, never to 401 or 403, naming the student server and nothing of the upstream', (upstream) => {
+      const axiosLikeError: any = new Error(`Request failed with status code ${upstream}`);
+      axiosLikeError.isAxiosError = true;
+      axiosLikeError.status = upstream; // axios 1.x also sets this on the error itself
+      axiosLikeError.config = { url: 'http://rpi-internal.local:4000/import/master', headers: { Authorization: 'SYNCKEYSECRET' } };
+      axiosLikeError.response = { status: upstream, data: { errormessage: 'the sync key is wrong: UPSTREAMSECRET' } };
+      const body = catchAndGetBody(axiosLikeError);
+      expect(statusMock).toHaveBeenCalledWith(502);
+      expect(body.code).toBe(ErrorCode.BAD_GATEWAY);
+      expect(body.errormessage).toBe("The student server refused this server's request.");
+      expect(body.hint).toBeDefined();
+      const text = JSON.stringify(body);
+      for (const secret of ['rpi-internal', 'SYNCKEYSECRET', 'UPSTREAMSECRET']) expect(text).not.toContain(secret);
+    });
+
+    it.each([400, 404, 500, 502])('an axios error whose response is the student server\'s %i is still INTERNAL 500 (only a refusal of this server is a gateway answer)', (upstream) => {
+      const axiosLikeError: any = new Error(`Request failed with status code ${upstream}`);
+      axiosLikeError.isAxiosError = true;
+      axiosLikeError.status = upstream;
+      axiosLikeError.response = { status: upstream, data: {} };
+      const body = catchAndGetBody(axiosLikeError);
+      expect(statusMock).toHaveBeenCalledWith(500);
+      expect(body.code).toBe(ErrorCode.INTERNAL);
+    });
+
+    it('a 401 that is NOT an axios error (a library error carrying a status) is still the sign-in answer', () => {
+      const libraryError: any = new Error('unauthorised');
+      libraryError.status = 401;
+      expect(catchAndGetBody(libraryError).code).toBe(ErrorCode.SIGN_IN_REQUIRED);
+    });
+
     it('a plain HttpException message is NOT passed through - it can quote user input (spec: "Any other HttpException")', () => {
       // Nest's own URIError wrapping for a bad %-encoded path param.
       const body = catchAndGetBody(new BadRequestException("Failed to decode param '%E0%A4%AFsecretparam%FF'"));

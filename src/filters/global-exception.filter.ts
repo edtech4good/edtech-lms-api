@@ -237,7 +237,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // docs/api-errors.md Delivery step 5; for now: unreachable -> 503, else
     // 500. Only class/message/stack are logged - never `config` (which holds
     // the upstream URL and the Authorization sync key) or `response`.
+    // A 401 or 403 from the upstream is the student server refusing THIS server (its server key, or a role it does
+    // not allow), never a refusal of the person who called us: it must not reach the caller as 401 or 403, which a
+    // client reads as an expired session or a role failure. Every axios call in this API is to the student server.
     if (e?.isAxiosError) {
+      const upstream = e.response?.status;
+      if (upstream === 401 || upstream === 403) {
+        return this.fromCatalogue(ErrorCode.BAD_GATEWAY);
+      }
       return this.fromCatalogue(e.response ? ErrorCode.INTERNAL : ErrorCode.SERVICE_UNAVAILABLE);
     }
 

@@ -3291,6 +3291,21 @@ describe("content is confined to the caller's organisation", () => {
       expect((axios.get as jest.Mock).mock.calls[0][0]).toMatch(new RegExp(`/curriculum/${TX.baseline}/getstudentresult$`));
       expect((axios.get as jest.Mock).mock.calls[0][1]).toEqual({ headers: { Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": X } });
     });
+    it.each([401, 403])("the student API answering %i is a 502 BAD_GATEWAY that names the student server, never the caller's 401 or 403 (edtech-lms-api#150)", async (upstream) => {
+      (axios.get as jest.Mock).mockRejectedValue({
+        isAxiosError: true,
+        status: upstream,
+        response: { status: upstream, data: { error: true, errormessage: "the sync key is wrong: secret-detail" } },
+      });
+      const res = await send(NOT_ACTING, "get", `/curriculumbaseline/${TU.baseline}/download`);
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(502);
+      expect(JSON.parse(Buffer.isBuffer(res.body) ? res.body.toString("utf8") : JSON.stringify(res.body))).toMatchObject({
+        code: "BAD_GATEWAY",
+        errormessage: "The student server refused this server's request.",
+      });
+      expect(JSON.stringify(res.body)).not.toContain("secret-detail");
+    });
     it("a platform user not acting: the student API is asked with X-Organisation-Id: platform", async () => {
       expect((await send(NOT_ACTING, "get", `/curriculumbaseline/${TU.baseline}/download`)).status).toBe(200);
       expect((axios.get as jest.Mock).mock.calls[0][1]).toEqual({ headers: { Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": "platform" } });

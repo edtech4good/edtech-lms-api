@@ -762,9 +762,8 @@ describe("the content sync is one organisation's", () => {
       });
     });
 
-    it("any other refusal by the student API (the server key, a failure, a network error) keeps the generic answer: its message is not relayed", async () => {
+    it("any other failure of the student API (a failure, a network error) keeps the generic answer: its message is not relayed", async () => {
       for (const [rejection, status] of [
-        [{ isAxiosError: true, response: { status: 401, data: { errormessage: "the sync key is wrong: secret-detail" } } }, 500],
         [{ isAxiosError: true, response: { status: 500, data: { errormessage: "database exploded: secret-detail" } } }, 500],
         [{ isAxiosError: true, response: { status: 400, data: {} } }, 500],
         [{ isAxiosError: true, message: "connect ECONNREFUSED secret-detail" }, 503],
@@ -900,6 +899,40 @@ describe("the content sync is one organisation's", () => {
       const res = await send("X's Admin", "post", "/student/create?cloud=true", studentBody(TY.school, TY.standard, TY.curriculum));
       expect(res.status).toBe(404);
       expect(axios.put).not.toHaveBeenCalled();
+    });
+  });
+
+  // ───────────────────────────── the student server refuses this server ─────────────────────────────
+  // A 401 or 403 from the student API on a push is that server refusing THIS server (the server key, or a role it
+  // does not allow). It must never reach the admin as 401 or 403: the admin reads a 401 as "my session is dead",
+  // refreshes, sends the push again and then signs the person out (edtech-lms-api#150).
+  describe("the student server refusing the push", () => {
+    const REFUSED = "The student server refused this server's request.";
+    const learner = {
+      city: "ភ្នំពេញ", country: "Cambodia", dateofjoin: "01-01-2026", studentfirstname: "សុខា1", genderid: "1", state: "Phnom Penh",
+      schoolusername: "newlearner1", schooluserpasswordhash: "pass1234",
+    };
+    const routes: Array<[string, Method, () => string, () => object | undefined]> = [
+      ["POST /sync/cloud (the content push)", "post", () => "/sync/cloud", () => undefined],
+      ["POST /sync/cloud/:schoolname/students", "post", () => `/sync/cloud/${encodeURIComponent(TX.names.school)}/students`, () => undefined],
+      ["POST /student/create?cloud=true", "post", () => "/student/create?cloud=true", () => ({ schoolid: TX.school, standard: TX.standard, curriculumid: [TX.curriculum], students: [learner] })],
+      ["POST /teacher/create?cloud=true", "post", () => "/teacher/create?cloud=true", () => ({ schoolname: TX.names.school, teachers: [{ schoolusername: "newteacher1", schooluserpasswordhash: "pass1234" }] })],
+    ];
+    const cases = routes.flatMap((route) => [401, 403].map((upstream) => [...route, upstream] as [...typeof route, number]));
+
+    it.each(cases)("%s: the student API answering %i is a 502 BAD_GATEWAY that names the student server, with nothing of the upstream's own words", async (_name, method, path, body, upstream) => {
+      (axios.put as jest.Mock).mockRejectedValue({
+        isAxiosError: true,
+        status: upstream,
+        response: { status: upstream, data: { error: true, code: "SIGN_IN_REQUIRED", errormessage: "the sync key is wrong: secret-detail" } },
+      });
+      const res = await send("X's Admin", method, path(), body());
+      expect(axios.put).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(502);
+      expect(res.body.code).toBe("BAD_GATEWAY");
+      expect(res.body.errormessage).toBe(REFUSED);
+      expect(typeof res.body.reference).toBe("string");
+      expect(JSON.stringify(res.body)).not.toContain("secret-detail");
     });
   });
 });
