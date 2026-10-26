@@ -30,7 +30,7 @@ import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { dbinstance } from "src/services/dbservice";
 import { CentralDirectory, File, Open } from "unzipper";
 import { Istudentprogress, LogBusiness } from "./../../business/log.business";
-import { assertLogRowsInSchool, assertLogRowsNameKnownContent, uploadingTeacher } from "src/business/log-scope";
+import { assertLogPointsRowsComplete, assertLogRowsInSchool, assertLogRowsNameKnownContent, uploadingTeacher } from "src/business/log-scope";
 import { v4 as uuidv4 } from "uuid";
 import { User } from "src/decorators/user.decorator";
 import { LmsUserToken } from "src/models/token.model";
@@ -141,6 +141,7 @@ export class LogController {
           );
           await assertLogRowsInSchool(teacher, logdata);
           await assertLogRowsNameKnownContent(logdata);
+          assertLogPointsRowsComplete(logdata);
           parsedlogs.set(file, logdata);
         }
       }

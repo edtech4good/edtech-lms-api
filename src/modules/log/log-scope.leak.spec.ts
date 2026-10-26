@@ -89,7 +89,7 @@ const rows = {
   studentgradesprogress: (s: string) => ({ studentgradeprogressid: next(), studentid: s, gradeid: GRADE, curriculumid: CUR, completed: 1 }),
   studentlevelsprogress: (s: string) => ({ studentlevelprogressid: next(), studentid: s, levelid: LEVEL, gradeid: GRADE, curid: CUR, completed: 1 }),
   studentlessonsprogress: (s: string) => ({ studentlessonprogressid: next(), studentid: s, lessonid: LESSON, levelid: LEVEL, gradeid: GRADE, curid: CUR, completed: 1 }),
-  studentpoints: (s: string) => ({ studentpointid: next(), studentid: s, levelid: next(), lessonid: next(), totalgradepoints: 1 }),
+  studentpoints: (s: string) => ({ studentpointid: next(), studentid: s, levelid: next(), lessonid: next(), totalgradepoints: 1, gradepoints: 1, levelpoints: 1, levelquizscores: 1, lessonpoints: 1, learningpoints: 1, practicepoints: 1, quizpoints: 1 }),
   studentappusages: (_s: string, login: string) => ({ studentappusageid: next(), schooluserid: login, time_spent: 30 }),
 } as const;
 type Kind = keyof typeof rows;
@@ -337,6 +337,56 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
         Object.assign(logdata.log.progress.studentpoints[0], { scores: 9, totalgradepoints: 8, totallearningpoints: 7, totallevelpoints: 6, totalpracticepoints: 5, totalquizpoints: 4 });
         expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
         expect(db.createdIn("studentpoints")[0]).toMatchObject({ scores: 9, totalgradepoints: 8, totallearningpoints: 7, totallevelpoints: 6, totalpracticepoints: 5, totalquizpoints: 4 });
+      });
+    });
+
+    describe("a points row", () => {
+      const FIELDS = ["gradepoints", "levelpoints", "levelquizscores", "lessonpoints", "learningpoints", "practicepoints", "quizpoints"];
+      it.each(FIELDS)("without %s refuses the whole upload (400, FILE_REJECTED), naming the row and the field, never an id: nothing is stored", async (field) => {
+        const logdata = logOf(["result", "x"], ["studentpoints", "x"], ["studentpoints", "x"]);
+        delete (logdata.log.progress.studentpoints[1] as Row)[field];
+        const res = await refused(teacher(TCH_X), logdata);
+        expect(res.body.errormessage).toBe(`That file has points with a value missing (studentpoints row 2: ${field}).`);
+        expect(res.body.hint).toBe("Make the file again on the device that wrote it, then upload it again.");
+        expect(db.createdIn("studentpoints")).toEqual([]);
+        expect(db.createdIn("studentprogress")).toEqual([]);
+      });
+
+      it.each(FIELDS)("with %s null is refused the same way", async (field) => {
+        const logdata = logOf(["studentpoints", "x"]);
+        (logdata.log.progress.studentpoints[0] as Row)[field] = null;
+        const res = await refused(teacher(TCH_X), logdata);
+        expect(res.body.errormessage).toBe(`That file has points with a value missing (studentpoints row 1: ${field}).`);
+      });
+
+      it("names every field a row lacks, in column order, and every offending row", async () => {
+        const logdata = logOf(["studentpoints", "x"], ["studentpoints", "x"], ["studentpoints", "x"]);
+        const [a, , c] = logdata.log.progress.studentpoints as Row[];
+        delete a.quizpoints;
+        delete a.gradepoints;
+        delete c.lessonpoints;
+        const res = await refused(teacher(TCH_X), logdata);
+        expect(res.body.errormessage).toBe("That file has points with a value missing (studentpoints row 1: gradepoints, quizpoints; studentpoints row 3: lessonpoints).");
+      });
+
+      it("lists the first 10 offending rows and counts the rest", async () => {
+        const logdata = logOf();
+        for (let i = 0; i < 13; i += 1) {
+          const row = rows.studentpoints(STU_X);
+          delete (row as Row).quizpoints;
+          logdata.log.progress.studentpoints.push(row);
+        }
+        const res = await refused(teacher(TCH_X), logdata);
+        expect(res.body.errormessage).toContain("studentpoints row 10: quizpoints");
+        expect(res.body.errormessage).not.toContain("row 11");
+        expect(res.body.errormessage).toMatch(/, and 3 more\)\.$/);
+      });
+
+      it("whose seven values are 0 is stored: 0 is a value", async () => {
+        const logdata = logOf(["studentpoints", "x"]);
+        for (const f of FIELDS) (logdata.log.progress.studentpoints[0] as Row)[f] = 0;
+        expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
+        expect(db.createdIn("studentpoints")[0]).toMatchObject(Object.fromEntries(FIELDS.map((f) => [f, 0])));
       });
     });
 

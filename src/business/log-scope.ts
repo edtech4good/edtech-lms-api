@@ -300,3 +300,35 @@ export const assertLogRowsNameKnownContent = async (logdata: unknown, chunkSize 
     );
   }
 };
+
+/**
+ * The per-row columns of a `studentpoints` row that are NOT NULL with no default (the six totals beside them are
+ * stored as 0 when missing, see `withPointTotals`). A row without one cannot be stored: MySQL refuses it (1364).
+ */
+export const POINTS_ROW_FIELDS = ["gradepoints", "levelpoints", "levelquizscores", "lessonpoints", "learningpoints", "practicepoints", "quizpoints"] as const;
+
+/**
+ * Refuses the upload when a `studentpoints` row lacks one of its seven per-row values (absent or null), before any row
+ * is written. The message names each offending row by its position in the file (1 is the first) and the fields it
+ * lacks, in column order, never a learner or an id; nothing is stored. It lists the first 10 rows and counts the rest.
+ */
+export const assertLogPointsRowsComplete = (logdata: unknown): void => {
+  const log = (logdata as { log?: unknown } | null | undefined)?.log;
+  if (log === undefined || log === null) return;
+  const lacking: string[] = [];
+  let count = 0;
+  progressRows("studentpoints")(log).forEach((row, at) => {
+    const fields = POINTS_ROW_FIELDS.filter((f) => row[f] === undefined || row[f] === null);
+    if (fields.length === 0) return;
+    count += 1;
+    if (lacking.length < LISTED_ROWS) lacking.push(`studentpoints row ${at + 1}: ${fields.join(", ")}`);
+  });
+  if (count > 0) {
+    const more = count > lacking.length ? `, and ${count - lacking.length} more` : "";
+    throw new ApiError(
+      ErrorCode.FILE_REJECTED,
+      `That file has points with a value missing (${lacking.join("; ")}${more}).`,
+      { hint: "Make the file again on the device that wrote it, then upload it again." },
+    );
+  }
+};

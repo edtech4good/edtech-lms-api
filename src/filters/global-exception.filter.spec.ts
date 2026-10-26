@@ -326,6 +326,16 @@ describe('GlobalExceptionFilter', () => {
       expect(JSON.stringify(body)).not.toContain('DBVALUESECRET');
     });
 
+    it('a DatabaseError for a NOT NULL column the row did not name (1364) is INVALID_INPUT 400 - never 5xx, never the column or the value', () => {
+      const original: any = new Error("Field 'gradepoints' doesn't have a default value");
+      original.errno = 1364;
+      original.code = 'ER_NO_DEFAULT_FOR_FIELD';
+      const body = catchAndGetBody(new DatabaseError(original));
+      expect(statusMock).toHaveBeenCalledWith(400);
+      expect(body.code).toBe(ErrorCode.INVALID_INPUT);
+      expect(JSON.stringify(body)).not.toContain('gradepoints');
+    });
+
     it('INVALID_INPUT without fields has no "Check the highlighted fields." hint', () => {
       const body = catchAndGetBody(new ForeignKeyConstraintError({}));
       expect(body.code).toBe(ErrorCode.INVALID_INPUT);
