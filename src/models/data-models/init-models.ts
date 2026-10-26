@@ -3,6 +3,8 @@ import { curriculumbaseline } from "./curriculumbaseline";
 import { curriculumcountry } from "./curriculumcountry";
 import { organisations } from "./organisations";
 import { organisationcountry } from "./organisationcountry";
+import { curriculumpublications } from "./curriculumpublications";
+import type { curriculumpublicationsAttributes, curriculumpublicationsCreationAttributes } from "./curriculumpublications";
 import type { organisationsAttributes, organisationsCreationAttributes, organisationsOptionalAttributes } from "./organisations";
 import type { organisationcountryAttributes, organisationcountryCreationAttributes } from "./organisationcountry";
 import type { curriculumbaselineAttributes, curriculumbaselineCreationAttributes } from "./curriculumbaseline";
@@ -184,6 +186,7 @@ export {
   curriculumcountry,
   organisations,
   organisationcountry,
+  curriculumpublications,
   studentlearningprogress,
   studentgradesprogress,
   studentlevelsprogress,
@@ -258,6 +261,8 @@ export type {
   organisationsOptionalAttributes,
   organisationcountryAttributes,
   organisationcountryCreationAttributes,
+  curriculumpublicationsAttributes,
+  curriculumpublicationsCreationAttributes,
 };
 
 export function initModels(sequelize: Sequelize) {
@@ -295,6 +300,7 @@ export function initModels(sequelize: Sequelize) {
   curriculumcountry.initModel(sequelize);
   organisations.initModel(sequelize);
   organisationcountry.initModel(sequelize);
+  curriculumpublications.initModel(sequelize);
   studentlearningprogress.initModel(sequelize);
   studentgradesprogress.initModel(sequelize);
   studentlevelsprogress.initModel(sequelize);
@@ -334,6 +340,10 @@ export function initModels(sequelize: Sequelize) {
     foreignKey: "organisationid",
   });
   organisations.hasMany(schools, { as: "schools", foreignKey: "organisationid" });
+  curriculumpublications.belongsTo(curriculums, { as: "curriculum", foreignKey: "curriculumid" });
+  curriculums.hasMany(curriculumpublications, { as: "publications", foreignKey: "curriculumid" });
+  curriculumpublications.belongsTo(organisations, { as: "organisation", foreignKey: "organisationid" });
+  curriculumpublications.belongsTo(lmsusers, { as: "publisher", foreignKey: "publishedby" });
   lmsusers.belongsTo(organisations, {
     as: "organisation",
     foreignKey: "organisationid",
@@ -668,6 +678,7 @@ export function initModels(sequelize: Sequelize) {
     curriculumcountry,
     organisations,
     organisationcountry,
+    curriculumpublications,
     studentlearningprogress,
     studentgradesprogress,
     studentlevelsprogress,
