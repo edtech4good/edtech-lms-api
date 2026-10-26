@@ -2997,6 +2997,30 @@ describe("reports are confined to the caller's organisation", () => {
 
   });
 
+  // A 401 or 403 from the student API is that server refusing THIS server (the server key): never the caller's 401 or
+  // 403, which the admin reads as an expired session or a role failure (edtech-lms-api#150).
+  describe("the student server refusing a report request", () => {
+    const REFUSED = "The student server refused this server's request.";
+    /** The route each report has on this API (the level quiz list is the one that is not `online/<path>`). */
+    const routeOf = (name: OnlineReportName) => (name === "levelquiz" ? "/report/studentlevelquiz/online" : `/report/online/${ONLINE_REPORTS[name].path}`);
+    const names = Object.keys(ONLINE_REPORTS) as OnlineReportName[];
+    const cases = names.flatMap((name) => ([401, 403] as const).map((upstream) => [name, upstream] as const));
+
+    it.each(cases)("%s: the student API answering %i is a 502 BAD_GATEWAY that names the student server, with nothing of the upstream's own words", async (name, upstream) => {
+      (axios.post as jest.Mock).mockReset().mockRejectedValue({
+        isAxiosError: true,
+        status: upstream,
+        response: { status: upstream, data: { error: true, errormessage: "the sync key is wrong: secret-detail" } },
+      });
+      const res = await send(NOT_ACTING, "post", routeOf(name), page());
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(502);
+      expect(res.body.code).toBe("BAD_GATEWAY");
+      expect(res.body.errormessage).toBe(REFUSED);
+      expect(JSON.stringify(res.body)).not.toContain("secret-detail");
+    });
+  });
+
   describe("the organisation header on every forwarded report request", () => {
     const names = Object.keys(ONLINE_REPORTS) as OnlineReportName[];
     /** A body the confinement lets through for X, for any report: X's own learner, class and (where taken) school. */
