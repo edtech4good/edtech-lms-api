@@ -2,6 +2,7 @@ import { baselinequestion } from "src/models/data-models/baselinequestion";
 import { countries } from "src/models/data-models/countries";
 import { curriculumbaseline } from "src/models/data-models/curriculumbaseline";
 import { curriculumcountry } from "src/models/data-models/curriculumcountry";
+import { curriculumpublications } from "src/models/data-models/curriculumpublications";
 import { curriculums } from "src/models/data-models/curriculums";
 import { documents } from "src/models/data-models/documents";
 import { documenttags } from "src/models/data-models/documenttags";
@@ -83,6 +84,7 @@ const MODELS = {
   baselinequestion: [baselinequestion, "baselinequestionid"],
   curriculumbaseline: [curriculumbaseline, "curriculumbaselineid"],
   curriculumcountry: [curriculumcountry, "curriculumcountryid"],
+  curriculumpublications: [curriculumpublications, "publicationid"],
   feedbacks: [feedbacks, "feedbackid"],
   schools: [schools, "schoolid"],
   countries: [countries, "countryid"],
