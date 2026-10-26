@@ -4,6 +4,7 @@ import { OrgContext } from "src/decorators/org.decorator";
 import { lessonlearnings } from "src/models/data-models/lessonlearnings";
 import { students } from "src/models/data-models/students";
 import { CurriculumBusiness } from "./curriculum.business";
+import { publicationStates, publicationStatesWithChanges } from "./curriculum-publication";
 import { andScope } from "./content-scope";
 import { GradeBusiness } from "./grade.business";
 import { LessonBusiness } from "./lesson.business";
@@ -48,9 +49,16 @@ const toMap = (grouped: unknown, key: string): Map<unknown, number> =>
  * The counts come from the lists already read, plus one grouped count for learning items (the tree does not list them)
  * and one for students: no query per node. The fields that were here before are unchanged; the counts are added after them.
  *
+ * Each curriculum also carries its publication state (curriculum-publication.ts), from one query that reads no payload:
+ *  - `publicationstatus`: `never` (no publication), `published`, or `withdrawn` (retired);
+ *  - `publishedat`: when it was last published; null when it never was, or has been withdrawn;
+ *  - `changedsincepublish`: only when `withChanges` is asked for (it reads the organisation's whole question and document
+ *    bank): true when the live rows differ from the latest publication. The routes leave it to
+ *    `GET /curriculum/publication/:curriculumid` (see the note there).
+ *
  * `only` limits the tree to one curriculum (the caller has already checked that it is in scope).
  */
-export const buildCurriculumTree = async (org: OrgContext, only?: string) => {
+export const buildCurriculumTree = async (org: OrgContext, only?: string, withChanges = false) => {
   const curriculums = await new CurriculumBusiness(org).getCurriculums();
   const grades = await new GradeBusiness(org).getGrades();
   const levels = await new LevelBusiness(org).getLevels();
@@ -100,6 +108,9 @@ export const buildCurriculumTree = async (org: OrgContext, only?: string) => {
     }
   }
 
+  const shownIds = shown.map((x) => x.curriculumid);
+  const states = withChanges ? await publicationStatesWithChanges(org, shownIds) : await publicationStates(shownIds);
+
   return shown.map((curriculum) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tempc: any = { ...curriculum.toJSON() };
@@ -145,6 +156,12 @@ export const buildCurriculumTree = async (org: OrgContext, only?: string) => {
       });
     tempc.childcount = gradesIn.get(curriculum.curriculumid) ?? 0;
     tempc.enrolmentcount = enrolledIn.get(curriculum.curriculumid) ?? 0;
+    const state = states.get(curriculum.curriculumid);
+    tempc.publishedat = state?.publishedat ?? null;
+    tempc.publicationstatus = state?.publicationstatus ?? "never";
+    if (state !== undefined && "changedsincepublish" in state) {
+      tempc.changedsincepublish = state.changedsincepublish;
+    }
     return tempc;
   });
 };

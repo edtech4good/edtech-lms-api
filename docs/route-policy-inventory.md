@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **288** routes, **277** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
+Of **291** routes, **280** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 249 | 249 | 0 | 0 |
+| owned | 252 | 252 | 0 | 0 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 0 | 0 | 0 | 0 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **288** | **277** | **11** | **0** |
+| **all** | **291** | **280** | **11** | **0** |
 
 ## Policies
 
@@ -117,6 +117,9 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | POST | `/curriculum/create` | CurriculumController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_curriculum] |  |
 | PUT | `/curriculum/deactivate/:curriculumid` | CurriculumController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_curriculum] |  |
 | GET | `/curriculum/map` | CurriculumController.map | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum, view_lesson] |  |
+| GET | `/curriculum/publication/:curriculumid` | CurriculumController.publication | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
+| PUT | `/curriculum/publish/:curriculumid` | CurriculumController.publish | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[publish_curriculum] |  |
+| PUT | `/curriculum/retire/:curriculumid` | CurriculumController.retire | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[publish_curriculum] |  |
 | GET | `/curriculum/tree` | CurriculumController.tree | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
 | GET | `/curriculum/tree/:curriculumid` | CurriculumController.getcurriculumtree | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum] |  |
 | POST | `/document` | DocumentController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_document] |  |

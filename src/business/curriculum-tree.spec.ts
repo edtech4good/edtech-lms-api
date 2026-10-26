@@ -4,6 +4,7 @@ import { grades } from "src/models/data-models/grades";
 import { lessonlearnings } from "src/models/data-models/lessonlearnings";
 import { lessons } from "src/models/data-models/lessons";
 import { levels } from "src/models/data-models/levels";
+import { curriculumpublications } from "src/models/data-models/curriculumpublications";
 import { students } from "src/models/data-models/students";
 import { ContentFake } from "src/test-support/content-fake";
 import { CurriculumBusiness } from "./curriculum.business";
@@ -123,10 +124,10 @@ const previousTree = async (org: OrgContext, only?: string) => {
     });
 };
 
-/** A tree without the keys this change adds. */
+/** A tree without the keys this change adds (the counts, and the publication state). */
 const withoutCounts = (nodes: any[]): any[] =>
   nodes.map((c) => {
-    const { childcount, enrolmentcount, ...curriculum } = c;
+    const { childcount, enrolmentcount, publishedat, publicationstatus, changedsincepublish, ...curriculum } = c;
     return {
       ...curriculum,
       grades: c.grades.map((g: any) => {
@@ -276,5 +277,30 @@ describe("the curriculum tree", () => {
     expect(calls()).toEqual(small);
     expect(calls().learnings).toBe(1);
     expect(calls().learners).toBe(1);
+  });
+
+  it("carries each curriculum's publication state from one query that reads no payload: never, published (with when) or withdrawn (no time)", async () => {
+    const T1 = new Date("2026-10-27T01:00:00.000Z");
+    const T2 = new Date("2026-10-27T02:00:00.000Z");
+    const publication = (n: number, curriculumid: string, at: Date, status: string) => ({
+      publicationid: id(9000 + n), curriculumid, organisationid: X, publishedat: at, publishedby: id(1), status, payload: null, summary: {}, payloadhash: "0".repeat(64),
+    });
+    db.add("curriculumpublications", publication(1, C1, T1, "published"));
+    db.add("curriculumpublications", publication(2, C1, T2, "published"));
+    db.add("curriculumpublications", publication(3, C2, T1, "published"));
+    db.add("curriculumpublications", publication(4, C2, T2, "withdrawn"));
+    jest.clearAllMocks();
+    const tree = await buildCurriculumTree(orgX);
+    expect(tree.map((c) => [c.curriculumid, c.publicationstatus, c.publishedat]).sort()).toEqual(
+      [[C1, "published", T2], [C2, "withdrawn", null]].sort(),
+    );
+    expect("changedsincepublish" in tree[0]).toBe(false);
+    // one read of the publications, and no payload or summary in it
+    const reads = (curriculumpublications.findAll as unknown as jest.Mock).mock.calls;
+    expect(reads).toHaveLength(1);
+    expect(reads[0][0].attributes).not.toContain("payload");
+    expect(reads[0][0].attributes).not.toContain("summary");
+    const never = await buildCurriculumTree(platform);
+    expect(never.find((c) => c.curriculumid === C3)).toMatchObject({ publicationstatus: "never", publishedat: null });
   });
 });
