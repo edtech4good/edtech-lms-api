@@ -493,7 +493,7 @@ export class CurriculumController {
     @Org() org: OrgContext
   ): Promise<any> {
     // Read on demand and not in the tree: working out "changed since publish" reads the organisation's whole question and
-    // document bank, which the tree (loaded with every open of the Curricula workspace) does not.
+    // document bank, which the tree (loaded with every open of the Curricula workspace) does not (see curriculum-tree.ts).
     const data = await publicationOverview(org, curriculumid);
     return {
       error: false,

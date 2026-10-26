@@ -1,12 +1,10 @@
 import { OrgContext } from "src/decorators/org.decorator";
 import { ApiError } from "src/models/ApiError";
 import { curriculumpublications } from "src/models/data-models/curriculumpublications";
-import { questions } from "src/models/data-models/questions";
 import { dbinstance } from "src/services/dbservice";
 import { ContentFake } from "src/test-support/content-fake";
 import {
   canonicalJson,
-  changedSincePublish,
   confineCurriculumTables,
   diffHashes,
   hashTables,
@@ -447,11 +445,6 @@ describe("retiring and the state", () => {
 });
 
 describe("changed since publish", () => {
-  const latestRow = async (curriculumid: string) => {
-    const rows = await curriculumpublications.findAll({ where: { curriculumid }, order: [["publishedat", "DESC"]] });
-    return rows[0] as never;
-  };
-
   it("is false for what was just published, true after any edit to its rows, false again after a republish", async () => {
     await publishCurriculum(orgX, USER, A);
     expect((await publicationOverview(orgX, A)).changedsincepublish).toBe(false);
@@ -461,18 +454,6 @@ describe("changed since publish", () => {
     expect(changed.pending!.affected.lessons.changed).toEqual([{ id: L1, name: "Lesson uno" }]);
     await publishCurriculum(orgX, USER, A);
     expect((await publicationOverview(orgX, A)).changedsincepublish).toBe(false);
-  });
-
-  it("works every curriculum out of one read of the content", async () => {
-    await publishCurriculum(orgX, USER, A);
-    await publishCurriculum(orgX, USER, B);
-    stored("lessons", "lessonid", LB).lessonname = "Lesson maths 2";
-    jest.clearAllMocks();
-    const states = new Map([[A, await latestRow(A)], [B, await latestRow(B)]]);
-    const result = await changedSincePublish(X, states as never);
-    expect([result.get(A)!.changed, result.get(B)!.changed]).toEqual([false, true]);
-    // the question bank was read once for both
-    expect((questions.findAll as unknown as jest.Mock).mock.calls).toHaveLength(1);
   });
 
   it("says a curriculum that cannot be published has changed, and why (tables and counts only)", async () => {

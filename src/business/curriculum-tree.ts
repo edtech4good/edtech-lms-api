@@ -4,7 +4,7 @@ import { OrgContext } from "src/decorators/org.decorator";
 import { lessonlearnings } from "src/models/data-models/lessonlearnings";
 import { students } from "src/models/data-models/students";
 import { CurriculumBusiness } from "./curriculum.business";
-import { publicationStates, publicationStatesWithChanges } from "./curriculum-publication";
+import { publicationStates } from "./curriculum-publication";
 import { andScope } from "./content-scope";
 import { GradeBusiness } from "./grade.business";
 import { LessonBusiness } from "./lesson.business";
@@ -52,13 +52,13 @@ const toMap = (grouped: unknown, key: string): Map<unknown, number> =>
  * Each curriculum also carries its publication state (curriculum-publication.ts), from one query that reads no payload:
  *  - `publicationstatus`: `never` (no publication), `published`, or `withdrawn` (retired);
  *  - `publishedat`: when it was last published; null when it never was, or has been withdrawn;
- *  - `changedsincepublish`: only when `withChanges` is asked for (it reads the organisation's whole question and document
- *    bank): true when the live rows differ from the latest publication. The routes leave it to
- *    `GET /curriculum/publication/:curriculumid` (see the note there).
+ * "Changed since publish" is NOT on the tree: working it out reads the organisation's whole question and document bank (on a
+ * seed with 7 curricula and 1,500 questions the tree takes 28 ms without it and 126 ms with it, and the difference grows
+ * with the bank), so it is read on demand from `GET /curriculum/publication/:curriculumid`.
  *
  * `only` limits the tree to one curriculum (the caller has already checked that it is in scope).
  */
-export const buildCurriculumTree = async (org: OrgContext, only?: string, withChanges = false) => {
+export const buildCurriculumTree = async (org: OrgContext, only?: string) => {
   const curriculums = await new CurriculumBusiness(org).getCurriculums();
   const grades = await new GradeBusiness(org).getGrades();
   const levels = await new LevelBusiness(org).getLevels();
@@ -109,7 +109,7 @@ export const buildCurriculumTree = async (org: OrgContext, only?: string, withCh
   }
 
   const shownIds = shown.map((x) => x.curriculumid);
-  const states = withChanges ? await publicationStatesWithChanges(org, shownIds) : await publicationStates(shownIds);
+  const states = await publicationStates(shownIds);
 
   return shown.map((curriculum) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -159,9 +159,6 @@ export const buildCurriculumTree = async (org: OrgContext, only?: string, withCh
     const state = states.get(curriculum.curriculumid);
     tempc.publishedat = state?.publishedat ?? null;
     tempc.publicationstatus = state?.publicationstatus ?? "never";
-    if (state !== undefined && "changedsincepublish" in state) {
-      tempc.changedsincepublish = state.changedsincepublish;
-    }
     return tempc;
   });
 };

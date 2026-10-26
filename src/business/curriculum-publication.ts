@@ -455,65 +455,6 @@ export const publicationStates = async (curriculumids: string[]): Promise<Map<st
   return new Map(curriculumids.map((id) => [id, stateOf(latest.get(id))]));
 };
 
-/**
- * Which of the curricula have changed since they were published: their live payload's hash differs from the latest
- * publication's. Reads the organisation's content ONCE and works every curriculum out of it. Only a curriculum whose
- * latest publication is `published` is compared (one never published, or withdrawn, has nothing to have changed
- * since); a curriculum whose live rows cannot be published (the payload is refused) has changed.
- */
-export const changedSincePublish = async (
-  organisationid: string,
-  states: Map<string, LightRow | undefined>,
-): Promise<Map<string, { changed: boolean; problem: string | null }>> => {
-  const out = new Map<string, { changed: boolean; problem: string | null }>();
-  const published = [...states.entries()].filter(([, row]) => row?.status === "published");
-  for (const [id] of states) out.set(id, { changed: false, problem: null });
-  if (published.length === 0) return out;
-  const content = await readCurriculumContent(contextOfOrganisation(organisationid));
-  for (const [id, row] of published) {
-    try {
-      const live = payloadHashOf(hashTables(payloadOf(organisationid, content, id).tables));
-      out.set(id, { changed: live !== row!.payloadhash, problem: null });
-    } catch (e) {
-      if (e instanceof ApiError && e.code === ErrorCode.INVALID_INPUT) {
-        out.set(id, { changed: true, problem: e.message });
-      } else if (e instanceof ApiError && e.code === ErrorCode.NOT_FOUND) {
-        out.set(id, { changed: false, problem: null });
-      } else {
-        throw e;
-      }
-    }
-  }
-  return out;
-};
-
-/** The state of the curricula, with whether each has changed since it was published (one read of the content for all). */
-export const publicationStatesWithChanges = async (
-  org: OrgContext,
-  curriculumids: string[],
-): Promise<Map<string, PublicationState & { changedsincepublish: boolean }>> => {
-  const scope = scopeOf(org);
-  const latest = await latestOf(curriculumids);
-  const out = new Map<string, PublicationState & { changedsincepublish: boolean }>();
-  // a platform user who is not acting reads every organisation's curricula: each is worked out in its own organisation
-  const byOrganisation = new Map<string, Map<string, LightRow | undefined>>();
-  for (const id of curriculumids) {
-    const row = latest.get(id);
-    const owner = scope.kind === "organisation" ? scope.organisationid : row?.organisationid;
-    if (owner === undefined) continue;
-    if (!byOrganisation.has(owner)) byOrganisation.set(owner, new Map());
-    byOrganisation.get(owner)!.set(id, row);
-  }
-  const changes = new Map<string, { changed: boolean; problem: string | null }>();
-  for (const [owner, states] of byOrganisation) {
-    for (const [id, c] of await changedSincePublish(owner, states)) changes.set(id, c);
-  }
-  for (const id of curriculumids) {
-    out.set(id, { ...stateOf(latest.get(id)), changedsincepublish: changes.get(id)?.changed ?? false });
-  }
-  return out;
-};
-
 // ---- publish, retire, read --------------------------------------------------------------------------------
 
 const nextTime = (latest: Date | undefined): Date => {
