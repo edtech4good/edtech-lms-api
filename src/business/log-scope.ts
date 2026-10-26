@@ -300,3 +300,45 @@ export const assertLogRowsNameKnownContent = async (logdata: unknown, chunkSize 
     );
   }
 };
+
+/**
+ * The per-row columns of a `studentpoints` row that are NOT NULL with no default (the six totals beside them are
+ * stored as 0 when missing, see `withPointTotals`). A row without one cannot be stored: MySQL refuses it (1364).
+ */
+export const POINTS_ROW_FIELDS = ["gradepoints", "levelpoints", "levelquizscores", "lessonpoints", "learningpoints", "practicepoints", "quizpoints"] as const;
+
+/**
+ * Refuses the upload when a `studentpoints` row lacks one of its seven per-row values (absent or null) or carries one
+ * that is not a number of 0 or more (text, an object, a list, true, a number too large to be one, a negative), before
+ * any row is written. The message names each offending row by its position in the file (1 is the first) and each field
+ * with what is wrong ("gradepoints" alone is a missing value; "(not a number)", "(below 0)"), in column order, never
+ * a learner or an id; nothing is stored. It lists the first 10 rows and counts the rest.
+ */
+export const assertLogPointsRowsComplete = (logdata: unknown): void => {
+  const log = (logdata as { log?: unknown } | null | undefined)?.log;
+  if (log === undefined || log === null) return;
+  const problem = (value: unknown): string | null => {
+    if (value === undefined || value === null) return "";
+    if (typeof value !== "number" || !Number.isFinite(value)) return " (not a number)";
+    return value < 0 ? " (below 0)" : null;
+  };
+  const lacking: string[] = [];
+  let count = 0;
+  progressRows("studentpoints")(log).forEach((row, at) => {
+    const fields = POINTS_ROW_FIELDS.flatMap((f) => {
+      const wrong = problem(row[f]);
+      return wrong === null ? [] : [`${f}${wrong}`];
+    });
+    if (fields.length === 0) return;
+    count += 1;
+    if (lacking.length < LISTED_ROWS) lacking.push(`studentpoints row ${at + 1}: ${fields.join(", ")}`);
+  });
+  if (count > 0) {
+    const more = count > lacking.length ? `, and ${count - lacking.length} more` : "";
+    throw new ApiError(
+      ErrorCode.FILE_REJECTED,
+      `That file has points with a missing or invalid value (${lacking.join("; ")}${more}).`,
+      { hint: "Make the file again on the device that wrote it, then upload it again." },
+    );
+  }
+};

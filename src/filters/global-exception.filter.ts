@@ -65,8 +65,12 @@ const SEQUELIZE_UNAVAILABLE_CLASSES = [
   InvalidConnectionError,
 ];
 
-/** MySQL errno for a VALUE that can never be saved (not a connection problem). */
-const DATA_ERRNOS = [1048, 1264, 1292, 1366, 1406];
+/**
+ * MySQL errno for a VALUE that can never be saved (not a connection problem). 1364 is a NOT NULL column with no
+ * default that the row did not name at all; 1265 is a value cut to fit the column (a text in a number column). Both are
+ * backstops: the writers check their rows first.
+ */
+const DATA_ERRNOS = [1048, 1264, 1265, 1292, 1364, 1366, 1406];
 
 /** multer limit messages, as re-thrown by Nest's transformException. */
 const MULTER_MESSAGES = new Set([
