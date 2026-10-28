@@ -199,3 +199,91 @@ describe("the student API's media-library rules, as central's contract port appl
     ]);
   });
 });
+
+describe("the student API's translation rules (bilingual content, B-1), as central's contract port applies them", () => {
+  const OPT = "11111111-1111-4111-8111-111111111111-opt-1";
+  const HASH = "a".repeat(64);
+  const translation = (n: number, over: Row = {}): Row => ({
+    translationid: id(n), organisationid: ORG, tablename: "lessons", rowid: id(4), field: "lessonname", subkey: "", language: "km", text: "x", sourcehash: HASH, lastupdated: "2026-10-28T05:00:00.000Z", ...over,
+  });
+  /** The baseline payload, with the organisation in `en`, one question (template 1) and two translations. */
+  const withTranslations = (b: Record<string, Row[]>) => {
+    (b.organisations[0] as Row).contentlanguage = "en";
+    b.questions = [{ questionid: id(20), organisationid: ORG, templatetypeid: 1 }];
+    b.contenttranslations = [translation(30), translation(31, { tablename: "questions", rowid: id(20), field: "questionoptiontext", subkey: OPT })];
+  };
+  const run = (change: (b: Record<string, Row[]>) => void = () => undefined) => changed((b) => { withTranslations(b); change(b); });
+  const only = (message: string) => [`contenttranslations: ${message}`];
+
+  it("the baseline with two translations passes, so each case below fails for its own fault", () => {
+    expect(run()).toEqual([]);
+  });
+
+  it("is the last key of the table list, and is required (an older payload without it is refused), an empty list being fine", () => {
+    expect(TABLE_KEYS[TABLE_KEYS.length - 1]).toBe("contenttranslations");
+    expect(changed((b) => { delete b.contenttranslations; })).toEqual(["contenttranslations must be an array"]);
+    expect(changed((b) => { b.contenttranslations = []; })).toEqual([]);
+  });
+
+  it("refuses translations when the organisation row has no contentlanguage (absent or null)", () => {
+    const message = only("the organisation has no contentlanguage; set it before sending translations.");
+    expect(run((b) => { delete (b.organisations[0] as Row).contentlanguage; })).toEqual(message);
+    expect(run((b) => { (b.organisations[0] as Row).contentlanguage = null; })).toEqual(message);
+  });
+
+  it("the organisation row takes a contentlanguage of 2 to 8 letters, digits and hyphens, or null, and refuses anything else", () => {
+    expect(changed((b) => { (b.organisations[0] as Row).contentlanguage = "pt-BR"; })).toEqual([]);
+    expect(changed((b) => { (b.organisations[0] as Row).contentlanguage = null; })).toEqual([]);
+    for (const language of ["", "e", "english-us-x", "e n", 5]) expect(changed((b) => { (b.organisations[0] as Row).contentlanguage = language; })).toHaveLength(1);
+  });
+
+  it("refuses a row in the organisation's own language, in any case, and a language that is not a code", () => {
+    expect(run((b) => { b.contenttranslations[0].language = "EN"; })).toEqual(only("1 row is in the organisation's own contentlanguage"));
+    expect(run((b) => { b.contenttranslations[0].language = "k"; })).toEqual(only("1 row have a language that is not 2 to 8 letters, digits or hyphens"));
+  });
+
+  it("refuses a table that is not translatable, a field its table does not have, and a document's title", () => {
+    expect(run((b) => { b.contenttranslations[0].tablename = "documents"; })).toEqual(only("1 row name a tablename that is not translatable"));
+    expect(run((b) => { b.contenttranslations[0].field = "lessonorder"; })).toEqual(only("1 row name a field that its table does not have as translatable text"));
+  });
+
+  it("refuses the fields an answer is graded by, by the question's template: 21 option and question text, 8 and 23 question text", () => {
+    const graded = "(template 8: questiontext; template 21: questiontext, questionoptiontext; template 23: questiontext)";
+    expect(run((b) => { b.questions[0].templatetypeid = 21; })).toEqual(only(`1 row translate a field that an answer is graded by ${graded}`));
+    expect(run((b) => { b.questions[0].templatetypeid = 23; })).toEqual([]);
+    expect(run((b) => { b.questions[0].templatetypeid = 23; b.contenttranslations[1].field = "questiontext"; b.contenttranslations[1].subkey = ""; })).toEqual(only(`1 row translate a field that an answer is graded by ${graded}`));
+    expect(run((b) => { b.questions[0].templatetypeid = 8; b.contenttranslations[1].field = "questiontext"; b.contenttranslations[1].subkey = ""; })).toEqual(only(`1 row translate a field that an answer is graded by ${graded}`));
+    expect(run((b) => { b.questions[0].templatetypeid = "21" as never; })).toHaveLength(1);
+  });
+
+  it("holds the subkey rules: required for an option, partner, distractor and feedback, '' for the rest, 64 characters at most, feedback only its two keys", () => {
+    const message = "has a subkey that does not follow its field's rule";
+    expect(run((b) => { b.contenttranslations[1].subkey = ""; })).toEqual(only(`1 row ${message}`));
+    expect(run((b) => { b.contenttranslations[0].subkey = "x"; })).toEqual(only(`1 row ${message}`));
+    expect(run((b) => { b.contenttranslations[1].subkey = null; })).toEqual(only(`1 row ${message}`));
+    expect(run((b) => { b.contenttranslations[1].subkey = "a".repeat(64); })).toEqual([]);
+    expect(run((b) => { b.contenttranslations[1].subkey = "a".repeat(65); })).toEqual(only(`1 row have a subkey that does not follow its field's rule`));
+    expect(run((b) => { Object.assign(b.contenttranslations[1], { field: "feedback", subkey: "correctmessage" }); })).toEqual([]);
+    expect(run((b) => { Object.assign(b.contenttranslations[1], { field: "feedback", subkey: "other" }); })).toHaveLength(1);
+  });
+
+  it("refuses a row whose parent is not in the payload, whatever the case of the id", () => {
+    expect(run((b) => { b.contenttranslations[0].rowid = id(99); })).toEqual(only("1 row name a lessons row (rowid) that is not in the payload"));
+    expect(run((b) => { b.contenttranslations[1].rowid = id(98); })).toEqual(only("1 row name a questions row (rowid) that is not in the payload"));
+    expect(run((b) => { b.contenttranslations[0].rowid = String(id(4)).toUpperCase(); })).toEqual([]);
+  });
+
+  it("refuses an empty text, a text over 65535 bytes, a bad hash, a date that is not one, and a repeat of table, row, field, subkey and language", () => {
+    expect(run((b) => { b.contenttranslations[0].text = ""; })).toEqual(only("1 row have a text that is not a string of 1 to 65535 bytes"));
+    expect(run((b) => { b.contenttranslations[0].text = "ក".repeat(21846); })).toEqual(only("1 row have a text that is not a string of 1 to 65535 bytes"));
+    expect(run((b) => { b.contenttranslations[0].text = "ក".repeat(21845); })).toEqual([]);
+    expect(run((b) => { b.contenttranslations[0].sourcehash = "z".repeat(64); })).toEqual(only("1 row have a sourcehash that is not 64 hexadecimal characters"));
+    expect(run((b) => { delete b.contenttranslations[0].lastupdated; })).toEqual(only("1 row have a lastupdated that is not a date"));
+    expect(run((b) => { b.contenttranslations.push(translation(32, { language: "KM" })); })).toEqual(only("1 row repeat a table, row, field, subkey and language that is already in the payload"));
+  });
+
+  it("is owned by the organisation: a row of another organisation, or none, is refused like any owned row", () => {
+    expect(run((b) => { b.contenttranslations[0].organisationid = id(77); })).toEqual(["contenttranslations: 1 belong to another organisation than the header's"]);
+    expect(run((b) => { delete b.contenttranslations[0].organisationid; })).toEqual(["contenttranslations: 1 carry no organisationid"]);
+  });
+});
