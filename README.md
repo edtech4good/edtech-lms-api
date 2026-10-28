@@ -14,7 +14,7 @@ The system is seven repos under [github.com/edtech4good](https://github.com/edte
 
 Content moves in two directions:
 
-1. Cloud to classroom. `GET /sync/content` builds a curriculum zip. A client can download it and `PUT` it to the classroom API at `/import/master`, or this server can push it itself with `POST /sync/cloud`, which sends the zip to `{RPI_CLOUD}/import/master` using `SERVER_SYNC_KEY`.
+1. Cloud to classroom. `GET /sync/content` builds a zip of the organisation's published curricula (a curriculum is published with `PUT /curriculum/publish/:id`; a draft edit never reaches learners). `npm run publish:initial -- --organisation <id>` (or `--all`, `--dry-run` to preview) publishes every curriculum that has no publication yet, once, when a database first moves to published sync. A client can download it and `PUT` it to the classroom API at `/import/master`, or this server can push it itself with `POST /sync/cloud`, which sends the zip to `{RPI_CLOUD}/import/master` using `SERVER_SYNC_KEY`.
 2. Classroom to cloud. The classroom API serves `GET /export/log`. A client downloads that zip and sends it here with `PUT /log/import` as a multipart upload in the `importfile` field. This route is off by default (see `LOG_IMPORT_ENABLED` below), and no current app calls it.
 
 Teachers and school accounts log in here with `POST /auth/school/login`. Students log in against the classroom API. Each user gets one access token at a time, so logging in from a second place, including with `curl`, ends the first session.
