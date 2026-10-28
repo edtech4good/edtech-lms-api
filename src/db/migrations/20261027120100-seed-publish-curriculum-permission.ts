@@ -12,9 +12,10 @@ import { v4 as uuidv4 } from "uuid";
  *    every Super Admin. After granting, if Super Admin held every permission BEFORE this ran, the migration checks it
  *    still does and throws (rolling back) if not.
  *  - Organisation Admin (`unb3Fy8p`), decision 3: organisation admins publish by default.
- *  - Admin (`zr5ER4QD`): the platform's own staff role, which holds every curriculum permission the Organisation Admin
- *    role was copied from; a platform user acting in an organisation publishes (decision 3), and one who holds the Admin
- *    role and not the wildcard must be able to.
+ *  - Admin (`zr5ER4QD`), for consistency: a platform user acting in an organisation is a Super Admin and passes through
+ *    the wildcard, so this grant is not for them. The Admin role always acts in its own organisation, and already holds
+ *    `sync_content`, `sync_students` and every curriculum permission, so withholding publish would be inconsistent.
+ *    Confirmed by Jesse on 28 Oct 2026 as an amendment to design decision 3 (the Admin role also publishes).
  *
  * Neither of those two roles may reach the wildcard: after granting, each must hold fewer distinct permissions than the
  * table has, or the migration throws and rolls back. Nothing else is granted: never `SELECT * FROM permissions`.
