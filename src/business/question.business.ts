@@ -22,8 +22,51 @@ import {
   questionsAttributes,
 } from "../models/data-models/questions";
 import { OrgContext } from "src/decorators/org.decorator";
+import { ApiError } from "src/models/ApiError";
+import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { andScope, findOwnedQuestion } from "./content-scope";
 import { andOrganisation, extractOrganisationFilter } from "./row-owner";
+
+/**
+ * An option keeps the id the request carries: translations of an option's text are keyed by that id (bilingual content),
+ * so an id that changed on every save would leave a translation beside another option's correct/incorrect flag. An
+ * option that carries none (a new one) gets a new id. A matching partner (`questionassociate`) has no id of its own and
+ * takes its option's. Two options of one question with the same id are refused (400): a translation could not tell them apart.
+ */
+export const withOptionIds = (options: any[]): QuestionOption[] => {
+  const seen = new Set<string>();
+  return options.map((questionoption: any) => {
+    const tempquestionoption: QuestionOption = { ...questionoption };
+    const given = tempquestionoption.questionoptionid;
+    tempquestionoption.questionoptionid = typeof given === "string" && given.trim() !== "" ? given : uuidv4();
+    if (seen.has(tempquestionoption.questionoptionid)) {
+      throw new ApiError(ErrorCode.INVALID_INPUT, "Two options of this question have the same id.", {
+        fields: [{ field: "questionoptions", message: "Each option of a question needs its own id." }],
+      });
+    }
+    seen.add(tempquestionoption.questionoptionid);
+    if (tempquestionoption.questionassociate) {
+      tempquestionoption.questionassociate = { ...tempquestionoption.questionassociate, questionoptionid: tempquestionoption.questionoptionid };
+    }
+    return tempquestionoption;
+  });
+};
+
+/** A distractor keeps the id it carries (it always has); two with the same non-empty id are refused (400), for the reason `withOptionIds` gives. */
+export const assertUniqueDistractorIds = (distractors: any): void => {
+  if (!Array.isArray(distractors)) return;
+  const seen = new Set<string>();
+  for (const d of distractors) {
+    const id = d?.questiondistractorid;
+    if (typeof id !== "string" || id.trim() === "") continue;
+    if (seen.has(id)) {
+      throw new ApiError(ErrorCode.INVALID_INPUT, "Two distractors of this question have the same id.", {
+        fields: [{ field: "questiondistractors", message: "Each distractor of a question needs its own id." }],
+      });
+    }
+    seen.add(id);
+  }
+};
 
 /**
  * Built with the caller's context, every read and write here is limited to the questions in scope (a question of
@@ -40,20 +83,9 @@ export class QuestionBusiness {
     tempquestion.isdeleted = false;
     tempquestion.questioncorrectvalue = question.questioncorrectvalue;
     if (tempquestion.questionoptions) {
-      tempquestion.questionoptions = tempquestion.questionoptions.map(
-        (questionoption: any) => {
-          const tempquestionoption: QuestionOption = { ...questionoption };
-          tempquestionoption.questionoptionid = uuidv4();
-
-          if (tempquestionoption.questionassociate) {
-            tempquestionoption.questionassociate.questionoptionid =
-              tempquestionoption.questionoptionid;
-          }
-
-          return tempquestionoption;
-        }
-      );
+      tempquestion.questionoptions = withOptionIds(tempquestion.questionoptions);
     }
+    assertUniqueDistractorIds(tempquestion.questiondistractors);
     tempquestion.questionstatus = true;
     tempquestion.created_by = user.lmsuserid;
     return await questions.create(tempquestion);
@@ -66,20 +98,9 @@ export class QuestionBusiness {
       tempquestion = { ...question };
 
       if (tempquestion.questionoptions) {
-        tempquestion.questionoptions = tempquestion.questionoptions.map(
-          (questionoption: any) => {
-            const tempquestionoption: QuestionOption = { ...questionoption };
-            tempquestionoption.questionoptionid = uuidv4();
-
-            if (tempquestionoption.questionassociate) {
-              tempquestionoption.questionassociate.questionoptionid =
-                tempquestionoption.questionoptionid;
-            }
-
-            return tempquestionoption;
-          }
-        );
+        tempquestion.questionoptions = withOptionIds(tempquestion.questionoptions);
       }
+      assertUniqueDistractorIds(tempquestion.questiondistractors);
       oldQuestion.questiondistractors = tempquestion.questiondistractors;
       oldQuestion.questionoptions = tempquestion.questionoptions;
       oldQuestion.questionheading = tempquestion.questionheading;
