@@ -11,6 +11,7 @@ import { assertInScope } from "./content-scope";
 import { ownerOfCurriculum } from "./content-owner";
 import { notFoundError, scopeOf } from "./org-scope";
 import { SubjectBusiness } from "./subject.business";
+import { translationCoverage, TranslationCoverage } from "./translation-coverage";
 import {
   confine,
   contextOfOrganisation,
@@ -18,6 +19,7 @@ import {
   CurriculumContentKey,
   keyOf,
   plain,
+  readContentLanguage,
   readCurriculumContent,
   Row,
   SHAPE,
@@ -791,6 +793,12 @@ export interface PublicationOverview extends PublicationState {
   pending: SlimSummary | null;
   /** The latest publication's own summary. */
   latest: { publicationid: string; publishedat: Date; publishedby: string; status: PublicationStatus; summary: SlimSummary } | null;
+  /**
+   * How much of the curriculum's text is translated, per language, with the untranslated and stale counts of every lesson
+   * (translation-coverage.ts). Read here and not on the tree, with the rest of what needs the organisation's whole bank;
+   * it is there whether or not the curriculum was ever published, and it never blocks a publish.
+   */
+  translationcoverage: TranslationCoverage | null;
 }
 
 /**
@@ -807,7 +815,7 @@ export const publicationOverview = async (org: OrgContext, curriculumid: string)
     limit: 1,
   });
   const state = stateOf(latest as unknown as LightRow | undefined);
-  const base: PublicationOverview = { curriculumid, ...state, changedsincepublish: false, problem: null, pending: null, latest: null };
+  const base: PublicationOverview = { curriculumid, ...state, changedsincepublish: false, problem: null, pending: null, latest: null, translationcoverage: null };
   if (latest !== undefined) {
     base.latest = {
       publicationid: latest.publicationid,
@@ -817,10 +825,14 @@ export const publicationOverview = async (org: OrgContext, curriculumid: string)
       summary: summaryForAnswer(latest.summary as unknown as StoredSummary),
     };
   }
+  const { content, subjects } = await readSources(organisationid);
+  const picked = selectCurriculumTables(content, curriculumid);
+  if (picked.curriculums.length > 0) {
+    base.translationcoverage = translationCoverage(picked, await readContentLanguage(organisationid));
+  }
   if (latest === undefined || latest.status !== "published") {
     return base;
   }
-  const { content, subjects } = await readSources(organisationid);
   try {
     const payload = payloadOf(organisationid, content, curriculumid, subjects);
     const hashes = hashTables(payload.tables);

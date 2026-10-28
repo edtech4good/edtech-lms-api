@@ -487,6 +487,12 @@ export const exportableTranslations = (rows: Row[], contentlanguage: string | nu
   return kept.map((r) => ({ ...r, language: normaliseLanguage(r.language as string) }));
 };
 
+/** The organisation's content language, null when it has none (or is not there). */
+export const readContentLanguage = async (organisationid: string): Promise<string | null> => {
+  const organisation = await organisations.findOne({ where: { organisationid }, attributes: ["organisationid", "contentlanguage"] });
+  return organisation?.contentlanguage ?? null;
+};
+
 /**
  * The organisation's translations as they are exported: all its rows (`contenttranslations`, ordered by table, row,
  * field, subkey and language so the file is the same on every run), filtered by `exportableTranslations` against its
@@ -496,14 +502,14 @@ export const exportableTranslations = (rows: Row[], contentlanguage: string | nu
 export const readTranslations = async (org: OrgContext, questionRows: Row[]): Promise<Row[]> => {
   const scope = scopeOf(org);
   if (scope.kind !== "organisation") return [];
-  const organisation = await organisations.findOne({ where: { organisationid: scope.organisationid }, attributes: ["organisationid", "contentlanguage"] });
+  const contentlanguage = await readContentLanguage(scope.organisationid);
   const rows = plain(
     await contenttranslations.findAll({
       where: ownedWhere(org),
       order: [["tablename", "ASC"], ["rowid", "ASC"], ["field", "ASC"], ["subkey", "ASC"], ["language", "ASC"]],
     }),
   );
-  return exportableTranslations(rows, organisation?.contentlanguage ?? null, questionRows);
+  return exportableTranslations(rows, contentlanguage, questionRows);
 };
 
 /** The content tables that hang from the organisation's curriculums or are drawn on by them (every table but the four the organisation owns outright), and the translations of their rows. */
