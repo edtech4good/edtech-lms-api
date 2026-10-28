@@ -21,6 +21,7 @@ import { schools } from "src/models/data-models/school";
 import { SyncController } from "./sync.controller";
 import { confine, contextOfOrganisation } from "src/business/organisation-content-export";
 import { LessonLearningBusiness } from "src/business/lessonlearning.business";
+import { publishCurriculum } from "src/business/curriculum-publication";
 
 /**
  * The content sync is one organisation's: `GET sync/content` and `POST sync/cloud` (format 3, the only format: format 2
@@ -202,6 +203,16 @@ const ORGANISATION_ROW = (organisationid: string) => ({
   isdeleted: false,
 });
 
+/** Publishes every curriculum of X and Y as it stands (a sync serves publications, not the live tables). */
+const publishAll = async () => {
+  for (const [organisationid, t] of [[X, TX], [Y, TY]] as const) {
+    await publishCurriculum({ organisationid, isplatform: false, permissions: [] }, uuid(9), t.curriculum);
+  }
+};
+/** Publishes X's curriculum again, after a spec changed the live rows. */
+const republishX = () => publishCurriculum({ organisationid: X, isplatform: false, permissions: [] }, uuid(9), TX.curriculum);
+const republishY = () => publishCurriculum({ organisationid: Y, isplatform: false, permissions: [] }, uuid(9), TY.curriculum);
+
 describe("the content sync is one organisation's", () => {
   let app: INestApplication;
 
@@ -217,7 +228,7 @@ describe("the content sync is one organisation's", () => {
   });
   afterAll(async () => app.close());
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.restoreAllMocks();
     jest.spyOn(Logger, "warn").mockImplementation(() => Logger);
     jest.spyOn(Logger, "info").mockImplementation(() => Logger);
@@ -234,6 +245,8 @@ describe("the content sync is one organisation's", () => {
     db.add("organisationcountry", { organisationcountryid: uuid(702), organisationid: Y, countryid: C_Y });
     jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(transaction as never);
     (axios.put as jest.Mock).mockReset().mockResolvedValue({ status: 200 });
+    // the sync serves PUBLISHED content (A4 step 2): both organisations' curricula are published as seeded
+    await publishAll();
   });
   const send = (who: Who, method: Method, path: string, body?: object) => {
     const r = request(app.getHttpServer())[method](path).set("Authorization", callers[who]).set("Connection", "close");
@@ -308,6 +321,7 @@ describe("the content sync is one organisation's", () => {
 
     it("leaves out a translation whose lesson is not in the payload (its level is gone) instead of failing the export", async () => {
       db.tables.levels = db.tables.levels.filter((l) => l.levelid !== TX.level);
+      await republishX();
       const { status, json } = await download("X's Organisation Admin", "/sync/content");
       expect(status).toBe(200);
       expect(ids(json.contenttranslations, "translationid")).toEqual([TX.translation2]);
@@ -432,6 +446,8 @@ describe("the content sync is one organisation's", () => {
       const attribution = { v: 1, author: "ក្រុម", sourceurl: "https://example.org/a" };
       Object.assign(db.tables.documents.find((r) => r.documentid === TX.document)!, { documenttitle: "ភ្នំពេញ", documentlicence: "CC-BY-4.0", documentattribution: attribution });
       Object.assign(db.tables.documents.find((r) => r.documentid === TY.document)!, { documenttitle: "ខេត្ត", documentlicence: "CC0-1.0", documentattribution: { v: 1, author: "Y" } });
+      await republishX();
+      await republishY();
       const { json } = await download("X's Admin", "/sync/content");
       expect(documentRow(json, TX.document)).toMatchObject({ documenttitle: "ភ្នំពេញ", documentlicence: "CC-BY-4.0", documentattribution: attribution });
       expect(documentRow(json, TX.document2)).toMatchObject({ documenttitle: null, documentlicence: "unspecified", documentattribution: null });
@@ -446,12 +462,14 @@ describe("the content sync is one organisation's", () => {
 
     it("a video item on a document that is not a video makes the student API's rule report it", async () => {
       db.tables.documents.find((r) => r.documentid === TX.document)!.documenttypeid = 5;
+      await republishX();
       const { json } = await download("X's Admin", "/sync/content");
       expect(contentProblems(json)).toEqual(["lessonlearnings: 1 row of type video points at a document that is not a video (its documenttypeid must be 2)."]);
     });
 
     it("an unknown licence or a bad attribution in the database is reported by the student API's rule, not hidden by the export", async () => {
       Object.assign(db.tables.documents.find((r) => r.documentid === TX.document2)!, { documentlicence: "GPL-3.0", documentattribution: { v: 9 } });
+      await republishX();
       const { json } = await download("X's Admin", "/sync/content");
       expect(contentProblems(json)).toHaveLength(2);
     });
@@ -466,6 +484,7 @@ describe("the content sync is one organisation's", () => {
 
     it("lessonlearnings rows ship whole, with the item's type and body as stored", async () => {
       db.tables.lessonlearnings.find((r) => r.lessonlearningid === TX.learning)!.lessonlearningbody = { v: 1, note: "ខ្មែរ" };
+      await republishX();
       const { json } = await download("X's Admin", "/sync/content");
       const row = (json.lessonlearnings as Row[]).find((r) => r.lessonlearningid === TX.learning)!;
       expect(row).toMatchObject({ lessonlearningtype: "video", lessonlearningbody: { v: 1, note: "ខ្មែរ" }, documentid: TX.document });
@@ -500,6 +519,7 @@ describe("the content sync is one organisation's", () => {
 
     it("with no link rows the key is still there, an empty list, and the student API's check accepts the payload", async () => {
       db.tables.lessonlearningdocuments.length = 0;
+      await republishX();
       const { json } = await download("X's Admin", "/sync/content");
       expect(json.lessonlearningdocuments).toEqual([]);
       expect("lessonlearningdocuments" in json).toBe(true);
@@ -513,13 +533,12 @@ describe("the content sync is one organisation's", () => {
       expect(contentProblems(json)).toEqual([]);
     });
 
-    it("a link row that names another organisation's document stops the export (400): the table and the number of rows, no id", async () => {
+    it("a link row that names another organisation's document stops the publish (400): the table and the number of rows, no id", async () => {
       db.tables.lessonlearningdocuments.find((r) => r.lessonlearningdocumentid === TX.link)!.documentid = TY.document;
-      const { res } = await download(NOT_ACTING, `/sync/content?organisationid=${X}`);
-      expect(res.status).toBe(400);
-      const text = (res.body as Buffer).toString("utf8");
-      expect(JSON.parse(text).errormessage).toContain("lessonlearningdocuments: 1 row names a document");
-      for (const id of [...everyIdOf(TY), ...everyIdOf(TU)]) expect(text).not.toContain(id);
+      const thrown = await republishX().then(() => undefined, (e: Error) => e);
+      expect(thrown).toBeDefined();
+      expect(thrown!.message).toContain("lessonlearningdocuments: 1 row names a document");
+      for (const id of [...everyIdOf(TY), ...everyIdOf(TU)]) expect(thrown!.message).not.toContain(id);
     });
 
     it("a link row whose item is not in the payload is left out, not refused (nothing can reach it)", () => {
@@ -629,8 +648,12 @@ describe("the content sync is one organisation's", () => {
   });
 
   // ───────────────────────────── cross-owner references ─────────────────────────────
-  describe("content that names another organisation's rows cannot be exported", () => {
-    const cases: Array<[string, () => void, string]> = [
+  // Content is checked twice now: when a curriculum is PUBLISHED (the publish is refused, 400, and the last publication
+  // stays what learners get) and again when the published copies are merged for a sync (a stored copy that names a row
+  // outside the merged payload refuses the sync). The live tables the organisation owns outright (schools, subjects,
+  // standards, countries) are only ever checked at sync time.
+  describe("content that names another organisation's rows cannot be published or exported", () => {
+    const contentCases: Array<[string, () => void, string]> = [
       ["a practice question pointing at another organisation's question", () => { db.tables.lessonpracticequestions[0].questionid = TY.question; }, "lessonpracticequestions: 1 row names a question"],
       ["a quiz question pointing at an unowned question", () => { db.tables.lessonquizquestions[0].questionid = TU.question; }, "lessonquizquestions: 1 row names a question"],
       ["a level quiz question pointing at another organisation's question", () => { db.tables.levelquizquestions[0].questionid = TY.question; }, "levelquizquestions: 1 row names a question"],
@@ -638,21 +661,44 @@ describe("the content sync is one organisation's", () => {
       ["a lesson learning pointing at another organisation's document", () => { db.tables.lessonlearnings[0].documentid = TY.document; }, "lessonlearnings: 1 row names a document"],
       ["a lesson plan pointing at an unowned document", () => { db.tables.lessonplans[0].documentid = TU.document; }, "lessonplans: 1 row names a document"],
       ["a curriculum pointing at another organisation's subject", () => { db.tables.curriculums[0].subjectid = TY.subject; }, "curriculums: 1 row names a subject"],
-      ["a school in a country that is not there", () => { db.tables.schools[0].countryid = MISSING; }, "schools: 1 row names a country"],
       ["a level quiz question pointing at another organisation's lesson", () => { db.tables.levelquizquestions[0].lessonid = TY.lesson; }, "levelquizquestions: 1 row names a lesson"],
     ];
-    it.each(cases)("%s: 400 naming the table and the number of rows, and no id", async (_name, setUp, message) => {
+    it.each(contentCases)("%s: the publish is refused (400) naming the table and the number of rows, no id, and learners keep the last publication", async (_name, setUp, message) => {
       // the first rows of each table in the fake are X's (it is seeded first)
+      const before = (await download(NOT_ACTING, `/sync/content?organisationid=${X}`)).raw;
       setUp();
+      const thrown = await republishX().then(() => undefined, (e: { message: string; getStatus: () => number }) => e);
+      expect(thrown).toBeDefined();
+      expect(thrown!.getStatus()).toBe(400);
+      expect(thrown!.message).toContain(message);
+      for (const id of [...everyIdOf(TY), ...everyIdOf(TU), MISSING]) expect(thrown!.message).not.toContain(id);
+      const after = await download(NOT_ACTING, `/sync/content?organisationid=${X}`);
+      expect(after.status).toBe(200);
+      expect(after.raw).toBe(before);
+    });
+
+    it("a school in a country that is not there (a live table): 400 at sync time, naming the table and the number of rows, and no id", async () => {
+      db.tables.schools[0].countryid = MISSING;
       const { res } = await download(NOT_ACTING, `/sync/content?organisationid=${X}`);
       expect(res.status).toBe(400);
       const text = (res.body as Buffer).toString("utf8");
-      expect(JSON.parse(text).errormessage).toContain(message);
+      expect(JSON.parse(text).errormessage).toContain("schools: 1 row names a country");
       for (const id of [...everyIdOf(TY), ...everyIdOf(TU), MISSING]) expect(text).not.toContain(id);
     });
 
-    it("POST /sync/cloud sends nothing when the export is refused", async () => {
-      db.tables.lessonpracticequestions[0].questionid = TY.question;
+    it("a stored publication that names a question outside the payload stops the sync (400): the table and the number of rows, no id", async () => {
+      const stored = db.tables.curriculumpublications.find((r) => r.organisationid === X)!.payload as { tables: Record<string, Row[]> };
+      stored.tables.lessonpracticequestions[0].questionid = TY.question;
+      const { res } = await download(NOT_ACTING, `/sync/content?organisationid=${X}`);
+      expect(res.status).toBe(400);
+      const text = (res.body as Buffer).toString("utf8");
+      expect(JSON.parse(text).errormessage).toContain("lessonpracticequestions: 1 row names a question");
+      for (const id of [...everyIdOf(TY), ...everyIdOf(TU)]) expect(text).not.toContain(id);
+    });
+
+    it("POST /sync/cloud sends nothing when the stored copy is refused", async () => {
+      const stored = db.tables.curriculumpublications.find((r) => r.organisationid === X)!.payload as { tables: Record<string, Row[]> };
+      stored.tables.lessonpracticequestions[0].questionid = TY.question;
       const res = await send("X's Admin", "post", "/sync/cloud");
       expect(res.status).toBe(400);
       expect(axios.put).not.toHaveBeenCalled();
@@ -660,6 +706,7 @@ describe("the content sync is one organisation's", () => {
 
     it("a baseline question under a baseline that is deleted is left out, not refused", async () => {
       db.tables.curriculumbaseline[0].isdeleted = true;
+      await republishX();
       const { status, json } = await download("X's Admin", "/sync/content");
       expect(status).toBe(200);
       expect(json.curriculumbaselines).toEqual([]);
@@ -672,6 +719,7 @@ describe("the content sync is one organisation's", () => {
       db.tables.schools.find((r) => r.schoolid === TX.school)!.curriculums = [TX.curriculum, TY.curriculum, TU.curriculum, MISSING];
       db.tables.schools.find((r) => r.schoolid === TX.school2)!.curriculums = JSON.stringify([TX.curriculum, TY.curriculum]);
       db.tables.curriculumbaseline.find((r) => r.curriculumbaselineid === TX.baseline)!.schoolid = [TX.school, TY.school, MISSING, TX.school2];
+      await republishX();
       const { status, json, raw } = await download("X's Admin", "/sync/content");
       expect(status).toBe(200);
       const school = (id: string) => (json.schools as Row[]).find((r) => r.schoolid === id)!;

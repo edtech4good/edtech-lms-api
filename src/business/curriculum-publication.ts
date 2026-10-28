@@ -30,8 +30,8 @@ import {
  *
  * A publication is the curriculum's own payload, taken from the live tables the moment an editor publishes, and stored
  * in `curriculumpublications` with a summary of what changed since the publication before it. This file builds that
- * payload, hashes it, compares it, and records and withdraws publications. It changes nothing about what the two sync
- * routes serve (step 2) and pushes nothing (step 3).
+ * payload, hashes it, compares it, and records and withdraws publications. The two sync routes serve the latest publication of
+ * each curriculum (published-content.ts, step 2); nothing is pushed on publish yet (step 3).
  *
  * ## The payload
  *
@@ -58,11 +58,11 @@ import {
  * summary counts and diffs translation rows by id. A translation updated in place keeps its id, so it shows as changed,
  * not as removed and added.
  *
- * Step 2 (the merge, not built yet): the student side keeps one copy of a shared question, the newest publication's, and
- * the merge must take that question's translations from THE SAME publication it took the question from, never from
- * another curriculum's. A translation is therefore merged with its parent row, not by itself, and a translation whose
- * parent was taken from another publication is dropped. The organisation's `contentlanguage` is read live by the merge
- * (it is a property of the organisation, not of a curriculum), and translations in it are left out there as here.
+ * The merge (A4 step 2, published-content.ts) keeps one copy of a shared question, the newest publication's, and takes
+ * that question's translations from THE SAME publication it took the question from, never from another curriculum's. A
+ * translation is therefore merged with its parent row, not by itself, and a translation whose parent was taken from
+ * another publication is dropped. The organisation's `contentlanguage` is read live by the merge (it is a property of the
+ * organisation, not of a curriculum), and translations in it are left out there as here.
  *
  * ## Hashes
  *
