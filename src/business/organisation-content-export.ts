@@ -265,6 +265,44 @@ export const readCountries = async (org: OrgContext, schoolRows: Row[]): Promise
   return plain(await countries.findAll({ where: { countryid: { [Op.in]: [...wanted.values()] } }, order: [["countryname", "ASC"]] }));
 };
 
+/**
+ * The lists of ids a row can hold (ID_LISTS) trimmed to the entries that are rows of the payload given; a count per
+ * column is logged, never the ids. Only the tables given are touched, and only against the tables given. Pure apart from
+ * the log line. `confine` calls it last; the published-content merge (published-content.ts) reaches it through `confine`.
+ */
+export const trimIdLists = (given: Partial<Record<ContentTableKey, Row[]>>): Partial<Record<ContentTableKey, Row[]>> => {
+  const tables: Partial<Record<ContentTableKey, Row[]>> = { ...given };
+  const idsIn = (key: ContentTableKey): Set<string> | undefined => {
+    const list = tables[key];
+    if (list === undefined) return undefined;
+    const pk = SHAPE[key].pk;
+    return new Set(list.map((r) => keyOf(r[pk])).filter((id): id is string => id !== null));
+  };
+  const trimmed: string[] = [];
+  for (const key of CONTENT_TABLE_KEYS) {
+    for (const { column, to } of ID_LISTS[key] ?? []) {
+      const targets = idsIn(to);
+      if (tables[key] === undefined || targets === undefined) continue;
+      let left = 0;
+      tables[key] = (tables[key] as Row[]).map((row) => {
+        if (row[column] === null || row[column] === undefined) return row;
+        const entries = listOf(row[column]);
+        const kept = (entries ?? []).filter((entry) => {
+          const id = keyOf(entry);
+          return id !== null && targets.has(id);
+        });
+        left += entries === null ? 1 : entries.length - kept.length;
+        return { ...row, [column]: kept };
+      });
+      if (left > 0) trimmed.push(`${key}.${column}: ${left}`);
+    }
+  }
+  if (trimmed.length > 0) {
+    Logger.info(`organisation content export: list entries left out because they name a row that is not in the payload (${trimmed.join(", ")})`);
+  }
+  return tables;
+};
+
 // ---- the check the student API makes -----------------------------------------------------------
 
 /**
@@ -352,30 +390,7 @@ export const confine = (given: Partial<Record<ContentTableKey, Row[]>>): Partial
     );
   }
 
-  // The lists of ids are trimmed to what is in the payload (see ID_LISTS); a count per column is logged, never the ids.
-  const trimmed: string[] = [];
-  for (const key of CONTENT_TABLE_KEYS) {
-    for (const { column, to } of ID_LISTS[key] ?? []) {
-      const targets = idsIn(to);
-      if (tables[key] === undefined || targets === undefined) continue;
-      let left = 0;
-      tables[key] = (tables[key] as Row[]).map((row) => {
-        if (row[column] === null || row[column] === undefined) return row;
-        const entries = listOf(row[column]);
-        const kept = (entries ?? []).filter((entry) => {
-          const id = keyOf(entry);
-          return id !== null && targets.has(id);
-        });
-        left += entries === null ? 1 : entries.length - kept.length;
-        return { ...row, [column]: kept };
-      });
-      if (left > 0) trimmed.push(`${key}.${column}: ${left}`);
-    }
-  }
-  if (trimmed.length > 0) {
-    Logger.info(`organisation content export: list entries left out because they name a row that is not in the payload (${trimmed.join(", ")})`);
-  }
-  return tables;
+  return trimIdLists(tables);
 };
 
 // ---- the payload --------------------------------------------------------------------------------
@@ -562,52 +577,68 @@ export const readCurriculumContent = async (org: OrgContext): Promise<Record<Cur
   };
 };
 
-/** The content of the organisation, whole, in the format the student API reads (see the top of this file). */
-export const buildOrganisationContent = async (organisation: organisations): Promise<OrganisationContentPayload> => {
-  const row = organisationRowOf(organisation);
-  const org = contextOfOrganisation(row.organisationid);
+/** The four tables the organisation owns outright, with the countries its schools name: the tables a publication does not carry (they are always live). */
+export const LIVE_TABLE_KEYS = ["countries", "schools", "standards", "subjects"] as const;
+export type LiveTableKey = (typeof LIVE_TABLE_KEYS)[number];
 
+/** Countries, schools, standards and subjects of the organisation, read live, the readers' order, not confined. */
+export const readLiveTables = async (org: OrgContext): Promise<Record<LiveTableKey, Row[]>> => {
   const schoolRows = await readSchools(org);
-  const tables: Record<ContentTableKey, Row[]> = {
+  return {
     countries: await readCountries(org, schoolRows),
     schools: schoolRows,
     standards: await readStandards(org),
     subjects: plain(await new SubjectBusiness(org).getSubjectsWithOwner()),
+  };
+};
+
+/** The checked tables as the payload the student API reads, in the order it documents them (see the top of this file). */
+export const shapePayload = (row: OrganisationRow, checked: Record<ContentTableKey, Row[]>): OrganisationContentPayload => ({
+  format: 3,
+  organisationid: row.organisationid,
+  organisationcode: row.organisationcode,
+  scope: "organisation",
+  organisations: [row],
+  schools: checked.schools,
+  standards: checked.standards,
+  countries: checked.countries,
+  curriculums: checked.curriculums,
+  curriculumbaselines: checked.curriculumbaselines,
+  baselinequestion: checked.baselinequestion,
+  grades: checked.grades,
+  levels: checked.levels,
+  lessons: checked.lessons,
+  lessonlearnings: checked.lessonlearnings,
+  lessonplans: checked.lessonplans,
+  lessonpractices: checked.lessonpractices,
+  lessonquizzes: checked.lessonquizzes,
+  lessonpracticequestions: checked.lessonpracticequestions,
+  lessonquizquestions: checked.lessonquizquestions,
+  levelquizquestions: checked.levelquizquestions,
+  questions: checked.questions,
+  documents: checked.documents,
+  subjects: checked.subjects,
+  // Always present, an empty list when no item has a link row (the student API refuses a payload without the key,
+  // and one with it when it does not know it). Last, so that the two tables it hangs from (lessonlearnings and
+  // documents) come before it in the file.
+  lessonlearningdocuments: checked.lessonlearningdocuments,
+  // The last key, as in the student API's list of tables.
+  contenttranslations: checked.contenttranslations,
+});
+
+/**
+ * The content of the organisation, whole, in the format the student API reads (see the top of this file), from the LIVE
+ * tables. No sync route serves this any more (A4 step 2): they serve `buildPublishedOrganisationContent`
+ * (published-content.ts), the published copy of each curriculum. This is the draft view: what the organisation would
+ * serve if every curriculum were published as it stands now.
+ */
+export const buildOrganisationContent = async (organisation: organisations): Promise<OrganisationContentPayload> => {
+  const row = organisationRowOf(organisation);
+  const org = contextOfOrganisation(row.organisationid);
+
+  const tables: Record<ContentTableKey, Row[]> = {
+    ...(await readLiveTables(org)),
     ...(await readCurriculumContent(org)),
   };
-  const checked = confine(tables) as Record<ContentTableKey, Row[]>;
-
-  // The tables in the order the student API documents them.
-  return {
-    format: 3,
-    organisationid: row.organisationid,
-    organisationcode: row.organisationcode,
-    scope: "organisation",
-    organisations: [row],
-    schools: checked.schools,
-    standards: checked.standards,
-    countries: checked.countries,
-    curriculums: checked.curriculums,
-    curriculumbaselines: checked.curriculumbaselines,
-    baselinequestion: checked.baselinequestion,
-    grades: checked.grades,
-    levels: checked.levels,
-    lessons: checked.lessons,
-    lessonlearnings: checked.lessonlearnings,
-    lessonplans: checked.lessonplans,
-    lessonpractices: checked.lessonpractices,
-    lessonquizzes: checked.lessonquizzes,
-    lessonpracticequestions: checked.lessonpracticequestions,
-    lessonquizquestions: checked.lessonquizquestions,
-    levelquizquestions: checked.levelquizquestions,
-    questions: checked.questions,
-    documents: checked.documents,
-    subjects: checked.subjects,
-    // Always present, an empty list when no item has a link row (the student API refuses a payload without the key,
-    // and one with it when it does not know it). Last, so that the two tables it hangs from (lessonlearnings and
-    // documents) come before it in the file.
-    lessonlearningdocuments: checked.lessonlearningdocuments,
-    // The last key, as in the student API's list of tables.
-    contenttranslations: checked.contenttranslations,
-  };
+  return shapePayload(row, confine(tables) as Record<ContentTableKey, Row[]>);
 };

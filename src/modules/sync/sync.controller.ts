@@ -37,7 +37,7 @@ const zipped = (json: string) => {
 export class SyncController {
 
   @OrgPolicy("owned", {
-    note: "One organisation's content (format 3); a platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired. School-user tokens pass the guards but @Org() answers 401.",
+    note: "One organisation's PUBLISHED content (format 3): the latest publication of each of its published curricula, merged, with its live schools, standards, subjects and countries; a draft edit never reaches it. A platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired. School-user tokens pass the guards but @Org() answers 401.",
     enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
   })
   @Get("content")
@@ -72,7 +72,7 @@ export class SyncController {
   }
 
   @OrgPolicy("owned", {
-    note: "Pushes one organisation's content (format 3) with the organisation named in the request header; a platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired.",
+    note: "Pushes one organisation's PUBLISHED content (format 3; the same payload as GET sync/content) with the organisation named in the request header; a platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired.",
     enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
   })
   @Post("cloud")
