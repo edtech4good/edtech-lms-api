@@ -216,6 +216,9 @@ interface FindOptions {
   limit?: number;
   offset?: number;
   raw?: boolean;
+  /** A locking read reads the same rows here: the fake has one connection and no snapshots. */
+  lock?: unknown;
+  transaction?: unknown;
 }
 
 /** `attributes` as Sequelize reads it: a list of columns, or `{ exclude }`; anything fancier (an aggregate) leaves the row whole. */
