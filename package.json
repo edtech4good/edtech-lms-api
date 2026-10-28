@@ -28,6 +28,7 @@
     "db:check-schoolid": "ts-node --transpile-only -r tsconfig-paths/register -P tsconfig.json scripts/check-school-id-invariant.ts",
     "db:check-owners": "ts-node --transpile-only -r tsconfig-paths/register -P tsconfig.json scripts/check-owners.ts",
     "db:check-indexes": "ts-node --transpile-only -r tsconfig-paths/register -P tsconfig.json scripts/check-model-indexes.ts",
+    "publish:initial": "ts-node --transpile-only -r tsconfig-paths/register -P tsconfig.json scripts/publish-initial.ts",
     "db:race-check": "ts-node --transpile-only -r tsconfig-paths/register -P tsconfig.json scripts/check-rename-create-race.ts",
     "routes:policy": "ts-node -r tsconfig-paths/register -P tsconfig.json scripts/route-policy-inventory.ts",
     "model-gen": "sequelize-auto -h localhost -d test -u root -x password --dialect mysql -o ./path/to/models -l ts"
