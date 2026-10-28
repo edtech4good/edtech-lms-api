@@ -9,6 +9,7 @@ import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { LmsUserToken } from "src/models/token.model";
 import { dbinstance } from "src/services/dbservice";
 import { ContentFake } from "src/test-support/content-fake";
+import { queriesBetween } from "src/test-support/queries-between";
 import { cloudConfigured } from "./cloud-push";
 import { CurriculumBusiness } from "./curriculum.business";
 import { publishCurriculum, retireCurriculum } from "./curriculum-publication";
@@ -74,6 +75,21 @@ const tx = { open: false, commit: jest.fn(), rollback: jest.fn(), LOCK: { SHARE:
 const stored = (table: Parameters<ContentFake["add"]>[0], key: string, value: string) => db.tables[table].find((r) => r[key] === value)!;
 const put = axios.put as jest.Mock;
 const ids = (rows: Array<Record<string, unknown>>, key: string) => rows.map((r) => r[key] as string).sort();
+
+/**
+ * The pool rule for the act that has just run (its LAST transaction): every query made between its begin and its commit takes
+ * the transaction, and no request to the learner server starts in there. The reads and the push come before and after.
+ */
+const heldOnlyByQueriesThatTakeIt = () => {
+  const begins = (dbinstance.getdbinstance().transaction as unknown as jest.Mock).mock.invocationCallOrder;
+  const commits = tx.commit.mock.invocationCallOrder;
+  const begin = begins[begins.length - 1];
+  const commit = commits[commits.length - 1];
+  expect(commit).toBeGreaterThan(begin);
+  const between = queriesBetween(db, tx, begin, commit);
+  const requests = put.mock.invocationCallOrder.filter((order) => order > begin && order < commit);
+  return { between, requests };
+};
 
 /** What was PUT to the student server, call `n`: the url, the options, and the file inside the zip. */
 const pushed = (n = 0) => {
@@ -272,6 +288,17 @@ describe("retire pushes the published set", () => {
     expect(events).toEqual(["begin", "commit", "put"]);
   });
 
+  it("holds its transaction only through queries that take it, and starts no request to the learner server meanwhile", async () => {
+    await publishAndPush(orgX, USER, A);
+    await retireAndPush(orgX, A);
+    const { between, requests } = heldOnlyByQueriesThatTakeIt();
+    // the lock and the withdraw run in there, and every one of them takes the transaction
+    expect(between.map((q) => q.method).sort()).toEqual(["findOne", "update"]);
+    expect(between.filter((q) => !q.inTransaction)).toEqual([]);
+    expect(requests).toEqual([]);
+    expect(put).toHaveBeenCalledTimes(2);
+  });
+
   it("the last published curriculum retired pushes an empty set: that is how the student server learns it is gone", async () => {
     await publishAndPush(orgX, USER, A);
     put.mockClear();
@@ -347,6 +374,17 @@ describe("delete withdraws the curriculum's publication, then pushes", () => {
     expect(updates).toHaveBeenCalledWith({ status: "withdrawn" }, expect.objectContaining({ transaction: tx }));
     // the countries are kept, so a later restore of the curriculum does not lose them
     expect(db.tables.curriculumcountry.map((r) => [r.curriculumid, r.countryid])).toEqual([[A, COUNTRY]]);
+  });
+
+  it("holds its transaction only through queries that take it, and starts no request to the learner server meanwhile", async () => {
+    await publishAndPush(orgX, USER, A);
+    await deleteA();
+    const { between, requests } = heldOnlyByQueriesThatTakeIt();
+    // the lock and the withdraw run in there (the row's own save is an instance call), and every query takes the transaction
+    expect(between.map((q) => q.method).sort()).toEqual(["findOne", "update"]);
+    expect(between.filter((q) => !q.inTransaction)).toEqual([]);
+    expect(requests).toEqual([]);
+    expect(put).toHaveBeenCalledTimes(1);
   });
 
   it("then the push sends a set without it, after the commit", async () => {

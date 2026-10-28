@@ -3,6 +3,7 @@ import { ApiError } from "src/models/ApiError";
 import { curriculumpublications } from "src/models/data-models/curriculumpublications";
 import { dbinstance } from "src/services/dbservice";
 import { ContentFake } from "src/test-support/content-fake";
+import { queriesBetween as sharedQueriesBetween } from "src/test-support/queries-between";
 import {
   canonicalJson,
   confineCurriculumTables,
@@ -563,22 +564,7 @@ describe("the audit columns are not part of a row's hash", () => {
   });
 });
 
-/** Every call made on a model between two moments (jest's global call order), with whether it was given the transaction. */
-const queriesBetween = (from: number, to: number) => {
-  const out: Array<{ method: string; inTransaction: boolean }> = [];
-  for (const model of db.models()) {
-    for (const method of ["findOne", "findAll", "findAndCountAll", "count", "create", "bulkCreate", "update", "destroy"]) {
-      const fn = (model as Record<string, unknown>)[method] as jest.Mock;
-      fn.mock.calls.forEach((args: unknown[], n: number) => {
-        const order = fn.mock.invocationCallOrder[n];
-        if (order > from && order < to) {
-          out.push({ method, inTransaction: args.some((a) => typeof a === "object" && a !== null && (a as { transaction?: unknown }).transaction === transaction) });
-        }
-      });
-    }
-  }
-  return out;
-};
+const queriesBetween = (from: number, to: number) => sharedQueriesBetween(db, transaction, from, to);
 
 describe("the lock is held only by queries that take the transaction", () => {
   it("issues no query that does not take the transaction between the start of the transaction and its commit", async () => {
