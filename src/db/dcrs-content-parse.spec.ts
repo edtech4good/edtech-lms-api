@@ -5,11 +5,16 @@
  * code points, not words (see dcrs-content-plan.spec.ts).
  */
 import AdmZip from "adm-zip";
+import { spawnSync } from "child_process";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const { ID } = require("../../scripts/seed-dcrs-content");
 const { validateContent } = require("../../scripts/lib/dcrs-content-plan");
 const { ParseRefused, readCellsFromXlsx, parseCells, parseQuizCell } = require("../../scripts/lib/dcrs-content-parse");
+const { outputFolderRefusal } = require("../../scripts/dcrs-content-from-xlsx");
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -105,6 +110,15 @@ describe("parsing the cells of row 2", () => {
     expect(refusal(cells({ F2: "1. S?\nA. a \u2713 more\nB. b \u2713", G2: cells().G2 })).join("|")).toContain("a tick that is not at the end of option A");
   });
 
+  it("refuses a tick glued to the option text, naming the row, and accepts it once a space separates them", () => {
+    expect(refusal(cells({ F2: "1. S?\nA. a\nB. b\u2713", G2: cells().G2 })).join("|")).toContain(
+      "F2 question 1: the tick at the end of option B must be separated from the option text by a space",
+    );
+    expect(refusal(cells({ F2: "1. S?\nA. a\u2714\nB. b", G2: cells().G2 })).join("|")).toContain("F2 question 1: the tick at the end of option A must be separated");
+    const [q] = parseQuizCell("S?\nA. a\nB. b \u2713", "X", []);
+    expect(q.options.map((o: Json) => [o.text, o.correct])).toEqual([["a", false], ["b", true]]);
+  });
+
   it("refuses English and Khmer that do not line up, by question count, option count and correct option", () => {
     expect(refusal(cells({ G2: cells().G2.split("\n\n")[0] }))).toEqual(["quiz: 2 English questions but 1 Khmer"]);
     expect(refusal(cells({ G2: cells().G2.replace(`\nD. ${km("d")}`, "") }))).toEqual(["quiz question 1: 4 English options but 3 Khmer"]);
@@ -188,5 +202,77 @@ describe("reading the cells of an .xlsx", () => {
     });
     expect(readCellsFromXlsx(file)).toEqual(Object.fromEntries(keys.map((k) => [k, c[k]])));
     expect(parseCells(readCellsFromXlsx(file))).toEqual(parseCells(c));
+  });
+});
+
+describe("the folder the converter writes content.json into", () => {
+  const repoRoot = path.resolve(__dirname, "..", "..");
+  const made: string[] = [];
+  const tmp = (): string => {
+    const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dcrs-out-")));
+    made.push(d);
+    return d;
+  };
+  afterAll(() => {
+    for (const d of made) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  it("accepts a folder under the temp directory, which no git working tree contains", () => {
+    expect(outputFolderRefusal(tmp(), repoRoot)).toBeNull();
+  });
+
+  it("refuses the checkout itself, a folder inside it, and a symlink that leads into it", () => {
+    expect(outputFolderRefusal(repoRoot, repoRoot)).toMatch(/inside this repository/);
+    expect(outputFolderRefusal(path.join(repoRoot, "scripts"), repoRoot)).toMatch(/inside this repository/);
+    const link = path.join(tmp(), "link");
+    fs.symlinkSync(path.join(repoRoot, "scripts"), link);
+    expect(outputFolderRefusal(link, repoRoot)).toMatch(/inside this repository/);
+  });
+
+  it("refuses a folder under any git working tree, a worktree's .git file as well as a .git directory", () => {
+    const tree = tmp();
+    fs.mkdirSync(path.join(tree, "deep", "er"), { recursive: true });
+    fs.writeFileSync(path.join(tree, ".git"), "gitdir: /elsewhere/.git/worktrees/x\n");
+    expect(outputFolderRefusal(path.join(tree, "deep", "er"), repoRoot)).toMatch(/inside a git working tree/);
+    const other = tmp();
+    fs.mkdirSync(path.join(other, ".git"));
+    fs.mkdirSync(path.join(other, "out"));
+    expect(outputFolderRefusal(path.join(other, "out"), repoRoot)).toMatch(/inside a git working tree/);
+    const link = path.join(tmp(), "link");
+    fs.symlinkSync(path.join(other, "out"), link);
+    expect(outputFolderRefusal(link, repoRoot)).toMatch(/inside a git working tree/);
+  });
+
+  it("is what the command applies: content.json is written to a clean folder and refused for a linked or worktree one", () => {
+    const keys = ["A2", "B2", "C2", "D2", "E2", "F2", "G2"];
+    const c = cells();
+    const book = path.join(tmp(), "book.xlsx");
+    fs.writeFileSync(
+      book,
+      xlsx({
+        "xl/worksheets/sheet1.xml": sheetXml(keys.map((k, i) => `<c r="${k}" t="s"><v>${i}</v></c>`).join("")),
+        "xl/sharedStrings.xml": sstXml(keys.map((k) => `<si><t xml:space="preserve">${c[k].replace(/&/g, "&amp;").replace(/</g, "&lt;")}</t></si>`)),
+      }),
+    );
+    const run = (outDir: string) =>
+      spawnSync(process.execPath, [path.join(repoRoot, "scripts", "dcrs-content-from-xlsx.js"), book, outDir], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+    const clean = tmp();
+    expect(run(clean).status).toBe(0);
+    expect(fs.existsSync(path.join(clean, "content.json"))).toBe(true);
+
+    const tree = tmp();
+    fs.writeFileSync(path.join(tree, ".git"), "gitdir: /elsewhere\n");
+    fs.mkdirSync(path.join(tree, "out"));
+    const refused = run(path.join(tree, "out"));
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toMatch(/inside a git working tree/);
+    expect(fs.existsSync(path.join(tree, "out", "content.json"))).toBe(false);
+
+    const link = path.join(tmp(), "link");
+    fs.symlinkSync(path.join(repoRoot, "scripts"), link);
+    const linked = run(link);
+    expect(linked.status).toBe(1);
+    expect(fs.existsSync(path.join(repoRoot, "scripts", "content.json"))).toBe(false);
   });
 });

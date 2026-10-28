@@ -393,6 +393,10 @@ async function main() {
       }
     }
 
+    // curriculumids (plural) is what the learner routes filter on (the student API's content-access.ts), and
+    // Sync Students copies this row as it is: a NULL here reaches the learner as a 404 on every lesson route.
+    const CURRICULUM_IDS = JSON.stringify([ID.curriculum]);
+
     // Facilitator and student. schooluserrole: 3 = teacher, 4 = student
     // (matches edtech-lms-rpi-api/scripts/seed-demo-users.sql and useAuth.ts).
     await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, schoolid, isdisabled)
@@ -400,16 +404,20 @@ async function main() {
       [ID.studentUser, "miv.demo", PASSWORD_HASH, "Mekong Inclusive Ventures", ID.school]);
     // students.schoolname is still read directly (the Students list shows it), so it
     // must stay filled; schoolid is written alongside it (C4) and is not read yet.
-    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
-             VALUES (?,?,?,2,?,?,?,?,1,?,?,?,?,?,?,?,?,?,0)`,
-      [ID.student, "Sreymom", "Prak", "Battambang", "Cambodia", "Battambang", ID.curriculum, ID.studentUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Mekong Inclusive Ventures", ID.school, "Public"]);
+    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, curriculumids, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
+             VALUES (?,?,?,2,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,0)`,
+      [ID.student, "Sreymom", "Prak", "Battambang", "Cambodia", "Battambang", ID.curriculum, CURRICULUM_IDS, ID.studentUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Mekong Inclusive Ventures", ID.school, "Public"]);
 
     await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, schoolid, isdisabled)
              VALUES (?,?,?,3,1,?,?,0)`,
       [ID.facilitatorUser, "miv.facilitator", PASSWORD_HASH, "Mekong Inclusive Ventures", ID.school]);
-    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
-             VALUES (?,?,?,1,?,?,?,?,1,?,?,?,?,?,?,?,?,?,1)`,
-      [ID.facilitator, "MIV", "Facilitator", "Battambang", "Cambodia", "Battambang", ID.curriculum, ID.facilitatorUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Mekong Inclusive Ventures", ID.school, "Public"]);
+    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, curriculumids, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
+             VALUES (?,?,?,1,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,1)`,
+      [ID.facilitator, "MIV", "Facilitator", "Battambang", "Cambodia", "Battambang", ID.curriculum, CURRICULUM_IDS, ID.facilitatorUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Mekong Inclusive Ventures", ID.school, "Public"]);
+
+    // INSERT IGNORE leaves a row seeded before curriculumids was set as it was: repair only the NULLs, of this seed's own learners.
+    await q(`UPDATE students SET curriculumids = JSON_ARRAY(curriculumid) WHERE studentid IN (?,?) AND curriculumids IS NULL`,
+      [ID.student, ID.facilitator]);
 
     // Content mode: the real text over the placeholder rows, in one transaction, then counted.
     const contentPlan = content ? planContent(content, ID, { lang: args.lang, organisationid }) : null;

@@ -23,7 +23,7 @@ const { LESSON_IDS } = require("./dcrs-content-plan");
 
 const KHMER = /[\u1780-\u17ff]/;
 const MAX_ENTRY_BYTES = 20 * 1024 * 1024;
-const TICK = /\s+[\u2713\u2714]$/;
+const TICK = /\s+[\u2713\u2714]\s*$/; // the tick is separated from the option text by whitespace
 const OPTION = /^([A-Za-z])\.\s+(.+)$/;
 const NUMBER_PREFIX = /^[0-9\u17e0-\u17e9]+[.)]\s+/;
 
@@ -140,7 +140,11 @@ function parseQuizCell(text, where, problems) {
       if (m[1].toUpperCase() !== String.fromCharCode(65 + j)) problems.push(`${at}: option letters must run A, B, C in order (found ${m[1]} at position ${j + 1})`);
       const correct = TICK.test(m[2]);
       const body = m[2].replace(TICK, "");
-      if (/[\u2713\u2714]/.test(body)) problems.push(`${at}: a tick that is not at the end of option ${m[1]}`);
+      if (/[\u2713\u2714]/.test(body)) {
+        problems.push(/[\u2713\u2714]\s*$/.test(body)
+          ? `${at}: the tick at the end of option ${m[1]} must be separated from the option text by a space`
+          : `${at}: a tick that is not at the end of option ${m[1]}`);
+      }
       options.push({ text: body, correct });
     });
     if (options.length === 0) problems.push(`${at} has no options`);

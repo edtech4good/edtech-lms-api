@@ -13,6 +13,31 @@ const fs = require("fs");
 const path = require("path");
 const { readCellsFromXlsx, parseCells, ParseRefused } = require("./lib/dcrs-content-parse");
 
+/**
+ * Why `outDir` may not hold the content, or null. The text is the client's, so it must not land in any git working
+ * tree. Both paths are resolved through symlinks first (a link into the repo is the repo), then the folder and every
+ * ancestor are checked for a `.git` entry: a checkout, a worktree (`.git` is a file there) or the workspace repo.
+ */
+function outputFolderRefusal(outDir, checkout) {
+  const real = fs.realpathSync(outDir);
+  const realCheckout = fs.realpathSync(checkout);
+  const rel = path.relative(realCheckout, real);
+  if (rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))) {
+    return "the output directory is inside this repository; the content is not ours to commit";
+  }
+  for (let dir = real; ; dir = path.dirname(dir)) {
+    let hasGit = false;
+    try {
+      fs.lstatSync(path.join(dir, ".git"));
+      hasGit = true;
+    } catch (err) {
+      if (err.code !== "ENOENT" && err.code !== "ENOTDIR") throw err;
+    }
+    if (hasGit) return `the output directory is inside a git working tree (${dir}); the content is not ours to commit`;
+    if (path.dirname(dir) === dir) return null;
+  }
+}
+
 function main(argv) {
   const args = [];
   const options = {};
@@ -27,10 +52,9 @@ function main(argv) {
   if (options.videoSource !== undefined && !/^[A-Za-z0-9._-]+$/.test(options.videoSource)) fail("--video-source must be a plain file name");
 
   const [file, outDir] = args.map((a) => path.resolve(a));
-  const repo = path.resolve(__dirname, "..");
-  const inside = path.relative(repo, outDir);
-  if (inside === "" || (!inside.startsWith("..") && !path.isAbsolute(inside))) fail("the output directory is inside this repository; the content is not ours to commit");
   if (!fs.existsSync(outDir) || !fs.statSync(outDir).isDirectory()) fail("the output directory does not exist");
+  const refusal = outputFolderRefusal(outDir, path.resolve(__dirname, ".."));
+  if (refusal) fail(refusal);
 
   let content;
   try {
@@ -49,4 +73,6 @@ function fail(message) {
   process.exit(1);
 }
 
-main(process.argv.slice(2));
+if (require.main === module) main(process.argv.slice(2));
+
+module.exports = { outputFolderRefusal };

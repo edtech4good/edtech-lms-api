@@ -285,6 +285,10 @@ async function main() {
         [`${id}-q`.slice(0, 36), l.quiz, id, i + 1]);
     }
 
+    // curriculumids (plural) is what the learner routes filter on (the student API's content-access.ts), and
+    // Sync Students copies this row as it is: a NULL here reaches the learner as a 404 on every lesson route.
+    const CURRICULUM_IDS = JSON.stringify([ID.curriculum]);
+
     // Teacher and students. schooluserrole: 3 = teacher, 4 = student
     // (matches edtech-lms-rpi-api/scripts/seed-demo-users.sql and useAuth.ts).
     await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, schoolid, isdisabled)
@@ -292,18 +296,23 @@ async function main() {
       [ID.teacherUser, "demo.teacher", PASSWORD_HASH, "Demo Primary School", ID.school]);
     // students.schoolname is still read directly (the Students list shows it), so it
     // must stay filled; schoolid is written alongside it (C4) and is not read yet.
-    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
-             VALUES (?,?,?,1,?,?,?,?,1,?,?,?,?,?,?,?,?,?,1)`,
-      [ID.teacher, "Demo", "Teacher", "Phnom Penh", "Cambodia", "Phnom Penh", ID.curriculum, ID.teacherUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Demo Primary School", ID.school, "Public"]);
+    await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, curriculumids, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
+             VALUES (?,?,?,1,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,1)`,
+      [ID.teacher, "Demo", "Teacher", "Phnom Penh", "Cambodia", "Phnom Penh", ID.curriculum, CURRICULUM_IDS, ID.teacherUser, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Demo Primary School", ID.school, "Public"]);
 
     for (const s of STUDENTS) {
       await q(`INSERT IGNORE INTO schoolusers (schooluserid, schoolusername, schooluserpasswordhash, schooluserrole, schooluserstatus, schoolname, schoolid, isdisabled)
                VALUES (?,?,?,4,1,?,?,0)`,
         [s.su, s.username, PASSWORD_HASH, "Demo Primary School", ID.school]);
-      await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
-               VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,0)`,
-        [s.id, s.first, s.last, s.gender, "Phnom Penh", "Cambodia", "Phnom Penh", ID.curriculum, s.su, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Demo Primary School", ID.school, "Public"]);
+      await q(`INSERT IGNORE INTO students (studentid, studentfirstname, studentlastname, genderid, city, country, state, curriculumid, curriculumids, isactive, schooluserid, gradeid, startinglevelid, studentcurrentlevelid, studentcurrentlessonid, standard, schoolname, schoolid, schooltype, is_teacher_acc)
+               VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,0)`,
+        [s.id, s.first, s.last, s.gender, "Phnom Penh", "Cambodia", "Phnom Penh", ID.curriculum, CURRICULUM_IDS, s.su, ID.grade, ID.level, ID.level, ID.lesson1, ID.standard, "Demo Primary School", ID.school, "Public"]);
     }
+
+    // INSERT IGNORE leaves a row seeded before curriculumids was set as it was: repair only the NULLs, of this seed's own learners.
+    const learnerIds = [ID.teacher, ...STUDENTS.map((s) => s.id)];
+    await q(`UPDATE students SET curriculumids = JSON_ARRAY(curriculumid) WHERE studentid IN (${learnerIds.map(() => "?").join(",")}) AND curriculumids IS NULL`,
+      learnerIds);
 
     // Progress. progresstype: 1 = LESSONPRACTICE, 2 = LESSONQUIZ
     // (edtech-lms-rpi-api/src/models/enums/progress.enum.ts).
