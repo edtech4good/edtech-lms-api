@@ -17,7 +17,12 @@
  *
  * The spreadsheet's text is copied exactly (no trimming inside a line, no normalising), with one
  * exception: a lesson number in front of the English lesson title alone is dropped (see parseCells).
+ *
+ * The programme's name is not in the spreadsheet. It comes from a small sidecar, `programme.json`
+ * (`{ "programme": { "en": "...", "km": "..." } }`), read by `readProgramme` and made one line by
+ * `normaliseProgramme`, which says what it changed; `parseCells` writes it into content.json.
  */
+const fs = require("fs");
 const AdmZip = require("adm-zip");
 const { LESSON_IDS } = require("./dcrs-content-plan");
 
@@ -178,10 +183,70 @@ function matchQuestions(en, km, kind, where, ident, problems) {
   });
 }
 
+const MAX_SIDECAR_BYTES = 64 * 1024;
+
+/**
+ * The programme's name from the sidecar's parsed JSON, as one line each in English and Khmer, plus what was changed to get there:
+ * `{ programme: { en, km }, notes: [text, ...] }`. Trailing whitespace is trimmed; a line break inside a name (with the spaces
+ * around it) becomes one space; each of the two is noted, with the count, so the caller can say it. Nothing else is touched.
+ * Anything else in the sidecar, a name that is missing, not text, empty or beginning with whitespace is refused.
+ */
+function normaliseProgramme(raw, where = "programme.json") {
+  const problems = [];
+  const notes = [];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new ParseRefused([`${where} must be an object with a "programme"`]);
+  for (const key of Object.keys(raw)) if (key !== "programme") problems.push(`${where} has an unknown key "${key}"`);
+  const src = raw.programme;
+  if (!src || typeof src !== "object" || Array.isArray(src)) throw new ParseRefused([...problems, `${where} needs "programme": { "en": ..., "km": ... }`]);
+  for (const key of Object.keys(src)) if (key !== "en" && key !== "km") problems.push(`${where} programme has an unknown key "${key}"`);
+  const programme = {};
+  for (const lang of ["en", "km"]) {
+    const text = src[lang];
+    if (typeof text !== "string") {
+      problems.push(`${where} programme.${lang} must be text`);
+      continue;
+    }
+    let out = text.replace(/\s+$/u, "");
+    if (out.length !== text.length) notes.push(`programme.${lang}: trailing whitespace trimmed (${text.length - out.length} character${text.length - out.length === 1 ? "" : "s"})`);
+    const breaks = (out.match(/(?:\r\n|[\r\n\u2028\u2029])+/g) ?? []).length;
+    if (breaks > 0) {
+      out = out.replace(/[^\S\r\n\u2028\u2029]*(?:\r\n|[\r\n\u2028\u2029])+[^\S\r\n\u2028\u2029]*/g, " ");
+      notes.push(`programme.${lang}: ${breaks} line break${breaks === 1 ? "" : "s"} joined with a space`);
+    }
+    if (out.length === 0) problems.push(`${where} programme.${lang} is empty`);
+    else if (/^\s/u.test(out)) problems.push(`${where} programme.${lang} begins with whitespace`);
+    programme[lang] = out;
+  }
+  if (problems.length > 0) throw new ParseRefused(problems);
+  return { programme, notes };
+}
+
+/** Reads and normalises a sidecar file (see normaliseProgramme). A file that is large, missing or not JSON is refused. */
+function readProgramme(file) {
+  let text;
+  try {
+    const stat = fs.statSync(file);
+    if (!stat.isFile()) throw new ParseRefused([`${file} is not a file`]);
+    if (stat.size > MAX_SIDECAR_BYTES) throw new ParseRefused([`${file} is larger than ${MAX_SIDECAR_BYTES} bytes`]);
+    text = fs.readFileSync(file, "utf8");
+  } catch (err) {
+    if (err instanceof ParseRefused) throw err;
+    throw new ParseRefused([`cannot read the programme file (${err.code ?? "error"})`]);
+  }
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new ParseRefused(["the programme file is not valid JSON"]);
+  }
+  return normaliseProgramme(raw, "the programme file");
+}
+
 /**
  * Row 2 of the sheet (`cells`: { A2, B2, ... }) to content.json.
  * `options.module` is the module number used in identifiers and file names (default 1);
- * `options.videoSource` is the local name of the video, printed by the seed (optional).
+ * `options.videoSource` is the local name of the video, printed by the seed (optional);
+ * `options.programme` is `{ en, km }`, the programme's name (optional; from normaliseProgramme).
  */
 function parseCells(cells, options = {}) {
   const module = options.module ?? 1;
@@ -198,6 +263,7 @@ function parseCells(cells, options = {}) {
   const quiz = matchQuestions(parseQuizCell(cells.F2, "F2", problems), parseQuizCell(cells.G2, "G2", problems), "Q", "quiz", ident, problems);
   if (problems.length > 0) throw new ParseRefused(problems);
   return {
+    ...(options.programme ? { programme: { en: options.programme.en, km: options.programme.km } } : {}),
     curriculum: { name: moduleTitle },
     level: { name: moduleTitle },
     lessons: [
@@ -213,4 +279,4 @@ function parseCells(cells, options = {}) {
   };
 }
 
-module.exports = { ParseRefused, readCellsFromXlsx, parseCells, parseQuizCell, splitBilingual };
+module.exports = { ParseRefused, readCellsFromXlsx, parseCells, parseQuizCell, splitBilingual, normaliseProgramme, readProgramme };

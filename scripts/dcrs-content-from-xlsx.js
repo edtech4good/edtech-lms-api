@@ -3,7 +3,12 @@
  * Dev-only helper: reads the programme author's spreadsheet and writes the
  * content.json that `npm run seed:dcrs -- --content <dir>` reads.
  *
- *   node scripts/dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module 1] [--video-source name.mp4]
+ *   node scripts/dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module 1] [--video-source name.mp4] [--programme <file>]
+ *
+ * The programme's name is not in the spreadsheet: it is read from `programme.json` next to the spreadsheet when there is
+ * one, or from the file `--programme` names (which takes its place), and written into content.json as `programme`.
+ * The file is `{ "programme": { "en": "...", "km": "..." } }`; a name is made one line (trailing whitespace trimmed, a line
+ * break inside it joined with a space) and the command says so when it did.
  *
  * The text is the client's, so the output directory must be OUTSIDE this repository
  * (the helper refuses one inside it). The spreadsheet is read, never extracted or run.
@@ -11,7 +16,7 @@
  */
 const fs = require("fs");
 const path = require("path");
-const { readCellsFromXlsx, parseCells, ParseRefused } = require("./lib/dcrs-content-parse");
+const { readCellsFromXlsx, parseCells, readProgramme, ParseRefused } = require("./lib/dcrs-content-parse");
 
 /**
  * Why `outDir` may not hold the content, or null. The text is the client's, so it must not land in any git working
@@ -44,10 +49,14 @@ function main(argv) {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--module") options.module = Number(argv[++i]);
     else if (argv[i] === "--video-source") options.videoSource = argv[++i];
+    else if (argv[i] === "--programme") {
+      if (argv[i + 1] === undefined || argv[i + 1].startsWith("--")) fail("--programme needs a file");
+      options.programmeFile = argv[++i];
+    }
     else if (argv[i].startsWith("--")) fail(`unknown option ${argv[i]}`);
     else args.push(argv[i]);
   }
-  if (args.length !== 2) fail("usage: dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module 1] [--video-source name.mp4]");
+  if (args.length !== 2) fail("usage: dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module 1] [--video-source name.mp4] [--programme <file>]");
   if (options.module !== undefined && !(Number.isInteger(options.module) && options.module >= 1)) fail("--module must be a whole number from 1");
   if (options.videoSource !== undefined && !/^[A-Za-z0-9._-]+$/.test(options.videoSource)) fail("--video-source must be a plain file name");
 
@@ -58,14 +67,24 @@ function main(argv) {
 
   let content;
   try {
-    content = parseCells(readCellsFromXlsx(file), options);
+    // the programme file named with --programme, else programme.json next to the spreadsheet when there is one
+    const sidecar = options.programmeFile ? path.resolve(options.programmeFile) : path.join(path.dirname(file), "programme.json");
+    let programme;
+    if (options.programmeFile || fs.existsSync(sidecar)) {
+      const read = readProgramme(sidecar);
+      programme = read.programme;
+      for (const note of read.notes) console.log(`programme: ${note}`);
+    }
+    content = parseCells(readCellsFromXlsx(file), { ...options, programme });
   } catch (err) {
     if (err instanceof ParseRefused) fail(err.problems.join("\n  "));
     throw err;
   }
   fs.writeFileSync(path.join(outDir, "content.json"), `${JSON.stringify(content, null, 2)}\n`, { flag: "wx" });
   const lesson = content.lessons[0];
-  console.log(`content.json written: ${content.lessons.length} lesson, ${lesson.practice.length} practice and ${lesson.quiz.length} quiz questions.`);
+  console.log(
+    `content.json written: ${content.lessons.length} lesson, ${lesson.practice.length} practice and ${lesson.quiz.length} quiz questions, ${content.programme ? "with" : "no"} programme name.`,
+  );
 }
 
 function fail(message) {

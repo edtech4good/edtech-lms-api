@@ -13,7 +13,7 @@ import * as path from "path";
 /* eslint-disable @typescript-eslint/no-var-requires */
 const { ID } = require("../../scripts/seed-dcrs-content");
 const { validateContent } = require("../../scripts/lib/dcrs-content-plan");
-const { ParseRefused, readCellsFromXlsx, parseCells, parseQuizCell } = require("../../scripts/lib/dcrs-content-parse");
+const { ParseRefused, readCellsFromXlsx, parseCells, parseQuizCell, normaliseProgramme, readProgramme } = require("../../scripts/lib/dcrs-content-parse");
 const { outputFolderRefusal } = require("../../scripts/dcrs-content-from-xlsx");
 /* eslint-enable @typescript-eslint/no-var-requires */
 
@@ -274,5 +274,165 @@ describe("the folder the converter writes content.json into", () => {
     const linked = run(link);
     expect(linked.status).toBe(1);
     expect(fs.existsSync(path.join(repoRoot, "scripts", "content.json"))).toBe(false);
+  });
+});
+
+describe("the programme name", () => {
+  const programme = { en: "Example programme", km: km("programme") };
+  const refused = (raw: unknown): string[] => {
+    try {
+      normaliseProgramme(raw);
+    } catch (e) {
+      expect(e).toBeInstanceOf(ParseRefused);
+      return (e as { problems: string[] }).problems;
+    }
+    throw new Error("expected the programme to be refused");
+  };
+
+  it("parseCells writes it into content.json, and leaves it out when there is none", () => {
+    const c = parseCells(cells(), { programme });
+    expect(c.programme).toEqual(programme);
+    expect(c.curriculum.name.en).toBe("Module 1 \u00b7 Example title"); // the module title is untouched
+    expect(() => validateContent(c, ID)).not.toThrow();
+    expect("programme" in parseCells(cells())).toBe(false);
+    expect("programme" in parseCells(cells(), { programme: undefined })).toBe(false);
+  });
+
+  it("takes a clean pair as it is, with nothing to report", () => {
+    expect(normaliseProgramme({ programme })).toEqual({ programme, notes: [] });
+  });
+
+  it("trims trailing whitespace and joins a line break with one space, and says what it did", () => {
+    const r = normaliseProgramme({ programme: { en: "First part  \n  second part\r\nthird\n", km: `${km("a")}\n${km("b")} \t` } });
+    expect(r.programme).toEqual({ en: "First part second part third", km: `${km("a")} ${km("b")}` });
+    expect(r.notes).toEqual([
+      "programme.en: trailing whitespace trimmed (1 character)",
+      "programme.en: 2 line breaks joined with a space",
+      "programme.km: trailing whitespace trimmed (2 characters)",
+      "programme.km: 1 line break joined with a space",
+    ]);
+    // the result is always one line, and what is inside a line is copied exactly (a zero-width space and a double space stay)
+    const odd = normaliseProgramme({ programme: { en: "a  b", km: `${km("x")}\u200b${km("y")}` } });
+    expect(odd.programme).toEqual({ en: "a  b", km: `${km("x")}\u200b${km("y")}` });
+    expect(odd.notes).toEqual([]);
+    for (const text of [r.programme.en, r.programme.km]) expect(text).not.toMatch(/[\r\n\u2028\u2029]/);
+  });
+
+  it("refuses what is not a programme: a missing or empty name, text that is not text, unknown keys, whitespace in front", () => {
+    expect(refused(null)).toEqual(['programme.json must be an object with a "programme"']);
+    expect(refused({})).toEqual(['programme.json needs "programme": { "en": ..., "km": ... }']);
+    expect(refused({ programme: { en: "x" } })).toEqual(["programme.json programme.km must be text"]);
+    expect(refused({ programme: { en: "x", km: 3 } })).toEqual(["programme.json programme.km must be text"]);
+    expect(refused({ programme: { en: " \n ", km: "x" } })).toEqual(["programme.json programme.en is empty"]);
+    expect(refused({ programme: { en: "x", km: "y" }, other: 1 })).toEqual(['programme.json has an unknown key "other"']);
+    expect(refused({ programme: { en: "x", km: "y", fr: "z" } })).toEqual(['programme.json programme has an unknown key "fr"']);
+    expect(refused({ programme: { en: "\nx", km: "y" } })).toEqual(["programme.json programme.en begins with whitespace"]);
+  });
+
+  describe("the file and the command", () => {
+    const repoRoot = path.resolve(__dirname, "..", "..");
+    const made: string[] = [];
+    const tmp = (): string => {
+      const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dcrs-prog-")));
+      made.push(d);
+      return d;
+    };
+    afterAll(() => {
+      for (const d of made) fs.rmSync(d, { recursive: true, force: true });
+    });
+    const keys = ["A2", "B2", "C2", "D2", "E2", "F2", "G2"];
+    const book = (dir: string): string => {
+      const c = cells();
+      const file = path.join(dir, "book.xlsx");
+      fs.writeFileSync(
+        file,
+        xlsx({
+          "xl/worksheets/sheet1.xml": sheetXml(keys.map((k, i) => `<c r="${k}" t="s"><v>${i}</v></c>`).join("")),
+          "xl/sharedStrings.xml": sstXml(keys.map((k) => `<si><t xml:space="preserve">${c[k].replace(/&/g, "&amp;").replace(/</g, "&lt;")}</t></si>`)),
+        }),
+      );
+      return file;
+    };
+    const run = (...args: string[]) =>
+      spawnSync(process.execPath, [path.join(repoRoot, "scripts", "dcrs-content-from-xlsx.js"), ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const content = (dir: string): Json => JSON.parse(fs.readFileSync(path.join(dir, "content.json"), "utf8"));
+
+    it("readProgramme reads a file, and refuses one that is missing, too large, not JSON or a directory", () => {
+      const dir = tmp();
+      const good = path.join(dir, "programme.json");
+      fs.writeFileSync(good, JSON.stringify({ programme }));
+      expect(readProgramme(good)).toEqual({ programme, notes: [] });
+      const reason = (file: string): string => {
+        try {
+          readProgramme(file);
+        } catch (e) {
+          expect(e).toBeInstanceOf(ParseRefused);
+          return (e as { problems: string[] }).problems.join(";");
+        }
+        throw new Error("expected a refusal");
+      };
+      expect(reason(path.join(dir, "absent.json"))).toMatch(/cannot read the programme file/);
+      fs.writeFileSync(path.join(dir, "bad.json"), "{ not json");
+      expect(reason(path.join(dir, "bad.json"))).toBe("the programme file is not valid JSON");
+      fs.writeFileSync(path.join(dir, "big.json"), " ".repeat(70 * 1024));
+      expect(reason(path.join(dir, "big.json"))).toMatch(/larger than/);
+      expect(reason(dir)).toMatch(/not a file/);
+    });
+
+    it("picks up programme.json next to the spreadsheet, and reports a name it made one line", () => {
+      const src = tmp();
+      const file = book(src);
+      fs.writeFileSync(path.join(src, "programme.json"), JSON.stringify({ programme: { en: "Example programme\n", km: `${km("a")}\n${km("b")}` } }));
+      const out = tmp();
+      const r = run(file, out);
+      expect(r.status).toBe(0);
+      expect(content(out).programme).toEqual({ en: "Example programme", km: `${km("a")} ${km("b")}` });
+      expect(r.stdout).toContain("programme.en: trailing whitespace trimmed (1 character)");
+      expect(r.stdout).toContain("programme.km: 1 line break joined with a space");
+      expect(r.stdout).toContain("with programme name");
+      // the report counts, it does not quote the name
+      expect(r.stdout).not.toContain("Example programme");
+    });
+
+    it("--programme names the file and takes the sidecar's place; without either there is no programme", () => {
+      const src = tmp();
+      const file = book(src);
+      fs.writeFileSync(path.join(src, "programme.json"), JSON.stringify({ programme: { en: "Sidecar", km: km("sidecar") } }));
+      const elsewhere = path.join(tmp(), "named.json");
+      fs.writeFileSync(elsewhere, JSON.stringify({ programme }));
+      const out = tmp();
+      expect(run(file, out, "--programme", elsewhere).status).toBe(0);
+      expect(content(out).programme).toEqual(programme);
+
+      const bare = tmp();
+      const out2 = tmp();
+      const r = run(book(bare), out2);
+      expect(r.status).toBe(0);
+      expect("programme" in content(out2)).toBe(false);
+      expect(r.stdout).toContain("no programme name");
+    });
+
+    it("refuses a bad programme file, writing nothing", () => {
+      const src = tmp();
+      const file = book(src);
+      const named = path.join(src, "p.json");
+      fs.writeFileSync(named, JSON.stringify({ programme: { en: "only english" } }));
+      const out = tmp();
+      const r = run(file, out, "--programme", named);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("programme.km must be text");
+      expect(fs.existsSync(path.join(out, "content.json"))).toBe(false);
+      const missing = run(file, tmp(), "--programme", path.join(src, "absent.json"));
+      expect(missing.status).toBe(1);
+      expect(missing.stderr).toMatch(/cannot read the programme file/);
+      const noArg = run(file, tmp(), "--programme");
+      expect(noArg.status).toBe(1);
+      expect(noArg.stderr).toMatch(/--programme needs a file/);
+      // a sidecar that is there but bad refuses too, rather than being skipped
+      fs.writeFileSync(path.join(src, "programme.json"), "nope");
+      const sidecar = run(file, tmp());
+      expect(sidecar.status).toBe(1);
+      expect(sidecar.stderr).toMatch(/not valid JSON/);
+    });
   });
 });
