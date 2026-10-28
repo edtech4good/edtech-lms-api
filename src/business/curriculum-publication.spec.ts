@@ -1,8 +1,6 @@
 import { OrgContext } from "src/decorators/org.decorator";
 import { ApiError } from "src/models/ApiError";
 import { curriculumpublications } from "src/models/data-models/curriculumpublications";
-import { curriculums } from "src/models/data-models/curriculums";
-import { questions } from "src/models/data-models/questions";
 import { dbinstance } from "src/services/dbservice";
 import { ContentFake } from "src/test-support/content-fake";
 import {
@@ -291,9 +289,22 @@ describe("the summary", () => {
       expect(sharedRows(all, B, mine, diff, new Map())).toEqual([]);
     });
 
-    it("lists a curriculum whose latest publication does not hold the row at all", async () => {
+    it("does not list a row the other curriculum links live but its publication does not hold: it reaches none of its learners", async () => {
       const held = await publishedA();
+      // A links Q1 live (and published it); its publication, as held here, never had it
       delete held.get(A)!.questions[Q(1)];
+      expect(selectCurriculumTables(await content(), A).questions.map((r) => r.questionid)).toContain(Q(1));
+      const { all, mine, diff } = await mineOf();
+      expect(sharedRows(all, B, mine, diff, held)).toEqual([]);
+    });
+
+    it("lists a row the other curriculum published and has since unlinked: its learners still hold that copy", async () => {
+      const held = await publishedA();
+      // A drops every link to Q1 after publishing it
+      db.tables.lessonpracticequestions = db.tables.lessonpracticequestions.filter((r) => r.lessonpracticequestionid !== id(705));
+      db.tables.lessonquizquestions = db.tables.lessonquizquestions.filter((r) => r.lessonquizquestionid !== id(706));
+      expect(selectCurriculumTables(await content(), A).questions.map((r) => r.questionid)).not.toContain(Q(1));
+      stored("questions", "questionid", Q(1)).questiontext = "Question one, edited";
       const { all, mine, diff } = await mineOf();
       expect(sharedRows(all, B, mine, diff, held)).toEqual([{ table: "questions", id: Q(1), name: "q-1", curricula: [{ id: A, name: "Reading" }] }]);
     });
@@ -550,21 +561,88 @@ describe("the audit columns are not part of a row's hash", () => {
   });
 });
 
-describe("the payload is built under the lock", () => {
-  it("reads the content only after it has locked the curriculum row", async () => {
+/** Every call made on a model between two moments (jest's global call order), with whether it was given the transaction. */
+const queriesBetween = (from: number, to: number) => {
+  const out: Array<{ method: string; inTransaction: boolean }> = [];
+  for (const model of db.models()) {
+    for (const method of ["findOne", "findAll", "findAndCountAll", "count", "create", "bulkCreate", "update", "destroy"]) {
+      const fn = (model as Record<string, unknown>)[method] as jest.Mock;
+      fn.mock.calls.forEach((args: unknown[], n: number) => {
+        const order = fn.mock.invocationCallOrder[n];
+        if (order > from && order < to) {
+          out.push({ method, inTransaction: args.some((a) => typeof a === "object" && a !== null && (a as { transaction?: unknown }).transaction === transaction) });
+        }
+      });
+    }
+  }
+  return out;
+};
+
+describe("the lock is held only by queries that take the transaction", () => {
+  it("issues no query that does not take the transaction between the start of the transaction and its commit", async () => {
     await publishCurriculum(orgX, USER, A);
-    const findOne = curriculums.findOne as unknown as jest.Mock;
-    const lock = findOne.mock.calls.findIndex((c) => (c[0] as { lock?: unknown })?.lock !== undefined);
-    expect(lock).toBeGreaterThanOrEqual(0);
-    const lockedAt = findOne.mock.invocationCallOrder[lock];
-    const firstRead = Math.min(...(questions.findAll as unknown as jest.Mock).mock.invocationCallOrder);
-    expect(lockedAt).toBeLessThan(firstRead);
+    const begin = (dbinstance.getdbinstance().transaction as unknown as jest.Mock).mock.invocationCallOrder[0];
+    const commit = transaction.commit.mock.invocationCallOrder[0];
+    const between = queriesBetween(begin, commit);
+    // the lock, the history, the insert: something runs in there, and all of it takes the transaction
+    expect(between.map((q) => q.method)).toEqual(expect.arrayContaining(["findOne", "findAll", "create"]));
+    expect(between.filter((q) => !q.inTransaction)).toEqual([]);
+    // and the reads of the content, the subjects and the other curricula's publications were all made before it
+    const before = queriesBetween(0, begin);
+    expect(before.length).toBeGreaterThan(10);
   });
 
-  it("answers a payload that cannot be published with the 400, rolls back, and writes nothing", async () => {
+  describe("a curriculum published meanwhile", () => {
+    const meanwhile = (curriculumid: string) => {
+      // the other publish commits between this one's reads and its lock: the transaction opens after it
+      const real = (dbinstance.getdbinstance().transaction as unknown as jest.Mock).getMockImplementation()!;
+      (dbinstance.getdbinstance().transaction as unknown as jest.Mock).mockImplementation(async (...args: unknown[]) => {
+        db.add("curriculumpublications", {
+          publicationid: id(9000 + publications().length),
+          curriculumid,
+          organisationid: X,
+          publishedat: new Date(),
+          publishedby: USER,
+          status: "published",
+          payload: null,
+          summary: {},
+          payloadhash: "x",
+        });
+        return (real as (...a: unknown[]) => unknown)(...args);
+      });
+    };
+    const taken = "This curriculum was published a moment ago by someone else. Reload and publish again.";
+
+    it("answers 409 with that text, writes nothing and rolls back, when the first publication is made meanwhile", async () => {
+      meanwhile(A);
+      await expect(publishCurriculum(orgX, USER, A)).rejects.toMatchObject({ status: 409, message: taken });
+      expect(publications()).toHaveLength(1);
+      expect(transaction.rollback).toHaveBeenCalledTimes(1);
+      expect(transaction.commit).not.toHaveBeenCalled();
+    });
+
+    it("answers 409 when a later publication is made meanwhile, and leaves the publications as they were", async () => {
+      await publishCurriculum(orgX, USER, A);
+      transaction.commit.mockClear();
+      meanwhile(A);
+      await expect(publishCurriculum(orgX, USER, A)).rejects.toMatchObject({ status: 409 });
+      expect(publications()).toHaveLength(2);
+      expect(publications().filter((p) => p.payload !== null)).toHaveLength(1);
+      expect(transaction.commit).not.toHaveBeenCalled();
+    });
+
+    it("is not troubled by a publication of another curriculum made meanwhile", async () => {
+      meanwhile(B);
+      const res = await publishCurriculum(orgX, USER, A);
+      expect(res.publicationid).toBeDefined();
+      expect(publications()).toHaveLength(2);
+    });
+  });
+
+  it("answers a payload that cannot be published with the 400 before it opens a transaction, and writes nothing", async () => {
     stored("lessonquizquestions", "lessonquizquestionid", id(706)).questionid = Q(50);
     await expect(publishCurriculum(orgX, USER, A)).rejects.toMatchObject({ status: 400 });
-    expect(transaction.rollback).toHaveBeenCalledTimes(1);
+    expect(dbinstance.getdbinstance().transaction).not.toHaveBeenCalled();
     expect(transaction.commit).not.toHaveBeenCalled();
     expect(publications()).toEqual([]);
   });
@@ -635,13 +713,24 @@ describe("the subject a curriculum names", () => {
     expect(publications()).toEqual([]);
   });
 
-  it("refuses a subject that is deleted, and a subject that is not there", async () => {
+  it("refuses a subject that is deleted with its own text, and a subject that is not there as one that is not the organisation's", async () => {
     db.add("subjects", { subjectid: SUBJECT, subjectname: "Gone", organisationid: X, isdeleted: true });
     withSubject(SUBJECT);
-    await expect(publishCurriculum(orgX, USER, A)).rejects.toThrow(refusal);
+    const deleted = "This curriculum can't be published yet. curriculums: 1 row names a subject that has been deleted.";
+    await expect(publishCurriculum(orgX, USER, A)).rejects.toThrow(deleted);
+    expect(JSON.stringify(await publishCurriculum(orgX, USER, A).catch((e) => e))).not.toContain(SUBJECT);
     withSubject(id(901));
     await expect(publishCurriculum(orgX, USER, A)).rejects.toThrow(refusal);
     expect(publications()).toEqual([]);
+  });
+
+  it("restoring the deleted subject lets the curriculum publish again", async () => {
+    db.add("subjects", { subjectid: SUBJECT, subjectname: "Gone", organisationid: X, isdeleted: true });
+    withSubject(SUBJECT);
+    await expect(publishCurriculum(orgX, USER, A)).rejects.toMatchObject({ status: 400 });
+    stored("subjects", "subjectid", SUBJECT).isdeleted = false;
+    await publishCurriculum(orgX, USER, A);
+    expect(publications()).toHaveLength(1);
   });
 
   it("tells the editor in the overview, with the same text", async () => {

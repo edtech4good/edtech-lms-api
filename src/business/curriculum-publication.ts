@@ -261,14 +261,29 @@ const unpublishable = (problems: string[], fields?: Array<{ field: string; messa
 /**
  * The export's `confine` on one curriculum's rows. A payload it would change, by leaving rows out or by refusing a row
  * that names a question or document that is not in the organisation's own bank (another organisation's, nobody's, or
- * gone), or a curriculum that names a subject that is not one of the organisation's live subjects (`subjects`: the
- * organisation's subjects that are not deleted), is refused with 400, naming tables and counts and no row. The subjects
- * are checked against and are not part of the payload (the sync keeps them live).
+ * gone), or a curriculum that names a subject that is not one of the organisation's live subjects, is refused with 400,
+ * naming tables and counts and no row. `subjects` are the organisation's subjects, deleted ones included (readSubjects):
+ * a curriculum that names a deleted one is refused with its own text ("names a subject that has been deleted"), and one
+ * that names a subject that is not in the list is refused as "not this organisation's". The subjects are checked against
+ * and are not part of the payload (the sync keeps them live).
  */
 export const confineCurriculumTables = (tables: Tables, subjects: Row[]): Tables => {
+  const isDeleted = (r: Row) => r.isdeleted === true || r.isdeleted === 1;
+  const live = subjects.filter((r) => !isDeleted(r));
+  // a subject that is deleted is told apart from one that is another organisation's or not there: the editor can restore it
+  const liveIds = new Set(live.map((r) => keyOf(r.subjectid)));
+  const deletedIds = new Set(subjects.filter(isDeleted).map((r) => keyOf(r.subjectid)));
+  const namingDeleted = tables.curriculums.filter((r) => {
+    const id = keyOf(r.subjectid);
+    return id !== null && deletedIds.has(id) && !liveIds.has(id);
+  }).length;
+  if (namingDeleted > 0) {
+    const message = `curriculums: ${countText(namingDeleted)} ${namingDeleted === 1 ? "names" : "name"} a subject that has been deleted.`;
+    throw unpublishable([message], [{ field: "curriculums", message }]);
+  }
   let confined: Tables;
   try {
-    const { subjects: _subjects, ...checked } = confine({ ...tables, subjects }) as Tables & { subjects: Row[] };
+    const { subjects: _subjects, ...checked } = confine({ ...tables, subjects: live }) as Tables & { subjects: Row[] };
     confined = checked as Tables;
   } catch (e) {
     if (e instanceof ApiError && e.fields !== undefined && e.fields.length > 0) {
@@ -291,7 +306,7 @@ export const confineCurriculumTables = (tables: Tables, subjects: Row[]): Tables
 /**
  * The payload of one curriculum out of the organisation's content: its rows (selectCurriculumTables), confined. A
  * curriculum that is not in the content, or is deleted, is the 404 an absent one gets. `subjects` are the organisation's
- * live subjects (readLiveSubjects). Pure.
+ * subjects, deleted ones included (readSubjects). Pure.
  */
 export const payloadOf = (organisationid: string, content: Tables, curriculumid: string, subjects: Row[]): CurriculumPayload => {
   const picked = selectCurriculumTables(content, curriculumid);
@@ -331,16 +346,18 @@ const organisationOfRead = async (org: OrgContext, curriculumid: string): Promis
   return owner;
 };
 
-/** The organisation's subjects that are not deleted, as the export reads them (what a curriculum's `subjectid` may name). */
-export const readLiveSubjects = async (organisationid: string): Promise<Row[]> =>
-  plain(await new SubjectBusiness(contextOfOrganisation(organisationid)).getSubjectsWithOwner()).filter(
-    (r) => !(r.isdeleted === true || r.isdeleted === 1),
-  );
+/** The organisation's subjects, deleted ones included, as the export reads them. */
+export const readSubjects = async (organisationid: string): Promise<Row[]> =>
+  plain(await new SubjectBusiness(contextOfOrganisation(organisationid)).getSubjectsWithOwner());
 
-/** Everything a payload is built from, read now: the organisation's curriculum content and its live subjects. */
+/** The organisation's subjects that are not deleted (what a curriculum's `subjectid` may name). */
+export const readLiveSubjects = async (organisationid: string): Promise<Row[]> =>
+  (await readSubjects(organisationid)).filter((r) => !(r.isdeleted === true || r.isdeleted === 1));
+
+/** Everything a payload is built from, read now: the organisation's curriculum content and its subjects. */
 const readSources = async (organisationid: string) => {
   const content = await readCurriculumContent(contextOfOrganisation(organisationid));
-  return { content, subjects: await readLiveSubjects(organisationid) };
+  return { content, subjects: await readSubjects(organisationid) };
 };
 
 /** The payload of the curriculum as it is now, built from the live tables by the export's readers. */
@@ -391,9 +408,11 @@ export type PublishedHashes = Map<string, RowHashes>;
  * differs from this one. The student side keeps one copy of a shared question or document, and the newest publication's
  * copy wins, so these are the rows whose new copy reaches that other curriculum's learners too
  * (docs/content-publishing-design.md, section 3). A row is listed for another curriculum only when that curriculum has a
- * publication that is live (`published`) and the hash of the row in it differs from the copy being published (or the
- * row is not in it); an unpublished or withdrawn curriculum, and a copy that is already equal, are not listed. `published`
- * is the latest published hashes of the other curricula (publishedHashesOf). Pure.
+ * publication that is live (`published`) that HOLDS the row, with a hash that differs from the copy being published. The
+ * rows of that publication are the ones walked, not the rows the curriculum links live now: so a row the curriculum links
+ * but has not published (it reaches none of its learners) is not listed, a row it published and has since unlinked is, and
+ * an unpublished or withdrawn curriculum and a copy that is already equal are not. `published` is the latest published
+ * hashes of the other curricula (publishedHashesOf). Pure.
  */
 export const sharedRows = (
   content: Tables,
@@ -416,10 +435,9 @@ export const sharedRows = (
     if (keyOf(other.curriculumid) === keyOf(curriculumid) || other.isdeleted === true || other.isdeleted === 1) continue;
     const theirHashes = published.get(String(other.curriculumid));
     if (theirHashes === undefined) continue;
-    const theirs = selectCurriculumTables(content, String(other.curriculumid));
     for (const bank of ["questions", "documents"] as const) {
-      for (const row of theirs[bank]) {
-        const id = idOf(bank, row);
+      // the rows its latest publication holds (what reaches its learners), not the rows it links live now
+      for (const id of Object.keys(theirHashes[bank] ?? {})) {
         if (!touched[bank].has(id) || theirHashes[bank]?.[id] === copy[bank].get(id)) continue;
         users[bank].set(id, [...(users[bank].get(id) ?? []), { id: String(other.curriculumid), name: String(other.curriculumname ?? "") }]);
       }
@@ -592,6 +610,12 @@ const nextTime = (latest: Date | undefined): Date => {
   return latest !== undefined && now.getTime() <= new Date(latest).getTime() ? new Date(new Date(latest).getTime() + 1) : now;
 };
 
+/** The 409 of a publish that finds the curriculum was published after it began to read: its payload may be older than that publication. */
+const publishedMeanwhile = () =>
+  new ApiError(ErrorCode.ALREADY_EXISTS, "This curriculum was published a moment ago by someone else. Reload and publish again.", {
+    hint: "Reload the curriculum, check what changed, then publish again. Nothing was published.",
+  });
+
 export interface PublishResult {
   publicationid: string;
   publishedat: Date;
@@ -605,9 +629,15 @@ export interface PublishResult {
  * records a publication, with a summary of 0, 0, 0: the act is the record (who and when), and a publish repeated after a
  * push that failed must still push (step 3).
  *
- * The payload is built INSIDE the transaction, after the curriculum's row is locked: two publishes of one curriculum take
- * turns, and the one that commits last has read the live rows after the other committed, so the newest publication is
- * never the older content.
+ * Every read that is not part of the transaction (the content, the subjects, the other curricula's published hashes) is made
+ * BEFORE the transaction opens, because the business classes cannot take a `transaction` and each such read asks the pool
+ * for its own connection: made while the transaction holds the `FOR UPDATE` lock, six publishes at once hold the pool and
+ * wait on each other until the lock-wait timeout. While the lock is held the only queries are the ones that take
+ * `transaction`. Two publishes of one curriculum take turns on the lock, and the payload was read before it, so the one
+ * that comes second may have read before the first committed. It checks: the curriculum's latest publication is noted
+ * before the reads begin (the same as asking whether one was made after they began, without a clock), and when it is not
+ * the latest once the lock is held, the publish answers 409 (try again) and writes nothing, so the newest publication is
+ * never an older read than the one before it.
  *
  * The caller has not checked the curriculum: it is in the caller's organisation, or the 404 an absent one gets.
  */
@@ -615,15 +645,18 @@ export const publishCurriculum = async (org: OrgContext, publishedby: string, cu
   const organisationid = publishingOrganisation(org);
   await assertInScope(org, "curriculum", curriculumid);
 
+  // all reads that are not part of the transaction come first (see above)
+  const latestBeforeReads = (await latestOf([curriculumid])).get(curriculumid)?.publicationid ?? null;
+  const { content, subjects } = await readSources(organisationid);
+  const payload = payloadOf(organisationid, content, curriculumid, subjects);
+  const hashes = hashTables(payload.tables);
+  const payloadhash = payloadHashOf(hashes);
+  const otherPublished = await publishedHashesOf(content, curriculumid);
+
   const transaction = await dbinstance.getdbinstance().transaction();
   try {
     // two publishes of one curriculum at once take turns
     await curriculums.findOne({ where: { curriculumid }, attributes: ["curriculumid"], lock: transaction.LOCK.UPDATE, transaction });
-    const { content, subjects } = await readSources(organisationid);
-    const payload = payloadOf(organisationid, content, curriculumid, subjects);
-    const hashes = hashTables(payload.tables);
-    const payloadhash = payloadHashOf(hashes);
-
     const history = await curriculumpublications.findAll({
       where: { curriculumid },
       attributes: { exclude: ["payload"] },
@@ -631,10 +664,13 @@ export const publishCurriculum = async (org: OrgContext, publishedby: string, cu
       transaction,
     });
     const latest = history[0];
+    if ((latest?.publicationid ?? null) !== latestBeforeReads) {
+      throw publishedMeanwhile();
+    }
     const previous = baseOf(latest, "published");
     const withdrawn = previous === null ? baseOf(latest, "withdrawn") : null;
     const diff = diffHashes(hashes, previous?.summary.hashes ?? null);
-    const shared = sharedRows(content, curriculumid, payload.tables, diff, await publishedHashesOf(content, curriculumid));
+    const shared = sharedRows(content, curriculumid, payload.tables, diff, otherPublished);
     const summary = summarise(payload.tables, hashes, previous, shared, withdrawn);
 
     const publicationid = uuidv4();

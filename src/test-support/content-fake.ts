@@ -350,6 +350,11 @@ export class ContentFake {
     return instance;
   }
 
+  /** Every model the fake stands in for, so a spec can read the calls made on them. */
+  models(): object[] {
+    return Object.values(MODELS).map(([model]) => model);
+  }
+
   install() {
     this.reset();
     for (const [name, [model, key]] of Object.entries(MODELS) as Array<[ContentTable, readonly [object, string]]>) {
