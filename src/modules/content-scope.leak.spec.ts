@@ -4327,8 +4327,10 @@ describe("content is confined to the caller's organisation", () => {
         const res = await send(NOT_ACTING, "put", url("lessons", TY.lesson), BODY);
         expect(res.status).toBe(200);
         expect(db.createdIn("contenttranslations")).toEqual([expect.objectContaining({ organisationid: Y, rowid: TY.lesson, sourcehash: sha(lessonName(TY)) })]);
-        const refused = await refuses(NOT_ACTING, "put", url("lessons", TU.lesson), BODY);
+        const before = db.snapshot();
+        const refused = await send(NOT_ACTING, "put", url("lessons", TU.lesson), BODY);
         expect(refused.status).toBe(400);
+        expect(db.snapshot()).toEqual(before);
       });
       it.each(IN_X)("%s: an organisation with no content language is refused (400), nothing written", async (who) => {
         stored("organisations", "organisationid", X).contentlanguage = null;
