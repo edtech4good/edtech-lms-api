@@ -8,6 +8,7 @@ import { curriculums } from "src/models/data-models/curriculums";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import { assertInScope } from "./content-scope";
+import { withdrawPublications } from "./publication-withdraw";
 import { ownerOfCurriculum } from "./content-owner";
 import { notFoundError, scopeOf } from "./org-scope";
 import { SubjectBusiness } from "./subject.business";
@@ -31,7 +32,8 @@ import {
  * A publication is the curriculum's own payload, taken from the live tables the moment an editor publishes, and stored
  * in `curriculumpublications` with a summary of what changed since the publication before it. This file builds that
  * payload, hashes it, compares it, and records and withdraws publications. The two sync routes serve the latest publication of
- * each curriculum (published-content.ts, step 2); nothing is pushed on publish yet (step 3).
+ * each curriculum (published-content.ts, step 2). Pushing the published set to the learner server after a publish or a retire
+ * is publish-push.ts (step 3): it runs after these functions have committed and is no part of them.
  *
  * ## The payload
  *
@@ -700,7 +702,12 @@ export const publishCurriculum = async (org: OrgContext, publishedby: string, cu
   const transaction = await dbinstance.getdbinstance().transaction();
   try {
     // two publishes of one curriculum at once take turns
-    await curriculums.findOne({ where: { curriculumid }, attributes: ["curriculumid"], lock: transaction.LOCK.UPDATE, transaction });
+    const locked = await curriculums.findOne({ where: { curriculumid }, attributes: ["curriculumid", "isdeleted"], lock: transaction.LOCK.UPDATE, transaction });
+    // deleted while this publish waited for the lock (the payload above was read before it): the delete has withdrawn the
+    // curriculum's publications, and a publish now would leave a deleted curriculum `published`
+    if (locked === null || locked.isdeleted === true || (locked.isdeleted as unknown) === 1) {
+      throw notFoundError("That curriculum doesn't exist.");
+    }
     const history = await curriculumpublications.findAll({
       where: { curriculumid },
       attributes: { exclude: ["payload"] },
@@ -774,11 +781,7 @@ export const retireCurriculum = async (org: OrgContext, curriculumid: string): P
   let retired = false;
   try {
     await curriculums.findOne({ where: { curriculumid }, attributes: ["curriculumid"], lock: transaction.LOCK.UPDATE, transaction });
-    const [changed] = await curriculumpublications.update(
-      { status: "withdrawn" },
-      { where: { curriculumid, status: "published" }, transaction },
-    );
-    retired = changed > 0;
+    retired = await withdrawPublications(curriculumid, transaction);
     await transaction.commit();
   } catch (e) {
     await rollbackQuietly(transaction);

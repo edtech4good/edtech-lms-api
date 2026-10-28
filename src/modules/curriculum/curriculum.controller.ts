@@ -71,7 +71,8 @@ import { Org, OrgContext, OrgOrServer } from "src/decorators/org.decorator";
 import { assertSameOwner, ownerForNewContent, ownerOfCurriculum, ownerOfSubject } from "src/business/content-owner";
 import { assertInScope } from "src/business/content-scope";
 import { notFoundError } from "src/business/org-scope";
-import { publicationOverview, publishCurriculum, retireCurriculum } from "src/business/curriculum-publication";
+import { publicationOverview } from "src/business/curriculum-publication";
+import { pushAfterDelete, publishAndPush, PushOutcome, retireAndPush } from "src/business/publish-push";
 
 @ApiExtraModels(
   CurriculumBase,
@@ -179,7 +180,7 @@ export class CurriculumController {
   @Delete(":curriculumid")
   @ApiResponse({
     status: 200,
-    description: "Curriculum deleted successfully",
+    description: "Curriculum deleted successfully (a published one is withdrawn with it); `push` says how pushing the organisation's published set to the learner server went",
     schema: { $ref: getSchemaPath(ResponseBoolean) },
   })
   @ApiResponse({
@@ -202,11 +203,16 @@ export class CurriculumController {
     @Param("curriculumid") curriculumid: string,
     @User() user: LmsUserToken,
     @Org() org: OrgContext
-  ): Promise<ResponseBoolean> {
-    await new CurriculumBusiness(org).deleteCurriculum(curriculumid, user);
+  ): Promise<ResponseBoolean & { push?: PushOutcome }> {
+    const deleted = await new CurriculumBusiness(org).deleteCurriculum(curriculumid, user);
+    // A curriculum that was published is withdrawn by its delete (same transaction); the organisation's published set is then
+    // pushed to the learner server, after the commit. `data` stays `true`: the push is reported beside it, and a failed
+    // push does not undo the delete.
+    const push = deleted ? await pushAfterDelete(deleted) : undefined;
     return {
       error: false,
       data: true,
+      ...(push ? { push } : {}),
     };
   }
 
@@ -400,7 +406,7 @@ export class CurriculumController {
   @Put("publish/:curriculumid")
   @ApiResponse({
     status: 200,
-    description: "Curriculum published: the id and time of the publication, and what changed since the one before",
+    description: "Curriculum published: the id and time of the publication, what changed since the one before, and `push`: how pushing the organisation's published set to the learner server went (pushed, skipped, or failed: the publish stands)",
   })
   @ApiResponse({
     status: 400,
@@ -427,8 +433,9 @@ export class CurriculumController {
     // The curriculum in the path is the caller's, or the 404 an absent one gets; the organisation is the one the token
     // acts in. A publish with nothing changed since the last one still records a publication (summary 0, 0, 0): the
     // record of who published and when is the act, and a publish repeated after a push that failed must push again.
-    // Nothing is pushed here: the sync routes still serve the live tables.
-    const data = await publishCurriculum(org, user.lmsuserid, curriculumid);
+    // The organisation's published set is then pushed to the learner server by central (the caller never holds the key);
+    // the answer's `push` says how that went, and a failed push does not undo the publish.
+    const data = await publishAndPush(org, user.lmsuserid, curriculumid);
     return {
       error: false,
       data,
@@ -439,7 +446,7 @@ export class CurriculumController {
   @Put("retire/:curriculumid")
   @ApiResponse({
     status: 200,
-    description: "Curriculum retired (or already not published: `retired` is false and nothing changed)",
+    description: "Curriculum retired (or already not published: `retired` is false and nothing changed), and `push`: how pushing the organisation's published set to the learner server went",
   })
   @ApiResponse({
     status: 400,
@@ -462,7 +469,8 @@ export class CurriculumController {
     @Param("curriculumid") curriculumid: string,
     @Org() org: OrgContext
   ): Promise<any> {
-    const data = await retireCurriculum(org, curriculumid);
+    // The published set is pushed afterwards, so that the retired curriculum leaves the learner server at once.
+    const data = await retireAndPush(org, curriculumid);
     return {
       error: false,
       data,

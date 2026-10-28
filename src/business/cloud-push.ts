@@ -12,11 +12,35 @@ export type CloudImport = "master" | "students" | "teachers";
 export const ORGANISATION_HEADER = "X-Organisation-Id";
 
 /**
+ * Whether this server has a student server to push to: `RPI_CLOUD` is set to something other than the placeholder the
+ * configuration falls back to. An unset one is not an error (a central server with no online learners has none); a push
+ * that is asked for without one is skipped, never attempted.
+ */
+export const cloudConfigured = (): boolean => {
+  const url = Config.fortyk.api.rpi?.cloud;
+  return typeof url === "string" && url.trim() !== "" && !url.trim().startsWith("your-");
+};
+
+export interface PushOptions {
+  /**
+   * Gives up on the student server after this long. Left out, the request waits as long as the server does (the manual
+   * Sync Content has always done so); a push made while an admin waits for the answer to a publish sets one.
+   */
+  timeoutMs?: number;
+}
+
+/**
  * Sends one file to the student API's import route, as a zip holding `entry`, with the server key. The request names the
  * organisation it is for (`X-Organisation-Id`) when there is one: a content push always has one, a push of a school's
  * learners or teachers has the school's.
  */
-export const pushToCloud = async (kind: CloudImport, entry: string, json: string, organisationid?: string | null) => {
+export const pushToCloud = async (
+  kind: CloudImport,
+  entry: string,
+  json: string,
+  organisationid?: string | null,
+  options: PushOptions = {},
+) => {
   const zip = new AdmZip();
   zip.addFile(entry, Buffer.from(json, "utf8"));
   const file = new FormData();
@@ -31,6 +55,7 @@ export const pushToCloud = async (kind: CloudImport, entry: string, json: string
       },
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
+      ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
     });
   } catch (error) {
     throw (kind === "master" ? refusalOf(error) : undefined) ?? error;

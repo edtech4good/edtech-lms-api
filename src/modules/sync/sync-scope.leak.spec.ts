@@ -22,6 +22,7 @@ import { SyncController } from "./sync.controller";
 import { confine, contextOfOrganisation } from "src/business/organisation-content-export";
 import { LessonLearningBusiness } from "src/business/lessonlearning.business";
 import { publishCurriculum } from "src/business/curriculum-publication";
+import { PUSH_TIMEOUT_MS } from "src/business/publish-push";
 
 /**
  * The content sync is one organisation's: `GET sync/content` and `POST sync/cloud` (format 3, the only format: format 2
@@ -808,6 +809,13 @@ describe("the content sync is one organisation's", () => {
       expect(ids(call.json.curriculums, "curriculumid")).toEqual([TX.curriculum]);
       expect(contentProblems(call.json)).toEqual([]);
       expect(JSON.stringify(call.json)).not.toContain(Y);
+    });
+
+    it("takes the organisation's turn and the push timeout (it goes through the same push as a publish's), and its answer is unchanged", async () => {
+      const res = await send("X's Admin", "post", "/sync/cloud").expect(200);
+      expect(withoutReference(res.body)).toEqual({ error: false, data: true });
+      const options = (axios.put as jest.Mock).mock.calls[0][2] as { timeout?: number };
+      expect(options.timeout).toBe(PUSH_TIMEOUT_MS);
     });
 
     it("the file it sends holds the link rows, under the key the student API requires", async () => {

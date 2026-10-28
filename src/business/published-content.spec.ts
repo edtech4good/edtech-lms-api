@@ -4,6 +4,8 @@ import { organisations } from "src/models/data-models/organisations";
 import { dbinstance } from "src/services/dbservice";
 import { ContentFake } from "src/test-support/content-fake";
 import { contentProblems, TABLE_KEYS } from "src/test-support/student-api-content-contract";
+import { LmsUserToken } from "src/models/token.model";
+import { CurriculumBusiness } from "./curriculum.business";
 import { publishCurriculum, retireCurriculum, Tables, CurriculumPayload } from "./curriculum-publication";
 import { buildOrganisationContent, CURRICULUM_CONTENT_KEYS, keyOf, Row, SHAPE, trimIdLists } from "./organisation-content-export";
 import { buildPublishedOrganisationContent, mergePublished, PublishedSet } from "./published-content";
@@ -300,6 +302,23 @@ describe("what the sync serves", () => {
     // every curriculum deleted: nothing served, no error
     stored("curriculums", "curriculumid", B).isdeleted = true;
     expect((await served()).curriculums).toEqual([]);
+  });
+
+  it("a curriculum is served only while it is live AND its latest publication is `published`: one deleted through the delete route and restored stays out until it is published again", async () => {
+    await publish(A);
+    await publish(B);
+    // the delete route's own act: soft-delete and withdraw, in one transaction
+    expect(await new CurriculumBusiness(orgX).deleteCurriculum(A, { lmsuserid: USER } as LmsUserToken)).toEqual({ organisationid: X, withdrew: true });
+    expect(ids((await served()).curriculums, "curriculumid")).toEqual([B]);
+    // restored by SQL (there is no restore route): live again, but its publication was withdrawn with the delete, so the
+    // frozen copy is not resurrected
+    stored("curriculums", "curriculumid", A).isdeleted = false;
+    const restored = await served();
+    expect(ids(restored.curriculums, "curriculumid")).toEqual([B]);
+    expect(ids(restored.lessons, "lessonid")).toEqual([LB]);
+    // only a new publish brings it back
+    await publish(A);
+    expect(ids((await served()).curriculums, "curriculumid")).toEqual(sorted(A, B));
   });
 
   it("a curriculum republished after being retired is served again", async () => {

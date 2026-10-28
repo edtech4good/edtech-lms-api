@@ -46,7 +46,7 @@ import { generateReference } from '../services/reference.service';
  */
 type LogDetail = 'full' | 'classonly' | 'db';
 
-interface MappedError {
+export interface MappedError {
   code: ErrorCode;
   status: number;
   errormessage: string;
@@ -133,8 +133,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
    * a custom message; every other exception is mapped by TYPE or STATUS
    * with the catalogue's generic message, because its message may quote
    * user input.
+   *
+   * Public so that a caller that must tell the person what went wrong WITHOUT failing the request (the push to the learner
+   * server that follows a publish, publish-push.ts) says it in the same words an error answer would.
    */
-  private map(exception: unknown, request?: any): MappedError {
+  map(exception: unknown, request?: any): MappedError {
     const e = exception as any;
 
     if (exception instanceof ApiError) {
