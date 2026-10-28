@@ -586,7 +586,9 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsentPath(who, "put", (id) => r(url(id)), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
     });
     it("a platform user not acting must choose an organisation first (400), nothing written", async () => {
-      expect((await refuses(NOT_ACTING, "put", url(TX.curriculum))).status).toBe(400);
+      const res = await refuses(NOT_ACTING, "put", url(TX.curriculum));
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation to act in before you retire a curriculum. Use the organisation switcher, then try again.");
     });
     it("a staff user who may view but not publish is refused (403), nothing written", async () => {
       const viewer = bearer({ lmsuserid: "vw", lmsuserroles: [Role.admin], permissions: ["view_curriculum", "update_curriculum"], organisationid: X, isplatform: false });

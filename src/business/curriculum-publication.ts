@@ -10,12 +10,14 @@ import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import { assertInScope } from "./content-scope";
 import { ownerOfCurriculum } from "./content-owner";
 import { notFoundError, scopeOf } from "./org-scope";
+import { SubjectBusiness } from "./subject.business";
 import {
   confine,
   contextOfOrganisation,
   CURRICULUM_CONTENT_KEYS,
   CurriculumContentKey,
   keyOf,
+  plain,
   readCurriculumContent,
   Row,
   SHAPE,
@@ -45,9 +47,15 @@ import {
  * ## Hashes
  *
  * A row's hash is the sha256 of its JSON with the keys sorted at every level (arrays keep their order, a date is its
- * ISO text), so it is the same on every run and on every machine. The payload's hash is the sha256 of the table-then-id
- * map of those hashes, so it does not depend on the order the readers returned the rows in. "Changed since publish" is
- * the live payload's hash differing from the latest publication's.
+ * ISO text), so it is the same on every run and on every machine. The row's AUDIT columns are left out of the hash
+ * (HASH_EXCLUDED: who created, updated or deleted it, and when, and `lastupdated` on questions and documents), so that
+ * saving a row with the values it already has is not a change; they stay in the payload. `isdeleted` and every points
+ * column stay in the hash: a deletion and a points change both reach learners. The payload's hash is the sha256 of the
+ * table-then-id map of those hashes, so it does not depend on the order the readers returned the rows in. "Changed since
+ * publish" is the live payload's hash differing from the latest publication's.
+ *
+ * Do not change HASH_EXCLUDED once a publication exists: every stored hash was taken with it, and a change would show
+ * every row of every curriculum as changed once.
  */
 
 export type Tables = Record<CurriculumContentKey, Row[]>;
@@ -84,8 +92,8 @@ export interface SharedRow {
   curricula: RowRef[];
 }
 
-/** What is stored in `curriculumpublications.summary`. */
-export interface PublicationSummary {
+/** What a publication's summary keeps for good (see StoredSummary for what retention drops). */
+export interface SlimSummary {
   format: 1;
   /** The publication this one was compared with: the latest one, when it is `published`; else null (everything is new). */
   previous: string | null;
@@ -94,12 +102,39 @@ export interface PublicationSummary {
   changes: Record<string, TableChange>;
   /** Lessons and questions whose rows changed, by name (at most NAME_LIMIT of each kind; the counts above are exact). */
   affected: { lessons: Affected; questions: Affected; truncated: boolean };
-  /** Questions and documents added or changed here that another curriculum of the organisation also uses. */
+  /** Questions and documents added or changed here whose copy differs from another published curriculum's latest copy. */
   shared: SharedRow[];
-  /** Names of this payload's lessons and questions, kept so that a later publish can name what it removed. */
-  names: { lessons: Record<string, string>; questions: Record<string, string> };
+  /**
+   * Only on a publish that follows a retire (`previous` is null): what changed since the curriculum was withdrawn,
+   * compared with the withdrawn publication's kept hashes. Omitted when there was no withdrawn publication to compare with.
+   */
+  sincewithdrawn?: { publicationid: string; changes: Record<string, TableChange>; affected: { lessons: Affected; questions: Affected; truncated: boolean } };
+}
+
+/** Names of this payload's lessons and questions, kept so that a later publish can name what it removed. */
+export interface SummaryNames {
+  lessons: Record<string, string>;
+  questions: Record<string, string>;
+}
+
+/** The summary as a publish builds it: the slim part, the names and the per-row hashes the next publish compares with. */
+export interface PublicationSummary extends SlimSummary {
+  names: SummaryNames;
   hashes: RowHashes;
 }
+
+/**
+ * What is stored in `curriculumpublications.summary`: the hashes and names are there on the latest two publications of a
+ * curriculum (the ones a later publish or a "changed since publish" can compare with) and are dropped from older ones
+ * together with their payload (decision 9), which keep the rest.
+ */
+export type StoredSummary = SlimSummary & Partial<Pick<PublicationSummary, "names" | "hashes">>;
+
+/** The summary without its hashes and names: what a pruned publication keeps, and what is answered. */
+export const slimSummary = (summary: StoredSummary): SlimSummary => {
+  const { hashes: _hashes, names: _names, ...rest } = summary;
+  return rest;
+};
 
 /** The most names a summary lists of one kind of change (the counts are always exact). */
 export const NAME_LIMIT = 200;
@@ -124,8 +159,23 @@ export const canonicalJson = (value: unknown): string => JSON.stringify(sortedVa
 
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
 
-/** sha256 of the row's key-sorted JSON. */
-export const rowHash = (row: Row): string => sha256(canonicalJson(row));
+/**
+ * The columns a row's hash leaves out: the audit columns, which move when a row is saved with the values it already has.
+ * Never `isdeleted` or a points column (they reach learners). The payload keeps every column.
+ */
+export const HASH_EXCLUDED: ReadonlySet<string> = new Set([
+  "created_at",
+  "created_by",
+  "updated_at",
+  "updated_by",
+  "deleted_at",
+  "deleted_by",
+  "lastupdated",
+]);
+
+/** sha256 of the row's key-sorted JSON, without the audit columns (HASH_EXCLUDED). */
+export const rowHash = (row: Row): string =>
+  sha256(canonicalJson(Object.fromEntries(Object.entries(row).filter(([column]) => !HASH_EXCLUDED.has(column)))));
 
 const idOf = (key: CurriculumContentKey, row: Row): string => String(row[SHAPE[key].pk]);
 
@@ -203,7 +253,7 @@ const unpublishable = (problems: string[], fields?: Array<{ field: string; messa
     ErrorCode.INVALID_INPUT,
     `This curriculum can't be published yet. ${problems.join(" ")}`,
     {
-      hint: "Fix or remove the rows named, then publish again. Nothing was published.",
+      hint: "Fix or remove the rows in the tables named, then publish again. Nothing was published.",
       ...(fields && fields.length > 0 ? { fields } : {}),
     },
   );
@@ -211,12 +261,15 @@ const unpublishable = (problems: string[], fields?: Array<{ field: string; messa
 /**
  * The export's `confine` on one curriculum's rows. A payload it would change, by leaving rows out or by refusing a row
  * that names a question or document that is not in the organisation's own bank (another organisation's, nobody's, or
- * gone), is refused with 400, naming tables and counts and no row.
+ * gone), or a curriculum that names a subject that is not one of the organisation's live subjects (`subjects`: the
+ * organisation's subjects that are not deleted), is refused with 400, naming tables and counts and no row. The subjects
+ * are checked against and are not part of the payload (the sync keeps them live).
  */
-export const confineCurriculumTables = (tables: Tables): Tables => {
+export const confineCurriculumTables = (tables: Tables, subjects: Row[]): Tables => {
   let confined: Tables;
   try {
-    confined = confine(tables) as Tables;
+    const { subjects: _subjects, ...checked } = confine({ ...tables, subjects }) as Tables & { subjects: Row[] };
+    confined = checked as Tables;
   } catch (e) {
     if (e instanceof ApiError && e.fields !== undefined && e.fields.length > 0) {
       throw unpublishable(
@@ -237,15 +290,16 @@ export const confineCurriculumTables = (tables: Tables): Tables => {
 
 /**
  * The payload of one curriculum out of the organisation's content: its rows (selectCurriculumTables), confined. A
- * curriculum that is not in the content, or is deleted, is the 404 an absent one gets. Pure.
+ * curriculum that is not in the content, or is deleted, is the 404 an absent one gets. `subjects` are the organisation's
+ * live subjects (readLiveSubjects). Pure.
  */
-export const payloadOf = (organisationid: string, content: Tables, curriculumid: string): CurriculumPayload => {
+export const payloadOf = (organisationid: string, content: Tables, curriculumid: string, subjects: Row[]): CurriculumPayload => {
   const picked = selectCurriculumTables(content, curriculumid);
   const row = picked.curriculums[0];
   if (row === undefined || row.isdeleted === true || row.isdeleted === 1) {
     throw notFoundError("That curriculum doesn't exist.");
   }
-  return { format: 1, curriculumid: String(row.curriculumid), organisationid, tables: confineCurriculumTables(picked) };
+  return { format: 1, curriculumid: String(row.curriculumid), organisationid, tables: confineCurriculumTables(picked, subjects) };
 };
 
 // ---- who a request publishes for -------------------------------------------------------------------
@@ -254,12 +308,12 @@ export const payloadOf = (organisationid: string, content: Tables, curriculumid:
  * The organisation a publish or a retire is for: the one the caller acts in. A platform user who is not acting as an
  * organisation has none: 400, as creating content has. The organisation always comes from the token.
  */
-export const publishingOrganisation = (org: OrgContext): string => {
+export const publishingOrganisation = (org: OrgContext, verb: "publish" | "retire" = "publish"): string => {
   const scope = scopeOf(org);
   if (scope.kind === "platform") {
     throw new ApiError(
       ErrorCode.INVALID_INPUT,
-      "Choose an organisation to act in before you publish a curriculum. Use the organisation switcher, then try again.",
+      `Choose an organisation to act in before you ${verb} a curriculum. Use the organisation switcher, then try again.`,
     );
   }
   return scope.organisationid;
@@ -277,11 +331,23 @@ const organisationOfRead = async (org: OrgContext, curriculumid: string): Promis
   return owner;
 };
 
+/** The organisation's subjects that are not deleted, as the export reads them (what a curriculum's `subjectid` may name). */
+export const readLiveSubjects = async (organisationid: string): Promise<Row[]> =>
+  plain(await new SubjectBusiness(contextOfOrganisation(organisationid)).getSubjectsWithOwner()).filter(
+    (r) => !(r.isdeleted === true || r.isdeleted === 1),
+  );
+
+/** Everything a payload is built from, read now: the organisation's curriculum content and its live subjects. */
+const readSources = async (organisationid: string) => {
+  const content = await readCurriculumContent(contextOfOrganisation(organisationid));
+  return { content, subjects: await readLiveSubjects(organisationid) };
+};
+
 /** The payload of the curriculum as it is now, built from the live tables by the export's readers. */
 export const buildCurriculumPayload = async (org: OrgContext, curriculumid: string): Promise<CurriculumPayload> => {
   const organisationid = publishingOrganisation(org);
-  const content = await readCurriculumContent(contextOfOrganisation(organisationid));
-  return payloadOf(organisationid, content, curriculumid);
+  const { content, subjects } = await readSources(organisationid);
+  return payloadOf(organisationid, content, curriculumid, subjects);
 };
 
 // ---- comparing -----------------------------------------------------------------------------------------
@@ -317,30 +383,44 @@ const refs = (ids: string[], names: Record<string, string>): { list: RowRef[]; c
   cut: ids.length > NAME_LIMIT,
 });
 
+/** Curriculum id -> the per-row hashes of its latest publication, for the curricula whose latest publication is `published`. */
+export type PublishedHashes = Map<string, RowHashes>;
+
 /**
- * The bank rows this publish adds or changes that another curriculum of the organisation also uses. The student side
- * keeps one copy of a shared question or document, and the newest publication's copy wins, so these are the rows whose
- * new copy reaches that other curriculum's learners too (docs/content-publishing-design.md, section 3). Pure.
+ * The bank rows this publish adds or changes that another curriculum of the organisation also uses AND whose copy there
+ * differs from this one. The student side keeps one copy of a shared question or document, and the newest publication's
+ * copy wins, so these are the rows whose new copy reaches that other curriculum's learners too
+ * (docs/content-publishing-design.md, section 3). A row is listed for another curriculum only when that curriculum has a
+ * publication that is live (`published`) and the hash of the row in it differs from the copy being published (or the
+ * row is not in it); an unpublished or withdrawn curriculum, and a copy that is already equal, are not listed. `published`
+ * is the latest published hashes of the other curricula (publishedHashesOf). Pure.
  */
 export const sharedRows = (
   content: Tables,
   curriculumid: string,
   tables: Tables,
   diff: ReturnType<typeof diffHashes>,
+  published: PublishedHashes,
 ): SharedRow[] => {
   const touched = {
     questions: new Set([...diff.questions.added, ...diff.questions.changed]),
     documents: new Set([...diff.documents.added, ...diff.documents.changed]),
   };
   if (touched.questions.size === 0 && touched.documents.size === 0) return [];
+  const copy = {
+    questions: new Map(tables.questions.map((r) => [idOf("questions", r), rowHash(r)])),
+    documents: new Map(tables.documents.map((r) => [idOf("documents", r), rowHash(r)])),
+  };
   const users: Record<"questions" | "documents", Map<string, RowRef[]>> = { questions: new Map(), documents: new Map() };
   for (const other of content.curriculums) {
     if (keyOf(other.curriculumid) === keyOf(curriculumid) || other.isdeleted === true || other.isdeleted === 1) continue;
+    const theirHashes = published.get(String(other.curriculumid));
+    if (theirHashes === undefined) continue;
     const theirs = selectCurriculumTables(content, String(other.curriculumid));
     for (const bank of ["questions", "documents"] as const) {
       for (const row of theirs[bank]) {
         const id = idOf(bank, row);
-        if (!touched[bank].has(id)) continue;
+        if (!touched[bank].has(id) || theirHashes[bank]?.[id] === copy[bank].get(id)) continue;
         users[bank].set(id, [...(users[bank].get(id) ?? []), { id: String(other.curriculumid), name: String(other.curriculumname ?? "") }]);
       }
     }
@@ -358,19 +438,24 @@ export const sharedRows = (
   return out;
 };
 
-/**
- * The summary of a payload against the publication before it (`previous`: its hashes and names, or null when there is
- * none to compare with). Exact counts per table; the lessons and questions named. Pure.
- */
-export const summarise = (
-  tables: Tables,
-  hashes: RowHashes,
-  previous: { publicationid: string; summary: PublicationSummary } | null,
-  shared: SharedRow[] = [],
-): PublicationSummary => {
-  const diff = diffHashes(hashes, previous?.summary.hashes ?? null);
+/** A publication to compare a payload with: its id and what its summary kept of it (the hashes are needed, the names help). */
+export interface CompareBase {
+  publicationid: string;
+  summary: StoredSummary;
+}
+
+/** `row` as something to compare with, when it has the given status and its summary still holds the hashes; else null. */
+const baseOf = (row: { publicationid: string; status: PublicationStatus; summary: unknown } | undefined, status: PublicationStatus): CompareBase | null => {
+  if (row === undefined || row.status !== status) return null;
+  const summary = row.summary as StoredSummary;
+  return summary.hashes === undefined ? null : { publicationid: row.publicationid, summary };
+};
+
+/** What a payload's rows did against a base: exact counts per table, and the lessons and questions named. */
+const compare = (tables: Tables, hashes: RowHashes, base: CompareBase | null) => {
+  const diff = diffHashes(hashes, base?.summary.hashes ?? null);
   const names = namesOf(tables);
-  const before = previous?.summary.names ?? { lessons: {}, questions: {} };
+  const before = base?.summary.names ?? { lessons: {}, questions: {} };
   let truncated = false;
   const affected = (kind: "lessons" | "questions"): Affected => {
     const d = diff[kind];
@@ -383,24 +468,46 @@ export const summarise = (
   const lessons = affected("lessons");
   const questions = affected("questions");
   return {
-    format: 1,
-    previous: previous?.publicationid ?? null,
-    counts: Object.fromEntries(CURRICULUM_CONTENT_KEYS.map((key) => [key, tables[key].length])),
+    names,
     changes: Object.fromEntries(
       CURRICULUM_CONTENT_KEYS.map((key) => [key, { added: diff[key].added.length, removed: diff[key].removed.length, changed: diff[key].changed.length }]),
     ),
     affected: { lessons, questions, truncated },
+  };
+};
+
+/**
+ * The summary of a payload against the publication before it (`previous`: its hashes and names, or null when there is
+ * none to compare with). Exact counts per table; the lessons and questions named. `withdrawn`, given only when there is
+ * no `previous`, is the withdrawn publication the curriculum had: the summary then also says what changed `sincewithdrawn`.
+ * Pure.
+ */
+export const summarise = (
+  tables: Tables,
+  hashes: RowHashes,
+  previous: CompareBase | null,
+  shared: SharedRow[] = [],
+  withdrawn: CompareBase | null = null,
+): PublicationSummary => {
+  const main = compare(tables, hashes, previous);
+  const since = previous === null && withdrawn !== null ? compare(tables, hashes, withdrawn) : null;
+  return {
+    format: 1,
+    previous: previous?.publicationid ?? null,
+    counts: Object.fromEntries(CURRICULUM_CONTENT_KEYS.map((key) => [key, tables[key].length])),
+    changes: main.changes,
+    affected: main.affected,
     shared,
-    names,
+    ...(since !== null && withdrawn !== null
+      ? { sincewithdrawn: { publicationid: withdrawn.publicationid, changes: since.changes, affected: since.affected } }
+      : {}),
+    names: main.names,
     hashes,
   };
 };
 
 /** The summary as an answer: everything but the per-row hashes and the names kept for the next publish. */
-export const summaryForAnswer = (summary: PublicationSummary) => {
-  const { hashes: _hashes, names: _names, ...rest } = summary;
-  return rest;
-};
+export const summaryForAnswer = (summary: StoredSummary): SlimSummary => slimSummary(summary);
 
 // ---- the stored publications ----------------------------------------------------------------------------
 
@@ -455,6 +562,28 @@ export const publicationStates = async (curriculumids: string[]): Promise<Map<st
   return new Map(curriculumids.map((id) => [id, stateOf(latest.get(id))]));
 };
 
+/**
+ * The latest published hashes of the organisation's curricula other than `curriculumid` (a curriculum that has none, because
+ * it was never published or its latest publication is withdrawn, is left out). Reads no payload.
+ */
+const publishedHashesOf = async (content: Tables, curriculumid: string): Promise<PublishedHashes> => {
+  const out: PublishedHashes = new Map();
+  const others = content.curriculums
+    .filter((c) => keyOf(c.curriculumid) !== keyOf(curriculumid) && !(c.isdeleted === true || c.isdeleted === 1))
+    .map((c) => String(c.curriculumid));
+  const live = [...(await latestOf(others)).values()].filter((l) => l.status === "published");
+  if (live.length === 0) return out;
+  const rows = await curriculumpublications.findAll({
+    where: { publicationid: { [Op.in]: live.map((l) => l.publicationid) } },
+    attributes: ["publicationid", "curriculumid", "summary"],
+  });
+  for (const row of rows) {
+    const hashes = (row.summary as unknown as StoredSummary).hashes;
+    if (hashes !== undefined) out.set(row.curriculumid, hashes);
+  }
+  return out;
+};
+
 // ---- publish, retire, read --------------------------------------------------------------------------------
 
 const nextTime = (latest: Date | undefined): Date => {
@@ -466,29 +595,35 @@ const nextTime = (latest: Date | undefined): Date => {
 export interface PublishResult {
   publicationid: string;
   publishedat: Date;
-  summary: ReturnType<typeof summaryForAnswer>;
+  summary: SlimSummary;
 }
 
 /**
  * Publishes the curriculum: builds its payload now, compares it with the latest publication (when that is `published`),
- * stores the new publication, and drops the payloads of the curriculum's publications beyond the latest two (the row and
- * its summary stay). A publish with nothing changed still records a publication, with a summary of 0, 0, 0: the act is
- * the record (who and when), and a publish repeated after a push that failed must still push (step 3).
+ * stores the new publication, and drops the payloads, and the hashes and names in the summaries, of the curriculum's
+ * publications beyond the latest two (the row and the rest of its summary stay). A publish with nothing changed still
+ * records a publication, with a summary of 0, 0, 0: the act is the record (who and when), and a publish repeated after a
+ * push that failed must still push (step 3).
+ *
+ * The payload is built INSIDE the transaction, after the curriculum's row is locked: two publishes of one curriculum take
+ * turns, and the one that commits last has read the live rows after the other committed, so the newest publication is
+ * never the older content.
  *
  * The caller has not checked the curriculum: it is in the caller's organisation, or the 404 an absent one gets.
  */
 export const publishCurriculum = async (org: OrgContext, publishedby: string, curriculumid: string): Promise<PublishResult> => {
   const organisationid = publishingOrganisation(org);
   await assertInScope(org, "curriculum", curriculumid);
-  const content = await readCurriculumContent(contextOfOrganisation(organisationid));
-  const payload = payloadOf(organisationid, content, curriculumid);
-  const hashes = hashTables(payload.tables);
-  const payloadhash = payloadHashOf(hashes);
 
   const transaction = await dbinstance.getdbinstance().transaction();
   try {
     // two publishes of one curriculum at once take turns
     await curriculums.findOne({ where: { curriculumid }, attributes: ["curriculumid"], lock: transaction.LOCK.UPDATE, transaction });
+    const { content, subjects } = await readSources(organisationid);
+    const payload = payloadOf(organisationid, content, curriculumid, subjects);
+    const hashes = hashTables(payload.tables);
+    const payloadhash = payloadHashOf(hashes);
+
     const history = await curriculumpublications.findAll({
       where: { curriculumid },
       attributes: { exclude: ["payload"] },
@@ -496,12 +631,11 @@ export const publishCurriculum = async (org: OrgContext, publishedby: string, cu
       transaction,
     });
     const latest = history[0];
-    const previous =
-      latest !== undefined && latest.status === "published"
-        ? { publicationid: latest.publicationid, summary: latest.summary as unknown as PublicationSummary }
-        : null;
+    const previous = baseOf(latest, "published");
+    const withdrawn = previous === null ? baseOf(latest, "withdrawn") : null;
     const diff = diffHashes(hashes, previous?.summary.hashes ?? null);
-    const summary = summarise(payload.tables, hashes, previous, sharedRows(content, curriculumid, payload.tables, diff));
+    const shared = sharedRows(content, curriculumid, payload.tables, diff, await publishedHashesOf(content, curriculumid));
+    const summary = summarise(payload.tables, hashes, previous, shared, withdrawn);
 
     const publicationid = uuidv4();
     const publishedat = nextTime(latest?.publishedat);
@@ -519,13 +653,20 @@ export const publishCurriculum = async (org: OrgContext, publishedby: string, cu
       },
       { transaction },
     );
-    // retention (decision 9): the latest two payloads are kept, this one and the one before it; older ones are dropped
-    const older = history.slice(1).map((h) => h.publicationid);
+    // retention (decision 9): the latest two are kept whole, this one and the one before it; an older one loses its payload
+    // and the hashes and names of its summary, and keeps the counts, the changes, what was affected and what was shared
+    const older = history.slice(1);
     if (older.length > 0) {
       await curriculumpublications.update(
         { payload: null },
-        { where: { publicationid: { [Op.in]: older }, payload: { [Op.ne]: null } }, transaction },
+        { where: { publicationid: { [Op.in]: older.map((h) => h.publicationid) }, payload: { [Op.ne]: null } }, transaction },
       );
+      for (const row of older) {
+        const kept = row.summary as unknown as StoredSummary;
+        if (kept.hashes !== undefined || kept.names !== undefined) {
+          await curriculumpublications.update({ summary: slimSummary(kept) as unknown as object }, { where: { publicationid: row.publicationid }, transaction });
+        }
+      }
     }
     await transaction.commit();
     return { publicationid, publishedat, summary: summaryForAnswer(summary) };
@@ -547,7 +688,7 @@ export interface RetireResult extends PublicationState {
  * `retired: false` and changes nothing.
  */
 export const retireCurriculum = async (org: OrgContext, curriculumid: string): Promise<RetireResult> => {
-  publishingOrganisation(org);
+  publishingOrganisation(org, "retire");
   await assertInScope(org, "curriculum", curriculumid);
   const transaction = await dbinstance.getdbinstance().transaction();
   let retired = false;
@@ -572,9 +713,9 @@ export interface PublicationOverview extends PublicationState {
   /** Null when the live rows can be published; else what stops them (tables and counts only). */
   problem: string | null;
   /** What a publish now would record against the latest publication, when that is `published`. */
-  pending: ReturnType<typeof summaryForAnswer> | null;
+  pending: SlimSummary | null;
   /** The latest publication's own summary. */
-  latest: { publicationid: string; publishedat: Date; publishedby: string; status: PublicationStatus; summary: ReturnType<typeof summaryForAnswer> } | null;
+  latest: { publicationid: string; publishedat: Date; publishedby: string; status: PublicationStatus; summary: SlimSummary } | null;
 }
 
 /**
@@ -598,20 +739,21 @@ export const publicationOverview = async (org: OrgContext, curriculumid: string)
       publishedat: latest.publishedat,
       publishedby: latest.publishedby,
       status: latest.status,
-      summary: summaryForAnswer(latest.summary as unknown as PublicationSummary),
+      summary: summaryForAnswer(latest.summary as unknown as StoredSummary),
     };
   }
   if (latest === undefined || latest.status !== "published") {
     return base;
   }
-  const content = await readCurriculumContent(contextOfOrganisation(organisationid));
+  const { content, subjects } = await readSources(organisationid);
   try {
-    const payload = payloadOf(organisationid, content, curriculumid);
+    const payload = payloadOf(organisationid, content, curriculumid, subjects);
     const hashes = hashTables(payload.tables);
     base.changedsincepublish = payloadHashOf(hashes) !== latest.payloadhash;
-    const diff = diffHashes(hashes, (latest.summary as unknown as PublicationSummary).hashes);
+    const previous = baseOf(latest, "published");
+    const diff = diffHashes(hashes, previous?.summary.hashes ?? null);
     base.pending = summaryForAnswer(
-      summarise(payload.tables, hashes, { publicationid: latest.publicationid, summary: latest.summary as unknown as PublicationSummary }, sharedRows(content, curriculumid, payload.tables, diff)),
+      summarise(payload.tables, hashes, previous, sharedRows(content, curriculumid, payload.tables, diff, await publishedHashesOf(content, curriculumid))),
     );
   } catch (e) {
     if (e instanceof ApiError && e.code === ErrorCode.INVALID_INPUT) {

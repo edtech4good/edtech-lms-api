@@ -1,12 +1,15 @@
 import { OrgContext } from "src/decorators/org.decorator";
 import { ApiError } from "src/models/ApiError";
 import { curriculumpublications } from "src/models/data-models/curriculumpublications";
+import { curriculums } from "src/models/data-models/curriculums";
+import { questions } from "src/models/data-models/questions";
 import { dbinstance } from "src/services/dbservice";
 import { ContentFake } from "src/test-support/content-fake";
 import {
   canonicalJson,
   confineCurriculumTables,
   diffHashes,
+  HASH_EXCLUDED,
   hashTables,
   NAME_LIMIT,
   payloadHashOf,
@@ -15,10 +18,12 @@ import {
   publicationStates,
   publishCurriculum,
   publishingOrganisation,
+  readLiveSubjects,
   retireCurriculum,
   rowHash,
   selectCurriculumTables,
   sharedRows,
+  StoredSummary,
   summarise,
   Tables,
 } from "./curriculum-publication";
@@ -94,6 +99,7 @@ beforeEach(() => {
 });
 
 const content = async (): Promise<Tables> => readCurriculumContent(orgX) as Promise<Tables>;
+const liveSubjects = () => readLiveSubjects(X);
 const ids = (rows: Array<Record<string, unknown>>, key: string) => rows.map((r) => r[key] as string).sort();
 const sorted = (...v: string[]) => [...v].sort();
 const stored = (table: Parameters<ContentFake["add"]>[0], key: string, value: string) => db.tables[table].find((r) => r[key] === value)!;
@@ -117,15 +123,15 @@ describe("hashing", () => {
 
   it("does not depend on the order the rows were read in", async () => {
     const all = await content();
-    const one = payloadOf(X, all, A).tables;
+    const one = payloadOf(X, all, A, await liveSubjects()).tables;
     const reversed = Object.fromEntries(Object.entries(one).map(([k, rows]) => [k, [...rows].reverse()])) as Tables;
     expect(payloadHashOf(hashTables(reversed))).toBe(payloadHashOf(hashTables(one)));
   });
 
   it("changes when one field of one row does", async () => {
-    const before = payloadHashOf(hashTables(payloadOf(X, await content(), A).tables));
+    const before = payloadHashOf(hashTables(payloadOf(X, await content(), A, await liveSubjects()).tables));
     stored("lessons", "lessonid", L1).lessonname = "Lesson uno";
-    expect(payloadHashOf(hashTables(payloadOf(X, await content(), A).tables))).not.toBe(before);
+    expect(payloadHashOf(hashTables(payloadOf(X, await content(), A, await liveSubjects()).tables))).not.toBe(before);
   });
 });
 
@@ -168,7 +174,7 @@ describe("the curriculum's rows and the closure", () => {
   it("closes over the bank without a document: remove the documents and the payload is refused for the learning item that names one", async () => {
     const all = await content();
     const picked = selectCurriculumTables(all, A);
-    expect(() => confineCurriculumTables({ ...picked, documents: [] })).toThrow(ApiError);
+    expect(() => confineCurriculumTables({ ...picked, documents: [] }, [])).toThrow(ApiError);
   });
 });
 
@@ -178,14 +184,14 @@ describe("confine", () => {
     const all = await content();
     let thrown: ApiError | undefined;
     try {
-      payloadOf(X, all, A);
+      payloadOf(X, all, A, await liveSubjects());
     } catch (e) {
       thrown = e as ApiError;
     }
     expect(thrown).toBeInstanceOf(ApiError);
     expect(thrown!.getStatus()).toBe(400);
     expect(thrown!.message).toBe("This curriculum can't be published yet. lessonquizquestions: 1 row names a question that is not this organisation's.");
-    expect(thrown!.hint).toBe("Fix or remove the rows named, then publish again. Nothing was published.");
+    expect(thrown!.hint).toBe("Fix or remove the rows in the tables named, then publish again. Nothing was published.");
     expect(thrown!.fields).toEqual([{ field: "lessonquizquestions", message: "lessonquizquestions: 1 row names a question that is not this organisation's." }]);
     expect(JSON.stringify(thrown)).not.toContain(Q(50));
   });
@@ -193,7 +199,7 @@ describe("confine", () => {
   it("refuses a payload that confine would trim (a row whose parent is not in it), naming table and count", async () => {
     const picked = selectCurriculumTables(await content(), A);
     const orphan = { ...picked, lessonquizquestions: [...picked.lessonquizquestions, { lessonquizquestionid: id(999), lessonquizid: id(998), questionid: Q(1) }] };
-    expect(() => confineCurriculumTables(orphan)).toThrow("lessonquizquestions: 1 row hang from a row that is not in this curriculum.");
+    expect(() => confineCurriculumTables(orphan, [])).toThrow("lessonquizquestions: 1 row hang from a row that is not in this curriculum.");
   });
 
   it("refuses a curriculum that is deleted or absent as a curriculum that is not there", async () => {
@@ -202,7 +208,7 @@ describe("confine", () => {
     for (const gone of [B, id(12345)]) {
       let thrown: ApiError | undefined;
       try {
-        payloadOf(X, all, gone);
+        payloadOf(X, all, gone, await liveSubjects());
       } catch (e) {
         thrown = e as ApiError;
       }
@@ -212,7 +218,7 @@ describe("confine", () => {
 });
 
 describe("the diff", () => {
-  const hashesOf = async (curriculumid: string) => hashTables(payloadOf(X, await content(), curriculumid).tables);
+  const hashesOf = async (curriculumid: string) => hashTables(payloadOf(X, await content(), curriculumid, await liveSubjects()).tables);
 
   it("is exact per table: added, removed and changed ids", async () => {
     const before = await hashesOf(A);
@@ -233,7 +239,7 @@ describe("the diff", () => {
 
 describe("the summary", () => {
   it("names the lessons and questions affected, and keeps names so that a later publish can name what it removed", async () => {
-    const first = payloadOf(X, await content(), A).tables;
+    const first = payloadOf(X, await content(), A, await liveSubjects()).tables;
     const firstSummary = summarise(first, hashTables(first), null);
     expect(firstSummary.previous).toBeNull();
     expect(firstSummary.affected.lessons.added).toEqual(expect.arrayContaining([{ id: L1, name: "Lesson one" }, { id: L2, name: "Lesson two" }]));
@@ -241,7 +247,7 @@ describe("the summary", () => {
 
     stored("lessons", "lessonid", L1).lessonname = "Lesson uno";
     db.tables.lessons = db.tables.lessons.filter((l) => l.lessonid !== L2);
-    const second = payloadOf(X, await content(), A).tables;
+    const second = payloadOf(X, await content(), A, await liveSubjects()).tables;
     const s = summarise(second, hashTables(second), { publicationid: "p1", summary: firstSummary });
     expect(s.previous).toBe("p1");
     expect(s.changes.lessons).toEqual({ added: 0, removed: 1, changed: 1 });
@@ -258,13 +264,39 @@ describe("the summary", () => {
     expect(s.affected.truncated).toBe(true);
   });
 
-  it("names the bank rows a publish adds or changes that another curriculum also uses, and that curriculum", async () => {
-    const all = await content();
-    const mine = payloadOf(X, all, B).tables;
-    const diff = diffHashes(hashTables(mine), null);
-    expect(sharedRows(all, B, mine, diff)).toEqual([{ table: "questions", id: Q(1), name: "q-1", curricula: [{ id: A, name: "Reading" }] }]);
-    // nothing is shared when nothing of the shared row is touched
-    expect(sharedRows(all, B, mine, diffHashes(hashTables(mine), hashTables(mine)))).toEqual([]);
+  describe("shared bank rows", () => {
+    const mineOf = async () => {
+      const all = await content();
+      const mine = payloadOf(X, all, B, await liveSubjects()).tables;
+      return { all, mine, diff: diffHashes(hashTables(mine), null) };
+    };
+    const publishedA = async () => new Map([[A, hashTables(payloadOf(X, await content(), A, await liveSubjects()).tables)]]);
+
+    it("lists a bank row another published curriculum also uses only when that curriculum's latest copy differs, and names that curriculum", async () => {
+      const published = await publishedA();
+      // B's copy of Q1 is the copy A published: nothing reaches A's learners that they do not hold
+      let { all, mine, diff } = await mineOf();
+      expect(sharedRows(all, B, mine, diff, published)).toEqual([]);
+      // B's copy now differs from A's published one
+      stored("questions", "questionid", Q(1)).questiontext = "Question one, edited";
+      ({ all, mine, diff } = await mineOf());
+      expect(sharedRows(all, B, mine, diff, published)).toEqual([{ table: "questions", id: Q(1), name: "q-1", curricula: [{ id: A, name: "Reading" }] }]);
+      // nothing is shared when nothing of the shared row is touched
+      expect(sharedRows(all, B, mine, diffHashes(hashTables(mine), hashTables(mine)), published)).toEqual([]);
+    });
+
+    it("does not list a curriculum that has no live publication, however the copies differ", async () => {
+      stored("questions", "questionid", Q(1)).questiontext = "Question one, edited";
+      const { all, mine, diff } = await mineOf();
+      expect(sharedRows(all, B, mine, diff, new Map())).toEqual([]);
+    });
+
+    it("lists a curriculum whose latest publication does not hold the row at all", async () => {
+      const held = await publishedA();
+      delete held.get(A)!.questions[Q(1)];
+      const { all, mine, diff } = await mineOf();
+      expect(sharedRows(all, B, mine, diff, held)).toEqual([{ table: "questions", id: Q(1), name: "q-1", curricula: [{ id: A, name: "Reading" }] }]);
+    });
   });
 });
 
@@ -275,7 +307,7 @@ describe("publishing", () => {
     const row = publications()[0];
     expect(row).toMatchObject({ publicationid: res.publicationid, curriculumid: A, organisationid: X, publishedby: USER, status: "published" });
     expect(row.publishedat).toEqual(res.publishedat);
-    expect(row.payloadhash).toBe(payloadHashOf(hashTables(payloadOf(X, await content(), A).tables)));
+    expect(row.payloadhash).toBe(payloadHashOf(hashTables(payloadOf(X, await content(), A, await liveSubjects()).tables)));
     expect(Object.keys((row.summary as { hashes: object }).hashes)).toHaveLength(16);
     expect(Object.keys(res.summary).sort()).toEqual(["affected", "changes", "counts", "format", "previous", "shared"]);
     expect(res.summary.previous).toBeNull();
@@ -481,5 +513,208 @@ describe("changed since publish", () => {
     expect((await publicationOverview(platform, A)).publicationstatus).toBe("published");
     db.add("curriculums", { curriculumid: id(400), curriculumname: "No owner", organisationid: null, curriculumstatus: true });
     await expect(publicationOverview(platform, id(400))).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("the audit columns are not part of a row's hash", () => {
+  it("leaves out exactly the audit columns, and keeps isdeleted and every points column", () => {
+    const row = { id: "r", name: "n", isdeleted: false, points: 10, brick_points: 1 };
+    for (const column of HASH_EXCLUDED) expect(rowHash({ ...row, [column]: "x" })).toBe(rowHash(row));
+    expect([...HASH_EXCLUDED].sort()).toEqual(["created_at", "created_by", "deleted_at", "deleted_by", "lastupdated", "updated_at", "updated_by"]);
+    expect(rowHash({ ...row, isdeleted: true })).not.toBe(rowHash(row));
+    expect(rowHash({ ...row, points: 20 })).not.toBe(rowHash(row));
+    expect(rowHash({ ...row, brick_points: 2 })).not.toBe(rowHash(row));
+  });
+
+  it("is not a change when a row is saved again with the values it has (only updated_at and lastupdated move), but the payload keeps the new value", async () => {
+    stored("lessons", "lessonid", L1).updated_at = "2026-10-01T00:00:00.000Z";
+    stored("questions", "questionid", Q(1)).lastupdated = "2026-10-01T00:00:00.000Z";
+    await publishCurriculum(orgX, USER, A);
+    stored("lessons", "lessonid", L1).updated_at = "2026-10-28T09:00:00.000Z";
+    stored("questions", "questionid", Q(1)).lastupdated = "2026-10-28T09:00:00.000Z";
+    const overview = await publicationOverview(orgX, A);
+    expect(overview.changedsincepublish).toBe(false);
+    const res = await publishCurriculum(orgX, USER, A);
+    for (const change of Object.values(res.summary.changes)) expect(change).toEqual({ added: 0, removed: 0, changed: 0 });
+    const latest = publications().find((p) => p.publicationid === res.publicationid)!;
+    const lesson = (latest.payload as { tables: Tables }).tables.lessons.find((l) => l.lessonid === L1)!;
+    expect(lesson.updated_at).toBe("2026-10-28T09:00:00.000Z");
+  });
+
+  it("is a change when a points column moves, because points reach learners", async () => {
+    await publishCurriculum(orgX, USER, A);
+    db.tables.lessonpractices.find((r) => r.lessonpracticeid === id(703))!.points = 20;
+    expect((await publicationOverview(orgX, A)).changedsincepublish).toBe(true);
+    const res = await publishCurriculum(orgX, USER, A);
+    expect(res.summary.changes.lessonpractices).toEqual({ added: 0, removed: 0, changed: 1 });
+  });
+});
+
+describe("the payload is built under the lock", () => {
+  it("reads the content only after it has locked the curriculum row", async () => {
+    await publishCurriculum(orgX, USER, A);
+    const findOne = curriculums.findOne as unknown as jest.Mock;
+    const lock = findOne.mock.calls.findIndex((c) => (c[0] as { lock?: unknown })?.lock !== undefined);
+    expect(lock).toBeGreaterThanOrEqual(0);
+    const lockedAt = findOne.mock.invocationCallOrder[lock];
+    const firstRead = Math.min(...(questions.findAll as unknown as jest.Mock).mock.invocationCallOrder);
+    expect(lockedAt).toBeLessThan(firstRead);
+  });
+
+  it("answers a payload that cannot be published with the 400, rolls back, and writes nothing", async () => {
+    stored("lessonquizquestions", "lessonquizquestionid", id(706)).questionid = Q(50);
+    await expect(publishCurriculum(orgX, USER, A)).rejects.toMatchObject({ status: 400 });
+    expect(transaction.rollback).toHaveBeenCalledTimes(1);
+    expect(transaction.commit).not.toHaveBeenCalled();
+    expect(publications()).toEqual([]);
+  });
+});
+
+describe("retention drops the hashes and names of a pruned summary", () => {
+  const summaryOf = (n: number) => {
+    const rows = [...publications()].sort((a, b) => (a.publishedat as Date).getTime() - (b.publishedat as Date).getTime());
+    return rows[n].summary as StoredSummary;
+  };
+
+  it("keeps the counts, the changes, what was affected and what was shared, and keeps hashes and names on the latest two", async () => {
+    await publishCurriculum(orgX, USER, A);
+    await publishCurriculum(orgX, USER, A);
+    expect(summaryOf(0).hashes).toBeDefined();
+    stored("lessons", "lessonid", L1).lessonname = "Lesson uno";
+    await publishCurriculum(orgX, USER, A);
+    // the oldest is now past the latest two
+    const oldest = summaryOf(0);
+    expect(oldest.hashes).toBeUndefined();
+    expect(oldest.names).toBeUndefined();
+    expect(Object.keys(oldest).sort()).toEqual(["affected", "changes", "counts", "format", "previous", "shared"]);
+    expect(oldest.counts.lessons).toBe(2);
+    expect(oldest.changes.lessons).toEqual({ added: 2, removed: 0, changed: 0 });
+    expect(oldest.affected.lessons.added).toHaveLength(2);
+    expect(summaryOf(1).hashes).toBeDefined();
+    expect(summaryOf(1).names).toBeDefined();
+    expect(summaryOf(2).hashes).toBeDefined();
+    // the third publish compared with the second, which was whole at the time
+    expect(summaryOf(2).changes.lessons).toEqual({ added: 0, removed: 0, changed: 1 });
+    // and the rows stay: their payload went, their summary stayed
+    expect(publications()).toHaveLength(3);
+  });
+});
+
+describe("the subject a curriculum names", () => {
+  const SUBJECT = id(900);
+  const withSubject = (subjectid: string | null) => {
+    stored("curriculums", "curriculumid", A).subjectid = subjectid;
+  };
+  const refusal = "This curriculum can't be published yet. curriculums: 1 row names a subject that is not this organisation's.";
+
+  it("publishes a curriculum with no subject, and one that names a live subject of the organisation", async () => {
+    await publishCurriculum(orgX, USER, A);
+    db.add("subjects", { subjectid: SUBJECT, subjectname: "Reading", organisationid: X });
+    withSubject(SUBJECT);
+    await publishCurriculum(orgX, USER, A);
+    expect(publications()).toHaveLength(2);
+    // the subject is checked against, and is not part of the payload
+    const latest = publications()[1].payload as { tables: Record<string, unknown[]> };
+    expect(Object.keys(latest.tables)).toHaveLength(16);
+    expect(latest.tables).not.toHaveProperty("subjects");
+  });
+
+  it("refuses a subject of another organisation, naming the table and the count and no id", async () => {
+    db.add("subjects", { subjectid: SUBJECT, subjectname: "Theirs", organisationid: Y });
+    withSubject(SUBJECT);
+    let thrown: ApiError | undefined;
+    try {
+      await publishCurriculum(orgX, USER, A);
+    } catch (e) {
+      thrown = e as ApiError;
+    }
+    expect(thrown).toBeInstanceOf(ApiError);
+    expect(thrown!.getStatus()).toBe(400);
+    expect(thrown!.message).toBe(refusal);
+    expect(JSON.stringify(thrown)).not.toContain(SUBJECT);
+    expect(publications()).toEqual([]);
+  });
+
+  it("refuses a subject that is deleted, and a subject that is not there", async () => {
+    db.add("subjects", { subjectid: SUBJECT, subjectname: "Gone", organisationid: X, isdeleted: true });
+    withSubject(SUBJECT);
+    await expect(publishCurriculum(orgX, USER, A)).rejects.toThrow(refusal);
+    withSubject(id(901));
+    await expect(publishCurriculum(orgX, USER, A)).rejects.toThrow(refusal);
+    expect(publications()).toEqual([]);
+  });
+
+  it("tells the editor in the overview, with the same text", async () => {
+    await publishCurriculum(orgX, USER, A);
+    db.add("subjects", { subjectid: SUBJECT, subjectname: "Theirs", organisationid: Y });
+    withSubject(SUBJECT);
+    const overview = await publicationOverview(orgX, A);
+    expect(overview.changedsincepublish).toBe(true);
+    expect(overview.problem).toBe(refusal);
+  });
+});
+
+describe("the not-acting text names the act", () => {
+  it("says retire for a retire and publish for a publish", async () => {
+    expect(() => publishingOrganisation(platform, "retire")).toThrow("Choose an organisation to act in before you retire a curriculum.");
+    await expect(retireCurriculum(platform, A)).rejects.toThrow("before you retire a curriculum");
+    await expect(publishCurriculum(platform, USER, A)).rejects.toThrow("before you publish a curriculum");
+  });
+});
+
+describe("shared bank rows at publish", () => {
+  it("lists none when the other curriculum is not published, or holds an equal copy, or is withdrawn", async () => {
+    // A was never published
+    const first = await publishCurriculum(orgX, USER, B);
+    expect(first.summary.shared).toEqual([]);
+    // A publishes a copy of Q1; B's publish of the same copy lists nothing
+    await publishCurriculum(orgX, USER, A);
+    const equal = await publishCurriculum(orgX, USER, B);
+    expect(equal.summary.shared).toEqual([]);
+    // A is retired: an edit to Q1 published through B does not reach A's learners
+    await retireCurriculum(orgX, A);
+    stored("questions", "questionid", Q(1)).questiontext = "Question one, edited";
+    const withdrawn = await publishCurriculum(orgX, USER, B);
+    expect(withdrawn.summary.changes.questions.changed).toBe(1);
+    expect(withdrawn.summary.shared).toEqual([]);
+  });
+
+  it("lists the other curriculum when its published copy differs", async () => {
+    await publishCurriculum(orgX, USER, A);
+    stored("questions", "questionid", Q(1)).questiontext = "Question one, edited";
+    const res = await publishCurriculum(orgX, USER, B);
+    expect(res.summary.shared).toEqual([{ table: "questions", id: Q(1), name: "q-1", curricula: [{ id: A, name: "Reading" }] }]);
+  });
+});
+
+describe("after a retire", () => {
+  it("reports what changed since the withdrawn publication, from its kept hashes", async () => {
+    await publishCurriculum(orgX, USER, A);
+    await retireCurriculum(orgX, A);
+    stored("lessons", "lessonid", L1).lessonname = "Lesson uno";
+    db.tables.lessons = db.tables.lessons.filter((l) => l.lessonid !== L2);
+    const res = await publishCurriculum(orgX, USER, A);
+    // for learners everything is new, as before
+    expect(res.summary.previous).toBeNull();
+    expect(res.summary.changes.lessons).toEqual({ added: 1, removed: 0, changed: 0 });
+    // for the editor, the change since the curriculum was withdrawn
+    const since = res.summary.sincewithdrawn!;
+    expect(since.publicationid).toBe(publications().find((p) => p.publicationid !== res.publicationid)!.publicationid);
+    expect(since.changes.lessons).toEqual({ added: 0, removed: 1, changed: 1 });
+    expect(since.affected.lessons.removed).toEqual([{ id: L2, name: "Lesson two" }]);
+    expect(since.affected.lessons.changed).toEqual([{ id: L1, name: "Lesson uno" }]);
+  });
+
+  it("says nothing of it on a first publish, on a publish after a publish, or when the withdrawn publication kept no hashes", async () => {
+    const first = await publishCurriculum(orgX, USER, A);
+    expect(first.summary).not.toHaveProperty("sincewithdrawn");
+    const second = await publishCurriculum(orgX, USER, A);
+    expect(second.summary).not.toHaveProperty("sincewithdrawn");
+    await retireCurriculum(orgX, A);
+    // the withdrawn publication's summary has lost its hashes: nothing to compare with
+    const latest = [...publications()].sort((a, b) => (b.publishedat as Date).getTime() - (a.publishedat as Date).getTime())[0];
+    delete (latest.summary as StoredSummary).hashes;
+    const third = await publishCurriculum(orgX, USER, A);
+    expect(third.summary).not.toHaveProperty("sincewithdrawn");
   });
 });
