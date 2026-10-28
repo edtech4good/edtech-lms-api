@@ -136,3 +136,7 @@ describe("20261027120100-seed-publish-curriculum-permission down()", () => {
     }
   });
 });
+
+// Makes this file a module, so its top-level names are not shared with other
+// spec files when ts-jest type-checks them in the same worker.
+export {};
