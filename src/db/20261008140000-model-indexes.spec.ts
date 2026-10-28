@@ -191,7 +191,7 @@ const named = (indexes: Map<string, Ix[]>, of: (n: string) => boolean = () => tr
   [...indexes.entries()].flatMap(([t, l]) => l.filter((i) => of(i.name)).map((i) => `${t}.${i.name}:${i.columns.join("+")}`)).sort();
 
 describe("the declared set is pinned", () => {
-  it("the compiled models declare exactly the 47 non-PRIMARY indexes in DECLARED_SNAPSHOT (a new or changed declaration needs classifying)", () => {
+  it("the compiled models declare exactly the 50 non-PRIMARY indexes in DECLARED_SNAPSHOT (a new or changed declaration needs classifying)", () => {
     const sequelize = new Sequelize("none", "none", "none", { dialect: "mysql" });
     initModels(sequelize);
     const declared: string[] = [];
@@ -205,7 +205,7 @@ describe("the declared set is pinned", () => {
       }
     }
     expect(declared.sort()).toEqual([...DECLARED_SNAPSHOT].sort());
-    expect(DECLARED_SNAPSHOT).toHaveLength(47);
+    expect(DECLARED_SNAPSHOT).toHaveLength(50);
   });
 });
 

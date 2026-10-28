@@ -1,4 +1,5 @@
 import AdmZip from "adm-zip";
+import { createHash } from "crypto";
 import {
   csvBytes, gifBytes, jpgBytes, mp3Bytes, mp4Bytes, odfBytes, ooxmlBytes, pdfBytes, pngBytes,
 } from "src/test-support/synthetic-media";
@@ -33,6 +34,7 @@ import { LevelModule } from "./level/level.module";
 import { QuestionModule } from "./question/question.module";
 import { QuestionTagModule } from "./questiontag/questiontag.module";
 import { SubjectModule } from "./subject/subject.module";
+import { TranslationsModule } from "./translations/translations.module";
 
 /**
  * Content is confined to its organisation (content-scope.ts). Driven over real HTTP through the real strategy,
@@ -190,7 +192,7 @@ describe("content is confined to the caller's organisation", () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         SubjectModule, CurriculumModule, DocumentTagModule, QuestionTagModule, DocumentModule, QuestionModule, GradeModule,
-        LevelModule, LessonModule, ExportModule, CurriculumBaseLineModule, FeedbackModule, BaselinequestionModule,
+        LevelModule, LessonModule, ExportModule, CurriculumBaseLineModule, FeedbackModule, BaselinequestionModule, TranslationsModule,
       ],
       providers: [JwtAccessStrategy],
     }).compile();
@@ -4215,6 +4217,341 @@ describe("content is confined to the caller's organisation", () => {
   });
 
   // ───────────────────────────── the other tokens ─────────────────────────────
+  // ───────────────────── translations of content text (bilingual content) ─────────────────────
+  // A translation belongs to the organisation that owns the row it translates. The row in the path is the one checked;
+  // another organisation's row and an unowned one answer as an absent one does; the permission of the row's own kind
+  // (update_lesson, update_question, ...) is asked first. The organisation's content language is what a translation differs from.
+  describe("translations", () => {
+    const OPT1 = "11111111-1111-4111-8111-111111111111-opt-1";
+    const OPT2 = "22222222-2222-4222-8222-222222222222-opt-2";
+    const DIS1 = "33333333-3333-4333-8333-333333333333";
+    // a text the other specs already use (Khmer, with subscript marks); a translation keeps it byte for byte
+    const KM_TEXT = "ពិពណ៌នា";
+    const sha = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+    const url = (table: string, id: string) => `/translations/${table}/${id}`;
+    const lessonName = (t: Tree) => t.names.lesson + t.tag;
+    const BODY = { language: "km", fields: { lessonname: KM_TEXT } };
+    const translationsOf = (rows: Row[] = db.tables.contenttranslations) => rows.map((t) => ({ table: t.tablename, row: t.rowid, field: t.field, subkey: t.subkey, language: t.language, text: t.text }));
+    const asUser = (permissions: string[], organisationid: string | null = X) =>
+      bearer({ lmsuserid: "u", lmsuserroles: [Role.admin], permissions, organisationid, isplatform: false });
+    const sendAs = (token: string, method: Method, path: string, body?: object) => {
+      const r2 = request(app.getHttpServer())[method](path).set("Authorization", token).set("Connection", "close");
+      return body ? r2.send(body) : r2;
+    };
+    const addTranslation = (t: Tree, table: string, rowid: string, field: string, subkey: string, language: string, text: string, base: string) =>
+      db.add("contenttranslations", {
+        translationid: uuid(Number(rowid.slice(-12)) * 10 + (field.length % 7) + (language === "km" ? 0 : 5) + subkey.length),
+        organisationid: t.owner, tablename: table, rowid, field, subkey, language, text, sourcehash: sha(base), lastupdated: new Date("2026-10-01"),
+      });
+
+    beforeEach(() => {
+      db.add("organisations", { organisationid: X, contentlanguage: "en" });
+      db.add("organisations", { organisationid: Y, contentlanguage: "en" });
+      for (const t of [TX, TY]) {
+        const q = stored("questions", "questionid", t.question);
+        q.questionheading = { headingtext: "Heading" };
+        q.questionoptions = [
+          { questionoptionid: OPT1, questionoptiontext: "Cat", questionoptioniscorrect: true, questionoptionsequence: 1 },
+          { questionoptionid: OPT2, questionoptiontext: "Dog", questionoptioniscorrect: false, questionoptionsequence: 2, questionassociate: { questionoptionid: OPT2, questionassociatetext: "Bark" } },
+        ];
+        q.questiondistractors = [{ questiondistractorid: DIS1, questiondistractortext: "Fish" }];
+        q.questionfeedback = { correctmessage: "Well done", incorrectmessage: "Try again" };
+      }
+    });
+
+    describe("PUT /translations/:tablename/:rowid", () => {
+      it.each(IN_X)("%s: saves a translation of X's lesson name in X's name, with the hash of the name as it is now", async (who) => {
+        const res = await send(who, "put", url("lessons", TX.lesson), BODY);
+        expect(res.status).toBe(200);
+        expect(db.created).toHaveLength(1);
+        expect(db.createdIn("contenttranslations")).toEqual([
+          {
+            translationid: expect.stringMatching(/^[0-9a-f-]{36}$/), organisationid: X, tablename: "lessons", rowid: TX.lesson, field: "lessonname", subkey: "",
+            language: "km", text: KM_TEXT, sourcehash: sha(lessonName(TX)), lastupdated: expect.any(Date),
+          },
+        ]);
+        expect(withoutReference(res.body)).toEqual({
+          error: false,
+          data: {
+            tablename: "lessons", rowid: TX.lesson, contentlanguage: "en",
+            translations: [expect.objectContaining({ field: "lessonname", subkey: "", language: "km", text: KM_TEXT, sourcehash: sha(lessonName(TX)), stale: false })],
+          },
+        });
+      });
+      it.each(IN_X)("%s: a question's option, partner, distractor, heading and feedback are translated by their ids, each with the hash of its own text", async (who) => {
+        const fields = {
+          [`questionoptiontext.${OPT1}`]: "Cat in km",
+          [`questionassociatetext.${OPT2}`]: "Bark in km",
+          [`questiondistractortext.${DIS1}`]: "Fish in km",
+          headingtext: "Heading in km",
+          "feedback.correctmessage": "Well done in km",
+          "feedback.incorrectmessage": "Try again in km",
+          questiontext: "Hello in km",
+        };
+        const res = await send(who, "put", url("questions", TX.question), { language: "km", fields });
+        expect(res.status).toBe(200);
+        const byKey = Object.fromEntries(db.createdIn("contenttranslations").map((t) => [t.subkey ? `${t.field}.${t.subkey}` : t.field, t]));
+        expect(Object.keys(byKey).sort()).toEqual(Object.keys(fields).sort());
+        expect(byKey[`questionoptiontext.${OPT1}`]).toMatchObject({ organisationid: X, tablename: "questions", rowid: TX.question, text: "Cat in km", sourcehash: sha("Cat") });
+        expect(byKey[`questionassociatetext.${OPT2}`]).toMatchObject({ sourcehash: sha("Bark") });
+        expect(byKey[`questiondistractortext.${DIS1}`]).toMatchObject({ sourcehash: sha("Fish") });
+        expect(byKey.headingtext).toMatchObject({ sourcehash: sha("Heading") });
+        expect(byKey["feedback.correctmessage"]).toMatchObject({ sourcehash: sha("Well done") });
+        expect(byKey["feedback.incorrectmessage"]).toMatchObject({ sourcehash: sha("Try again") });
+        expect(byKey.questiontext).toMatchObject({ sourcehash: sha("សួស្តី") });
+      });
+      it.each(IN_X)("%s: saving again updates the row in place (the same id) with the new text and the hash of the text now", async (who) => {
+        await send(who, "put", url("lessons", TX.lesson), BODY);
+        const first = { ...db.tables.contenttranslations[0] };
+        stored("lessons", "lessonid", TX.lesson).lessonname = "Renamed";
+        const res = await send(who, "put", url("lessons", TX.lesson), { language: "km", fields: { lessonname: "Second text" } });
+        expect(res.status).toBe(200);
+        expect(db.tables.contenttranslations).toHaveLength(1);
+        expect(db.created).toHaveLength(1);
+        expect(db.tables.contenttranslations[0]).toMatchObject({ translationid: first.translationid, text: "Second text", sourcehash: sha("Renamed") });
+        expect(res.body.data.translations[0].stale).toBe(false);
+      });
+      it.each(IN_X)("%s: Y's lesson and an unowned lesson answer as an absent one does, nothing written", async (who) => {
+        expect(await asAbsent(who, "put", (id) => r(url("lessons", id), BODY), TY.lesson, TU.lesson)).toBe(404);
+        expect(await asAbsent(who, "put", (id) => r(url("questions", id), { language: "km", fields: { questiontext: "x" } }), TY.question, TU.question)).toBe(404);
+      });
+      it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
+        expect(await asAbsentPath(who, "put", (id) => r(url("lessons", id), BODY), "rowid", TX.lesson, TY.lesson)).toBe(404);
+      });
+      it.each(IN_X)("%s: a deleted lesson answers as an absent one does", async (who) => {
+        stored("lessons", "lessonid", TX.lesson).isdeleted = true;
+        const res = await refuses(who, "put", url("lessons", TX.lesson), BODY);
+        expect(res.status).toBe(404);
+      });
+      it("a platform user not acting: Y's lesson is translated under Y; an unowned lesson is refused (400), nothing written", async () => {
+        const res = await send(NOT_ACTING, "put", url("lessons", TY.lesson), BODY);
+        expect(res.status).toBe(200);
+        expect(db.createdIn("contenttranslations")).toEqual([expect.objectContaining({ organisationid: Y, rowid: TY.lesson, sourcehash: sha(lessonName(TY)) })]);
+        const refused = await refuses(NOT_ACTING, "put", url("lessons", TU.lesson), BODY);
+        expect(refused.status).toBe(400);
+      });
+      it.each(IN_X)("%s: an organisation with no content language is refused (400), nothing written", async (who) => {
+        stored("organisations", "organisationid", X).contentlanguage = null;
+        const res = await refuses(who, "put", url("lessons", TX.lesson), BODY);
+        expect(res.status).toBe(400);
+        expect(res.body.errormessage).toBe("Set the organisation's content language first.");
+      });
+      it.each([["en"], ["EN"], ["En"]])("the organisation's own content language (%s, in any case) is refused (400), nothing written", async (language) => {
+        const res = await refuses("X's Organisation Admin", "put", url("lessons", TX.lesson), { language, fields: { lessonname: "x" } });
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual([{ field: "language", message: "That is the organisation's own content language: its text is the row's own text, not a translation." }]);
+      });
+      it("a language is stored as its primary subtag in lower case", async () => {
+        await send("X's Organisation Admin", "put", url("lessons", TX.lesson), { language: "KM", fields: { lessonname: "x" } });
+        await send("X's Organisation Admin", "put", url("lessons", TX.lesson2), { language: "PT-BR", fields: { lessonname: "x" } });
+        expect(db.createdIn("contenttranslations").map((t) => t.language)).toEqual(["km", "pt-BR"]);
+      });
+      it.each([
+        [21, "questionoptiontext", `questionoptiontext.${OPT1}`],
+        [21, "questiontext", "questiontext"],
+        [8, "questiontext", "questiontext"],
+        [23, "questiontext", "questiontext"],
+      ])("a text an answer is graded by is refused (400), nothing written: template %s %s", async (template, _field, key) => {
+        stored("questions", "questionid", TX.question).templatetypeid = template;
+        const res = await refuses("X's Organisation Admin", "put", url("questions", TX.question), { language: "km", fields: { [key]: "x" } });
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual([{ field: `fields.${key}`, message: "A text that an answer is graded by can't be translated." }]);
+      });
+      it("the option text of template 23 and of a template that grades by id is translatable", async () => {
+        stored("questions", "questionid", TX.question).templatetypeid = 23;
+        expect((await send("X's Organisation Admin", "put", url("questions", TX.question), { language: "km", fields: { [`questionoptiontext.${OPT1}`]: "x" } })).status).toBe(200);
+      });
+      it.each([
+        ["a field that is not on the list", { lessonstatus: "x" }],
+        ["a subkey on a plain field", { "lessonname.extra": "x" }],
+        ["an empty text", { lessonname: "" }],
+        ["a text of more than 65535 bytes", { lessonname: "x".repeat(65536) }],
+        ["a lesson with no description to translate", { lessondescription: "x" }],
+      ])("%s is refused (400), nothing written", async (_what, fields) => {
+        // the second lesson of the tree has no description
+        const target = _what === "a lesson with no description to translate" ? TX.lesson2 : TX.lesson;
+        const res = await refuses("X's Organisation Admin", "put", url("lessons", target), { language: "km", fields });
+        expect(res.status).toBe(400);
+      });
+      it.each([
+        ["an option the question does not have", { "questionoptiontext.nope": "x" }],
+        ["an option with no id named", { questionoptiontext: "x" }],
+        ["a feedback message that does not exist", { "feedback.otherkey": "x" }],
+        ["feedback with no message named", { feedback: "x" }],
+        ["a subkey longer than 64 characters", { [`questionoptiontext.${"a".repeat(65)}`]: "x" }],
+        ["a partner of an option that has none", { [`questionassociatetext.${OPT1}`]: "x" }],
+        ["a distractor the question does not have", { "questiondistractortext.nope": "x" }],
+      ])("a question's %s is refused (400), nothing written", async (_what, fields) => {
+        const res = await refuses("X's Organisation Admin", "put", url("questions", TX.question), { language: "km", fields });
+        expect(res.status).toBe(400);
+      });
+      it("a request that translates one text wrongly saves none of the others", async () => {
+        const res = await refuses("X's Organisation Admin", "put", url("questions", TX.question), { language: "km", fields: { headingtext: "ok", "feedback.otherkey": "x" } });
+        expect(res.status).toBe(400);
+      });
+      it.each([
+        [{ language: "x", fields: { lessonname: "x" } }],
+        [{ language: "km" }],
+        [{ language: "km", fields: {} }],
+        [{ fields: { lessonname: "x" } }],
+        [{ language: "km", fields: { lessonname: 5 } }],
+        [{ language: "km", fields: { lessonname: "x" }, organisationid: Y }],
+      ])("a malformed body %j is refused (400), nothing written", async (body) => {
+        const res = await refuses("X's Organisation Admin", "put", url("lessons", TX.lesson), body);
+        expect(res.status).toBe(400);
+      });
+      it("a table that is not translatable, and an id that is not an id, are refused (400)", async () => {
+        expect((await refuses("X's Organisation Admin", "put", url("documents", TX.document), BODY)).status).toBe(400);
+        expect((await refuses("X's Organisation Admin", "put", url("lessons", "not-an-id"), BODY)).status).toBe(400);
+      });
+      it("a body naming __proto__ is refused, nothing written", async () => {
+        const res = await refuses("X's Organisation Admin", "put", url("lessons", TX.lesson), JSON.parse('{"language":"km","fields":{"__proto__":"x"}}'));
+        expect(res.status).toBe(400);
+      });
+      it("the permission of the row's own kind is asked: update_lesson allows a lesson (200) and not a question (403), and update_question the reverse", async () => {
+        const lessonEditor = asUser(["update_lesson"]);
+        expect((await sendAs(lessonEditor, "put", url("lessons", TX.lesson), BODY)).status).toBe(200);
+        const before = db.snapshot();
+        const refused = await sendAs(lessonEditor, "put", url("questions", TX.question), { language: "km", fields: { questiontext: "x" } });
+        expect(refused.status).toBe(403);
+        expect(db.snapshot()).toEqual(before);
+        const questionEditor = asUser(["update_question"]);
+        expect((await sendAs(questionEditor, "put", url("questions", TX.question), { language: "km", fields: { headingtext: "x" } })).status).toBe(200);
+        expect((await sendAs(questionEditor, "put", url("lessons", TX.lesson2), BODY)).status).toBe(403);
+      });
+      it("a lesson plan is translated with the learning-item permission, as the plan routes are written", async () => {
+        const res = await sendAs(asUser(["update_lessonlearning"]), "put", url("lessonplans", TX.plan), { language: "km", fields: { lessonplanname: "x" } });
+        expect(res.status).toBe(200);
+        expect(db.createdIn("contenttranslations")).toEqual([expect.objectContaining({ tablename: "lessonplans", field: "lessonplanname", sourcehash: sha("Plan " + TX.tag) })]);
+      });
+      it("a staff user who may only view is refused (403) before the row is looked up: an absent id and a real one answer alike", async () => {
+        const viewer = asUser(["view_lesson", "view_question"]);
+        const real = await sendAs(viewer, "put", url("lessons", TX.lesson), BODY);
+        const absent = await sendAs(viewer, "put", url("lessons", MISSING), BODY);
+        expect(real.status).toBe(403);
+        expect(said(absent)).toEqual(said(real));
+        expect(db.created).toEqual([]);
+      });
+      it("a school-user token and the server token are refused, nothing written", async () => {
+        for (const who of ["a school-user token", "a server token"] as Who[]) {
+          const res = await refuses(who, "put", url("lessons", TX.lesson), BODY);
+          expect([401, 403]).toContain(res.status);
+        }
+      });
+    });
+
+    describe("GET /translations/:tablename/:rowid", () => {
+      beforeEach(() => {
+        addTranslation(TX, "lessons", TX.lesson, "lessonname", "", "km", KM_TEXT, lessonName(TX));
+        addTranslation(TX, "lessons", TX.lesson, "lessonname", "", "fr", "Leçon", lessonName(TX));
+        addTranslation(TX, "lessons", TX.lesson, "lessondescription", "", "km", "x", "ពិពណ៌នា");
+        addTranslation(TX, "lessons", TX.lesson2, "lessonname", "", "km", "other lesson", "Second " + TX.tag);
+        addTranslation(TY, "lessons", TY.lesson, "lessonname", "", "km", "Y's", lessonName(TY));
+      });
+      it.each(IN_X)("%s: lists the row's translations in every language, none of another row's or another organisation's", async (who) => {
+        const res = await send(who, "get", url("lessons", TX.lesson));
+        expect(res.status).toBe(200);
+        expect(res.body.data.contentlanguage).toBe("en");
+        expect(res.body.data.translations.map((t: Row) => [t.language, t.field, t.text, t.stale])).toEqual([
+          ["fr", "lessonname", "Leçon", false],
+          ["km", "lessondescription", "x", false],
+          ["km", "lessonname", KM_TEXT, false],
+        ]);
+        expect(JSON.stringify(res.body)).not.toContain("Y's");
+        expect(JSON.stringify(res.body)).not.toContain("other lesson");
+      });
+      it.each(IN_X)("%s: a translation whose text has changed is stale, and one whose text is unchanged is not", async (who) => {
+        stored("lessons", "lessonid", TX.lesson).lessonname = "Renamed";
+        const res = await send(who, "get", url("lessons", TX.lesson));
+        expect(res.body.data.translations.map((t: Row) => [t.language, t.field, t.stale])).toEqual([
+          ["fr", "lessonname", true],
+          ["km", "lessondescription", false],
+          ["km", "lessonname", true],
+        ]);
+      });
+      it.each(IN_X)("%s: Y's lesson and an unowned lesson answer as an absent one does", async (who) => {
+        expect(await asAbsent(who, "get", (id) => r(url("lessons", id)), TY.lesson, TU.lesson)).toBe(404);
+      });
+      it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
+        expect(await asAbsentPath(who, "get", (id) => r(url("lessons", id)), "rowid", TX.lesson, TY.lesson)).toBe(404);
+      });
+      it("a translation of an option that has since been removed is stale", async () => {
+        addTranslation(TX, "questions", TX.question, "questionoptiontext", OPT1, "km", "Cat in km", "Cat");
+        addTranslation(TX, "questions", TX.question, "questionoptiontext", OPT2, "km", "Dog in km", "Dog");
+        const q = stored("questions", "questionid", TX.question);
+        q.questionoptions = (q.questionoptions as Row[]).filter((o) => o.questionoptionid !== OPT2);
+        const res = await send("X's Organisation Admin", "get", url("questions", TX.question));
+        expect(res.body.data.translations.map((t: Row) => [t.subkey, t.stale])).toEqual([[OPT1, false], [OPT2, true]]);
+      });
+      it("a platform user not acting reads any organisation's row, an unowned row has none", async () => {
+        const y = await send(NOT_ACTING, "get", url("lessons", TY.lesson));
+        expect(y.body.data.translations.map((t: Row) => t.text)).toEqual(["Y's"]);
+        const unowned = await send(NOT_ACTING, "get", url("lessons", TU.lesson));
+        expect(unowned.body.data).toEqual({ tablename: "lessons", rowid: TU.lesson, contentlanguage: null, translations: [] });
+      });
+      it("the view permission of the row's own kind is asked (403 without it)", async () => {
+        expect((await sendAs(asUser(["view_lesson"]), "get", url("lessons", TX.lesson))).status).toBe(200);
+        expect((await sendAs(asUser(["view_lesson"]), "get", url("questions", TX.question))).status).toBe(403);
+        expect((await sendAs(asUser(["update_lesson"]), "get", url("lessons", TX.lesson))).status).toBe(403);
+      });
+      it("a school-user token and the server token are refused", async () => {
+        for (const who of ["a school-user token", "a server token"] as Who[]) {
+          expect([401, 403]).toContain((await send(who, "get", url("lessons", TX.lesson))).status);
+        }
+      });
+    });
+
+    describe("DELETE /translations/:tablename/:rowid/:language", () => {
+      beforeEach(() => {
+        addTranslation(TX, "lessons", TX.lesson, "lessonname", "", "km", KM_TEXT, lessonName(TX));
+        addTranslation(TX, "lessons", TX.lesson, "lessondescription", "", "km", "x", "ពិពណ៌នា");
+        addTranslation(TX, "lessons", TX.lesson, "lessonname", "", "fr", "Leçon", lessonName(TX));
+        addTranslation(TX, "lessons", TX.lesson2, "lessonname", "", "km", "other lesson", "Second " + TX.tag);
+        addTranslation(TY, "lessons", TY.lesson, "lessonname", "", "km", "Y's", lessonName(TY));
+      });
+      it.each(IN_X)("%s: removes every translation of the row in that language, and nothing else", async (who) => {
+        const res = await send(who, "delete", `${url("lessons", TX.lesson)}/km`);
+        expect(res.status).toBe(200);
+        expect(withoutReference(res.body)).toEqual({ error: false, data: { tablename: "lessons", rowid: TX.lesson, language: "km", deleted: 2 } });
+        expect(translationsOf().map((t) => [t.row, t.language])).toEqual([
+          [TX.lesson, "fr"],
+          [TX.lesson2, "km"],
+          [TY.lesson, "km"],
+        ]);
+      });
+      it("a language in capitals names the stored one; deleting none is not an error", async () => {
+        expect((await send("X's Organisation Admin", "delete", `${url("lessons", TX.lesson)}/KM`)).body.data.deleted).toBe(2);
+        const none = await refuses("X's Organisation Admin", "delete", `${url("lessons", TX.lesson)}/de`);
+        expect(none.status).toBe(200);
+        expect(none.body.data.deleted).toBe(0);
+      });
+      it.each(IN_X)("%s: Y's lesson and an unowned lesson answer as an absent one does, nothing deleted", async (who) => {
+        expect(await asAbsent(who, "delete", (id) => r(`${url("lessons", id)}/km`), TY.lesson, TU.lesson)).toBe(404);
+      });
+      it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
+        expect(await asAbsentPath(who, "delete", (id) => r(`${url("lessons", id)}/km`), "rowid", TX.lesson, TY.lesson)).toBe(404);
+      });
+      it("a platform user not acting deletes any organisation's", async () => {
+        expect((await send(NOT_ACTING, "delete", `${url("lessons", TY.lesson)}/km`)).body.data.deleted).toBe(1);
+        expect(translationsOf().filter((t) => t.row === TY.lesson)).toEqual([]);
+      });
+      it("the update permission of the row's own kind is asked (403 without it), nothing deleted", async () => {
+        const before = db.snapshot();
+        expect((await sendAs(asUser(["view_lesson"]), "delete", `${url("lessons", TX.lesson)}/km`)).status).toBe(403);
+        expect((await sendAs(asUser(["update_question"]), "delete", `${url("lessons", TX.lesson)}/km`)).status).toBe(403);
+        expect(db.snapshot()).toEqual(before);
+        expect((await sendAs(asUser(["update_lesson"]), "delete", `${url("lessons", TX.lesson)}/km`)).status).toBe(200);
+      });
+      it("a school-user token and the server token are refused, nothing deleted", async () => {
+        for (const who of ["a school-user token", "a server token"] as Who[]) {
+          const res = await refuses(who, "delete", `${url("lessons", TX.lesson)}/km`);
+          expect([401, 403]).toContain(res.status);
+        }
+      });
+    });
+  });
+
+
   describe("the application's server token", () => {
     it.each([
       ["get", "/curriculum/all"],

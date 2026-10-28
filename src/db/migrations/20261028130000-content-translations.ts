@@ -99,9 +99,6 @@ module.exports = {
   up: (queryInterface: QueryInterface): Promise<void> =>
     queryInterface.sequelize.transaction(async (transaction: Transaction) => {
       const names = await tableNameList(queryInterface);
-      if (!names.includes("organisations")) {
-        throw new Error("organisations must exist before the contenttranslations table. Run the earlier migrations first.");
-      }
       const wanted = await tableOptionsMatchingColumn(queryInterface, "organisations", "organisationid");
       if (!names.includes(TABLE)) {
         await queryInterface.createTable(

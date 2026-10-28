@@ -166,13 +166,6 @@ describe("B-2 up()", () => {
     expect(db.organisationColumns.has("contentlanguage")).toBe(true);
   });
 
-  it("refuses, changing nothing, when organisations is not there", async () => {
-    const db = makeQI({ tables: [] });
-    await expect(migration.up(db.qi)).rejects.toThrow(/organisations must exist/);
-    expect(db.raw.createTable).not.toHaveBeenCalled();
-    expect(db.raw.addColumn).not.toHaveBeenCalled();
-  });
-
   it("stops with a message, changing nothing, when a populated table has organisationid in the wrong collation", async () => {
     const db = makeQI({
       tables: ["organisations", "contenttranslations"],
