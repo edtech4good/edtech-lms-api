@@ -1,4 +1,5 @@
 import { baselinequestion } from "src/models/data-models/baselinequestion";
+import { contenttranslations } from "src/models/data-models/contenttranslations";
 import { countries } from "src/models/data-models/countries";
 import { curriculumbaseline } from "src/models/data-models/curriculumbaseline";
 import { curriculumcountry } from "src/models/data-models/curriculumcountry";
@@ -60,6 +61,9 @@ import { rowMatches, withPrimaryKey } from "./fakewhere";
  * that must have written nothing (an update writes no `created` entry).
  * The columns in `IGNORE_CASE` are compared without regard to case, as MySQL's
  * default collation does.
+ * A table in `UNIQUE_KEYS` has a unique key besides its primary key (`contenttranslations`, compared without regard to case,
+ * as its collation does): `create` of a row that holds a stored row's key throws, as MySQL's duplicate-key error does, and
+ * `bulkCreate` with `updateOnDuplicate` finds the stored row by that key (and records a `created` entry only for a row it adds).
  */
 type Row = Record<string, unknown>;
 
@@ -85,6 +89,7 @@ const MODELS = {
   curriculumbaseline: [curriculumbaseline, "curriculumbaselineid"],
   curriculumcountry: [curriculumcountry, "curriculumcountryid"],
   curriculumpublications: [curriculumpublications, "publicationid"],
+  contenttranslations: [contenttranslations, "translationid"],
   feedbacks: [feedbacks, "feedbackid"],
   schools: [schools, "schoolid"],
   countries: [countries, "countryid"],
@@ -211,6 +216,9 @@ interface FindOptions {
   limit?: number;
   offset?: number;
   raw?: boolean;
+  /** A locking read reads the same rows here: the fake has one connection and no snapshots. */
+  lock?: unknown;
+  transaction?: unknown;
 }
 
 /** `attributes` as Sequelize reads it: a list of columns, or `{ exclude }`; anything fancier (an aggregate) leaves the row whole. */
@@ -228,6 +236,11 @@ const project = (row: Row, attributes: unknown): Row => {
 export type ContentTable = keyof typeof MODELS;
 
 const IGNORE_CASE = ["questiontagname", "documenttagname"];
+// unique keys other than the primary key (compared case-insensitively, as the tables' collations do)
+const UNIQUE_KEYS: Partial<Record<ContentTable, readonly string[]>> = {
+  contenttranslations: ["tablename", "rowid", "field", "subkey", "language"],
+};
+const lower = (v: unknown) => String(v ?? "").toLowerCase();
 // what the wrapper adds to a row: never copied back into it
 const INSTANCE_ONLY = new Set(["get", "getDataValue", "setDataValue", "save", "reload", "update", "destroy", "toJSON", "getGrade"]);
 
@@ -418,8 +431,13 @@ export class ContentFake {
         }
         return o?.include ? find(o).length : match(o?.where).length;
       }) as never);
+      const unique = UNIQUE_KEYS[name];
+      const sameKey = (a: Row, b: Row) => lower(a[key]) === lower(b[key]) || (unique !== undefined && unique.every((c) => lower(a[c]) === lower(b[c])));
       jest.spyOn(m, "create" as never).mockImplementation((async (attrs: Row) => {
         const row = { ...attrs };
+        if (unique !== undefined && rows().some((r) => sameKey(r, row))) {
+          throw Object.assign(new Error("Validation error"), { name: "SequelizeUniqueConstraintError" });
+        }
         this.created.push({ table: name, row });
         rows().push(row);
         return this.wrap(name, row);
@@ -437,12 +455,17 @@ export class ContentFake {
       jest.spyOn(m, "bulkCreate" as never).mockImplementation((async (list: Row[], o?: { updateOnDuplicate?: ReadonlyArray<string> }) => {
         for (const attrs of list) {
           const row = { ...attrs };
-          this.created.push({ table: name, row });
           // with `updateOnDuplicate`, a row that has the key of a stored row sets the listed fields of that row and nothing else, as MySQL does
-          const stored = o?.updateOnDuplicate ? rows().find((r) => String(r[key]).toLowerCase() === String(row[key]).toLowerCase()) : undefined;
+          const stored = o?.updateOnDuplicate ? rows().find((r) => (unique !== undefined ? sameKey(r, row) : lower(r[key]) === lower(row[key]))) : undefined;
           if (stored) {
             for (const field of o!.updateOnDuplicate!) if (field in row) stored[field] = row[field];
+            // a table with a unique key records only what it adds (the update of a stored row is not a creation)
+            if (unique === undefined) this.created.push({ table: name, row });
           } else {
+            if (unique !== undefined && rows().some((r) => sameKey(r, row))) {
+              throw Object.assign(new Error("Validation error"), { name: "SequelizeUniqueConstraintError" });
+            }
+            this.created.push({ table: name, row });
             rows().push(row);
           }
         }

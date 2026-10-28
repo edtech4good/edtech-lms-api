@@ -1,4 +1,5 @@
 import joi from "joi";
+import { LANGUAGE_CODE } from "src/constants/content-translations";
 import { RequestValidator } from "../../models/RequestValidator";
 
 /**
@@ -140,6 +141,13 @@ const countryids = joi
   .required()
   .label("Country IDs");
 
+/**
+ * The language of the organisation's content text (the base language of its translations): 2 to 8 letters, digits and
+ * hyphens, the student API's own rule for a language code (it refuses what this accepts not), or null for "none yet".
+ * Stored as its primary subtag in lower case.
+ */
+const contentlanguage = joi.string().pattern(LANGUAGE_CODE).allow(null).label("Content language");
+
 const organisationid = joi.string().required().uuid().label("Organisation ID");
 
 export const createorganisation: RequestValidator = {
@@ -173,6 +181,7 @@ export const updateorganisation: RequestValidator = {
     uitheme: uitheme.optional(),
     brandingconfig: brandingconfig.optional(),
     organisationstatus: joi.boolean().strict().optional().label("Status"),
+    contentlanguage: contentlanguage.optional(),
     countryids,
     // The code and the preset cannot be changed. They are accepted here only so
     // that a form which sends the whole record back is not refused for a value

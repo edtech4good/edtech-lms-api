@@ -1,7 +1,20 @@
 import { Op } from "sequelize";
 import { Logger } from "src/config";
+import {
+  FEEDBACK_KEYS,
+  LANGUAGE_CODE,
+  NO_SUBKEY,
+  SUBKEYED_FIELDS,
+  SUBKEY_MAX_LENGTH,
+  TRANSLATABLE_FIELDS,
+  TRANSLATION_TABLES,
+  TRANSLATION_TEXT_MAX_BYTES,
+  isAnswerBearing,
+  normaliseLanguage,
+} from "src/constants/content-translations";
 import { OrgContext } from "src/decorators/org.decorator";
 import { ApiError } from "src/models/ApiError";
+import { contenttranslations } from "src/models/data-models/contenttranslations";
 import { countries } from "src/models/data-models/countries";
 import { organisationcountry } from "src/models/data-models/organisationcountry";
 import { organisations } from "src/models/data-models/organisations";
@@ -22,7 +35,7 @@ import { LessonQuizBusiness } from "./lessonquiz.business";
 import { LessonQuizQuestionBusiness } from "./lessonquizquestion.business";
 import { LevelBusiness } from "./level.business";
 import { LevelQuizQuestionBusiness } from "./levelquizquestion.business";
-import { ownedWhere } from "./org-scope";
+import { ownedWhere, scopeOf } from "./org-scope";
 import { QuestionBusiness } from "./question.business";
 import { inOwnedSchools } from "./school-scope";
 import { SubjectBusiness } from "./subject.business";
@@ -35,6 +48,14 @@ import { SubjectBusiness } from "./subject.business";
  *   organisations: [ <the organisation's row> ],
  *   <every table below, an empty list when the organisation has none> }
  * ```
+ *
+ * `contenttranslations` (bilingual content) is the LAST key. Its rows are translations of learner-visible text of rows
+ * of the payload: a polymorphic parent `(tablename, rowid)` over the nine translatable tables (see SHAPE). What the
+ * student API REFUSES, central does not send: translations when the organisation has no `contentlanguage`, rows in
+ * that language, rows for a table, field, subkey or text the student API's rules do not allow, and rows for a field an
+ * answer is graded by on the question's template as it is NOW (`exportableTranslations`); and `confine` DROPS (with a
+ * count in the log, never an error) a translation whose parent row is not in the payload, where the student API
+ * refuses it. The organisation's row carries `contentlanguage`.
  *
  * A learning item (`lessonlearnings`) ships whole: its type and body are columns of the row. The documents an item
  * references beyond its own `documentid` ship in `lessonlearningdocuments` (a link row each), which hangs from the item
@@ -86,6 +107,8 @@ export const CONTENT_TABLE_KEYS = [
   "lessonpracticequestions",
   "lessonquizquestions",
   "levelquizquestions",
+  // translations of text of rows above; last, so that every parent comes before it
+  "contenttranslations",
 ] as const;
 export type ContentTableKey = (typeof CONTENT_TABLE_KEYS)[number];
 
@@ -100,6 +123,11 @@ export interface Shape {
   parent?: Reference;
   /** Other rows it names, which must be in the payload too. */
   refs?: Reference[];
+  /**
+   * A row that names its parent by a table name column and an id column over an allow-list of tables (translations):
+   * `confine` leaves it out when the table is not on the list or the parent is not a row of the payload.
+   */
+  polymorphic?: { tablefield: string; idfield: string; tables: readonly string[] };
 }
 
 // What the student API requires of the payload (organisation-content.validator.ts there: CONTENT_TABLES).
@@ -147,6 +175,8 @@ export const SHAPE: Record<ContentTableKey, Shape> = {
       { fk: "lessonid", to: "lessons", optional: true },
     ],
   },
+  // owned by the organisation, with a polymorphic parent over the translatable tables (the student API's CONTENT_TABLES says the same)
+  contenttranslations: { pk: "translationid", polymorphic: { tablefield: "tablename", idfield: "rowid", tables: TRANSLATION_TABLES } },
 };
 
 /**
@@ -195,6 +225,7 @@ const NOUN: Record<ContentTableKey, string> = {
   lessonpracticequestions: "lesson practice question",
   lessonquizquestions: "lesson quiz question",
   levelquizquestions: "level quiz question",
+  contenttranslations: "translation",
 };
 
 const ORGANISATION_CODE = /^[a-z0-9]{2,16}$/;
@@ -260,6 +291,27 @@ export const confine = (given: Partial<Record<ContentTableKey, Row[]>>): Partial
     const kept = list.filter((r) => {
       const id = keyOf(r[parent.fk]);
       return id !== null && parents.has(id);
+    });
+    if (kept.length !== list.length) {
+      dropped.push(`${key}: ${list.length - kept.length}`);
+      tables[key] = kept;
+    }
+  }
+  // A row with a polymorphic parent (a translation) hangs from the row named by its table and id columns. It is left
+  // out when it names a table that may not have such rows, or a row that is not in the payload (the tables are those
+  // of the payload already trimmed above, parents first). A table that was not given cannot be checked, as above.
+  for (const key of CONTENT_TABLE_KEYS) {
+    const list = tables[key];
+    const poly = SHAPE[key].polymorphic;
+    if (list === undefined || poly === undefined) continue;
+    const parentIds = new Map<string, Set<string> | undefined>(poly.tables.map((t) => [t, idsIn(t as ContentTableKey)]));
+    const kept = list.filter((r) => {
+      const table = r[poly.tablefield];
+      if (typeof table !== "string" || !parentIds.has(table)) return false;
+      const ids = parentIds.get(table);
+      if (ids === undefined) return true;
+      const id = keyOf(r[poly.idfield]);
+      return id !== null && ids.has(id);
     });
     if (kept.length !== list.length) {
       dropped.push(`${key}: ${list.length - kept.length}`);
@@ -336,6 +388,8 @@ export interface OrganisationRow {
   uitheme: string;
   brandingconfig: object | null;
   settingsconfig: object | null;
+  /** The language of the organisation's content text (the base language of its translations); null = no translations yet. */
+  contentlanguage: string | null;
   isdeleted: boolean;
 }
 
@@ -365,11 +419,100 @@ export const organisationRowOf = (organisation: organisations): OrganisationRow 
     uitheme: organisation.uitheme,
     brandingconfig: organisation.brandingconfig ?? null,
     settingsconfig: organisation.settingsconfig ?? null,
+    contentlanguage: organisation.contentlanguage ?? null,
     isdeleted: isTrue(organisation.isdeleted),
   };
 };
 
-/** The content tables that hang from the organisation's curriculums or are drawn on by them (every table but the four the organisation owns outright). */
+// ---- translations -------------------------------------------------------------------------------
+
+const REASONS = {
+  noLanguage: "the organisation has no content language",
+  baseLanguage: "in the organisation's own content language",
+  table: "a table or field that is not translatable",
+  answer: "a field an answer is graded by",
+  subkey: "a subkey that does not follow the field's rule",
+  value: "a language, text, hash or date the student API would refuse",
+} as const;
+
+/**
+ * The translation rows the student API will ACCEPT, out of the organisation's own. It refuses a payload for every row
+ * it finds wrong, so central leaves those out instead (a count per reason in the log, never the rows): all of them
+ * when the organisation has no content language (`contentlanguage`), a row in that language (the columns already hold
+ * it), a table or field that is not on the translatable list, a field an answer is graded by on the question's template
+ * AS IT IS NOW (a question whose template changed after it was translated), a subkey that does not follow its field's
+ * rule, and a language, text, hash or date that is malformed. A row whose parent is not in the payload is not judged
+ * here: `confine` drops it. A language is sent as its primary subtag in lower case. Pure.
+ */
+export const exportableTranslations = (rows: Row[], contentlanguage: string | null, questionRows: Row[]): Row[] => {
+  const templates = new Map<string, unknown>();
+  for (const q of questionRows) {
+    const id = keyOf(q.questionid);
+    if (id !== null) templates.set(id, q.templatetypeid);
+  }
+  const base = contentlanguage === null ? null : contentlanguage.toLowerCase();
+  const left: Record<string, number> = {};
+  const leave = (reason: string) => {
+    left[reason] = (left[reason] ?? 0) + 1;
+    return false;
+  };
+  const kept = rows.filter((r) => {
+    if (base === null) return leave(REASONS.noLanguage);
+    const { tablename, rowid, field, subkey, language, text, sourcehash, lastupdated } = r;
+    if (typeof tablename !== "string" || !Object.prototype.hasOwnProperty.call(TRANSLATABLE_FIELDS, tablename)) return leave(REASONS.table);
+    if (typeof field !== "string" || !TRANSLATABLE_FIELDS[tablename].includes(field)) return leave(REASONS.table);
+    if (typeof language !== "string" || !LANGUAGE_CODE.test(language)) return leave(REASONS.value);
+    if (language.toLowerCase() === base) return leave(REASONS.baseLanguage);
+    if (tablename === "questions" && typeof rowid === "string" && isAnswerBearing(templates.get(rowid.toLowerCase()), field)) return leave(REASONS.answer);
+    const needsSubkey = SUBKEYED_FIELDS.includes(field);
+    const subkeyOk = typeof subkey === "string" && (needsSubkey ? subkey !== NO_SUBKEY && subkey.length <= SUBKEY_MAX_LENGTH : subkey === NO_SUBKEY);
+    if (!subkeyOk || (field === "feedback" && !FEEDBACK_KEYS.includes(subkey as string))) return leave(REASONS.subkey);
+    const lastupdatedOk = lastupdated instanceof Date ? !Number.isNaN(lastupdated.getTime()) : typeof lastupdated === "string" && !Number.isNaN(Date.parse(lastupdated));
+    if (
+      typeof text !== "string" ||
+      text.length === 0 ||
+      Buffer.byteLength(text, "utf8") > TRANSLATION_TEXT_MAX_BYTES ||
+      typeof sourcehash !== "string" ||
+      !/^[0-9a-f]{64}$/i.test(sourcehash) ||
+      !lastupdatedOk
+    ) {
+      return leave(REASONS.value);
+    }
+    return true;
+  });
+  const summary = Object.entries(left).map(([reason, n]) => `${n} ${reason}`);
+  if (summary.length > 0) {
+    Logger.info(`organisation content export: translations left out because the student API would refuse them (${summary.join("; ")})`);
+  }
+  return kept.map((r) => ({ ...r, language: normaliseLanguage(r.language as string) }));
+};
+
+/** The organisation's content language, null when it has none (or is not there). */
+export const readContentLanguage = async (organisationid: string): Promise<string | null> => {
+  const organisation = await organisations.findOne({ where: { organisationid }, attributes: ["organisationid", "contentlanguage"] });
+  return organisation?.contentlanguage ?? null;
+};
+
+/**
+ * The organisation's translations as they are exported: all its rows (`contenttranslations`, ordered by table, row,
+ * field, subkey and language so the file is the same on every run), filtered by `exportableTranslations` against its
+ * content language and the questions read for the same export. A context with no organisation (the platform not
+ * acting) has no content language and so no translations.
+ */
+export const readTranslations = async (org: OrgContext, questionRows: Row[]): Promise<Row[]> => {
+  const scope = scopeOf(org);
+  if (scope.kind !== "organisation") return [];
+  const contentlanguage = await readContentLanguage(scope.organisationid);
+  const rows = plain(
+    await contenttranslations.findAll({
+      where: ownedWhere(org),
+      order: [["tablename", "ASC"], ["rowid", "ASC"], ["field", "ASC"], ["subkey", "ASC"], ["language", "ASC"]],
+    }),
+  );
+  return exportableTranslations(rows, contentlanguage, questionRows);
+};
+
+/** The content tables that hang from the organisation's curriculums or are drawn on by them (every table but the four the organisation owns outright), and the translations of their rows. */
 export const CURRICULUM_CONTENT_KEYS = [
   "curriculums",
   "questions",
@@ -387,6 +530,7 @@ export const CURRICULUM_CONTENT_KEYS = [
   "lessonpracticequestions",
   "lessonquizquestions",
   "levelquizquestions",
+  "contenttranslations",
 ] as const;
 export type CurriculumContentKey = (typeof CURRICULUM_CONTENT_KEYS)[number];
 
@@ -395,24 +539,28 @@ export type CurriculumContentKey = (typeof CURRICULUM_CONTENT_KEYS)[number];
  * everything under the curriculums, each through the business class built with the organisation's own context. The
  * order of the reads is the export's. Not confined: the caller does that with the tables it keeps.
  */
-export const readCurriculumContent = async (org: OrgContext): Promise<Record<CurriculumContentKey, Row[]>> => ({
-  curriculums: plain(await new CurriculumBusiness(org).getCurriculums()),
-  questions: plain(await new QuestionBusiness(org).getquestionsWithOwner()),
-  documents: plain(await new DocumentBusiness(org).getdocumentsWithOwner()),
-  curriculumbaselines: plain(await new CurriculumBaseLineBusiness(org).getCurriculumBaseLines()),
-  baselinequestion: plain(await new BaselineQuestionBusiness(org).getBaselineQuestion()),
-  grades: plain(await new GradeBusiness(org).getGrades()),
-  levels: plain(await new LevelBusiness(org).getLevels()),
-  lessons: plain(await new LessonBusiness(org).getLessons()),
-  lessonlearnings: plain(await new LessonLearningBusiness(org).getLessonLearnings()),
-  lessonlearningdocuments: plain(await new LessonLearningBusiness(org).getLessonLearningDocuments()),
-  lessonplans: plain(await new LessonPlanBusiness(org).getLessonPlans()),
-  lessonpractices: plain(await new LessonPracticeBusiness(org).getLessonPractices()),
-  lessonquizzes: plain(await new LessonQuizBusiness(org).getLessonQuizzes()),
-  lessonpracticequestions: plain(await new LessonPracticeQuestionBusiness(org).getLessonPracticeQuestions()),
-  lessonquizquestions: plain(await new LessonQuizQuestionBusiness(org).getLessonQuizQuestions()),
-  levelquizquestions: plain(await new LevelQuizQuestionBusiness(org).getLevelQuizQuestions()),
-});
+export const readCurriculumContent = async (org: OrgContext): Promise<Record<CurriculumContentKey, Row[]>> => {
+  const questionRows = plain(await new QuestionBusiness(org).getquestionsWithOwner());
+  return {
+    curriculums: plain(await new CurriculumBusiness(org).getCurriculums()),
+    questions: questionRows,
+    documents: plain(await new DocumentBusiness(org).getdocumentsWithOwner()),
+    curriculumbaselines: plain(await new CurriculumBaseLineBusiness(org).getCurriculumBaseLines()),
+    baselinequestion: plain(await new BaselineQuestionBusiness(org).getBaselineQuestion()),
+    grades: plain(await new GradeBusiness(org).getGrades()),
+    levels: plain(await new LevelBusiness(org).getLevels()),
+    lessons: plain(await new LessonBusiness(org).getLessons()),
+    lessonlearnings: plain(await new LessonLearningBusiness(org).getLessonLearnings()),
+    lessonlearningdocuments: plain(await new LessonLearningBusiness(org).getLessonLearningDocuments()),
+    lessonplans: plain(await new LessonPlanBusiness(org).getLessonPlans()),
+    lessonpractices: plain(await new LessonPracticeBusiness(org).getLessonPractices()),
+    lessonquizzes: plain(await new LessonQuizBusiness(org).getLessonQuizzes()),
+    lessonpracticequestions: plain(await new LessonPracticeQuestionBusiness(org).getLessonPracticeQuestions()),
+    lessonquizquestions: plain(await new LessonQuizQuestionBusiness(org).getLessonQuizQuestions()),
+    levelquizquestions: plain(await new LevelQuizQuestionBusiness(org).getLevelQuizQuestions()),
+    contenttranslations: await readTranslations(org, questionRows),
+  };
+};
 
 /** The content of the organisation, whole, in the format the student API reads (see the top of this file). */
 export const buildOrganisationContent = async (organisation: organisations): Promise<OrganisationContentPayload> => {
@@ -459,5 +607,7 @@ export const buildOrganisationContent = async (organisation: organisations): Pro
     // and one with it when it does not know it). Last, so that the two tables it hangs from (lessonlearnings and
     // documents) come before it in the file.
     lessonlearningdocuments: checked.lessonlearningdocuments,
+    // The last key, as in the student API's list of tables.
+    contenttranslations: checked.contenttranslations,
   };
 };

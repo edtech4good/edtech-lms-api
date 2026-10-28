@@ -236,6 +236,7 @@ export class OrganisationController {
         uitheme: body.uitheme,
         brandingconfig: body.brandingconfig,
         organisationstatus: body.organisationstatus,
+        contentlanguage: body.contentlanguage,
       },
       body.countryids,
       user,

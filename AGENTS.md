@@ -46,6 +46,33 @@ or its curriculum). The boundary is enforced in code, route by route:
 - A request body or query value never stands in for the organisation or for a
   path id: handlers check the row named in the path with the caller's scope.
 
+## Translations of content text (bilingual content)
+
+Learner-visible content text (names and descriptions of curricula, grades, levels, lessons and their items, and a
+question's text, heading, options, partners, distractors and feedback) has one text per column: the organisation's
+**base language** (`organisations.contentlanguage`, set on `PUT /organisation/:id`, null = no translations yet). A
+translation is a row of `contenttranslations`: `(tablename, rowid)` names the row (no foreign key), `field` the text,
+`subkey` (`''`, never NULL) the option, partner or distractor id or the feedback message key, `language` (its primary
+subtag in lower case), `text`, `sourcehash` (sha-256 of the base text it translated) and `lastupdated`; hard-deleted.
+
+- The rules both APIs share (translatable tables and fields, the fields an answer is graded by, subkey rules, language
+  code, the hash) are `src/constants/content-translations.ts`, **a copy of the student API's file, byte for byte**, pinned
+  by hash in `src/constants/content-translations.spec.ts`. Change the student API's file first, re-copy, update the hash.
+- `PUT /translations/:tablename/:rowid` `{ language, fields: { "<field>" | "<field>.<subkey>": text } }` saves, `GET` lists
+  (every language, `stale: true` where the base text has changed), `DELETE .../:language` removes a language. The parent
+  entity's own update (view, for GET) permission is asked first; the row must be the caller's (`OrgPolicy("owned")`).
+  Refused (400): no content language set, the organisation's own language, a text an answer is graded by, a subkey that
+  names no option, partner, distractor or message. A question option keeps its id when the question is saved
+  (`withOptionIds`): a translation is keyed by it.
+- The export (`organisation-content-export.ts`) ends with `contenttranslations`. It sends only what the student API
+  accepts (none without a content language, none in that language, none for a field the question's template now grades by);
+  `confine` DROPS a translation whose parent row is not in the payload (count in the log) where the student API refuses it.
+  The student API requires the key and `organisations[0].contentlanguage`: **deploy the student API first, central straight
+  after, with no Sync Content between**; offline Pis on an older build must be updated before they receive a new zip.
+- A curriculum's publication carries the translations of every row it carries, the pulled-in questions included. The
+  overview (`GET /curriculum/publication/:curriculumid`) adds `translationcoverage` (untranslated and stale counts per
+  language and lesson, `src/business/translation-coverage.ts`); it never blocks a publish.
+
 ## Tests and verification
 
 - `npx jest --maxWorkers=2` (never the default worker count). `npx tsc --noEmit

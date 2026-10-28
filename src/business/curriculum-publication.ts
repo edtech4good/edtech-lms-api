@@ -11,6 +11,7 @@ import { assertInScope } from "./content-scope";
 import { ownerOfCurriculum } from "./content-owner";
 import { notFoundError, scopeOf } from "./org-scope";
 import { SubjectBusiness } from "./subject.business";
+import { translationCoverage, TranslationCoverage } from "./translation-coverage";
 import {
   confine,
   contextOfOrganisation,
@@ -18,6 +19,7 @@ import {
   CurriculumContentKey,
   keyOf,
   plain,
+  readContentLanguage,
   readCurriculumContent,
   Row,
   SHAPE,
@@ -33,16 +35,34 @@ import {
  *
  * ## The payload
  *
- * `payload.tables` holds sixteen of the export's tables (CURRICULUM_CONTENT_KEYS): the curriculum row; the rows that hang
+ * `payload.tables` holds seventeen of the export's tables (CURRICULUM_CONTENT_KEYS): the curriculum row; the rows that hang
  * from it (baselines and their questions, grades, levels, lessons, and what a lesson holds: learning items and their
  * documents, plans, practices, quizzes and the question links); and the REVERSE CLOSURE, the questions and documents
- * those rows name. The organisation's other curricula are not in it, and neither are the four tables the organisation
- * owns outright (countries, schools, standards, subjects): the sync keeps those live. The rows are read by the
+ * those rows name; and the translations of all of these rows (below). The organisation's other curricula are not in it,
+ * and neither are the four tables the organisation owns outright (countries, schools, standards, subjects): the sync
+ * keeps those live. The rows are read by the
  * export's own readers, in its order, so a row in a payload is the row the export would ship.
  *
  * The closure is picked from the SHAPE of the export (its parent and reference columns), then the result goes through
  * the export's `confine`. A payload that `confine` would change is not published: it is refused (400) with the tables and
  * counts that are wrong, because a payload that ships a dangling reference is exactly what the student API refuses.
+ *
+ * ## Translations (bilingual content)
+ *
+ * `contenttranslations`, the last of the tables, holds the translations of every row the payload carries: the curriculum's own rows and the questions (and documents) the closure pulls in (decision 10). They are
+ * picked like the bank rows: by what is already picked, through each translation's polymorphic parent (`tablename`,
+ * `rowid`). The rows are the export's (`readTranslations`): none when the organisation has no content language, none in
+ * that language, none the student API would refuse; a stale translation is kept (it says what the translator wrote and
+ * the student API leaves it out when it serves). A translation is a row like any other: its hash (below) is of its own
+ * columns, so editing a translation changes its row, the payload and "changed since publish" with no extra work, and the
+ * summary counts and diffs translation rows by id. A translation updated in place keeps its id, so it shows as changed,
+ * not as removed and added.
+ *
+ * Step 2 (the merge, not built yet): the student side keeps one copy of a shared question, the newest publication's, and
+ * the merge must take that question's translations from THE SAME publication it took the question from, never from
+ * another curriculum's. A translation is therefore merged with its parent row, not by itself, and a translation whose
+ * parent was taken from another publication is dropped. The organisation's `contentlanguage` is read live by the merge
+ * (it is a property of the organisation, not of a curriculum), and translations in it are left out there as here.
  *
  * ## Hashes
  *
@@ -191,8 +211,15 @@ export const hashTables = (tables: Tables): RowHashes => {
   return hashes;
 };
 
-/** The hash of a payload: of the map of its row hashes, so the order of the rows does not matter. */
-export const payloadHashOf = (hashes: RowHashes): string => sha256(canonicalJson(hashes));
+/**
+ * The hash of a payload: of the map of its row hashes, so the order of the rows does not matter. A payload with no
+ * translations hashes as a payload did before the table existed (`contenttranslations: {}` is left out of the map), so
+ * a curriculum published before translations does not show as changed once because the key arrived.
+ */
+export const payloadHashOf = (hashes: RowHashes): string => {
+  const { contenttranslations, ...rest } = hashes;
+  return sha256(canonicalJson(contenttranslations !== undefined && Object.keys(contenttranslations).length > 0 ? hashes : rest));
+};
 
 // ---- picking the curriculum's rows -----------------------------------------------------------------
 
@@ -211,7 +238,7 @@ export const selectCurriculumTables = (all: Tables, curriculumid: string): Table
   };
 
   for (const key of CURRICULUM_CONTENT_KEYS) {
-    if (key === "questions" || key === "documents") continue;
+    if (key === "questions" || key === "documents" || key === "contenttranslations") continue;
     if (key === "curriculums") {
       picked.curriculums = all.curriculums.filter((r) => keyOf(r.curriculumid) === wanted);
       continue;
@@ -229,7 +256,7 @@ export const selectCurriculumTables = (all: Tables, curriculumid: string): Table
   for (const bank of ["questions", "documents"] as const) {
     const named = new Set<string>();
     for (const key of CURRICULUM_CONTENT_KEYS) {
-      if (key === "questions" || key === "documents") continue;
+      if (key === "questions" || key === "documents" || key === "contenttranslations") continue;
       for (const ref of SHAPE[key].refs ?? []) {
         if (ref.to !== bank) continue;
         for (const row of picked[key] ?? []) {
@@ -243,6 +270,20 @@ export const selectCurriculumTables = (all: Tables, curriculumid: string): Table
       return id !== null && named.has(id);
     });
   }
+
+  // The translations of every row picked so far, the bank rows pulled in included (decision 10 of the bilingual content
+  // design): a translation is picked when the row its table and id name is one of the picked rows.
+  const poly = SHAPE.contenttranslations.polymorphic;
+  if (poly === undefined) throw new Error("curriculum publication: translations have no polymorphic parent in the export's shape");
+  const pickedIds = new Map<string, Set<string>>();
+  for (const key of CURRICULUM_CONTENT_KEYS) {
+    if (key !== "contenttranslations") pickedIds.set(key, idsIn(key));
+  }
+  picked.contenttranslations = all.contenttranslations.filter((t) => {
+    const table = t[poly.tablefield];
+    const id = keyOf(t[poly.idfield]);
+    return typeof table === "string" && id !== null && pickedIds.get(table)?.has(id) === true;
+  });
   return picked as Tables;
 };
 
@@ -308,8 +349,11 @@ export const confineCurriculumTables = (tables: Tables, subjects: Row[]): Tables
  * curriculum that is not in the content, or is deleted, is the 404 an absent one gets. `subjects` are the organisation's
  * subjects, deleted ones included (readSubjects). Pure.
  */
-export const payloadOf = (organisationid: string, content: Tables, curriculumid: string, subjects: Row[]): CurriculumPayload => {
-  const picked = selectCurriculumTables(content, curriculumid);
+export const payloadOf = (organisationid: string, content: Tables, curriculumid: string, subjects: Row[]): CurriculumPayload =>
+  payloadOfPicked(organisationid, selectCurriculumTables(content, curriculumid), subjects);
+
+/** `payloadOf` for rows already picked by `selectCurriculumTables` (a caller that needs them for something else too picks once). */
+const payloadOfPicked = (organisationid: string, picked: Tables, subjects: Row[]): CurriculumPayload => {
   const row = picked.curriculums[0];
   if (row === undefined || row.isdeleted === true || row.isdeleted === 1) {
     throw notFoundError("That curriculum doesn't exist.");
@@ -752,6 +796,13 @@ export interface PublicationOverview extends PublicationState {
   pending: SlimSummary | null;
   /** The latest publication's own summary. */
   latest: { publicationid: string; publishedat: Date; publishedby: string; status: PublicationStatus; summary: SlimSummary } | null;
+  /**
+   * How much of the curriculum's text is translated, per language, with the untranslated and stale counts of every lesson
+   * (translation-coverage.ts). Read here and not on the tree, with the rest of what needs the organisation's whole bank,
+   * from the same read as `pending`; so it is there in every state (never published, withdrawn, published) and `null` only
+   * for a curriculum that is not in the content. It never blocks a publish.
+   */
+  translationcoverage: TranslationCoverage | null;
 }
 
 /**
@@ -768,7 +819,7 @@ export const publicationOverview = async (org: OrgContext, curriculumid: string)
     limit: 1,
   });
   const state = stateOf(latest as unknown as LightRow | undefined);
-  const base: PublicationOverview = { curriculumid, ...state, changedsincepublish: false, problem: null, pending: null, latest: null };
+  const base: PublicationOverview = { curriculumid, ...state, changedsincepublish: false, problem: null, pending: null, latest: null, translationcoverage: null };
   if (latest !== undefined) {
     base.latest = {
       publicationid: latest.publicationid,
@@ -778,12 +829,20 @@ export const publicationOverview = async (org: OrgContext, curriculumid: string)
       summary: summaryForAnswer(latest.summary as unknown as StoredSummary),
     };
   }
+  // The organisation's content is read once, in every state, and the curriculum's own rows are picked from it once: the
+  // coverage is worked out from those rows whether or not the curriculum is published (an editor translates before the
+  // first publish and before a republish). Only the pending change needs a live publication to compare against.
+  const { content, subjects } = await readSources(organisationid);
+  const picked = selectCurriculumTables(content, curriculumid);
+  if (picked.curriculums.length > 0) {
+    base.translationcoverage = translationCoverage(picked, await readContentLanguage(organisationid));
+  }
+  // A curriculum that was never published (or whose latest publication is not live) has nothing to compare.
   if (latest === undefined || latest.status !== "published") {
     return base;
   }
-  const { content, subjects } = await readSources(organisationid);
   try {
-    const payload = payloadOf(organisationid, content, curriculumid, subjects);
+    const payload = payloadOfPicked(organisationid, picked, subjects);
     const hashes = hashTables(payload.tables);
     base.changedsincepublish = payloadHashOf(hashes) !== latest.payloadhash;
     const previous = baseOf(latest, "published");

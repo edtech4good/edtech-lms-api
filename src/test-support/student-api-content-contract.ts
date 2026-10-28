@@ -1,5 +1,16 @@
 import joi from "joi";
 import {
+  ANSWER_BEARING_FIELDS,
+  FEEDBACK_KEYS,
+  LANGUAGE_CODE,
+  NO_SUBKEY,
+  SUBKEYED_FIELDS,
+  SUBKEY_MAX_LENGTH,
+  TRANSLATABLE_FIELDS,
+  TRANSLATION_TEXT_MAX_BYTES,
+  isAnswerBearing,
+} from "src/constants/content-translations";
+import {
   DOCUMENT_LICENCES,
   DOCUMENT_TITLE_MAX,
   isDocumentLicence,
@@ -17,7 +28,9 @@ import {
  * `src/constants/learning-items.ts` and the `organisation` row schema of `src/modules/import/ownership.request.validator.ts`,
  * as of the learning-items change (LI-2) and the media-library change (ML-1: a video item's document is a VIDEO document;
  * the title, licence and attribution of a document when the row carries them; the rules and their messages are the student API's,
- * through `src/constants/media-library.ts`, which is the same file in both repositories). The same rules, in the same order; the differences are only that problems are returned as a list instead of thrown as a 400,
+ * through `src/constants/media-library.ts`, which is the same file in both repositories), and the bilingual-content change
+ * (B-1, edtech-lms-rpi-api `feat/content-translations` at 63e1da6: the `contenttranslations` table kind, `organisations[0].contentlanguage`,
+ * and the rules of `src/constants/content-translations.ts`, which is the same file in both repositories). The same rules, in the same order; the differences are only that problems are returned as a list instead of thrown as a 400,
  * and that the messages are shortened. When the student API's validator changes, change this with it.
  *
  * Two kinds of rule about the lists of ids a row holds (`schools.curriculums`, `curriculumbaselines.schoolid`):
@@ -72,7 +85,8 @@ export type TableKey =
   | "levelquizquestions"
   | "questions"
   | "documents"
-  | "subjects";
+  | "subjects"
+  | "contenttranslations";
 
 interface Reference {
   fk: string;
@@ -84,6 +98,8 @@ interface TableSpec {
   kind: "owned" | "inherited" | "global";
   parent?: Reference;
   refs?: Reference[];
+  /** An owned row that names its parent row by a table name column and an id column (translations). */
+  polymorphic?: { tablefield: string; idfield: string };
 }
 
 export const CONTENT_TABLES: Record<TableKey, TableSpec> = {
@@ -145,6 +161,8 @@ export const CONTENT_TABLES: Record<TableKey, TableSpec> = {
       { fk: "lessonid", to: "lessons", optional: true },
     ],
   },
+  // the LAST key
+  contenttranslations: { pk: "translationid", kind: "owned", polymorphic: { tablefield: "tablename", idfield: "rowid" } },
 };
 
 /** Columns that hold a list of ids of rows of the payload (central's rule: see the top of this file). */
@@ -191,6 +209,8 @@ const organisationRow = joi.object({
     .required(),
   brandingconfig,
   settingsconfig,
+  // optional (an older sender has none); null for "no translations yet"
+  contentlanguage: joi.string().pattern(LANGUAGE_CODE).allow(null),
   isdeleted: joi.boolean().strict().required(),
 });
 
@@ -394,6 +414,79 @@ export function contentProblems(body: unknown): string[] {
   if (badRole) problems.push(`lessonlearningdocuments: ${badRole} with a lessonlearningdocumentrole that is not one of ${LEARNING_DOCUMENT_ROLES.join(", ")}`);
   if (badOrder) problems.push(`lessonlearningdocuments: ${badOrder} with a lessonlearningdocumentorder that is not a whole number`);
   if (repeatedPairs) problems.push(`lessonlearningdocuments: ${repeatedPairs} repeat a lessonlearningid and documentid pair`);
+
+  // Translations: each row names its parent by (tablename, rowid), a table and a field that may be translated (and, for a
+  // question, a field its template does not grade by), the subkey its field needs, a language other than the
+  // organisation's own, a text, the hash of the base text, and when it was written. A row whose parent is not a row of
+  // THIS payload is refused (central drops it; this side refuses). The organisation row must carry a contentlanguage.
+  const translationRows = tables.contenttranslations ?? [];
+  if (translationRows.length > 0) {
+    const organisationRowGiven = Array.isArray(body.organisations) && body.organisations.length === 1 && isRow(body.organisations[0]) ? body.organisations[0] : null;
+    const baseLanguage = organisationRowGiven && typeof organisationRowGiven.contentlanguage === "string" ? organisationRowGiven.contentlanguage.toLowerCase() : null;
+    const templates = new Map<string, unknown>();
+    for (const q of tables.questions ?? []) {
+      if (isRow(q) && isId(q.questionid)) templates.set(lower(q.questionid), q.templatetypeid);
+    }
+    let badTable = 0;
+    let badField = 0;
+    let answerBearing = 0;
+    let badSubkey = 0;
+    let badLanguage = 0;
+    let baseLanguageRows = 0;
+    let badText = 0;
+    let badHash = 0;
+    let badDate = 0;
+    let repeated = 0;
+    const missingParent = new Map<string, number>();
+    const seenTranslations = new Set<string>();
+    for (const row of translationRows) {
+      if (!isRow(row)) continue;
+      const { tablename, rowid, field, subkey, language, text, sourcehash, lastupdated } = row;
+      const knownTable = typeof tablename === "string" && Object.prototype.hasOwnProperty.call(TRANSLATABLE_FIELDS, tablename);
+      if (!knownTable) badTable += 1;
+      const knownField = knownTable && typeof field === "string" && TRANSLATABLE_FIELDS[tablename as string].includes(field);
+      if (knownTable && !knownField) badField += 1;
+      if (knownField && tablename === "questions" && typeof rowid === "string" && isAnswerBearing(templates.get(lower(rowid)), field as string)) answerBearing += 1;
+      if (knownField) {
+        const needsSubkey = SUBKEYED_FIELDS.includes(field as string);
+        const rule = typeof subkey === "string" && (needsSubkey ? subkey !== NO_SUBKEY && subkey.length <= SUBKEY_MAX_LENGTH : subkey === NO_SUBKEY);
+        const feedbackOk = field !== "feedback" || (typeof subkey === "string" && FEEDBACK_KEYS.includes(subkey));
+        if (!rule || !feedbackOk) badSubkey += 1;
+      }
+      if (typeof language !== "string" || !LANGUAGE_CODE.test(language)) badLanguage += 1;
+      else if (baseLanguage !== null && language.toLowerCase() === baseLanguage) baseLanguageRows += 1;
+      if (typeof text !== "string" || text.length === 0 || Buffer.byteLength(text, "utf8") > TRANSLATION_TEXT_MAX_BYTES) badText += 1;
+      if (typeof sourcehash !== "string" || !/^[0-9a-f]{64}$/i.test(sourcehash)) badHash += 1;
+      if (typeof lastupdated !== "string" || Number.isNaN(Date.parse(lastupdated))) badDate += 1;
+      if (knownTable) {
+        if (typeof rowid !== "string" || !idsOf[tablename as TableKey]?.has(lower(rowid))) {
+          missingParent.set(tablename as string, (missingParent.get(tablename as string) ?? 0) + 1);
+        }
+      }
+      if (knownField && typeof rowid === "string" && typeof subkey === "string" && typeof language === "string") {
+        const key = [tablename, rowid, field, subkey, language].map((v) => String(v).toLowerCase()).join("\u0000");
+        if (seenTranslations.has(key)) repeated += 1;
+        else seenTranslations.add(key);
+      }
+    }
+    if (baseLanguage === null) problems.push("contenttranslations: the organisation has no contentlanguage; set it before sending translations.");
+    if (badTable) problems.push(`contenttranslations: ${rows(badTable)} ${badTable === 1 ? "names" : "name"} a tablename that is not translatable`);
+    if (badField) problems.push(`contenttranslations: ${rows(badField)} ${badField === 1 ? "names" : "name"} a field that its table does not have as translatable text`);
+    if (answerBearing) {
+      const graded = Object.entries(ANSWER_BEARING_FIELDS)
+        .map(([template, fields]) => `template ${template}: ${fields.join(", ")}`)
+        .join("; ");
+      problems.push(`contenttranslations: ${rows(answerBearing)} translate${answerBearing === 1 ? "s" : ""} a field that an answer is graded by (${graded})`);
+    }
+    if (badSubkey) problems.push(`contenttranslations: ${rows(badSubkey)} ${badSubkey === 1 ? "has" : "have"} a subkey that does not follow its field's rule`);
+    if (badLanguage) problems.push(`contenttranslations: ${rows(badLanguage)} ${badLanguage === 1 ? "has" : "have"} a language that is not 2 to 8 letters, digits or hyphens`);
+    if (baseLanguageRows) problems.push(`contenttranslations: ${rows(baseLanguageRows)} ${baseLanguageRows === 1 ? "is" : "are"} in the organisation's own contentlanguage`);
+    if (badText) problems.push(`contenttranslations: ${rows(badText)} ${badText === 1 ? "has" : "have"} a text that is not a string of 1 to ${TRANSLATION_TEXT_MAX_BYTES} bytes`);
+    if (badHash) problems.push(`contenttranslations: ${rows(badHash)} ${badHash === 1 ? "has" : "have"} a sourcehash that is not 64 hexadecimal characters`);
+    if (badDate) problems.push(`contenttranslations: ${rows(badDate)} ${badDate === 1 ? "has" : "have"} a lastupdated that is not a date`);
+    if (repeated) problems.push(`contenttranslations: ${rows(repeated)} repeat${repeated === 1 ? "s" : ""} a table, row, field, subkey and language that is already in the payload`);
+    for (const [table, n] of missingParent) problems.push(`contenttranslations: ${rows(n)} ${n === 1 ? "names" : "name"} a ${table} row (rowid) that is not in the payload`);
+  }
 
   for (const { table, column, to } of LISTS) {
     const list = tables[table];

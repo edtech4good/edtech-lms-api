@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **291** routes, **280** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
+Of **294** routes, **283** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 252 | 252 | 0 | 0 |
+| owned | 255 | 255 | 0 | 0 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 0 | 0 | 0 | 0 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **291** | **280** | **11** | **0** |
+| **all** | **294** | **283** | **11** | **0** |
 
 ## Policies
 
@@ -354,6 +354,9 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | POST | `/teacher` | TeacherController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_teacher] |  |
 | DELETE | `/teacher/:schooluserid` | TeacherController.deleteuser | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_teacher] |  |
 | POST | `/teacher/create` | TeacherController.createall | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) | The optional cloud push must send only the teachers created by this call. |
+| GET | `/translations/:tablename/:rowid` | TranslationsController.list | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum, view_grade, view_level, view_lesson, view_lessonlearning, view_lessonpractice, view_lessonquiz, view_question] |  |
+| PUT | `/translations/:tablename/:rowid` | TranslationsController.put | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_curriculum, update_grade, update_level, update_lesson, update_lessonlearning, update_lessonpractice, update_lessonquiz, update_question] |  |
+| DELETE | `/translations/:tablename/:rowid/:language` | TranslationsController.remove | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_curriculum, update_grade, update_level, update_lesson, update_lessonlearning, update_lessonpractice, update_lessonquiz, update_question] |  |
 | POST | `/user` | UserController.getall | owned | yes | `src/modules/user/user.organisation-scope.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_user] |  |
 | DELETE | `/user/:lmsuserid` | UserController.deleteuser | owned | yes | `src/modules/user/user.organisation-scope.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_user] |  |
 | GET | `/user/:lmsuserid` | UserController.get | owned | yes | `src/modules/user/user.organisation-scope.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_user] |  |

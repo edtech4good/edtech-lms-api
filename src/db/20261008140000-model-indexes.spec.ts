@@ -34,9 +34,12 @@ const COVERED = ["studentlearningsprogress.studentid", "studentgradesprogress.st
  * `npm run db:check-indexes`, so this pins the declared set: a NEW or CHANGED `indexes:` entry turns this red until someone
  * classifies it (add a migration for it and to EXPECTED above, list it in COVERED, or, if a migration already made it, update this list).
  * Classes: the 14 in EXPECTED are added here; the 7 in COVERED are not (an existing index leads with the column); 3 are unique and
- * already created by earlier migrations (one by the learning-item link table's own migration); the other 20 are created by earlier migrations; the 3 of `curriculumpublications` are created by its own migration (20261027120000).
+ * already created by earlier migrations (one by the learning-item link table's own migration); the other 20 are created by earlier migrations; the 3 of `curriculumpublications` are created by its own migration (20261027120000), and the 3 of `contenttranslations` by its own (20261028130000).
  */
 const DECLARED_SNAPSHOT = [
+  "contenttranslations.contenttranslations_organisationid(organisationid)",
+  "contenttranslations.contenttranslations_parent_language_unique(tablename,rowid,field,subkey,language) UNIQUE",
+  "contenttranslations.contenttranslations_table_row(tablename,rowid)",
   "curriculumpublications.curriculumpublications_curriculum_publishedat(curriculumid,publishedat)",
   "curriculumpublications.curriculumpublications_organisationid(organisationid)",
   "curriculumpublications.curriculumpublications_publishedby(publishedby)",
@@ -188,7 +191,7 @@ const named = (indexes: Map<string, Ix[]>, of: (n: string) => boolean = () => tr
   [...indexes.entries()].flatMap(([t, l]) => l.filter((i) => of(i.name)).map((i) => `${t}.${i.name}:${i.columns.join("+")}`)).sort();
 
 describe("the declared set is pinned", () => {
-  it("the compiled models declare exactly the 47 non-PRIMARY indexes in DECLARED_SNAPSHOT (a new or changed declaration needs classifying)", () => {
+  it("the compiled models declare exactly the 50 non-PRIMARY indexes in DECLARED_SNAPSHOT (a new or changed declaration needs classifying)", () => {
     const sequelize = new Sequelize("none", "none", "none", { dialect: "mysql" });
     initModels(sequelize);
     const declared: string[] = [];
@@ -202,7 +205,7 @@ describe("the declared set is pinned", () => {
       }
     }
     expect(declared.sort()).toEqual([...DECLARED_SNAPSHOT].sort());
-    expect(DECLARED_SNAPSHOT).toHaveLength(47);
+    expect(DECLARED_SNAPSHOT).toHaveLength(50);
   });
 });
 
