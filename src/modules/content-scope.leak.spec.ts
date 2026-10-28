@@ -615,7 +615,7 @@ describe("content is confined to the caller's organisation", () => {
         error: false,
         data: {
           curriculumid: TX.curriculum, publicationid: null, publishedat: null, publicationstatus: "never", changedsincepublish: false, problem: null, pending: null, latest: null,
-          translationcoverage: { contentlanguage: null, languages: {} },
+          translationcoverage: null,
         },
       });
       await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
@@ -4476,7 +4476,8 @@ describe("content is confined to the caller's organisation", () => {
         expect(after.changedsincepublish).toBe(true);
         expect(after.pending.changes.contenttranslations).toEqual({ added: 0, removed: 0, changed: 1 });
       });
-      it.each(IN_X)("%s: the publication overview counts, per language and lesson, the texts not yet translated and those gone stale", async (who) => {
+      it.each(IN_X)("%s: the publication overview of a published curriculum counts, per language and lesson, the texts not yet translated and those gone stale", async (who) => {
+        await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
         stored("lessons", "lessonid", TX.lesson).lessonname = "Renamed";
         const res = await send(who, "get", `/curriculum/publication/${TX.curriculum}`);
         const coverage = res.body.data.translationcoverage;

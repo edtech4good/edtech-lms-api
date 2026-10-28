@@ -15,7 +15,8 @@ import {
   selectCurriculumTables,
   Tables,
 } from "./curriculum-publication";
-import { readCurriculumContent, Row } from "./organisation-content-export";
+import { contextOfOrganisation, readCurriculumContent, Row } from "./organisation-content-export";
+import { lessons } from "src/models/data-models/lessons";
 
 /**
  * Translations in a curriculum's publication (bilingual content, decision 10): the payload carries the translations of
@@ -195,21 +196,43 @@ describe("hashes", () => {
 describe("the overview's coverage", () => {
   beforeEach(() => seed());
 
-  it("is there before the curriculum is ever published: untranslated and stale per lesson, per language", async () => {
-    stored("lessons", "lessonid", L1).lessonname = "Lesson uno"; // T(2) is now stale
+  // a read of the organisation's content is a read of its lessons (every curriculum's content has them), through the export's reader
+  const contentReads = (): number => (jest.mocked(lessons.findAll) as unknown as jest.Mock).mock.calls.length;
+  const clearReads = () => (jest.mocked(lessons.findAll) as unknown as jest.Mock).mockClear();
+
+  it("is not there before the curriculum is ever published, and reads none of the organisation's content", async () => {
+    clearReads();
     const overview = await publicationOverview(orgX, A);
     expect(overview.publicationstatus).toBe("never");
+    expect(overview.translationcoverage).toBeNull();
+    expect(overview.pending).toBeNull();
+    expect(contentReads()).toBe(0);
+  });
+
+  it("is there once it is published (untranslated and stale per lesson, per language), from one read of the content", async () => {
+    await publishCurriculum(orgX, id(7), A);
+    stored("lessons", "lessonid", L1).lessonname = "Lesson uno"; // T(2) is now stale
+    clearReads();
+    await readCurriculumContent(contextOfOrganisation(X)); // the read the overview makes
+    const oneRead = contentReads();
+    expect(oneRead).toBeGreaterThan(0);
+    clearReads();
+    const overview = await publicationOverview(orgX, A);
+    expect(overview.publicationstatus).toBe("published");
+    // the same number of reads of the tables as ONE read of the organisation's content: the coverage and the pending change share it
+    expect(contentReads()).toBe(oneRead);
     const km = overview.translationcoverage!.languages.km;
     expect(overview.translationcoverage!.contentlanguage).toBe("en");
     expect(km.lessons[L1]).toEqual({ untranslated: expect.any(Number), stale: 1 });
     expect(km.lessons[L2].stale).toBe(0);
+    // the pending change is worked out from the same rows
+    expect(overview.changedsincepublish).toBe(true);
   });
 
-  it("is the same once it is published", async () => {
+  it("counts only the curriculum's own lessons, not those of the organisation's other curricula", async () => {
     await publishCurriculum(orgX, id(7), A);
-    // the fake stores the publication; read it back through the overview
     const overview = await publicationOverview(orgX, A);
-    expect(overview.publicationstatus).toBe("published");
-    expect(overview.translationcoverage!.languages.km).toBeDefined();
+    expect(Object.keys(overview.translationcoverage!.languages.km.lessons).sort()).toEqual(sorted(L1, L2));
+    expect(JSON.stringify(overview.translationcoverage)).not.toContain(LB);
   });
 });

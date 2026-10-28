@@ -308,27 +308,25 @@ export const putTranslations = async (org: OrgContext, tablename: string, rowid:
     throw invalid("fields", "Give at least one text to translate.");
   }
 
+  // Written in one INSERT ... ON DUPLICATE KEY UPDATE, so two first-time saves of the same text cannot both insert (a read
+  // then an insert would let one of them hit the unique key, or deadlock on its gap lock). A text that already has a
+  // translation in this language is updated in place: only the text, the hash and the date are listed, so the id, the
+  // owner and the key stay as they were (the key is case-insensitive in MySQL and the row is the same row, and a
+  // publication does not see an update as removed and added). The rows go in one order, so two saves that share texts
+  // take their locks in the same order.
+  const rows = [...checked]
+    .sort((a, b) => (a.field < b.field ? -1 : a.field > b.field ? 1 : a.subkey < b.subkey ? -1 : a.subkey > b.subkey ? 1 : 0))
+    .map((c) => ({ translationid: uuidv4(), organisationid, tablename, rowid, field: c.field, subkey: c.subkey, language, text: c.text, sourcehash: c.sourcehash, lastupdated: new Date() }));
+
   const transaction = await dbinstance.getdbinstance().transaction();
   try {
+    await contenttranslations.bulkCreate(rows, { updateOnDuplicate: ["text", "sourcehash", "lastupdated"], transaction });
+    // what is stored now (an updated row keeps the id it had, which the statement does not return)
     const saved: contenttranslations[] = [];
-    const lastupdated = new Date();
-    for (const c of checked) {
-      const existing = await contenttranslations.findOne({
-        where: { tablename, rowid, field: c.field, subkey: c.subkey, language },
-        transaction,
-        lock: transaction.LOCK.UPDATE,
-      });
-      if (existing) {
-        // the key is case-insensitive in MySQL and the row is the same row: the id, the owner and the key stay as they were
-        saved.push(await existing.update({ text: c.text, sourcehash: c.sourcehash, lastupdated }, { transaction }));
-      } else {
-        saved.push(
-          await contenttranslations.create(
-            { translationid: uuidv4(), organisationid, tablename, rowid, field: c.field, subkey: c.subkey, language, text: c.text, sourcehash: c.sourcehash, lastupdated },
-            { transaction },
-          ),
-        );
-      }
+    for (const r of rows) {
+      const stored = await contenttranslations.findOne({ where: { tablename, rowid, field: r.field, subkey: r.subkey, language }, transaction });
+      if (!stored) throw new Error("content translation: a saved translation could not be read back");
+      saved.push(stored);
     }
     await transaction.commit();
     return { tablename, rowid, contentlanguage: base, translations: saved.map((t) => viewOf(tablename, parent.row, t)).sort(byLanguageFieldSubkey) };

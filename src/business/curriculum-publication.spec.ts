@@ -511,7 +511,7 @@ describe("changed since publish", () => {
   it("is false for a curriculum never published or withdrawn, with no state to compare against", async () => {
     expect(await publicationOverview(orgX, A)).toEqual({
       curriculumid: A, publicationid: null, publishedat: null, publicationstatus: "never", changedsincepublish: false, problem: null, pending: null, latest: null,
-      translationcoverage: { contentlanguage: null, languages: {} },
+      translationcoverage: null,
     });
     await publishCurriculum(orgX, USER, A);
     await retireCurriculum(orgX, A);

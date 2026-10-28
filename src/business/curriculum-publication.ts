@@ -349,8 +349,11 @@ export const confineCurriculumTables = (tables: Tables, subjects: Row[]): Tables
  * curriculum that is not in the content, or is deleted, is the 404 an absent one gets. `subjects` are the organisation's
  * subjects, deleted ones included (readSubjects). Pure.
  */
-export const payloadOf = (organisationid: string, content: Tables, curriculumid: string, subjects: Row[]): CurriculumPayload => {
-  const picked = selectCurriculumTables(content, curriculumid);
+export const payloadOf = (organisationid: string, content: Tables, curriculumid: string, subjects: Row[]): CurriculumPayload =>
+  payloadOfPicked(organisationid, selectCurriculumTables(content, curriculumid), subjects);
+
+/** `payloadOf` for rows already picked by `selectCurriculumTables` (a caller that needs them for something else too picks once). */
+const payloadOfPicked = (organisationid: string, picked: Tables, subjects: Row[]): CurriculumPayload => {
   const row = picked.curriculums[0];
   if (row === undefined || row.isdeleted === true || row.isdeleted === 1) {
     throw notFoundError("That curriculum doesn't exist.");
@@ -795,8 +798,9 @@ export interface PublicationOverview extends PublicationState {
   latest: { publicationid: string; publishedat: Date; publishedby: string; status: PublicationStatus; summary: SlimSummary } | null;
   /**
    * How much of the curriculum's text is translated, per language, with the untranslated and stale counts of every lesson
-   * (translation-coverage.ts). Read here and not on the tree, with the rest of what needs the organisation's whole bank;
-   * it is there whether or not the curriculum was ever published, and it never blocks a publish.
+   * (translation-coverage.ts). Read here and not on the tree, with the rest of what needs the organisation's whole bank,
+   * from the same read as `pending`; so it is there for a curriculum with a live publication and `null` for one that was
+   * never published (which reads none of the organisation's content). It never blocks a publish.
    */
   translationcoverage: TranslationCoverage | null;
 }
@@ -825,16 +829,20 @@ export const publicationOverview = async (org: OrgContext, curriculumid: string)
       summary: summaryForAnswer(latest.summary as unknown as StoredSummary),
     };
   }
+  // A curriculum that was never published (or whose latest publication is not live) has nothing to compare and no coverage
+  // to show: it reads none of the organisation's content.
+  if (latest === undefined || latest.status !== "published") {
+    return base;
+  }
+  // The organisation's content is read once, and the curriculum's own rows are picked from it once: the coverage and the
+  // pending change are both worked out from those rows.
   const { content, subjects } = await readSources(organisationid);
   const picked = selectCurriculumTables(content, curriculumid);
   if (picked.curriculums.length > 0) {
     base.translationcoverage = translationCoverage(picked, await readContentLanguage(organisationid));
   }
-  if (latest === undefined || latest.status !== "published") {
-    return base;
-  }
   try {
-    const payload = payloadOf(organisationid, content, curriculumid, subjects);
+    const payload = payloadOfPicked(organisationid, picked, subjects);
     const hashes = hashTables(payload.tables);
     base.changedsincepublish = payloadHashOf(hashes) !== latest.payloadhash;
     const previous = baseOf(latest, "published");
