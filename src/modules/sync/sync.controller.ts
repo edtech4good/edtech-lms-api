@@ -72,7 +72,7 @@ export class SyncController {
   }
 
   @OrgPolicy("owned", {
-    note: "Pushes one organisation's PUBLISHED content (format 3; the same payload as GET sync/content, so an organisation with no published curriculum pushes empty content and the student marks its curricula deleted: run `npm run publish:initial` first) with the organisation named in the request header; a platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired.",
+    note: "Re-pushes one organisation's PUBLISHED set (format 3; the same payload as GET sync/content, so a draft edit is never in it, and an organisation with no published curriculum pushes empty content and the student marks its curricula deleted: run `npm run publish:initial` first) with the organisation named in the request header. A publish, a retire and the delete of a published curriculum already push it by themselves; this is for a platform admin to push it again after one of those pushes failed, or for an organisation with no publisher. A platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired.",
     enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
   })
   @Post("cloud")
@@ -88,7 +88,8 @@ export class SyncController {
     status: 500,
     description: "Server error",
   })
-  // Not Role.organisationadmin: this pushes to the cloud server with the server key.
+  // Not Role.organisationadmin: this pushes to the cloud server with the server key. (A publish pushes by itself, with the
+  // same key, performed by central for whoever published; the key itself is never the organisation admin's.)
   @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
   @HttpCode(HttpStatus.OK)
   async synconline(

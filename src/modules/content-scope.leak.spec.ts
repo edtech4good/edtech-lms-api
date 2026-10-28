@@ -6,6 +6,7 @@ import {
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import axios from "axios";
+import FormData from "form-data";
 import { sign } from "jsonwebtoken";
 import request from "supertest";
 import { Config, Logger } from "src/config";
@@ -215,6 +216,9 @@ describe("content is confined to the caller's organisation", () => {
     db.add("countries", { countryid: COUNTRY, countryname: "កម្ពុជា" });
     jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(transaction as never);
     (axios.get as jest.Mock).mockReset().mockResolvedValue({ data: [] });
+    // no learner server unless a test sets one up (a developer's own RPI_CLOUD must not turn a skipped push into a real one)
+    Config.fortyk.api.rpi.cloud = "your-cloud-endpoint";
+    (axios.put as jest.Mock).mockReset().mockResolvedValue({ status: 200 });
   });
 
   const send = (who: Who, method: Method, path: string, body?: object) => {
@@ -498,7 +502,12 @@ describe("content is confined to the caller's organisation", () => {
       expect(rows).toHaveLength(1);
       expect(withoutReference(res.body)).toEqual({
         error: false,
-        data: { publicationid: rows[0].publicationid, publishedat: expect.any(String), summary: expect.objectContaining({ previous: null }) },
+        data: {
+          publicationid: rows[0].publicationid,
+          publishedat: expect.any(String),
+          summary: expect.objectContaining({ previous: null }),
+          push: { status: "skipped", reason: "nocloud", message: "Published. No learner server is set up here, so nothing was pushed." },
+        },
       });
       expect(rows[0]).toMatchObject({ curriculumid: TX.curriculum, organisationid: X, publishedby: USER_OF[who], status: "published" });
       const tables = payloadOfRow(rows[0]).tables;
@@ -565,7 +574,10 @@ describe("content is confined to the caller's organisation", () => {
       expect(first.status).toBe(200);
       expect(withoutReference(first.body)).toEqual({
         error: false,
-        data: { curriculumid: TX.curriculum, retired: true, publicationid: db.createdIn("curriculumpublications")[0].publicationid, publishedat: null, publicationstatus: "withdrawn" },
+        data: {
+          curriculumid: TX.curriculum, retired: true, publicationid: db.createdIn("curriculumpublications")[0].publicationid, publishedat: null, publicationstatus: "withdrawn",
+          push: { status: "skipped", reason: "nocloud", message: "Retired. No learner server is set up here, so nothing was pushed." },
+        },
       });
       expect(db.tables.curriculumpublications.map((p) => p.status)).toEqual(["withdrawn"]);
       const before = db.snapshot();
@@ -578,7 +590,10 @@ describe("content is confined to the caller's organisation", () => {
       const res = await refuses(who, "put", url(TX.curriculum2));
       expect(withoutReference(res.body)).toEqual({
         error: false,
-        data: { curriculumid: TX.curriculum2, retired: false, publicationid: null, publishedat: null, publicationstatus: "never" },
+        data: {
+          curriculumid: TX.curriculum2, retired: false, publicationid: null, publishedat: null, publicationstatus: "never",
+          push: { status: "skipped", reason: "nothingpublished", message: "Retired. That curriculum was not published, so there was nothing to push." },
+        },
       });
     });
     it.each(IN_X)("%s: Y's and an unowned curriculum answer as an absent one does, nothing written", async (who) => {
@@ -603,6 +618,150 @@ describe("content is confined to the caller's organisation", () => {
       for (const who of ["a school-user token", "a server token"] as Who[]) {
         expect([401, 403]).toContain((await refuses(who, "put", url(TX.curriculum))).status);
       }
+    });
+  });
+
+  // Publish, retire and the delete of a published curriculum push the organisation's published set to the learner server,
+  // after they have committed, and a failed push never undoes them. (The pushing itself is proved in business/publish-push.spec.ts.)
+  describe("the learner-server push of a publish, a retire and a delete", () => {
+    const LEARNER = "http://learner.test";
+    const cloudBefore = Config.fortyk.api.rpi.cloud;
+    const put = axios.put as jest.Mock;
+    const USER_OF: Record<string, string> = { "X's Organisation Admin": "oa", "X's Admin": "ad", "a platform user acting as X": "p" };
+    beforeEach(() => {
+      Config.fortyk.api.rpi.cloud = LEARNER;
+      db.add("organisations", { organisationid: X, organisationcode: "xorg", organisationname: "អង្គការ ក", organisationstatus: true, uitheme: "kids", brandingconfig: null, settingsconfig: null, contentlanguage: null, isdeleted: false });
+    });
+    afterAll(() => {
+      Config.fortyk.api.rpi.cloud = cloudBefore;
+    });
+    /** What was PUT to the learner server, call `n`: the url, the headers, and the file inside the zip. */
+    const pushed = (n = 0) => {
+      const [url, form, options] = put.mock.calls[n] as [string, FormData, { headers: Record<string, string> }];
+      const buffer = form.getBuffer();
+      const start = buffer.indexOf("\r\n\r\n") + 4;
+      const end = buffer.lastIndexOf(`\r\n--${form.getBoundary()}--`);
+      const zip = new AdmZip(buffer.subarray(start, end));
+      const entries = zip.getEntries().map((e) => e.entryName);
+      return { url, headers: options.headers, json: JSON.parse(zip.readAsText(entries[0])) as Record<string, Row[]> };
+    };
+    const PUSHED = (verb: string) => ({ status: "pushed", message: `${verb}. The learner server has the organisation's published curricula.` });
+
+    it.each(IN_X)("%s: PUT /curriculum/publish pushes X's published set once, with the server key and X's id, and says so", async (who) => {
+      const res = await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.push).toEqual(PUSHED("Published"));
+      expect(put).toHaveBeenCalledTimes(1);
+      const call = pushed();
+      expect(call.url).toBe(`${LEARNER}/import/master`);
+      expect(call.headers).toMatchObject({ Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": X });
+      expect(call.json.organisationid).toBe(X);
+      expect(idsOf(call.json.curriculums, "curriculumid")).toEqual([TX.curriculum]);
+      // the publish was made by the caller, and nothing of Y's or the unowned tree is in what was sent
+      expect(db.createdIn("curriculumpublications")[0]).toMatchObject({ publishedby: USER_OF[who], status: "published" });
+      for (const other of [TY, TU]) {
+        for (const value of Object.values(other)) if (typeof value === "string" && value.startsWith("00000000")) expect(JSON.stringify(call.json)).not.toContain(value);
+      }
+    });
+
+    it.each(IN_X)("%s: PUT /curriculum/publish when the learner server refuses: 200, the publication is there, and the answer says why", async (who) => {
+      put.mockRejectedValue({ isAxiosError: true, response: { status: 401, data: { errormessage: "secret-detail" } } });
+      const res = await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.push).toEqual({
+        status: "failed",
+        code: "BAD_GATEWAY",
+        cause: "The student server refused this server's request.",
+        hint: "This is a setup problem between the two servers, not your sign-in. Contact support with the reference.",
+        message: "Published. The push to the learner server failed; a platform admin can re-push from Sync Content. The student server refused this server's request.",
+      });
+      expect(JSON.stringify(res.body)).not.toContain("secret-detail");
+      expect(db.tables.curriculumpublications.map((p) => [p.curriculumid, p.status])).toEqual([[TX.curriculum, "published"]]);
+    });
+
+    it.each(IN_X)("%s: Y's and an unowned curriculum are as an absent one for publish and retire, and nothing is pushed", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(`/curriculum/publish/${id}`), TY.curriculum, TU.curriculum)).toBe(404);
+      expect(await asAbsent(who, "put", (id) => r(`/curriculum/retire/${id}`), TY.curriculum, TU.curriculum)).toBe(404);
+      expect(put).not.toHaveBeenCalled();
+    });
+
+    it.each(IN_X)("%s: PUT /curriculum/retire pushes the set without the retired curriculum", async (who) => {
+      await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
+      const res = await send(who, "put", `/curriculum/retire/${TX.curriculum}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.push).toEqual(PUSHED("Retired"));
+      expect(put).toHaveBeenCalledTimes(2);
+      expect(pushed(1).json.curriculums).toEqual([]);
+      expect(pushed(1).headers).toMatchObject({ "X-Organisation-Id": X });
+    });
+
+    it.each(IN_X)("%s: PUT /curriculum/retire of X's deleted curriculum is 200; Y's deleted curriculum, and an unowned one, answer as an absent one does", async (who) => {
+      // another organisation's deleted curriculum, and an unowned one, are as an absent one: 404, nothing written, nothing pushed
+      stored("curriculums", "curriculumid", TY.curriculum).isdeleted = true;
+      stored("curriculums", "curriculumid", TU.curriculum).isdeleted = true;
+      expect(await asAbsent(who, "put", (id) => r(`/curriculum/retire/${id}`), TY.curriculum, TU.curriculum)).toBe(404);
+      expect(put).not.toHaveBeenCalled();
+      await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
+      // soft-deleted without being withdrawn (as it was before a delete withdrew)
+      stored("curriculums", "curriculumid", TX.curriculum).isdeleted = true;
+      const own = await send(who, "put", `/curriculum/retire/${TX.curriculum}`);
+      expect(own.status).toBe(200);
+      expect(own.body.data).toMatchObject({ curriculumid: TX.curriculum, retired: true, publicationstatus: "withdrawn", push: PUSHED("Retired") });
+    });
+
+    it.each(IN_X)("%s: DELETE /curriculum/:id withdraws a published curriculum with the delete, keeps its countries, and pushes the set without it", async (who) => {
+      await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
+      const countries = db.tables.curriculumcountry.filter((c) => c.curriculumid === TX.curriculum);
+      expect(countries).toHaveLength(1);
+      const res = await send(who, "delete", `/curriculum/${TX.curriculum}`);
+      expect(res.status).toBe(200);
+      // `data` is still `true`; the push is reported beside it
+      expect(withoutReference(res.body)).toEqual({ error: false, data: true, push: PUSHED("Deleted") });
+      expect(stored("curriculums", "curriculumid", TX.curriculum).isdeleted).toBe(true);
+      expect(db.tables.curriculumpublications.map((p) => [p.curriculumid, p.status])).toEqual([[TX.curriculum, "withdrawn"]]);
+      expect(db.tables.curriculumcountry.filter((c) => c.curriculumid === TX.curriculum)).toEqual(countries);
+      expect(put).toHaveBeenCalledTimes(2);
+      expect(pushed(1).json.curriculums).toEqual([]);
+    });
+
+    it.each(IN_X)("%s: DELETE /curriculum/:id of a curriculum that was never published pushes nothing", async (who) => {
+      const res = await send(who, "delete", `/curriculum/${TX.curriculum2}`);
+      expect(res.status).toBe(200);
+      expect(withoutReference(res.body)).toEqual({
+        error: false, data: true,
+        push: { status: "skipped", reason: "nothingpublished", message: "Deleted. That curriculum was not published, so there was nothing to push." },
+      });
+      expect(put).not.toHaveBeenCalled();
+    });
+
+    it.each(IN_X)("%s: DELETE /curriculum/:id when the learner server is down: the delete stands, the answer says the push failed", async (who) => {
+      await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
+      put.mockRejectedValue({ isAxiosError: true, message: "connect ECONNREFUSED secret-detail", code: "ECONNREFUSED" });
+      const res = await send(who, "delete", `/curriculum/${TX.curriculum}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data).toBe(true);
+      expect(res.body.push).toMatchObject({ status: "failed", code: "SERVICE_UNAVAILABLE", cause: "The service is temporarily unavailable." });
+      expect(JSON.stringify(res.body)).not.toContain("secret-detail");
+      expect(stored("curriculums", "curriculumid", TX.curriculum).isdeleted).toBe(true);
+      expect(db.tables.curriculumpublications.map((p) => p.status)).toEqual(["withdrawn"]);
+    });
+
+    it.each(IN_X)("%s: DELETE /curriculum/:id of Y's or an unowned curriculum is as an absent one, nothing written, nothing pushed", async (who) => {
+      expect(await asAbsent(who, "delete", (id) => r(`/curriculum/${id}`), TY.curriculum, TU.curriculum)).toBe(400);
+      expect(put).not.toHaveBeenCalled();
+    });
+
+    it("a platform user not acting who deletes Y's published curriculum pushes Y's set, not X's", async () => {
+      db.add("organisations", { organisationid: Y, organisationcode: "yorg", organisationname: "អង្គការ ខ", organisationstatus: true, uitheme: "kids", brandingconfig: null, settingsconfig: null, contentlanguage: null, isdeleted: false });
+      const actingAsY = bearer({ lmsuserid: "p", lmsuserroles: [Role.superadmin], permissions: ["superadmin", ...PERMS], organisationid: Y, isplatform: true });
+      expect((await request(app.getHttpServer()).put(`/curriculum/publish/${TY.curriculum}`).set("Authorization", actingAsY).set("Connection", "close")).status).toBe(200);
+      put.mockClear();
+      const res = await send(NOT_ACTING, "delete", `/curriculum/${TY.curriculum}`);
+      expect(res.status).toBe(200);
+      expect(res.body.push).toEqual(PUSHED("Deleted"));
+      expect(put).toHaveBeenCalledTimes(1);
+      expect(pushed().headers).toMatchObject({ "X-Organisation-Id": Y });
+      expect(pushed().json.organisationid).toBe(Y);
     });
   });
 
