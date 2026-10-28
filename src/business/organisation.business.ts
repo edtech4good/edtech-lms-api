@@ -13,6 +13,8 @@ import { organisationcountry } from "../models/data-models/organisationcountry";
 import { lmsusers } from "../models/data-models/lmsusers";
 import { schools } from "../models/data-models/school";
 import { tokens } from "../models/data-models/tokens";
+import { contenttranslations } from "../models/data-models/contenttranslations";
+import { normaliseLanguage } from "src/constants/content-translations";
 
 export interface OrganisationCountryView {
   countryid: string;
@@ -98,6 +100,8 @@ export interface OrganisationChanges {
   uitheme?: string;
   brandingconfig?: OrganisationBranding | null;
   organisationstatus?: boolean;
+  /** Left unchanged when undefined; null clears it. */
+  contentlanguage?: string | null;
 }
 
 /** What the list returns: every column but `settingsconfig` (the full row is for GET by id). */
@@ -110,6 +114,7 @@ const LIST_COLUMNS: Array<keyof organisationsAttributes> = [
   "organisationstatus",
   "uitheme",
   "brandingconfig",
+  "contentlanguage",
   "isdeleted",
   "created_at",
   "created_by",
@@ -392,6 +397,17 @@ export class OrganisationBusiness {
       if (changes.organisationstatus !== undefined) {
         row.organisationstatus = changes.organisationstatus;
         fields.push("organisationstatus");
+      }
+      if (changes.contentlanguage !== undefined) {
+        const language = changes.contentlanguage === null ? null : normaliseLanguage(changes.contentlanguage);
+        // translations in the new content language would become rows in the base language, which the student API refuses and the export leaves out
+        if (language !== null && language !== row.contentlanguage && (await contenttranslations.count({ where: { organisationid, language }, transaction: tnx })) > 0) {
+          throw new ApiError(ErrorCode.INVALID_INPUT, "Some of the information isn't valid.", {
+            fields: [{ field: "contentlanguage", message: "This organisation has translations in that language. Remove them first, or choose another language." }],
+          });
+        }
+        row.contentlanguage = language;
+        fields.push("contentlanguage");
       }
       row.updated_at = new Date();
       row.updated_by = user.lmsuserid;

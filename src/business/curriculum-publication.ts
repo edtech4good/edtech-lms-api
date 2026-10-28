@@ -33,16 +33,34 @@ import {
  *
  * ## The payload
  *
- * `payload.tables` holds sixteen of the export's tables (CURRICULUM_CONTENT_KEYS): the curriculum row; the rows that hang
+ * `payload.tables` holds seventeen of the export's tables (CURRICULUM_CONTENT_KEYS): the curriculum row; the rows that hang
  * from it (baselines and their questions, grades, levels, lessons, and what a lesson holds: learning items and their
  * documents, plans, practices, quizzes and the question links); and the REVERSE CLOSURE, the questions and documents
- * those rows name. The organisation's other curricula are not in it, and neither are the four tables the organisation
- * owns outright (countries, schools, standards, subjects): the sync keeps those live. The rows are read by the
+ * those rows name; and the translations of all of these rows (below). The organisation's other curricula are not in it,
+ * and neither are the four tables the organisation owns outright (countries, schools, standards, subjects): the sync
+ * keeps those live. The rows are read by the
  * export's own readers, in its order, so a row in a payload is the row the export would ship.
  *
  * The closure is picked from the SHAPE of the export (its parent and reference columns), then the result goes through
  * the export's `confine`. A payload that `confine` would change is not published: it is refused (400) with the tables and
  * counts that are wrong, because a payload that ships a dangling reference is exactly what the student API refuses.
+ *
+ * ## Translations (bilingual content)
+ *
+ * `contenttranslations`, the last of the tables, holds the translations of every row the payload carries: the curriculum's own rows and the questions (and documents) the closure pulls in (decision 10). They are
+ * picked like the bank rows: by what is already picked, through each translation's polymorphic parent (`tablename`,
+ * `rowid`). The rows are the export's (`readTranslations`): none when the organisation has no content language, none in
+ * that language, none the student API would refuse; a stale translation is kept (it says what the translator wrote and
+ * the student API leaves it out when it serves). A translation is a row like any other: its hash (below) is of its own
+ * columns, so editing a translation changes its row, the payload and "changed since publish" with no extra work, and the
+ * summary counts and diffs translation rows by id. A translation updated in place keeps its id, so it shows as changed,
+ * not as removed and added.
+ *
+ * Step 2 (the merge, not built yet): the student side keeps one copy of a shared question, the newest publication's, and
+ * the merge must take that question's translations from THE SAME publication it took the question from, never from
+ * another curriculum's. A translation is therefore merged with its parent row, not by itself, and a translation whose
+ * parent was taken from another publication is dropped. The organisation's `contentlanguage` is read live by the merge
+ * (it is a property of the organisation, not of a curriculum), and translations in it are left out there as here.
  *
  * ## Hashes
  *
@@ -191,8 +209,15 @@ export const hashTables = (tables: Tables): RowHashes => {
   return hashes;
 };
 
-/** The hash of a payload: of the map of its row hashes, so the order of the rows does not matter. */
-export const payloadHashOf = (hashes: RowHashes): string => sha256(canonicalJson(hashes));
+/**
+ * The hash of a payload: of the map of its row hashes, so the order of the rows does not matter. A payload with no
+ * translations hashes as a payload did before the table existed (`contenttranslations: {}` is left out of the map), so
+ * a curriculum published before translations does not show as changed once because the key arrived.
+ */
+export const payloadHashOf = (hashes: RowHashes): string => {
+  const { contenttranslations, ...rest } = hashes;
+  return sha256(canonicalJson(contenttranslations !== undefined && Object.keys(contenttranslations).length > 0 ? hashes : rest));
+};
 
 // ---- picking the curriculum's rows -----------------------------------------------------------------
 
@@ -211,7 +236,7 @@ export const selectCurriculumTables = (all: Tables, curriculumid: string): Table
   };
 
   for (const key of CURRICULUM_CONTENT_KEYS) {
-    if (key === "questions" || key === "documents") continue;
+    if (key === "questions" || key === "documents" || key === "contenttranslations") continue;
     if (key === "curriculums") {
       picked.curriculums = all.curriculums.filter((r) => keyOf(r.curriculumid) === wanted);
       continue;
@@ -229,7 +254,7 @@ export const selectCurriculumTables = (all: Tables, curriculumid: string): Table
   for (const bank of ["questions", "documents"] as const) {
     const named = new Set<string>();
     for (const key of CURRICULUM_CONTENT_KEYS) {
-      if (key === "questions" || key === "documents") continue;
+      if (key === "questions" || key === "documents" || key === "contenttranslations") continue;
       for (const ref of SHAPE[key].refs ?? []) {
         if (ref.to !== bank) continue;
         for (const row of picked[key] ?? []) {
@@ -243,6 +268,20 @@ export const selectCurriculumTables = (all: Tables, curriculumid: string): Table
       return id !== null && named.has(id);
     });
   }
+
+  // The translations of every row picked so far, the bank rows pulled in included (decision 10 of the bilingual content
+  // design): a translation is picked when the row its table and id name is one of the picked rows.
+  const poly = SHAPE.contenttranslations.polymorphic;
+  if (poly === undefined) throw new Error("curriculum publication: translations have no polymorphic parent in the export's shape");
+  const pickedIds = new Map<string, Set<string>>();
+  for (const key of CURRICULUM_CONTENT_KEYS) {
+    if (key !== "contenttranslations") pickedIds.set(key, idsIn(key));
+  }
+  picked.contenttranslations = all.contenttranslations.filter((t) => {
+    const table = t[poly.tablefield];
+    const id = keyOf(t[poly.idfield]);
+    return typeof table === "string" && id !== null && pickedIds.get(table)?.has(id) === true;
+  });
   return picked as Tables;
 };
 

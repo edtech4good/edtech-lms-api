@@ -42,6 +42,7 @@ import { SchoolContributeController } from './modules/school-contribute/school-c
 import { SchoolContributeModule } from './modules/school-contribute/school-contribute.module';
 import { BaselinequestionModule } from './modules/baselinequestion/baselinequestion.module';
 import { SubjectModule } from "./modules/subject/subject.module";
+import { TranslationsModule } from "./modules/translations/translations.module";
 
 const providers = () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -97,6 +98,7 @@ const providers = () => {
     ReportModule,
     SchoolContributeModule,
     BaselinequestionModule,
+    TranslationsModule,
   ],
 
   controllers: [AppController, SchoolContributeController],
