@@ -663,20 +663,26 @@ describe("the not-acting text names the act", () => {
 });
 
 describe("shared bank rows at publish", () => {
-  it("lists none when the other curriculum is not published, or holds an equal copy, or is withdrawn", async () => {
-    // A was never published
-    const first = await publishCurriculum(orgX, USER, B);
-    expect(first.summary.shared).toEqual([]);
-    // A publishes a copy of Q1; B's publish of the same copy lists nothing
+  it("lists none when the other curriculum was never published", async () => {
+    const res = await publishCurriculum(orgX, USER, B);
+    expect(res.summary.changes.questions.added).toBe(1);
+    expect(res.summary.shared).toEqual([]);
+  });
+
+  it("lists none when the other curriculum's published copy is equal to the one being published", async () => {
     await publishCurriculum(orgX, USER, A);
-    const equal = await publishCurriculum(orgX, USER, B);
-    expect(equal.summary.shared).toEqual([]);
-    // A is retired: an edit to Q1 published through B does not reach A's learners
+    const res = await publishCurriculum(orgX, USER, B);
+    expect(res.summary.changes.questions.added).toBe(1);
+    expect(res.summary.shared).toEqual([]);
+  });
+
+  it("lists none when the other curriculum is withdrawn: an edit published through this one does not reach its learners", async () => {
+    await publishCurriculum(orgX, USER, A);
     await retireCurriculum(orgX, A);
     stored("questions", "questionid", Q(1)).questiontext = "Question one, edited";
-    const withdrawn = await publishCurriculum(orgX, USER, B);
-    expect(withdrawn.summary.changes.questions.changed).toBe(1);
-    expect(withdrawn.summary.shared).toEqual([]);
+    const res = await publishCurriculum(orgX, USER, B);
+    expect(res.summary.changes.questions.added).toBe(1);
+    expect(res.summary.shared).toEqual([]);
   });
 
   it("lists the other curriculum when its published copy differs", async () => {
