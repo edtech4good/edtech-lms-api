@@ -2,6 +2,7 @@ import { Op } from "sequelize";
 import { Logger } from "src/config";
 import { ApiError } from "src/models/ApiError";
 import { curriculumpublications } from "src/models/data-models/curriculumpublications";
+import { curriculums } from "src/models/data-models/curriculums";
 import { organisations } from "src/models/data-models/organisations";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { CurriculumPayload, Tables } from "./curriculum-publication";
@@ -33,9 +34,10 @@ import {
  * Every curriculum of the organisation whose LATEST publication (`publishedat`) is `published`. A curriculum that was
  * never published, or whose latest publication is `withdrawn` (retired), is not in the payload, and neither are the rows
  * only it uses (its questions and documents, decision 4); the student side marks it deleted and leaves learner progress
- * alone. The publications are found by the organisation they were made for, not by the live curriculum rows, so a
- * curriculum that was deleted on central after it was published stays in the payload until it is retired (see the note
- * in the step 2 report: deleting a curriculum does not retire it).
+ * alone. The publications are found by the organisation they were made for, but a publication is served only while its
+ * live `curriculums` row exists and is not soft-deleted: a curriculum deleted on central after it was published is not
+ * served (the student side marks it deleted, as it did when the sync read the live tables), and neither are the rows only
+ * it uses; a bank row another served curriculum also uses stays.
  *
  * An organisation with NO published curriculum gets the live tables and every content table empty. The student side then
  * marks every curriculum of the organisation deleted: decision 2's consequence, and the reason the initial publication
@@ -161,7 +163,7 @@ const unreadable = (what: string) =>
     hint: "A published curriculum's stored copy is missing or does not belong to this organisation. Publish the curriculum again.",
   });
 
-/** The organisation's curricula whose latest publication is `published`, with that publication whole. */
+/** The organisation's curricula whose latest publication is `published` and which are live (not deleted), with that publication whole. */
 export const readPublishedSets = async (organisationid: string): Promise<PublishedSet[]> => {
   const history = (await curriculumpublications.findAll({
     where: { organisationid },
@@ -172,7 +174,15 @@ export const readPublishedSets = async (organisationid: string): Promise<Publish
   for (const row of history) {
     if (!latest.has(row.curriculumid)) latest.set(row.curriculumid, row);
   }
-  const live = [...latest.values()].filter((row) => row.status === "published");
+  const published = [...latest.values()].filter((row) => row.status === "published");
+  if (published.length === 0) return [];
+  // a curriculum deleted on central after it was published is not served: its live row must exist and not be deleted
+  const rowsThere = (await curriculums.findAll({
+    where: { organisationid, isdeleted: false, curriculumid: { [Op.in]: published.map((p) => p.curriculumid) } },
+    attributes: ["curriculumid"],
+  })) as unknown as Array<{ curriculumid: string }>;
+  const stillThere = new Set(rowsThere.map((c) => keyOf(c.curriculumid)));
+  const live = published.filter((row) => stillThere.has(keyOf(row.curriculumid)));
   if (live.length === 0) return [];
   const rows = (await curriculumpublications.findAll({
     where: { publicationid: { [Op.in]: live.map((l) => l.publicationid) } },

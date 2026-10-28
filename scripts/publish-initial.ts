@@ -14,6 +14,9 @@
  *   --dry-run   builds and checks everything and writes nothing; prints what it would publish
  *   --as <id>   the staff account recorded as the publisher (default: the platform account the migrations seed)
  *
+ * Note: the business classes it needs import the application's barrel, which imports the email service; under
+ * NODE_ENV=development that service verifies its SMTP transport at import time, so a failed connection warning may print.
+ *
  * Prints one line per organisation (ids only) and the database it ran against. Exit 0 when no organisation was refused,
  * 1 when any was, 2 for a usage or other error.
  */

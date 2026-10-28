@@ -281,6 +281,27 @@ describe("what the sync serves", () => {
     expect(repeated(payload)).toEqual([]);
   });
 
+  it("a curriculum deleted after publishing is not served, nor are the rows only it uses; a shared bank row stays", async () => {
+    await publish(A);
+    await publish(B);
+    stored("curriculums", "curriculumid", A).isdeleted = true;
+    const payload = await served();
+    expect(ids(payload.curriculums, "curriculumid")).toEqual([B]);
+    // Q2, Q3 and the documents were only A's; Q1 is B's too
+    expect(ids(payload.questions, "questionid")).toEqual(sorted(Q(1), Q(5)));
+    expect(payload.documents).toEqual([]);
+    expect(ids(payload.lessons, "lessonid")).toEqual([LB]);
+    expect(payload.schools[0].curriculums).toEqual([B]);
+    expect(contentProblems(payload)).toEqual([]);
+    expect(repeated(payload)).toEqual([]);
+    // a deleted curriculum whose live row is gone altogether is not served either
+    db.tables.curriculums = db.tables.curriculums.filter((c) => c.curriculumid !== A);
+    expect(ids((await served()).curriculums, "curriculumid")).toEqual([B]);
+    // every curriculum deleted: nothing served, no error
+    stored("curriculums", "curriculumid", B).isdeleted = true;
+    expect((await served()).curriculums).toEqual([]);
+  });
+
   it("a curriculum republished after being retired is served again", async () => {
     await publish(A);
     await retireCurriculum(orgX, A);
