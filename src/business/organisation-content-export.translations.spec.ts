@@ -260,7 +260,7 @@ describe("the whole payload, built from the tables", () => {
     // the contract port refuses the same payload with the row put back: the asymmetry is central drops, the student API refuses
     const refused = JSON.parse(JSON.stringify(payload));
     refused.contenttranslations = [{ ...translation(1), lastupdated: AT.toISOString() }];
-    expect(contentProblems(refused)).toEqual(["contenttranslations: 1 row name a lessons row (rowid) that is not in the payload"]);
+    expect(contentProblems(refused)).toEqual(["contenttranslations: 1 row names a lessons row (rowid) that is not in the payload"]);
   });
 
   it("sends none of another organisation's translations", async () => {

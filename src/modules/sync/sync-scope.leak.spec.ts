@@ -306,8 +306,8 @@ describe("the content sync is one organisation's", () => {
       expect(contentProblems(json)).toEqual([]);
     });
 
-    it("leaves out a translation whose lesson is not in the payload instead of failing the export", async () => {
-      db.tables.lessons = db.tables.lessons.filter((l) => l.lessonid !== TX.lesson);
+    it("leaves out a translation whose lesson is not in the payload (its level is gone) instead of failing the export", async () => {
+      db.tables.levels = db.tables.levels.filter((l) => l.levelid !== TX.level);
       const { status, json } = await download("X's Organisation Admin", "/sync/content");
       expect(status).toBe(200);
       expect(ids(json.contenttranslations, "translationid")).toEqual([TX.translation2]);
