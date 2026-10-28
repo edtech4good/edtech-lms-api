@@ -321,7 +321,7 @@ describe("publishing", () => {
     expect(row.publishedat).toEqual(res.publishedat);
     expect(row.payloadhash).toBe(payloadHashOf(hashTables(payloadOf(X, await content(), A, await liveSubjects()).tables)));
     expect(Object.keys((row.summary as { hashes: object }).hashes)).toHaveLength(17);
-    expect(Object.keys(res.summary).sort()).toEqual(["affected", "changes", "counts", "format", "previous", "shared"]);
+    expect(Object.keys(res.summary).sort()).toEqual(["affected", "changes", "counts", "format", "movedaway", "previous", "shared"]);
     expect(res.summary.previous).toBeNull();
     expect(transaction.commit).toHaveBeenCalledTimes(1);
   });
@@ -652,7 +652,7 @@ describe("retention drops the hashes and names of a pruned summary", () => {
     const oldest = summaryOf(0);
     expect(oldest.hashes).toBeUndefined();
     expect(oldest.names).toBeUndefined();
-    expect(Object.keys(oldest).sort()).toEqual(["affected", "changes", "counts", "format", "previous", "shared"]);
+    expect(Object.keys(oldest).sort()).toEqual(["affected", "changes", "counts", "format", "movedaway", "previous", "shared"]);
     expect(oldest.counts.lessons).toBe(2);
     expect(oldest.changes.lessons).toEqual({ added: 2, removed: 0, changed: 0 });
     expect(oldest.affected.lessons.added).toHaveLength(2);
@@ -799,5 +799,112 @@ describe("after a retire", () => {
     delete (latest.summary as StoredSummary).hashes;
     const third = await publishCurriculum(orgX, USER, A);
     expect(third.summary).not.toHaveProperty("sincewithdrawn");
+  });
+});
+
+describe("a grade that moved to another curriculum (the summary names what the publish removes)", () => {
+  // Curriculum A also holds a second grade G2 with a level and a lesson of its own; the specs move G2 (or a level, or a lesson) to B.
+  const [G2, V2, L3] = [id(111), id(112), id(113)];
+  const MESSAGE = (what: string) => `This publish removes ${what} now in another curriculum until that curriculum is published.`;
+  beforeEach(() => {
+    db.add("grades", { gradeid: G2, curriculumid: A, gradename: "Grade two", gradeorder: 2, gradestatus: true });
+    db.add("levels", { levelid: V2, gradeid: G2, levelname: "Level two", levelorder: 1, levelstatus: true });
+    db.add("lessons", lessonRow(L3, V2, "Lesson three", 1));
+  });
+  const moveG2To = (curriculumid: string) => {
+    stored("grades", "gradeid", G2).curriculumid = curriculumid;
+  };
+
+  it("lists the grade, with the curriculum it is in now, when the publish removes it and that curriculum was never published", async () => {
+    await publishCurriculum(orgX, USER, A);
+    moveG2To(B);
+    const res = await publishCurriculum(orgX, USER, A);
+    // it is in `removed` too, with its subtree
+    expect(res.summary.changes.grades).toEqual({ added: 0, removed: 1, changed: 0 });
+    expect(res.summary.changes.lessons.removed).toBe(1);
+    // and only the root is named: not its level, not its lesson
+    expect(res.summary.movedaway).toEqual([{ table: "grades", id: G2, name: "Grade two", tocurriculum: { id: B, name: "Maths" }, published: false }]);
+    expect(res.summary.movedawaymessage).toBe(MESSAGE("1 grade"));
+    expect(res.summary.movedawaymessage).not.toContain(G2);
+    // what the next publication stores carries it too
+    expect((publications().find((p) => p.publicationid === res.publicationid)!.summary as StoredSummary).movedaway).toEqual(res.summary.movedaway);
+  });
+
+  it("says the other curriculum is published, when it was published before the move and does not carry the grade yet", async () => {
+    await publishCurriculum(orgX, USER, A);
+    await publishCurriculum(orgX, USER, B);
+    moveG2To(B);
+    const res = await publishCurriculum(orgX, USER, A);
+    expect(res.summary.movedaway).toEqual([{ table: "grades", id: G2, name: "Grade two", tocurriculum: { id: B, name: "Maths" }, published: true }]);
+  });
+
+  it("lists none once that curriculum has been published after the move: its learners hold the grade", async () => {
+    await publishCurriculum(orgX, USER, A);
+    moveG2To(B);
+    await publishCurriculum(orgX, USER, B);
+    const res = await publishCurriculum(orgX, USER, A);
+    expect(res.summary.changes.grades.removed).toBe(1);
+    expect(res.summary.movedaway).toEqual([]);
+    expect(res.summary).not.toHaveProperty("movedawaymessage");
+  });
+
+  it("lists none for a grade that was deleted, not moved: it is in `removed` as before", async () => {
+    await publishCurriculum(orgX, USER, A);
+    db.tables.grades = db.tables.grades.filter((g) => g.gradeid !== G2);
+    const res = await publishCurriculum(orgX, USER, A);
+    expect(res.summary.changes.grades.removed).toBe(1);
+    expect(res.summary.movedaway).toEqual([]);
+    expect(res.summary).not.toHaveProperty("movedawaymessage");
+  });
+
+  it("lists none for a grade soft-deleted in the other curriculum, and none when the other curriculum is deleted", async () => {
+    await publishCurriculum(orgX, USER, A);
+    moveG2To(B);
+    stored("grades", "gradeid", G2).isdeleted = true;
+    const soft = await publishCurriculum(orgX, USER, A);
+    expect(soft.summary.movedaway).toEqual([]);
+    stored("grades", "gradeid", G2).isdeleted = false;
+    stored("curriculums", "curriculumid", B).isdeleted = true;
+    // (A is unchanged since the last publish, so the grade is no longer a removal; publish another change to be sure of the comparison)
+    stored("lessons", "lessonid", L1).lessonname = "Lesson uno";
+    const gone = await publishCurriculum(orgX, USER, A);
+    expect(gone.summary.movedaway).toEqual([]);
+  });
+
+  it("lists a level or a lesson moved to a grade of another curriculum, as its own root, and counts each kind in the message", async () => {
+    await publishCurriculum(orgX, USER, A);
+    stored("levels", "levelid", V2).gradeid = GB;
+    stored("lessons", "lessonid", L2).levelid = VB;
+    const res = await publishCurriculum(orgX, USER, A);
+    expect(res.summary.movedaway).toEqual([
+      { table: "levels", id: V2, name: "Level two", tocurriculum: { id: B, name: "Maths" }, published: false },
+      { table: "lessons", id: L2, name: "Lesson two", tocurriculum: { id: B, name: "Maths" }, published: false },
+    ]);
+    // the lesson of the moved level (L3) travels with its level and is not a root
+    expect(res.summary.changes.lessons.removed).toBe(2);
+    expect(res.summary.movedawaymessage).toBe(MESSAGE("1 level and 1 lesson"));
+  });
+
+  it("counts several grades in the plural", async () => {
+    await publishCurriculum(orgX, USER, A);
+    moveG2To(B);
+    stored("grades", "gradeid", GA).curriculumid = B;
+    const res = await publishCurriculum(orgX, USER, A);
+    expect(res.summary.movedaway!.map((m) => m.id).sort()).toEqual(sorted(GA, G2));
+    expect(res.summary.movedawaymessage).toBe(MESSAGE("2 grades"));
+  });
+
+  it("is in the overview's pending summary, before anyone publishes", async () => {
+    await publishCurriculum(orgX, USER, A);
+    moveG2To(B);
+    const overview = await publicationOverview(orgX, A);
+    expect(overview.pending!.movedaway).toEqual([{ table: "grades", id: G2, name: "Grade two", tocurriculum: { id: B, name: "Maths" }, published: false }]);
+    expect(overview.pending!.movedawaymessage).toBe(MESSAGE("1 grade"));
+  });
+
+  it("says nothing on a first publish", async () => {
+    moveG2To(B);
+    const res = await publishCurriculum(orgX, USER, A);
+    expect(res.summary.movedaway).toEqual([]);
   });
 });

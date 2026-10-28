@@ -66,6 +66,14 @@ import {
  * another publication is dropped. The organisation's `contentlanguage` is read live by the merge (it is a property of the
  * organisation, not of a curriculum), and translations in it are left out there as here.
  *
+ * ## A grade that moved to another curriculum
+ *
+ * The merge keeps one copy of a row, the newest publication's. A grade (or level, or lesson) that was moved from curriculum
+ * A to curriculum B, when only A is republished, is in no publication that is served until B is published: A's new
+ * publication no longer carries it. So a publish of A names, in `movedaway` and `movedawaymessage`, the roots of the
+ * subtrees it removes that now live in another curriculum whose latest publication does not carry them (movedAway). A row
+ * that was deleted, not moved, is only in `removed`. Once B is published after the move, A's next summary does not list it.
+ *
  * ## Hashes
  *
  * A row's hash is the sha256 of its JSON with the keys sorted at every level (arrays keep their order, a date is its
@@ -114,6 +122,21 @@ export interface SharedRow {
   curricula: RowRef[];
 }
 
+/**
+ * A grade, level or lesson (the root of a moved subtree) that the previous publication of this curriculum carried and its
+ * live tree no longer holds, because the row now lives under another curriculum of the organisation whose latest
+ * publication does not carry it. Until that curriculum is published its learners do not get the row (nor what hangs from it).
+ */
+export interface MovedAway {
+  table: "grades" | "levels" | "lessons";
+  id: string;
+  name: string;
+  /** The curriculum the row lives under now. */
+  tocurriculum: RowRef;
+  /** True when that curriculum has a live publication (it was published before the move, so it does not carry the row yet); false when it has none (never published, or withdrawn). */
+  published: boolean;
+}
+
 /** What a publication's summary keeps for good (see StoredSummary for what retention drops). */
 export interface SlimSummary {
   format: 1;
@@ -126,6 +149,13 @@ export interface SlimSummary {
   affected: { lessons: Affected; questions: Affected; truncated: boolean };
   /** Questions and documents added or changed here whose copy differs from another published curriculum's latest copy. */
   shared: SharedRow[];
+  /**
+   * Subtree roots (grade, level, lesson) this publish removes that now live under another curriculum which does not carry
+   * them yet (movedAway; at most NAME_LIMIT listed, the message counts them all). Absent on a publication made before the field existed.
+   */
+  movedaway?: MovedAway[];
+  /** Only when `movedaway` is not empty: the sentence an editor reads (no ids). */
+  movedawaymessage?: string;
   /**
    * Only on a publish that follows a retire (`previous` is null): what changed since the curriculum was withdrawn,
    * compared with the withdrawn publication's kept hashes. Omitted when there was no withdrawn publication to compare with.
@@ -502,6 +532,75 @@ export const sharedRows = (
   return out;
 };
 
+const MOVED_LEVELS = [
+  { table: "grades", name: "gradename", parent: null },
+  { table: "levels", name: "levelname", parent: "grades" },
+  { table: "lessons", name: "lessonname", parent: "levels" },
+] as const;
+
+const isGone = (row: Row): boolean => row.isdeleted === true || row.isdeleted === 1;
+
+/**
+ * The grades, levels and lessons this publish removes (`diff` against the previous publication) that were not deleted but
+ * moved: they live now under another live curriculum of the organisation, and that curriculum's latest publication does not
+ * carry them. With newest-publication-wins per table (published-content.ts) such a row is in no served payload until that
+ * curriculum is published. Only the root of a moved subtree is listed: a level whose grade moved with it is not. A row that is
+ * deleted, or sits under a deleted parent or curriculum, is not moved; it stays in `removed` as before. `published` is the
+ * latest published hashes of the other curricula (publishedHashesOf). Pure.
+ */
+export const movedAway = (content: Tables, curriculumid: string, diff: ReturnType<typeof diffHashes>, published: PublishedHashes): MovedAway[] => {
+  const mine = keyOf(curriculumid);
+  const curricula = new Map(content.curriculums.filter((c) => !isGone(c)).map((c) => [keyOf(c.curriculumid), c]));
+  const rowsById = (table: "grades" | "levels" | "lessons") =>
+    new Map(content[table].filter((r) => !isGone(r)).map((r) => [keyOf(r[SHAPE[table].pk]), r]));
+  const byId = { grades: rowsById("grades"), levels: rowsById("levels"), lessons: rowsById("lessons") };
+  // the live curriculum a row sits under, through live parents only (null when any step is deleted or absent)
+  const curriculumOf = (table: "grades" | "levels" | "lessons", row: Row): string | null => {
+    const level = MOVED_LEVELS.find((l) => l.table === table)!;
+    if (level.parent === null) return keyOf(row.curriculumid);
+    const fk = SHAPE[table].parent!.fk;
+    const parent = byId[level.parent].get(keyOf(row[fk]));
+    return parent === undefined ? null : curriculumOf(level.parent, parent);
+  };
+  const removedIds = (table: "grades" | "levels" | "lessons") => new Set(diff[table].removed.map(keyOf));
+  const out: MovedAway[] = [];
+  for (const level of MOVED_LEVELS) {
+    for (const id of diff[level.table].removed) {
+      const row = byId[level.table].get(keyOf(id));
+      if (row === undefined) continue;
+      const to = curriculumOf(level.table, row);
+      const target = to === null || to === mine ? undefined : curricula.get(to);
+      if (target === undefined) continue;
+      // its parent was removed from this curriculum too: the parent is the root of the moved subtree
+      if (level.parent !== null && removedIds(level.parent).has(keyOf(row[SHAPE[level.table].parent!.fk]))) continue;
+      const theirs = published.get(String(target.curriculumid));
+      const carried = Object.keys(theirs?.[level.table] ?? {}).some((held) => keyOf(held) === keyOf(id));
+      if (carried) continue;
+      out.push({
+        table: level.table,
+        id,
+        name: String(row[level.name] ?? ""),
+        tocurriculum: { id: String(target.curriculumid), name: String(target.curriculumname ?? "") },
+        published: theirs !== undefined,
+      });
+    }
+  }
+  return out;
+};
+
+const KIND_TEXT = { grades: ["grade", "grades"], levels: ["level", "levels"], lessons: ["lesson", "lessons"] } as const;
+
+/** The sentence for the editor (no ids), or null when nothing moved away. */
+export const movedAwayMessage = (moved: MovedAway[]): string | null => {
+  const parts = (["grades", "levels", "lessons"] as const)
+    .map((table) => [table, moved.filter((m) => m.table === table).length] as const)
+    .filter(([, n]) => n > 0)
+    .map(([table, n]) => `${n} ${KIND_TEXT[table][n === 1 ? 0 : 1]}`);
+  if (parts.length === 0) return null;
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  return `This publish removes ${list} now in another curriculum until that curriculum is published.`;
+};
+
 /** A publication to compare a payload with: its id and what its summary kept of it (the hashes are needed, the names help). */
 export interface CompareBase {
   publicationid: string;
@@ -542,7 +641,8 @@ const compare = (tables: Tables, hashes: RowHashes, base: CompareBase | null) =>
 
 /**
  * The summary of a payload against the publication before it (`previous`: its hashes and names, or null when there is
- * none to compare with). Exact counts per table; the lessons and questions named. `withdrawn`, given only when there is
+ * none to compare with). Exact counts per table; the lessons and questions named; `moved`, the subtree roots the publish
+ * removes that now live in another curriculum (movedAway), named and counted in a message. `withdrawn`, given only when there is
  * no `previous`, is the withdrawn publication the curriculum had: the summary then also says what changed `sincewithdrawn`.
  * Pure.
  */
@@ -552,6 +652,7 @@ export const summarise = (
   previous: CompareBase | null,
   shared: SharedRow[] = [],
   withdrawn: CompareBase | null = null,
+  moved: MovedAway[] = [],
 ): PublicationSummary => {
   const main = compare(tables, hashes, previous);
   const since = previous === null && withdrawn !== null ? compare(tables, hashes, withdrawn) : null;
@@ -562,6 +663,8 @@ export const summarise = (
     changes: main.changes,
     affected: main.affected,
     shared,
+    movedaway: moved.slice(0, NAME_LIMIT),
+    ...(moved.length > 0 ? { movedawaymessage: movedAwayMessage(moved) as string } : {}),
     ...(since !== null && withdrawn !== null
       ? { sincewithdrawn: { publicationid: withdrawn.publicationid, changes: since.changes, affected: since.affected } }
       : {}),
@@ -722,7 +825,7 @@ export const publishCurriculum = async (org: OrgContext, publishedby: string, cu
     const withdrawn = previous === null ? baseOf(latest, "withdrawn") : null;
     const diff = diffHashes(hashes, previous?.summary.hashes ?? null);
     const shared = sharedRows(content, curriculumid, payload.tables, diff, otherPublished);
-    const summary = summarise(payload.tables, hashes, previous, shared, withdrawn);
+    const summary = summarise(payload.tables, hashes, previous, shared, withdrawn, movedAway(content, curriculumid, diff, otherPublished));
 
     const publicationid = uuidv4();
     const publishedat = nextTime(latest?.publishedat);
@@ -850,8 +953,16 @@ export const publicationOverview = async (org: OrgContext, curriculumid: string)
     base.changedsincepublish = payloadHashOf(hashes) !== latest.payloadhash;
     const previous = baseOf(latest, "published");
     const diff = diffHashes(hashes, previous?.summary.hashes ?? null);
+    const otherPublished = await publishedHashesOf(content, curriculumid);
     base.pending = summaryForAnswer(
-      summarise(payload.tables, hashes, previous, sharedRows(content, curriculumid, payload.tables, diff, await publishedHashesOf(content, curriculumid))),
+      summarise(
+        payload.tables,
+        hashes,
+        previous,
+        sharedRows(content, curriculumid, payload.tables, diff, otherPublished),
+        null,
+        movedAway(content, curriculumid, diff, otherPublished),
+      ),
     );
   } catch (e) {
     if (e instanceof ApiError && e.code === ErrorCode.INVALID_INPUT) {
