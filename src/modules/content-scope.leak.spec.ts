@@ -615,7 +615,7 @@ describe("content is confined to the caller's organisation", () => {
         error: false,
         data: {
           curriculumid: TX.curriculum, publicationid: null, publishedat: null, publicationstatus: "never", changedsincepublish: false, problem: null, pending: null, latest: null,
-          translationcoverage: null,
+          translationcoverage: expect.objectContaining({ languages: expect.any(Object) }),
         },
       });
       await send(who, "put", `/curriculum/publish/${TX.curriculum}`);

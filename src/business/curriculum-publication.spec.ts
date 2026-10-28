@@ -508,16 +508,17 @@ describe("changed since publish", () => {
     expect(overview.pending).toBeNull();
   });
 
-  it("is false for a curriculum never published or withdrawn, with no state to compare against", async () => {
+  it("is false for a curriculum never published or withdrawn, with no state to compare against (its coverage is there all the same)", async () => {
     expect(await publicationOverview(orgX, A)).toEqual({
       curriculumid: A, publicationid: null, publishedat: null, publicationstatus: "never", changedsincepublish: false, problem: null, pending: null, latest: null,
-      translationcoverage: null,
+      translationcoverage: expect.objectContaining({ languages: expect.any(Object) }),
     });
     await publishCurriculum(orgX, USER, A);
     await retireCurriculum(orgX, A);
     const withdrawn = await publicationOverview(orgX, A);
     expect(withdrawn).toMatchObject({ publicationstatus: "withdrawn", publishedat: null, changedsincepublish: false, pending: null });
     expect(withdrawn.latest!.status).toBe("withdrawn");
+    expect(withdrawn.translationcoverage).toEqual(expect.objectContaining({ languages: expect.any(Object) }));
   });
 
   it("lets a platform user who is not acting read a curriculum through its owner; an unowned one has no state", async () => {

@@ -11,6 +11,7 @@ import {
   publicationOverview,
   publishCurriculum,
   readLiveSubjects,
+  retireCurriculum,
   rowHash,
   selectCurriculumTables,
   Tables,
@@ -200,13 +201,28 @@ describe("the overview's coverage", () => {
   const contentReads = (): number => (jest.mocked(lessons.findAll) as unknown as jest.Mock).mock.calls.length;
   const clearReads = () => (jest.mocked(lessons.findAll) as unknown as jest.Mock).mockClear();
 
-  it("is not there before the curriculum is ever published, and reads none of the organisation's content", async () => {
+  it("is there before the curriculum is ever published and after it is withdrawn, with no pending change, from one read of the content", async () => {
     clearReads();
-    const overview = await publicationOverview(orgX, A);
-    expect(overview.publicationstatus).toBe("never");
-    expect(overview.translationcoverage).toBeNull();
-    expect(overview.pending).toBeNull();
-    expect(contentReads()).toBe(0);
+    await readCurriculumContent(contextOfOrganisation(X)); // the read the overview makes
+    const oneRead = contentReads();
+    expect(oneRead).toBeGreaterThan(0);
+    db.add("contenttranslations", translation(2, "lessons", L1, "lessonname", "Lesson one"));
+    clearReads();
+    const never = await publicationOverview(orgX, A);
+    expect(never.publicationstatus).toBe("never");
+    expect(never.pending).toBeNull();
+    expect(never.changedsincepublish).toBe(false);
+    expect(contentReads()).toBe(oneRead);
+    expect(Object.keys(never.translationcoverage!.languages.km.lessons).sort()).toEqual(sorted(L1, L2));
+    expect(never.translationcoverage!.languages.km.lessons[L1]).toEqual({ untranslated: expect.any(Number), stale: 0 });
+    await publishCurriculum(orgX, id(7), A);
+    await retireCurriculum(orgX, A);
+    clearReads();
+    const withdrawn = await publicationOverview(orgX, A);
+    expect(withdrawn.publicationstatus).toBe("withdrawn");
+    expect(withdrawn.pending).toBeNull();
+    expect(contentReads()).toBe(oneRead);
+    expect(Object.keys(withdrawn.translationcoverage!.languages.km.lessons).sort()).toEqual(sorted(L1, L2));
   });
 
   it("is there once it is published (untranslated and stale per lesson, per language), from one read of the content", async () => {

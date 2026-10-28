@@ -799,8 +799,8 @@ export interface PublicationOverview extends PublicationState {
   /**
    * How much of the curriculum's text is translated, per language, with the untranslated and stale counts of every lesson
    * (translation-coverage.ts). Read here and not on the tree, with the rest of what needs the organisation's whole bank,
-   * from the same read as `pending`; so it is there for a curriculum with a live publication and `null` for one that was
-   * never published (which reads none of the organisation's content). It never blocks a publish.
+   * from the same read as `pending`; so it is there in every state (never published, withdrawn, published) and `null` only
+   * for a curriculum that is not in the content. It never blocks a publish.
    */
   translationcoverage: TranslationCoverage | null;
 }
@@ -829,17 +829,17 @@ export const publicationOverview = async (org: OrgContext, curriculumid: string)
       summary: summaryForAnswer(latest.summary as unknown as StoredSummary),
     };
   }
-  // A curriculum that was never published (or whose latest publication is not live) has nothing to compare and no coverage
-  // to show: it reads none of the organisation's content.
-  if (latest === undefined || latest.status !== "published") {
-    return base;
-  }
-  // The organisation's content is read once, and the curriculum's own rows are picked from it once: the coverage and the
-  // pending change are both worked out from those rows.
+  // The organisation's content is read once, in every state, and the curriculum's own rows are picked from it once: the
+  // coverage is worked out from those rows whether or not the curriculum is published (an editor translates before the
+  // first publish and before a republish). Only the pending change needs a live publication to compare against.
   const { content, subjects } = await readSources(organisationid);
   const picked = selectCurriculumTables(content, curriculumid);
   if (picked.curriculums.length > 0) {
     base.translationcoverage = translationCoverage(picked, await readContentLanguage(organisationid));
+  }
+  // A curriculum that was never published (or whose latest publication is not live) has nothing to compare.
+  if (latest === undefined || latest.status !== "published") {
+    return base;
   }
   try {
     const payload = payloadOfPicked(organisationid, picked, subjects);

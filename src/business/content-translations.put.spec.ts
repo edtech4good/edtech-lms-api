@@ -70,6 +70,23 @@ describe("putTranslations: two saves at once", () => {
     expect(one.translations[0].translationid).toBe(two.translations[0].translationid);
   });
 
+  it("a key held by another organisation's row is refused and its text is left as it was (defence in depth, central never makes one)", async () => {
+    const Y = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    db.add("contenttranslations", { translationid: id(900), organisationid: Y, tablename: "lessons", rowid: L1, field: "lessonname", subkey: "", language: "km", text: "theirs", sourcehash: "h", lastupdated: new Date(0) });
+    const before = JSON.parse(JSON.stringify(db.tables.contenttranslations));
+    // a set that holds the key among others writes none of them, and the same key in another case is the same key
+    for (const [lang, fields] of [["km", { lessonname: "mine" }], ["KM", { lessondescription: "mine too", lessonname: "mine" }]] as const) {
+      await expect(put({ ...fields }, lang)).rejects.toMatchObject({ status: 404 });
+    }
+    expect(JSON.parse(JSON.stringify(db.tables.contenttranslations))).toEqual(before);
+    expect(db.created).toEqual([]);
+    expect(transaction.rollback).toHaveBeenCalled();
+    expect(transaction.commit).not.toHaveBeenCalled();
+    // a text of the same row in the same language that nobody else holds is saved as ever
+    await put({ lessondescription: "mine" });
+    expect(db.tables.contenttranslations.map((t) => [t.organisationid, t.field, t.text])).toEqual([[Y, "lessonname", "theirs"], [X, "lessondescription", "mine"]]);
+  });
+
   it("a refused save writes nothing and opens no transaction", async () => {
     await expect(put({ lessonname: "x" }, "en")).rejects.toMatchObject({ status: 400 });
     expect(db.tables.contenttranslations).toEqual([]);

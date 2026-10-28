@@ -320,6 +320,16 @@ export const putTranslations = async (org: OrgContext, tablename: string, rowid:
 
   const transaction = await dbinstance.getdbinstance().transaction();
   try {
+    // The key holds one row whoever owns it, and the upsert would write the text of a row that is another organisation's.
+    // Central never makes one (a translation's owner is always its parent's owner, which does not change), so this is
+    // defence in depth, as the student API's refusal of a colliding row is: read the parent's rows once, before the upsert,
+    // and refuse a key that is held by another organisation. A plain read, so it takes no lock the upsert would wait on.
+    const held = await contenttranslations.findAll({ where: { tablename, rowid }, attributes: ["organisationid", "field", "subkey", "language"], transaction });
+    const keyOf = (field: string, subkey: string, lang: string) => `${field.toLowerCase()}\u0000${subkey.toLowerCase()}\u0000${lang.toLowerCase()}`;
+    const wanted = new Set(rows.map((r) => keyOf(r.field, r.subkey, r.language)));
+    if (held.some((h) => h.organisationid !== organisationid && wanted.has(keyOf(h.field, h.subkey, h.language)))) {
+      throw notFoundError("That doesn't exist.");
+    }
     await contenttranslations.bulkCreate(rows, { updateOnDuplicate: ["text", "sourcehash", "lastupdated"], transaction });
     // what is stored now (an updated row keeps the id it had, which the statement does not return)
     const saved: contenttranslations[] = [];
