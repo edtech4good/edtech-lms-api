@@ -4,6 +4,8 @@ import { curriculumcountry } from "./curriculumcountry";
 import { organisations } from "./organisations";
 import { organisationcountry } from "./organisationcountry";
 import { curriculumpublications } from "./curriculumpublications";
+import { contenttranslations } from "./contenttranslations";
+import type { contenttranslationsAttributes, contenttranslationsCreationAttributes } from "./contenttranslations";
 import type { curriculumpublicationsAttributes, curriculumpublicationsCreationAttributes } from "./curriculumpublications";
 import type { organisationsAttributes, organisationsCreationAttributes, organisationsOptionalAttributes } from "./organisations";
 import type { organisationcountryAttributes, organisationcountryCreationAttributes } from "./organisationcountry";
@@ -187,6 +189,7 @@ export {
   organisations,
   organisationcountry,
   curriculumpublications,
+  contenttranslations,
   studentlearningprogress,
   studentgradesprogress,
   studentlevelsprogress,
@@ -263,6 +266,8 @@ export type {
   organisationcountryCreationAttributes,
   curriculumpublicationsAttributes,
   curriculumpublicationsCreationAttributes,
+  contenttranslationsAttributes,
+  contenttranslationsCreationAttributes,
 };
 
 export function initModels(sequelize: Sequelize) {
@@ -301,6 +306,7 @@ export function initModels(sequelize: Sequelize) {
   organisations.initModel(sequelize);
   organisationcountry.initModel(sequelize);
   curriculumpublications.initModel(sequelize);
+  contenttranslations.initModel(sequelize);
   studentlearningprogress.initModel(sequelize);
   studentgradesprogress.initModel(sequelize);
   studentlevelsprogress.initModel(sequelize);
@@ -343,6 +349,7 @@ export function initModels(sequelize: Sequelize) {
   curriculumpublications.belongsTo(curriculums, { as: "curriculum", foreignKey: "curriculumid" });
   curriculums.hasMany(curriculumpublications, { as: "publications", foreignKey: "curriculumid" });
   curriculumpublications.belongsTo(organisations, { as: "organisation", foreignKey: "organisationid" });
+  contenttranslations.belongsTo(organisations, { as: "organisation", foreignKey: "organisationid" });
   curriculumpublications.belongsTo(lmsusers, { as: "publisher", foreignKey: "publishedby" });
   lmsusers.belongsTo(organisations, {
     as: "organisation",

@@ -12,6 +12,8 @@ export interface organisationsAttributes {
   uitheme?: string;
   brandingconfig?: object | null;
   settingsconfig?: object | null;
+  /** The language of the organisation's content text (the base language of its translations), its primary subtag in lower case; null = no translations yet. */
+  contentlanguage?: string | null;
   isdeleted?: Boolean;
   created_at?: Date;
   created_by?: string;
@@ -29,6 +31,7 @@ export type organisationsOptionalAttributes =
   | "uitheme"
   | "brandingconfig"
   | "settingsconfig"
+  | "contentlanguage"
   | "isdeleted";
 export type organisationsCreationAttributes = Optional<organisationsAttributes, organisationsOptionalAttributes>;
 
@@ -42,6 +45,7 @@ export class organisations extends Model<organisationsAttributes, organisationsC
   uitheme!: string;
   brandingconfig!: object | null;
   settingsconfig!: object | null;
+  contentlanguage!: string | null;
   isdeleted!: Boolean;
   created_at!: Date;
   created_by!: string;
@@ -93,6 +97,11 @@ export class organisations extends Model<organisationsAttributes, organisationsC
       },
       settingsconfig: {
         type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: null
+      },
+      contentlanguage: {
+        type: DataTypes.STRING(8),
         allowNull: true,
         defaultValue: null
       },
