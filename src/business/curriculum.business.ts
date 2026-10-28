@@ -28,6 +28,8 @@ import { OrgContext } from "src/decorators/org.decorator";
 import { andScope, findOwnedCurriculum } from "./content-scope";
 import { andOrganisation, extractOrganisationFilter } from "./row-owner";
 import { andInOwnedSchools } from "./school-scope";
+import { withdrawPublications } from "./publication-withdraw";
+import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 
 /**
  * Built with the caller's context, every read and write here is limited to the curriculums in scope (a curriculum
@@ -159,21 +161,40 @@ export class CurriculumBusiness {
       return null;
     }
   };
-  deleteCurriculum = async (curriculumid: string, user: LmsUserToken) => {
+  /**
+   * Soft-deletes the curriculum and withdraws its publications in ONE transaction, so that a deleted curriculum is never
+   * left `published` (a curriculum deleted after it was published stays out of the sync either way; this is the admin's
+   * publish state, and what makes the push that follows send a set without it). `false` when there is no such live
+   * curriculum. The caller pushes the published set afterwards (publish-push.ts `pushAfterDelete`), outside the transaction.
+   *
+   * The curriculum's `curriculumcountry` rows are KEPT (they were hard-deleted): every reader of them goes through the
+   * curriculum, which is deleted, so they are inert, and a restore of the curriculum keeps its countries. A restored
+   * curriculum is not served again until it is published again: the sync serves a curriculum only while its latest
+   * publication is `published`, and this withdrew it.
+   *
+   * The row is read before the transaction opens (the lookup takes no `transaction`); inside it only the queries that take
+   * one run, so the pool is not held.
+   */
+  deleteCurriculum = async (
+    curriculumid: string,
+    user: LmsUserToken,
+  ): Promise<{ organisationid: string | null; withdrew: boolean } | false> => {
     const tempdt = await this.getCurriculumbyid(curriculumid);
-    if (tempdt) {
+    if (!tempdt) return false;
+    const transaction = await dbinstance.getdbinstance().transaction();
+    try {
+      // the same lock order as publish and retire: the curriculum row first, then its publications
+      await curriculums.findOne({ where: { curriculumid }, attributes: ["curriculumid"], lock: transaction.LOCK.UPDATE, transaction });
       tempdt.isdeleted = true;
       tempdt.deleted_at = new Date();
       tempdt.deleted_by = user.lmsuserid;
-      await tempdt.save({ fields: ["isdeleted", 'deleted_at', 'deleted_by'] });
-      await curriculumcountry.destroy({
-        where: {
-          curriculumid
-        }
-      })
-      return true;
-    } else {
-      return false;
+      await tempdt.save({ fields: ["isdeleted", "deleted_at", "deleted_by"], transaction });
+      const withdrew = await withdrawPublications(curriculumid, transaction);
+      await transaction.commit();
+      return { organisationid: tempdt.organisationid ?? null, withdrew };
+    } catch (e) {
+      await rollbackQuietly(transaction);
+      throw e;
     }
   };
 
