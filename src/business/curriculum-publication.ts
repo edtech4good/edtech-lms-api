@@ -125,7 +125,7 @@ export interface SharedRow {
 /**
  * A grade, level or lesson (the root of a moved subtree) that the previous publication of this curriculum carried and its
  * live tree no longer holds, because the row now lives under another curriculum of the organisation whose latest
- * publication does not carry it. Until that curriculum is published its learners do not get the row (nor what hangs from it).
+ * publication does not carry it. Until that curriculum is next published its learners do not get the row (nor what hangs from it).
  */
 export interface MovedAway {
   table: "grades" | "levels" | "lessons";
@@ -590,7 +590,11 @@ export const movedAway = (content: Tables, curriculumid: string, diff: ReturnTyp
 
 const KIND_TEXT = { grades: ["grade", "grades"], levels: ["level", "levels"], lessons: ["lesson", "lessons"] } as const;
 
-/** The sentence for the editor (no ids), or null when nothing moved away. */
+/**
+ * The sentence for the editor (no ids), or null when nothing moved away. It is true whether or not the other curriculum has a
+ * live publication already (`published`): a publication made before the move does not carry the row either, so in both cases
+ * learners lose the row until that curriculum's next publish. It says "other curricula" when the rows went to more than one.
+ */
 export const movedAwayMessage = (moved: MovedAway[]): string | null => {
   const parts = (["grades", "levels", "lessons"] as const)
     .map((table) => [table, moved.filter((m) => m.table === table).length] as const)
@@ -598,7 +602,10 @@ export const movedAwayMessage = (moved: MovedAway[]): string | null => {
     .map(([table, n]) => `${n} ${KIND_TEXT[table][n === 1 ? 0 : 1]}`);
   if (parts.length === 0) return null;
   const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
-  return `This publish removes ${list} now in another curriculum until that curriculum is published.`;
+  const them = moved.length === 1 ? "it" : "them";
+  return new Set(moved.map((m) => m.tocurriculum.id)).size > 1
+    ? `This publish removes ${list} now in other curricula; learners lose ${them} until those curricula are next published.`
+    : `This publish removes ${list} now in another curriculum; learners lose ${them} until that curriculum is next published.`;
 };
 
 /** A publication to compare a payload with: its id and what its summary kept of it (the hashes are needed, the names help). */

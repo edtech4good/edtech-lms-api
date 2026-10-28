@@ -805,7 +805,8 @@ describe("after a retire", () => {
 describe("a grade that moved to another curriculum (the summary names what the publish removes)", () => {
   // Curriculum A also holds a second grade G2 with a level and a lesson of its own; the specs move G2 (or a level, or a lesson) to B.
   const [G2, V2, L3] = [id(111), id(112), id(113)];
-  const MESSAGE = (what: string) => `This publish removes ${what} now in another curriculum until that curriculum is published.`;
+  const MESSAGE = (what: string, them = "it") => `This publish removes ${what} now in another curriculum; learners lose ${them} until that curriculum is next published.`;
+  const MESSAGE_MANY = (what: string, them = "them") => `This publish removes ${what} now in other curricula; learners lose ${them} until those curricula are next published.`;
   beforeEach(() => {
     db.add("grades", { gradeid: G2, curriculumid: A, gradename: "Grade two", gradeorder: 2, gradestatus: true });
     db.add("levels", { levelid: V2, gradeid: G2, levelname: "Level two", levelorder: 1, levelstatus: true });
@@ -836,6 +837,24 @@ describe("a grade that moved to another curriculum (the summary names what the p
     moveG2To(B);
     const res = await publishCurriculum(orgX, USER, A);
     expect(res.summary.movedaway).toEqual([{ table: "grades", id: G2, name: "Grade two", tocurriculum: { id: B, name: "Maths" }, published: true }]);
+    // B's earlier publication does not carry the grade, so the sentence cannot read as if B were published already
+    const message = res.summary.movedawaymessage!;
+    expect(message).toBe(MESSAGE("1 grade"));
+    expect(message).toContain("next published.");
+    expect(message).not.toMatch(/until that curriculum is published\./);
+  });
+
+  it("says 'other curricula' and 'those curricula' when the rows went to more than one curriculum", async () => {
+    const C = id(250);
+    db.add("curriculums", { curriculumid: C, curriculumname: "Science", organisationid: X, curriculumstatus: true });
+    await publishCurriculum(orgX, USER, A);
+    moveG2To(B);
+    stored("grades", "gradeid", GA).curriculumid = C;
+    const res = await publishCurriculum(orgX, USER, A);
+    expect(res.summary.movedaway!.map((m) => m.tocurriculum.id).sort()).toEqual(sorted(B, C));
+    expect(res.summary.movedawaymessage).toBe(MESSAGE_MANY("2 grades"));
+    expect(res.summary.movedawaymessage).toContain("other curricula");
+    expect(res.summary.movedawaymessage).toContain("those curricula are next published.");
   });
 
   it("lists none once that curriculum has been published after the move: its learners hold the grade", async () => {
@@ -882,7 +901,7 @@ describe("a grade that moved to another curriculum (the summary names what the p
     ]);
     // the lesson of the moved level (L3) travels with its level and is not a root
     expect(res.summary.changes.lessons.removed).toBe(2);
-    expect(res.summary.movedawaymessage).toBe(MESSAGE("1 level and 1 lesson"));
+    expect(res.summary.movedawaymessage).toBe(MESSAGE("1 level and 1 lesson", "them"));
   });
 
   it("counts several grades in the plural", async () => {
@@ -891,7 +910,7 @@ describe("a grade that moved to another curriculum (the summary names what the p
     stored("grades", "gradeid", GA).curriculumid = B;
     const res = await publishCurriculum(orgX, USER, A);
     expect(res.summary.movedaway!.map((m) => m.id).sort()).toEqual(sorted(GA, G2));
-    expect(res.summary.movedawaymessage).toBe(MESSAGE("2 grades"));
+    expect(res.summary.movedawaymessage).toBe(MESSAGE("2 grades", "them"));
   });
 
   it("is in the overview's pending summary, before anyone publishes", async () => {
