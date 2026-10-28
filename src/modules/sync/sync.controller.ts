@@ -16,6 +16,7 @@ import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { ApiBearerAuth, ApiResponse, ApiTags } from "@nestjs/swagger";
 import AdmZip from "adm-zip";
 import { pushToCloud, studentsFile } from "src/business/cloud-push";
+import { pushOrganisationSet } from "src/business/publish-push";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { findOwnedSchool, resolveOwnedSchoolSegment } from "src/business/school-scope";
 import { SyncBusiness } from "src/business/sync.business";
@@ -100,12 +101,10 @@ export class SyncController {
     // a format named in the body or in the query is refused alike
     refuseRetiredFormat(org, body?.format !== undefined ? body.format : format);
     const plan = await planContentSync(org, { organisationid: body?.organisationid });
-    return pushToCloud(
-      "master",
-      "syncfile.ini",
-      await new SyncBusiness().syncontentVersion3(plan.organisation),
-      plan.organisation.organisationid,
-    );
+    // takes the organisation's turn with the pushes that follow a publish, and the same timeout; the answer is as it always was
+    const settled = await pushOrganisationSet(plan.organisation.organisationid);
+    if (!settled.ok) throw settled.error;
+    return settled.answer;
   }
 
   @OrgPolicy("owned", {

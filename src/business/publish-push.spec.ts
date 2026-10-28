@@ -14,7 +14,7 @@ import { cloudConfigured } from "./cloud-push";
 import { CurriculumBusiness } from "./curriculum.business";
 import { publishCurriculum, retireCurriculum } from "./curriculum-publication";
 import { buildPublishedOrganisationContent } from "./published-content";
-import { PUSH_TIMEOUT_MS, pushAfterDelete, pushPublishedSet, publishAndPush, retireAndPush } from "./publish-push";
+import { PUSH_TIMEOUT_MS, pushAfterDelete, pushOrganisationSet, pushPublishedSet, publishAndPush, retireAndPush } from "./publish-push";
 
 /**
  * The push that follows a publish, a retire and the delete of a published curriculum (A4 step 3, design decision 3): what is
@@ -234,6 +234,22 @@ describe("a push that fails does not undo the publish", () => {
     expect(res.push).toMatchObject({ status: "failed", code: ErrorCode.INVALID_INPUT, cause: "lessons: 2 rows name a level that is not in the payload." });
     expect(res.push.message).toBe(`${LEAD} lessons: 2 rows name a level that is not in the payload.`);
     expect(db.tables.curriculumpublications).toHaveLength(1);
+  });
+
+  it("the hint never points at a reference: the answer carries none (the catalogue's sentence about it is dropped, the rest is kept)", async () => {
+    for (const [rejection, hint] of [
+      [refuses(401), "This is a setup problem between the two servers, not your sign-in."],
+      [refuses(500), "Try again."],
+    ] as Array<[object, string]>) {
+      put.mockRejectedValueOnce(rejection);
+      const res = await publishAndPush(orgX, USER, A);
+      expect(res.push.hint).toBe(hint);
+      expect(JSON.stringify(res.push)).not.toContain("reference");
+    }
+    // a cause whose catalogue hint says nothing but that is left without one
+    put.mockRejectedValueOnce({ isAxiosError: true, message: "connect ECONNREFUSED", code: "ECONNREFUSED" });
+    const unreachable = await publishAndPush(orgX, USER, A);
+    expect(JSON.stringify(unreachable.push)).not.toContain("reference");
   });
 
   it("a set that cannot be built (a stored copy is missing) is a failed push, not an error: nothing is sent and the publish stands", async () => {
@@ -489,5 +505,148 @@ describe("pushes of one organisation take turns", () => {
   it("no organisation (an unowned curriculum) has nothing to push", async () => {
     expect((await pushPublishedSet(null, "Deleted")).status).toBe("skipped");
     expect(put).not.toHaveBeenCalled();
+  });
+});
+
+describe("acts that arrive while a push is in flight share one later push", () => {
+  const held: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = [];
+  const hold = () => {
+    held.length = 0;
+    put.mockReset().mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          held.push({ resolve, reject });
+        }),
+    );
+  };
+  const settle = async (until: () => boolean) => {
+    for (let i = 0; i < 400 && !until(); i += 1) await new Promise((r) => setImmediate(r));
+  };
+  const idle = async () => {
+    for (let i = 0; i < 50; i += 1) await new Promise((r) => setImmediate(r));
+  };
+  const timedOut = { isAxiosError: true, message: "timeout of 30000ms exceeded", code: "ECONNABORTED" };
+
+  it("three acts at once send twice, not three times: the first, then ONE push for the two that waited", async () => {
+    await publishCurriculum(orgX, USER, A);
+    await publishCurriculum(orgX, USER, B);
+    hold();
+    const first = pushPublishedSet(X, "Published");
+    await settle(() => held.length === 1);
+    // A is retired meanwhile, and the pushes of two more acts are asked for while the first is still in flight
+    await retireCurriculum(orgX, A);
+    const second = pushPublishedSet(X, "Retired");
+    const third = pushPublishedSet(X, "Deleted");
+    await idle();
+    expect(put).toHaveBeenCalledTimes(1);
+    held[0].resolve({ status: 200 });
+    await settle(() => held.length === 2);
+    await idle();
+    expect(put).toHaveBeenCalledTimes(2);
+    held[1].resolve({ status: 200 });
+    const [a, b, c] = await Promise.all([first, second, third]);
+    expect(put).toHaveBeenCalledTimes(2);
+    // every waiter has that one push's outcome, each in its own words
+    expect([a.status, b.status, c.status]).toEqual(["pushed", "pushed", "pushed"]);
+    expect([a.message, b.message, c.message]).toEqual([
+      "Published. The learner server has the organisation's published curricula.",
+      "Retired. The learner server has the organisation's published curricula.",
+      "Deleted. The learner server has the organisation's published curricula.",
+    ]);
+    // the first push was built before the retire; the shared one was built when it finished, so the newest state wins
+    expect(ids(pushed(0).json.curriculums, "curriculumid")).toEqual([A, B].sort());
+    expect(ids(pushed(1).json.curriculums, "curriculumid")).toEqual([B]);
+  });
+
+  it("with a student server that does not answer, three queued acts answer after the first one's timeout and ONE more, not one timeout each", async () => {
+    hold();
+    const first = pushPublishedSet(X, "Published");
+    await settle(() => held.length === 1);
+    const second = pushPublishedSet(X, "Published");
+    const third = pushPublishedSet(X, "Retired");
+    await idle();
+    held[0].reject(timedOut);
+    expect((await first).status).toBe("failed");
+    await settle(() => held.length === 2);
+    held[1].reject(timedOut);
+    const [b, c] = await Promise.all([second, third]);
+    expect([b.status, c.status]).toEqual(["failed", "failed"]);
+    expect(b.cause).toBe("The service is temporarily unavailable.");
+    expect(c.message.startsWith("Retired. The push to the learner server failed")).toBe(true);
+    expect(put).toHaveBeenCalledTimes(2);
+  });
+
+  it("an act that arrives while the shared push is in flight gets the next one: the newest state wins, and the lane is free afterwards", async () => {
+    hold();
+    const first = pushPublishedSet(X, "Published");
+    await settle(() => held.length === 1);
+    const second = pushPublishedSet(X, "Published");
+    await idle();
+    held[0].resolve({ status: 200 });
+    await settle(() => held.length === 2);
+    // the shared push is in flight now; this one is neither the first's nor the shared one's
+    const third = pushPublishedSet(X, "Deleted");
+    await idle();
+    expect(put).toHaveBeenCalledTimes(2);
+    held[1].resolve({ status: 200 });
+    await settle(() => held.length === 3);
+    held[2].resolve({ status: 200 });
+    expect((await Promise.all([first, second, third])).map((o) => o.status)).toEqual(["pushed", "pushed", "pushed"]);
+    expect(put).toHaveBeenCalledTimes(3);
+    // free again: the next act sends at once
+    const fourth = pushPublishedSet(X, "Published");
+    await settle(() => held.length === 4);
+    expect(put).toHaveBeenCalledTimes(4);
+    held[3].resolve({ status: 200 });
+    expect((await fourth).status).toBe("pushed");
+  });
+
+  it("another organisation's push is not made to wait", async () => {
+    hold();
+    const x = pushPublishedSet(X, "Published");
+    await settle(() => held.length === 1);
+    db.add("organisations", { organisationid: Y, organisationcode: "yorg", organisationname: "Org Y", organisationstatus: true, uitheme: "kids", brandingconfig: null, settingsconfig: null, contentlanguage: "en", isdeleted: false });
+    const y = pushPublishedSet(Y, "Published");
+    await settle(() => held.length === 2);
+    expect(put).toHaveBeenCalledTimes(2);
+    held[0].resolve({ status: 200 });
+    held[1].resolve({ status: 200 });
+    expect((await Promise.all([x, y])).map((o) => o.status)).toEqual(["pushed", "pushed"]);
+  });
+});
+
+describe("the manual re-push takes the same turn", () => {
+  it("settles with the student server's answer, with the timeout, and without the cloudConfigured skip", async () => {
+    const settled = await pushOrganisationSet(X);
+    expect(settled).toEqual({ ok: true, answer: { error: false, data: true } });
+    expect(pushed().timeout).toBe(PUSH_TIMEOUT_MS);
+    Config.fortyk.api.rpi.cloud = "your-cloud-endpoint";
+    put.mockClear();
+    await pushOrganisationSet(X);
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles with the original error, for the route to throw as it always has", async () => {
+    const failure = { isAxiosError: true, response: { status: 401 } };
+    put.mockRejectedValueOnce(failure);
+    expect(await pushOrganisationSet(X)).toEqual({ ok: false, error: failure });
+  });
+
+  it("waits for a push in flight and shares the later one, as an act's push does", async () => {
+    const held: Array<(v: unknown) => void> = [];
+    put.mockReset().mockImplementation(() => new Promise((resolve) => held.push(resolve)));
+    const first = pushPublishedSet(X, "Published");
+    for (let i = 0; i < 400 && held.length < 1; i += 1) await new Promise((r) => setImmediate(r));
+    const manual = pushOrganisationSet(X);
+    const act = pushPublishedSet(X, "Retired");
+    for (let i = 0; i < 50; i += 1) await new Promise((r) => setImmediate(r));
+    expect(put).toHaveBeenCalledTimes(1);
+    held[0]({ status: 200 });
+    for (let i = 0; i < 400 && held.length < 2; i += 1) await new Promise((r) => setImmediate(r));
+    held[1]({ status: 200 });
+    const [, settled, outcome] = await Promise.all([first, manual, act]);
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(settled.ok).toBe(true);
+    expect(outcome.status).toBe("pushed");
   });
 });

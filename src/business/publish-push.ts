@@ -29,12 +29,23 @@ import { SyncBusiness } from "./sync.business";
  * The push runs before the HTTP answer returns, so the admin sees its result. It gives up on the student server after
  * `PUSH_TIMEOUT_MS`, so a server that hangs cannot hold the admin's request for longer than that.
  *
- * ## Turns
+ * ## Turns, and sharing
  *
- * Two acts of one organisation close together each push, and each push builds the payload when its turn comes, so the later
- * push always carries the earlier act (a payload built before another act committed, sent after that act's push, would
- * put an older set on the student server). Pushes of one organisation take turns within this process; the student server
- * serialises writes to one organisation's content itself, and a second central process is not covered (there is one).
+ * Two acts of one organisation close together must not each build a payload and send it in whatever order the requests
+ * happen to finish: a payload built before another act committed, sent after that act's push, would put an older set on the
+ * student server. So an organisation has one push in flight at a time, and a push builds its payload when it starts, so it
+ * carries every act that committed before it.
+ *
+ * The acts that arrive while a push is in flight do not each take a turn behind it (with a student server that hangs, a
+ * queue of them would answer after 30 s, 60 s, 90 s, one timeout each). They wait for the one in flight and then share ONE
+ * later push, built when that one finishes, so the newest state wins; every one of them gets that single push's outcome (each
+ * in its own words: a retire that shared a publish's push still says "Retired."). With a hung student server, the first act
+ * answers after one timeout and all the others after a second.
+ *
+ * This is in-process only: a second central process is not covered (there is one), and the student server does NOT
+ * serialise imports for one organisation (its master import takes no organisation-level lock; a ticket is filed on the
+ * student side). A push that gave up at the timeout may therefore still be importing on the student server when the next one
+ * arrives, and the two can overlap there. That is the student side's to close.
  *
  * ## The answer
  *
@@ -83,6 +94,16 @@ export const skippedNothingPublished = (verb: PushVerb): PushOutcome => ({
   message: `${verb}. That curriculum was not published, so there was nothing to push.`,
 });
 
+/**
+ * The catalogue's hints for a 5xx and a 502 end with "contact support with the reference". The `push` outcome carries no
+ * reference (the act itself succeeded, so there is no error answer to carry one), so that sentence is dropped from the hint
+ * and what remains is kept.
+ */
+const withoutReference = (hint: string | undefined): string | undefined => {
+  const kept = hint?.replace(/\s*(?:If it keeps happening, c|C)ontact support with the reference\.\s*$/, "").trim();
+  return kept ? kept : undefined;
+};
+
 const failedOutcome = (verb: PushVerb, error: unknown): PushOutcome => {
   const mapped = new GlobalExceptionFilter().map(error);
   // class and mapped code only: an axios error carries the request's config, which holds the server key
@@ -91,30 +112,80 @@ const failedOutcome = (verb: PushVerb, error: unknown): PushOutcome => {
     code: mapped.code,
     status: mapped.status,
   });
+  const hint = withoutReference(mapped.hint);
   return {
     status: "failed",
     message: `${verb}. ${FAILED_SUFFIX} ${mapped.errormessage}`,
     cause: mapped.errormessage,
-    ...(mapped.hint ? { hint: mapped.hint } : {}),
+    ...(hint ? { hint } : {}),
     code: mapped.code,
   };
 };
 
-const turns = new Map<string, Promise<void>>();
+/** How one push ended, before any act's words are put to it: the student server's answer, or what went wrong. */
+export type PushSettled = { ok: true; answer: Awaited<ReturnType<typeof pushToCloud>> } | { ok: false; error: unknown };
 
-/** Runs `job` after every earlier job under the same key has finished (whether it succeeded or not). */
-const inTurn = <T>(key: string, job: () => Promise<T>): Promise<T> => {
-  const result = (turns.get(key) ?? Promise.resolve()).then(job);
-  const tail = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  turns.set(key, tail);
-  void tail.then(() => {
-    if (turns.get(key) === tail) turns.delete(key);
-  });
-  return result;
+/** One build and send of the organisation's published set. Never throws. */
+const buildAndSend = async (organisationid: string): Promise<PushSettled> => {
+  try {
+    const organisation = await organisations.findOne({ where: { organisationid, isdeleted: false } });
+    if (organisation === null) {
+      throw new ApiError(ErrorCode.NOT_FOUND, "That organisation doesn't exist.");
+    }
+    const json = await new SyncBusiness().syncontentVersion3(organisation);
+    return { ok: true, answer: await pushToCloud("master", "syncfile.ini", json, organisationid, { timeoutMs: PUSH_TIMEOUT_MS }) };
+  } catch (error) {
+    return { ok: false, error };
+  }
 };
+
+/** An organisation that has a push in flight: the later acts' shared push, once one has asked for it. */
+interface Lane {
+  waiting: Promise<PushSettled> | null;
+  start: (() => void) | null;
+}
+const lanes = new Map<string, Lane>();
+
+/**
+ * Pushes the organisation's published set, taking its turn (see "Turns, and sharing"): when nothing is in flight the push
+ * starts at once; when one is, this waits for it and shares the one later push with every other act that waits.
+ */
+const takeTurn = (organisationid: string): Promise<PushSettled> => {
+  const lane = lanes.get(organisationid);
+  if (lane !== undefined) {
+    if (lane.waiting === null) {
+      lane.waiting = new Promise<PushSettled>((resolve) => {
+        lane.start = () => void buildAndSend(organisationid).then(resolve);
+      });
+    }
+    return lane.waiting;
+  }
+  const fresh: Lane = { waiting: null, start: null };
+  lanes.set(organisationid, fresh);
+  const own = buildAndSend(organisationid);
+  void serveWaiting(organisationid, fresh, own);
+  return own;
+};
+
+/** When the push in flight is over, runs the shared one the waiting acts asked for (and any asked for meanwhile), then frees the lane. */
+const serveWaiting = async (organisationid: string, lane: Lane, inFlight: Promise<PushSettled>): Promise<void> => {
+  await inFlight;
+  while (lane.waiting !== null) {
+    const waiting = lane.waiting;
+    const start = lane.start;
+    lane.waiting = null;
+    lane.start = null;
+    start?.();
+    await waiting;
+  }
+  lanes.delete(organisationid);
+};
+
+/**
+ * The manual re-push (`POST /sync/cloud`): the organisation's turn and the timeout, and what the push settled as, for the
+ * caller to throw or answer as it always has. No `cloudConfigured` check: the manual push always attempts.
+ */
+export const pushOrganisationSet = (organisationid: string): Promise<PushSettled> => takeTurn(organisationid);
 
 /**
  * Pushes the organisation's published set (see above). Never throws: whatever goes wrong is the `failed` outcome. Call it only
@@ -123,24 +194,14 @@ const inTurn = <T>(key: string, job: () => Promise<T>): Promise<T> => {
 export const pushPublishedSet = async (organisationid: string | null | undefined, verb: PushVerb): Promise<PushOutcome> => {
   if (!cloudConfigured()) return skippedNoCloud(verb);
   if (!organisationid) return skippedNothingPublished(verb);
-  return inTurn<PushOutcome>(organisationid, async () => {
-    try {
-      const organisation = await organisations.findOne({ where: { organisationid, isdeleted: false } });
-      if (organisation === null) {
-        throw new ApiError(ErrorCode.NOT_FOUND, "That organisation doesn't exist.");
-      }
-      const json = await new SyncBusiness().syncontentVersion3(organisation);
-      const answer = await pushToCloud("master", "syncfile.ini", json, organisationid, { timeoutMs: PUSH_TIMEOUT_MS });
-      const counts = "counts" in answer ? answer.counts : undefined;
-      return {
-        status: "pushed",
-        message: `${verb}. The learner server has the organisation's published curricula.`,
-        ...(counts ? { counts } : {}),
-      };
-    } catch (error) {
-      return failedOutcome(verb, error);
-    }
-  });
+  const settled = await takeTurn(organisationid);
+  if (!settled.ok) return failedOutcome(verb, settled.error);
+  const counts = "counts" in settled.answer ? settled.answer.counts : undefined;
+  return {
+    status: "pushed",
+    message: `${verb}. The learner server has the organisation's published curricula.`,
+    ...(counts ? { counts } : {}),
+  };
 };
 
 /** Publishes the curriculum (committing), then pushes the organisation's published set. */

@@ -672,7 +672,7 @@ describe("content is confined to the caller's organisation", () => {
         status: "failed",
         code: "BAD_GATEWAY",
         cause: "The student server refused this server's request.",
-        hint: "This is a setup problem between the two servers, not your sign-in. Contact support with the reference.",
+        hint: "This is a setup problem between the two servers, not your sign-in.",
         message: "Published. The push to the learner server failed; a platform admin can re-push from Sync Content. The student server refused this server's request.",
       });
       expect(JSON.stringify(res.body)).not.toContain("secret-detail");
