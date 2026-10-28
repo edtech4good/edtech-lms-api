@@ -4298,7 +4298,7 @@ describe("content is confined to the caller's organisation", () => {
         expect(byKey.headingtext).toMatchObject({ sourcehash: sha("Heading") });
         expect(byKey["feedback.correctmessage"]).toMatchObject({ sourcehash: sha("Well done") });
         expect(byKey["feedback.incorrectmessage"]).toMatchObject({ sourcehash: sha("Try again") });
-        expect(byKey.questiontext).toMatchObject({ sourcehash: sha("សួស្តី") });
+        expect(byKey.questiontext).toMatchObject({ sourcehash: sha(stored("questions", "questionid", TX.question).questiontext as string) });
       });
       it.each(IN_X)("%s: saving again updates the row in place (the same id) with the new text and the hash of the text now", async (who) => {
         await send(who, "put", url("lessons", TX.lesson), BODY);
@@ -4444,7 +4444,7 @@ describe("content is confined to the caller's organisation", () => {
       beforeEach(() => {
         addTranslation(TX, "lessons", TX.lesson, "lessonname", "", "km", KM_TEXT, lessonName(TX));
         addTranslation(TX, "lessons", TX.lesson, "lessonname", "", "fr", "Leçon", lessonName(TX));
-        addTranslation(TX, "lessons", TX.lesson, "lessondescription", "", "km", "x", "ពិពណ៌នា");
+        addTranslation(TX, "lessons", TX.lesson, "lessondescription", "", "km", "x", stored("lessons", "lessonid", TX.lesson).lessondescription as string);
         addTranslation(TX, "lessons", TX.lesson2, "lessonname", "", "km", "other lesson", "Second " + TX.tag);
         addTranslation(TY, "lessons", TY.lesson, "lessonname", "", "km", "Y's", lessonName(TY));
       });
@@ -4504,7 +4504,7 @@ describe("content is confined to the caller's organisation", () => {
     describe("DELETE /translations/:tablename/:rowid/:language", () => {
       beforeEach(() => {
         addTranslation(TX, "lessons", TX.lesson, "lessonname", "", "km", KM_TEXT, lessonName(TX));
-        addTranslation(TX, "lessons", TX.lesson, "lessondescription", "", "km", "x", "ពិពណ៌នា");
+        addTranslation(TX, "lessons", TX.lesson, "lessondescription", "", "km", "x", stored("lessons", "lessonid", TX.lesson).lessondescription as string);
         addTranslation(TX, "lessons", TX.lesson, "lessonname", "", "fr", "Leçon", lessonName(TX));
         addTranslation(TX, "lessons", TX.lesson2, "lessonname", "", "km", "other lesson", "Second " + TX.tag);
         addTranslation(TY, "lessons", TY.lesson, "lessonname", "", "km", "Y's", lessonName(TY));
