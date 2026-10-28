@@ -316,6 +316,22 @@ describe("updateorganisation", () => {
   });
 });
 
+describe("updateorganisation contentlanguage (bilingual content)", () => {
+  it("is optional, and null clears it", () => {
+    expect(run(updateorganisation, update())).toEqual([]);
+    expect(run(updateorganisation, update({ contentlanguage: null }))).toEqual([]);
+  });
+  it.each(["en", "km", "EN", "pt-BR", "zh-Hans", "ab", "abcdefgh"])("accepts %s: 2 to 8 letters, digits and hyphens", (value) => {
+    expect(run(updateorganisation, update({ contentlanguage: value }))).toEqual([]);
+  });
+  it.each(["", "e", "abcdefghi", "e n", "en_US", "en.", 5, true, {}, []])("refuses %j", (value) => {
+    expect(fieldsOf(updateorganisation, update({ contentlanguage: value }))).toEqual(["contentlanguage"]);
+  });
+  it("is not a field of a create: the language is set by an update", () => {
+    expect(fieldsOf(createorganisation, create({ contentlanguage: "en" }))).toEqual(["body"]);
+  });
+});
+
 describe("show / delete / list", () => {
   it("show and delete need a uuid", () => {
     expect(run(showorganisation, { params: { organisationid: UUID } })).toEqual([]);

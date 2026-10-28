@@ -1,5 +1,6 @@
 import { Op, Transaction } from "sequelize";
 import { OrganisationBusiness, pickBranding } from "src/business/organisation.business";
+import { contenttranslations } from "src/models/data-models/contenttranslations";
 import { countries } from "src/models/data-models/countries";
 import { organisationcountry } from "src/models/data-models/organisationcountry";
 import { organisations } from "src/models/data-models/organisations";
@@ -296,6 +297,57 @@ describe("OrganisationBusiness.updateorganisation", () => {
     expect(row.brandingconfig).toBeNull();
     expect(row.organisationstatus).toBe(false);
     expect(row.updated_by).toBe("staff-1");
+  });
+
+  describe("contentlanguage (bilingual content)", () => {
+    const run = (row: ReturnType<typeof orgRow>, given: Record<string, unknown>) => {
+      (organisations.findOne as jest.Mock).mockResolvedValue(row);
+      return new OrganisationBusiness().updateorganisation("org-1", { ...changes, ...given }, [A], user);
+    };
+
+    it("is saved, as its primary subtag in lower case, only when it was given", async () => {
+      jest.spyOn(contenttranslations, "count").mockResolvedValue(0 as never);
+      const row = orgRow();
+      await run(row, { contentlanguage: "EN" });
+      expect(row.save.mock.calls[0][0].fields).toContain("contentlanguage");
+      expect(row.contentlanguage).toBe("en");
+      const regional = orgRow();
+      await run(regional, { contentlanguage: "PT-BR" });
+      expect(regional.contentlanguage).toBe("pt-BR");
+      const untouched = orgRow({ contentlanguage: "en" });
+      await run(untouched, {});
+      expect(untouched.save.mock.calls[0][0].fields).not.toContain("contentlanguage");
+      expect(untouched.contentlanguage).toBe("en");
+    });
+
+    it("is cleared by null, which saves the field and asks nothing about translations", async () => {
+      const count = jest.spyOn(contenttranslations, "count").mockResolvedValue(5 as never);
+      const row = orgRow({ contentlanguage: "en" });
+      await run(row, { contentlanguage: null });
+      expect(row.contentlanguage).toBeNull();
+      expect(row.save.mock.calls[0][0].fields).toContain("contentlanguage");
+      expect(count).not.toHaveBeenCalled();
+    });
+
+    it("is refused (400, the field named, nothing saved) while the organisation holds translations in that language", async () => {
+      const count = jest.spyOn(contenttranslations, "count").mockResolvedValue(2 as never);
+      const row = orgRow({ contentlanguage: "en" });
+      const error = await run(row, { contentlanguage: "KM" }).catch((e) => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.code).toBe(ErrorCode.INVALID_INPUT);
+      expect(error.fields).toEqual([{ field: "contentlanguage", message: "This organisation has translations in that language. Remove them first, or choose another language." }]);
+      expect(count.mock.calls[0][0]).toEqual({ where: { organisationid: "org-1", language: "km" }, transaction: tnx });
+      expect(row.save).not.toHaveBeenCalled();
+      expect(tnx.rolledBack).toBe(true);
+    });
+
+    it("is not checked against translations when it is the language the organisation already has", async () => {
+      const count = jest.spyOn(contenttranslations, "count").mockResolvedValue(3 as never);
+      const row = orgRow({ contentlanguage: "en" });
+      await run(row, { contentlanguage: "EN" });
+      expect(count).not.toHaveBeenCalled();
+      expect(row.contentlanguage).toBe("en");
+    });
   });
 
   it("replaces the country set: removes the links no longer wanted, adds the new ones, leaves the rest", async () => {
