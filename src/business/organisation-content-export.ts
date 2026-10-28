@@ -62,7 +62,7 @@ import { SubjectBusiness } from "./subject.business";
  * the rows of the payload instead (ID_LISTS), since central keeps them as typed in.
  */
 
-type Row = Record<string, unknown>;
+export type Row = Record<string, unknown>;
 
 /** The tables of the payload, parents before the rows that hang from them. */
 export const CONTENT_TABLE_KEYS = [
@@ -89,12 +89,12 @@ export const CONTENT_TABLE_KEYS = [
 ] as const;
 export type ContentTableKey = (typeof CONTENT_TABLE_KEYS)[number];
 
-interface Reference {
+export interface Reference {
   fk: string;
   to: ContentTableKey;
   optional?: boolean;
 }
-interface Shape {
+export interface Shape {
   pk: string;
   /** For a row with no owner of its own: the row it hangs from. */
   parent?: Reference;
@@ -103,7 +103,7 @@ interface Shape {
 }
 
 // What the student API requires of the payload (organisation-content.validator.ts there: CONTENT_TABLES).
-const SHAPE: Record<ContentTableKey, Shape> = {
+export const SHAPE: Record<ContentTableKey, Shape> = {
   countries: { pk: "countryid" },
   schools: { pk: "schoolid", refs: [{ fk: "countryid", to: "countries", optional: true }] },
   standards: { pk: "standardid", parent: { fk: "schoolid", to: "schools" } },
@@ -206,8 +206,8 @@ export const contextOfOrganisation = (organisationid: string): OrgContext => ({
   permissions: [],
 });
 
-const plain = (list: Array<{ get: (o: { plain: true }) => unknown }>): Row[] => list.map((r) => r.get({ plain: true }) as Row);
-const keyOf = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value.toLowerCase() : null);
+export const plain = (list: Array<{ get: (o: { plain: true }) => unknown }>): Row[] => list.map((r) => r.get({ plain: true }) as Row);
+export const keyOf = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value.toLowerCase() : null);
 const rowsText = (n: number) => (n === 1 ? "1 row" : `${n} rows`);
 
 // ---- the rows that are not read through a content business class -----------------------------
@@ -369,6 +369,51 @@ export const organisationRowOf = (organisation: organisations): OrganisationRow 
   };
 };
 
+/** The content tables that hang from the organisation's curriculums or are drawn on by them (every table but the four the organisation owns outright). */
+export const CURRICULUM_CONTENT_KEYS = [
+  "curriculums",
+  "questions",
+  "documents",
+  "curriculumbaselines",
+  "baselinequestion",
+  "grades",
+  "levels",
+  "lessons",
+  "lessonlearnings",
+  "lessonlearningdocuments",
+  "lessonplans",
+  "lessonpractices",
+  "lessonquizzes",
+  "lessonpracticequestions",
+  "lessonquizquestions",
+  "levelquizquestions",
+] as const;
+export type CurriculumContentKey = (typeof CURRICULUM_CONTENT_KEYS)[number];
+
+/**
+ * The organisation's curriculum content as the export reads it: curriculums, the whole question and document bank, and
+ * everything under the curriculums, each through the business class built with the organisation's own context. The
+ * order of the reads is the export's. Not confined: the caller does that with the tables it keeps.
+ */
+export const readCurriculumContent = async (org: OrgContext): Promise<Record<CurriculumContentKey, Row[]>> => ({
+  curriculums: plain(await new CurriculumBusiness(org).getCurriculums()),
+  questions: plain(await new QuestionBusiness(org).getquestionsWithOwner()),
+  documents: plain(await new DocumentBusiness(org).getdocumentsWithOwner()),
+  curriculumbaselines: plain(await new CurriculumBaseLineBusiness(org).getCurriculumBaseLines()),
+  baselinequestion: plain(await new BaselineQuestionBusiness(org).getBaselineQuestion()),
+  grades: plain(await new GradeBusiness(org).getGrades()),
+  levels: plain(await new LevelBusiness(org).getLevels()),
+  lessons: plain(await new LessonBusiness(org).getLessons()),
+  lessonlearnings: plain(await new LessonLearningBusiness(org).getLessonLearnings()),
+  lessonlearningdocuments: plain(await new LessonLearningBusiness(org).getLessonLearningDocuments()),
+  lessonplans: plain(await new LessonPlanBusiness(org).getLessonPlans()),
+  lessonpractices: plain(await new LessonPracticeBusiness(org).getLessonPractices()),
+  lessonquizzes: plain(await new LessonQuizBusiness(org).getLessonQuizzes()),
+  lessonpracticequestions: plain(await new LessonPracticeQuestionBusiness(org).getLessonPracticeQuestions()),
+  lessonquizquestions: plain(await new LessonQuizQuestionBusiness(org).getLessonQuizQuestions()),
+  levelquizquestions: plain(await new LevelQuizQuestionBusiness(org).getLevelQuizQuestions()),
+});
+
 /** The content of the organisation, whole, in the format the student API reads (see the top of this file). */
 export const buildOrganisationContent = async (organisation: organisations): Promise<OrganisationContentPayload> => {
   const row = organisationRowOf(organisation);
@@ -380,22 +425,7 @@ export const buildOrganisationContent = async (organisation: organisations): Pro
     schools: schoolRows,
     standards: await readStandards(org),
     subjects: plain(await new SubjectBusiness(org).getSubjectsWithOwner()),
-    curriculums: plain(await new CurriculumBusiness(org).getCurriculums()),
-    questions: plain(await new QuestionBusiness(org).getquestionsWithOwner()),
-    documents: plain(await new DocumentBusiness(org).getdocumentsWithOwner()),
-    curriculumbaselines: plain(await new CurriculumBaseLineBusiness(org).getCurriculumBaseLines()),
-    baselinequestion: plain(await new BaselineQuestionBusiness(org).getBaselineQuestion()),
-    grades: plain(await new GradeBusiness(org).getGrades()),
-    levels: plain(await new LevelBusiness(org).getLevels()),
-    lessons: plain(await new LessonBusiness(org).getLessons()),
-    lessonlearnings: plain(await new LessonLearningBusiness(org).getLessonLearnings()),
-    lessonlearningdocuments: plain(await new LessonLearningBusiness(org).getLessonLearningDocuments()),
-    lessonplans: plain(await new LessonPlanBusiness(org).getLessonPlans()),
-    lessonpractices: plain(await new LessonPracticeBusiness(org).getLessonPractices()),
-    lessonquizzes: plain(await new LessonQuizBusiness(org).getLessonQuizzes()),
-    lessonpracticequestions: plain(await new LessonPracticeQuestionBusiness(org).getLessonPracticeQuestions()),
-    lessonquizquestions: plain(await new LessonQuizQuestionBusiness(org).getLessonQuizQuestions()),
-    levelquizquestions: plain(await new LevelQuizQuestionBusiness(org).getLevelQuizQuestions()),
+    ...(await readCurriculumContent(org)),
   };
   const checked = confine(tables) as Record<ContentTableKey, Row[]>;
 

@@ -4,6 +4,8 @@ export enum Permission {
     VIEW_CURRICULUM = "view_curriculum",
     UPDATE_CURRICULUM = "update_curriculum",
     DELETE_CURRICULUM = "delete_curriculum",
+    /** Publish a curriculum to learners, or retire it (curriculumpublications); granted to organisation admins. */
+    PUBLISH_CURRICULUM = "publish_curriculum",
     SYNC_CONTENT = "sync_content",
 
     CREATE_BASELINEENDLINE = "create_baseline-endline",

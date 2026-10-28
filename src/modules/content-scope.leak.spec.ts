@@ -116,7 +116,8 @@ const transaction = { commit: jest.fn(), rollback: jest.fn(), LOCK: { SHARE: "SH
 
 const bearer = (claims: Record<string, unknown>) =>
   `Bearer ${sign({ jti: "test-jti", ...claims }, Config.fortyk.api.applicationsecret, { expiresIn: "5m" })}`;
-const PERMS = [...ORGANISATION_ADMIN_PERMISSIONS_20261002, "view_download_student", "view_feedback", "create_feedback"];
+// publish_curriculum is granted to the Organisation Admin role by 20261027120100-seed-publish-curriculum-permission (the frozen list of 2 Oct predates it)
+const PERMS = [...ORGANISATION_ADMIN_PERMISSIONS_20261002, "publish_curriculum", "view_download_student", "view_feedback", "create_feedback"];
 const callers = {
   "X's Organisation Admin": bearer({ lmsuserid: "oa", lmsuserroles: [Role.organisationadmin], permissions: PERMS, organisationid: X, isplatform: false }),
   "X's Admin": bearer({ lmsuserid: "ad", lmsuserroles: [Role.admin], permissions: PERMS, organisationid: X, isplatform: false }),
@@ -480,6 +481,162 @@ describe("content is confined to the caller's organisation", () => {
     it("a platform user not acting: any curriculum's tree", async () => {
       const res = await send(NOT_ACTING, "get", `/curriculum/tree/${TU.curriculum}`);
       expect(idsOf(res.body.data, "curriculumid")).toEqual([TU.curriculum]);
+    });
+  });
+
+  // Publishing a curriculum stores its own payload (its rows, and the questions and documents they name) as a publication.
+  describe("PUT /curriculum/publish/:curriculumid", () => {
+    const url = (id: string) => `/curriculum/publish/${id}`;
+    const USER_OF: Record<string, string> = { "X's Organisation Admin": "oa", "X's Admin": "ad", "a platform user acting as X": "p" };
+    const payloadOfRow = (row: Row) => row.payload as { tables: Record<string, Row[]> };
+    it.each(IN_X)("%s: publishes X's curriculum: only its own rows and the bank rows it names are stored, and the answer names what is new", async (who) => {
+      const res = await send(who, "put", url(TX.curriculum));
+      expect(res.status).toBe(200);
+      const rows = db.createdIn("curriculumpublications");
+      expect(rows).toHaveLength(1);
+      expect(withoutReference(res.body)).toEqual({
+        error: false,
+        data: { publicationid: rows[0].publicationid, publishedat: expect.any(String), summary: expect.objectContaining({ previous: null }) },
+      });
+      expect(rows[0]).toMatchObject({ curriculumid: TX.curriculum, organisationid: X, publishedby: USER_OF[who], status: "published" });
+      const tables = payloadOfRow(rows[0]).tables;
+      expect(idsOf(tables.curriculums, "curriculumid")).toEqual([TX.curriculum]);
+      expect(idsOf(tables.grades, "gradeid")).toEqual(sorted(TX.grade, TX.grade2));
+      expect(idsOf(tables.lessons, "lessonid")).toEqual(sorted(TX.lesson, TX.lesson2));
+      // the closure: the question and the document the curriculum names, and not the one it does not
+      expect(idsOf(tables.questions, "questionid")).toEqual([TX.question]);
+      expect(idsOf(tables.documents, "documentid")).toEqual([TX.document]);
+      // nothing of Y's, of the unowned tree, or of X's other curriculum
+      const stored = JSON.stringify(rows[0]);
+      for (const other of [TY, TU]) {
+        for (const value of Object.values(other)) if (typeof value === "string" && value.startsWith("00000000")) expect(stored).not.toContain(value);
+      }
+      expect(stored).not.toContain(TX.curriculum2);
+      expect(res.body.data.summary.changes.lessons).toEqual({ added: 2, removed: 0, changed: 0 });
+    });
+    it.each(IN_X)("%s: a second publish with nothing changed records another publication, with 0, 0, 0", async (who) => {
+      await send(who, "put", url(TX.curriculum));
+      const res = await send(who, "put", url(TX.curriculum));
+      expect(res.status).toBe(200);
+      expect(db.createdIn("curriculumpublications")).toHaveLength(2);
+      for (const change of Object.values(res.body.data.summary.changes)) expect(change).toEqual({ added: 0, removed: 0, changed: 0 });
+    });
+    it.each(IN_X)("%s: Y's and an unowned curriculum answer as an absent one does, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(id)), TY.curriculum, TU.curriculum)).toBe(404);
+    });
+    it.each(IN_X)("%s: the curriculum in the path is the one checked", async (who) => {
+      expect(await asAbsentPath(who, "put", (id) => r(url(id)), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
+    });
+    it.each(IN_X)("%s: a question of Y's named by X's curriculum stops the publish (400, tables and counts only), nothing written", async (who) => {
+      stored("lessonquizquestions", "lessonquizquestionid", TX.quizQuestion).questionid = TY.question;
+      const res = await refuses(who, "put", url(TX.curriculum));
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("This curriculum can't be published yet. lessonquizquestions: 1 row names a question that is not this organisation's.");
+      expect(JSON.stringify(res.body)).not.toContain(TY.question);
+    });
+    it("a platform user not acting must choose an organisation first (400), nothing written", async () => {
+      const res = await refuses(NOT_ACTING, "put", url(TX.curriculum));
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation to act in before you publish a curriculum. Use the organisation switcher, then try again.");
+    });
+    it("a staff user who may view but not publish is refused (403), nothing written", async () => {
+      const viewer = bearer({ lmsuserid: "vw", lmsuserroles: [Role.admin], permissions: ["view_curriculum", "update_curriculum"], organisationid: X, isplatform: false });
+      const before = db.snapshot();
+      const res = await request(app.getHttpServer()).put(url(TX.curriculum)).set("Authorization", viewer).set("Connection", "close");
+      expect(res.status).toBe(403);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it("a school-user token and the server token are refused, nothing written", async () => {
+      for (const who of ["a school-user token", "a server token"] as Who[]) {
+        const res = await refuses(who, "put", url(TX.curriculum));
+        expect([401, 403]).toContain(res.status);
+      }
+    });
+  });
+
+  // Retiring withdraws the curriculum's publication; it is idempotent.
+  describe("PUT /curriculum/retire/:curriculumid", () => {
+    const url = (id: string) => `/curriculum/retire/${id}`;
+    it.each(IN_X)("%s: withdraws X's published curriculum; a second call changes nothing and says so", async (who) => {
+      await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
+      const first = await send(who, "put", url(TX.curriculum));
+      expect(first.status).toBe(200);
+      expect(withoutReference(first.body)).toEqual({
+        error: false,
+        data: { curriculumid: TX.curriculum, retired: true, publicationid: db.createdIn("curriculumpublications")[0].publicationid, publishedat: null, publicationstatus: "withdrawn" },
+      });
+      expect(db.tables.curriculumpublications.map((p) => p.status)).toEqual(["withdrawn"]);
+      const before = db.snapshot();
+      const again = await send(who, "put", url(TX.curriculum));
+      expect(db.snapshot()).toEqual(before);
+      expect(again.status).toBe(200);
+      expect(again.body.data).toMatchObject({ retired: false, publicationstatus: "withdrawn" });
+    });
+    it.each(IN_X)("%s: a curriculum never published answers 200 with retired false, nothing written", async (who) => {
+      const res = await refuses(who, "put", url(TX.curriculum2));
+      expect(withoutReference(res.body)).toEqual({
+        error: false,
+        data: { curriculumid: TX.curriculum2, retired: false, publicationid: null, publishedat: null, publicationstatus: "never" },
+      });
+    });
+    it.each(IN_X)("%s: Y's and an unowned curriculum answer as an absent one does, nothing written", async (who) => {
+      expect(await asAbsent(who, "put", (id) => r(url(id)), TY.curriculum, TU.curriculum)).toBe(404);
+    });
+    it.each(IN_X)("%s: the curriculum in the path is the one checked", async (who) => {
+      expect(await asAbsentPath(who, "put", (id) => r(url(id)), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
+    });
+    it("a platform user not acting must choose an organisation first (400), nothing written", async () => {
+      const res = await refuses(NOT_ACTING, "put", url(TX.curriculum));
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation to act in before you retire a curriculum. Use the organisation switcher, then try again.");
+    });
+    it("a staff user who may view but not publish is refused (403), nothing written", async () => {
+      const viewer = bearer({ lmsuserid: "vw", lmsuserroles: [Role.admin], permissions: ["view_curriculum", "update_curriculum"], organisationid: X, isplatform: false });
+      const before = db.snapshot();
+      const res = await request(app.getHttpServer()).put(url(TX.curriculum)).set("Authorization", viewer).set("Connection", "close");
+      expect(res.status).toBe(403);
+      expect(db.snapshot()).toEqual(before);
+    });
+    it("a school-user token and the server token are refused, nothing written", async () => {
+      for (const who of ["a school-user token", "a server token"] as Who[]) {
+        expect([401, 403]).toContain((await refuses(who, "put", url(TX.curriculum))).status);
+      }
+    });
+  });
+
+  // Where a curriculum stands: read on demand, because "changed since publish" reads the organisation's bank.
+  describe("GET /curriculum/publication/:curriculumid", () => {
+    const url = (id: string) => `/curriculum/publication/${id}`;
+    it.each(IN_X)("%s: X's curriculum never published is `never`; published and untouched it has not changed; a renamed lesson has", async (who) => {
+      const never = await send(who, "get", url(TX.curriculum));
+      expect(withoutReference(never.body)).toEqual({
+        error: false,
+        data: { curriculumid: TX.curriculum, publicationid: null, publishedat: null, publicationstatus: "never", changedsincepublish: false, problem: null, pending: null, latest: null },
+      });
+      await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
+      const same = await send(who, "get", url(TX.curriculum));
+      expect(same.body.data).toMatchObject({ publicationstatus: "published", changedsincepublish: false, problem: null });
+      stored("lessons", "lessonid", TX.lesson).lessonname = "Renamed";
+      const changed = await send(who, "get", url(TX.curriculum));
+      expect(changed.body.data.changedsincepublish).toBe(true);
+      expect(changed.body.data.pending.affected.lessons.changed).toEqual([{ id: TX.lesson, name: "Renamed" }]);
+    });
+    it.each(IN_X)("%s: Y's and an unowned curriculum answer as an absent one does", async (who) => {
+      expect(await asAbsent(who, "get", (id) => r(url(id)), TY.curriculum, TU.curriculum)).toBe(404);
+    });
+    it.each(IN_X)("%s: the curriculum in the path is the one checked", async (who) => {
+      expect(await asAbsentPath(who, "get", (id) => r(url(id)), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
+    });
+    it("a platform user not acting: any owned curriculum's state; an unowned one has none (404)", async () => {
+      const res = await send(NOT_ACTING, "get", url(TY.curriculum));
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({ curriculumid: TY.curriculum, publicationstatus: "never" });
+      expect((await send(NOT_ACTING, "get", url(TU.curriculum))).status).toBe(404);
+    });
+    it("a school-user token and the server token are refused", async () => {
+      for (const who of ["a school-user token", "a server token"] as Who[]) {
+        expect([401, 403]).toContain((await send(who, "get", url(TX.curriculum))).status);
+      }
     });
   });
 

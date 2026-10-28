@@ -71,6 +71,7 @@ import { Org, OrgContext, OrgOrServer } from "src/decorators/org.decorator";
 import { assertSameOwner, ownerForNewContent, ownerOfCurriculum, ownerOfSubject } from "src/business/content-owner";
 import { assertInScope } from "src/business/content-scope";
 import { notFoundError } from "src/business/org-scope";
+import { publicationOverview, publishCurriculum, retireCurriculum } from "src/business/curriculum-publication";
 
 @ApiExtraModels(
   CurriculumBase,
@@ -392,6 +393,111 @@ export class CurriculumController {
     return {
       error: false,
       data: data,
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
+  @Put("publish/:curriculumid")
+  @ApiResponse({
+    status: 200,
+    description: "Curriculum published: the id and time of the publication, and what changed since the one before",
+  })
+  @ApiResponse({
+    status: 400,
+    description: "The curriculum's rows cannot be published as they are (the answer says which tables and how many rows), or the caller is a platform user who is not acting as an organisation",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "The curriculum is not found",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @UseInterceptors(new SchemaValidationInterceptor(showcurriculum))
+  @RequirePermissions(Permission.PUBLISH_CURRICULUM)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: `curriculumid`, type: "string", required: true })
+  async publish(
+    @Param("curriculumid") curriculumid: string,
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext
+  ): Promise<any> {
+    // The curriculum in the path is the caller's, or the 404 an absent one gets; the organisation is the one the token
+    // acts in. A publish with nothing changed since the last one still records a publication (summary 0, 0, 0): the
+    // record of who published and when is the act, and a publish repeated after a push that failed must push again.
+    // Nothing is pushed here: the sync routes still serve the live tables.
+    const data = await publishCurriculum(org, user.lmsuserid, curriculumid);
+    return {
+      error: false,
+      data,
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
+  @Put("retire/:curriculumid")
+  @ApiResponse({
+    status: 200,
+    description: "Curriculum retired (or already not published: `retired` is false and nothing changed)",
+  })
+  @ApiResponse({
+    status: 400,
+    description: "The caller is a platform user who is not acting as an organisation",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "The curriculum is not found",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @UseInterceptors(new SchemaValidationInterceptor(showcurriculum))
+  @RequirePermissions(Permission.PUBLISH_CURRICULUM)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: `curriculumid`, type: "string", required: true })
+  async retire(
+    @Param("curriculumid") curriculumid: string,
+    @Org() org: OrgContext
+  ): Promise<any> {
+    const data = await retireCurriculum(org, curriculumid);
+    return {
+      error: false,
+      data,
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/content-scope.leak.spec.ts" })
+  @Get("publication/:curriculumid")
+  @ApiResponse({
+    status: 200,
+    description: "Where the curriculum stands: its publication state, whether it changed since it was published, and what a publish now would record",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "The curriculum is not found",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @UseInterceptors(new SchemaValidationInterceptor(showcurriculum))
+  @RequirePermissions(Permission.VIEW_CURRICULUM)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: `curriculumid`, type: "string", required: true })
+  async publication(
+    @Param("curriculumid") curriculumid: string,
+    @Org() org: OrgContext
+  ): Promise<any> {
+    // Read on demand and not in the tree: working out "changed since publish" reads the organisation's whole question and
+    // document bank, which the tree (loaded with every open of the Curricula workspace) does not (see curriculum-tree.ts).
+    const data = await publicationOverview(org, curriculumid);
+    return {
+      error: false,
+      data,
     };
   }
 
