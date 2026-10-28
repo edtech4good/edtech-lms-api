@@ -613,7 +613,10 @@ describe("content is confined to the caller's organisation", () => {
       const never = await send(who, "get", url(TX.curriculum));
       expect(withoutReference(never.body)).toEqual({
         error: false,
-        data: { curriculumid: TX.curriculum, publicationid: null, publishedat: null, publicationstatus: "never", changedsincepublish: false, problem: null, pending: null, latest: null },
+        data: {
+          curriculumid: TX.curriculum, publicationid: null, publishedat: null, publicationstatus: "never", changedsincepublish: false, problem: null, pending: null, latest: null,
+          translationcoverage: { contentlanguage: null, languages: {} },
+        },
       });
       await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
       const same = await send(who, "get", url(TX.curriculum));
@@ -4439,6 +4442,52 @@ describe("content is confined to the caller's organisation", () => {
           const res = await refuses(who, "put", url("lessons", TX.lesson), BODY);
           expect([401, 403]).toContain(res.status);
         }
+      });
+    });
+
+    describe("a curriculum's publication and the translations of its rows", () => {
+      beforeEach(() => {
+        addTranslation(TX, "lessons", TX.lesson, "lessonname", "", "km", KM_TEXT, lessonName(TX));
+        addTranslation(TX, "curriculums", TX.curriculum, "curriculumname", "", "km", "Curriculum in km", stored("curriculums", "curriculumid", TX.curriculum).curriculumname as string);
+        addTranslation(TX, "questions", TX.question, "headingtext", "", "km", "Heading in km", "Heading");
+        addTranslation(TX, "questions", TX.question2, "questiontext", "", "km", "Of the other curriculum's question", stored("questions", "questionid", TX.question2).questiontext as string);
+        addTranslation(TX, "lessons", TX.lesson2, "lessonname", "", "km", "Second lesson", "Second " + TX.tag);
+        addTranslation(TY, "lessons", TY.lesson, "lessonname", "", "km", "Y's", lessonName(TY));
+      });
+      it.each(IN_X)("%s: the stored payload carries the translations of the rows it carries, a pulled-in question's included, and no other organisation's", async (who) => {
+        const res = await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
+        expect(res.status).toBe(200);
+        const row = db.createdIn("curriculumpublications")[0];
+        const tables = (row.payload as { tables: Record<string, Row[]> }).tables;
+        const text = (t: Row) => t.text;
+        expect(tables.contenttranslations.map(text).sort()).toEqual(["Curriculum in km", "Heading in km", "Second lesson", KM_TEXT].sort());
+        expect(JSON.stringify(row)).not.toContain("Y's");
+        // the question X's other curriculum alone would use is not pulled in, so neither is its translation
+        expect(JSON.stringify(tables.contenttranslations)).not.toContain("Of the other curriculum's question");
+        expect(res.body.data.summary.counts.contenttranslations).toBe(4);
+        expect(res.body.data.summary.changes.contenttranslations).toEqual({ added: 4, removed: 0, changed: 0 });
+      });
+      it.each(IN_X)("%s: editing a translation after the publish is a change since publish, counted as a changed translation", async (who) => {
+        await send(who, "put", `/curriculum/publish/${TX.curriculum}`);
+        expect((await send(who, "get", `/curriculum/publication/${TX.curriculum}`)).body.data.changedsincepublish).toBe(false);
+        const row = db.tables.contenttranslations.find((t) => t.rowid === TX.lesson)!;
+        row.text = "Edited";
+        const after = (await send(who, "get", `/curriculum/publication/${TX.curriculum}`)).body.data;
+        expect(after.changedsincepublish).toBe(true);
+        expect(after.pending.changes.contenttranslations).toEqual({ added: 0, removed: 0, changed: 1 });
+      });
+      it.each(IN_X)("%s: the publication overview counts, per language and lesson, the texts not yet translated and those gone stale", async (who) => {
+        stored("lessons", "lessonid", TX.lesson).lessonname = "Renamed";
+        const res = await send(who, "get", `/curriculum/publication/${TX.curriculum}`);
+        const coverage = res.body.data.translationcoverage;
+        expect(coverage.contentlanguage).toBe("en");
+        expect(Object.keys(coverage.languages)).toEqual(["km"]);
+        expect(coverage.languages.km.lessons[TX.lesson].stale).toBe(1);
+        expect(coverage.languages.km.lessons[TX.lesson2].stale).toBe(0);
+        expect(Object.keys(coverage.languages.km.lessons).sort()).toEqual(sorted(TX.lesson, TX.lesson2));
+        // counts only: no text of a translation and nothing of Y's
+        expect(JSON.stringify(coverage)).not.toContain(KM_TEXT);
+        expect(JSON.stringify(coverage)).not.toContain(TY.lesson);
       });
     });
 

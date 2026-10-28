@@ -97,8 +97,15 @@ describe("the tables and their permissions", () => {
     expect(assertMay(org, "lessons", "update")).toBe(TABLES.lessons);
     expect(() => assertMay(org, "questions", "update")).toThrow("You don't have permission to do that.");
     expect(() => assertMay(org, "lessons", "view")).toThrow("You don't have permission to do that.");
-    expect(() => assertMay(org, "documents", "update")).toThrow("That kind of content can't be translated.");
-    expect(() => assertMay(org, "constructor", "update")).toThrow("That kind of content can't be translated.");
+    for (const table of ["documents", "constructor", "__proto__"]) {
+      try {
+        assertMay(org, table, "update");
+        throw new Error("not refused");
+      } catch (e) {
+        expect((e as { getStatus: () => number }).getStatus()).toBe(400);
+        expect((e as { fields: unknown }).fields).toEqual([{ field: "tablename", message: "That kind of content can't be translated." }]);
+      }
+    }
     expect(assertMay({ ...org, permissions: ["superadmin"] }, "questions", "update")).toBe(TABLES.questions);
   });
 });

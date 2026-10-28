@@ -166,7 +166,7 @@ describe("the curriculum's rows and the closure", () => {
     const t = selectCurriculumTables(await content(), B);
     expect(t.lessonlearningdocuments).toEqual([]);
     expect(t.curriculumbaselines).toEqual([]);
-    expect(Object.keys(t)).toHaveLength(16);
+    expect(Object.keys(t)).toHaveLength(17);
   });
 
   it("closes over the bank without a document: remove the documents and the payload is refused for the learning item that names one", async () => {
@@ -319,7 +319,7 @@ describe("publishing", () => {
     expect(row).toMatchObject({ publicationid: res.publicationid, curriculumid: A, organisationid: X, publishedby: USER, status: "published" });
     expect(row.publishedat).toEqual(res.publishedat);
     expect(row.payloadhash).toBe(payloadHashOf(hashTables(payloadOf(X, await content(), A, await liveSubjects()).tables)));
-    expect(Object.keys((row.summary as { hashes: object }).hashes)).toHaveLength(16);
+    expect(Object.keys((row.summary as { hashes: object }).hashes)).toHaveLength(17);
     expect(Object.keys(res.summary).sort()).toEqual(["affected", "changes", "counts", "format", "previous", "shared"]);
     expect(res.summary.previous).toBeNull();
     expect(transaction.commit).toHaveBeenCalledTimes(1);
@@ -511,6 +511,7 @@ describe("changed since publish", () => {
   it("is false for a curriculum never published or withdrawn, with no state to compare against", async () => {
     expect(await publicationOverview(orgX, A)).toEqual({
       curriculumid: A, publicationid: null, publishedat: null, publicationstatus: "never", changedsincepublish: false, problem: null, pending: null, latest: null,
+      translationcoverage: { contentlanguage: null, languages: {} },
     });
     await publishCurriculum(orgX, USER, A);
     await retireCurriculum(orgX, A);
@@ -693,7 +694,7 @@ describe("the subject a curriculum names", () => {
     expect(publications()).toHaveLength(2);
     // the subject is checked against, and is not part of the payload
     const latest = publications()[1].payload as { tables: Record<string, unknown[]> };
-    expect(Object.keys(latest.tables)).toHaveLength(16);
+    expect(Object.keys(latest.tables)).toHaveLength(17);
     expect(latest.tables).not.toHaveProperty("subjects");
   });
 

@@ -62,25 +62,33 @@ const checked = (value: string): string => {
 
 const nameOf = (r: { name?: string; NAME?: string }): string => String(r.name ?? r.NAME);
 
+/** The rows of a SELECT, whatever shape the driver (or a stand-in) wraps them in: only plain row objects count. */
+const objects = <T>(result: unknown): T[] =>
+  (Array.isArray(result) ? result : []).filter((r): r is T => r !== null && typeof r === "object" && !Array.isArray(r));
+
 async function indexNames(queryInterface: QueryInterface, transaction: Transaction): Promise<Set<string>> {
-  const rows = (await queryInterface.sequelize.query(
-    `SELECT DISTINCT INDEX_NAME AS name FROM information_schema.statistics WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
-    { replacements: [TABLE], type: QueryTypes.SELECT, transaction },
-  )) as Array<{ name?: string; NAME?: string }>;
+  const rows = objects<{ name?: string; NAME?: string }>(
+    await queryInterface.sequelize.query(
+      `SELECT DISTINCT INDEX_NAME AS name FROM information_schema.statistics WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+      { replacements: [TABLE], type: QueryTypes.SELECT, transaction },
+    ),
+  );
   return new Set(rows.map(nameOf));
 }
 
 async function constraintNames(queryInterface: QueryInterface, transaction: Transaction): Promise<Set<string>> {
-  const rows = (await queryInterface.sequelize.query(
-    `SELECT CONSTRAINT_NAME AS name FROM information_schema.table_constraints
+  const rows = objects<{ name?: string; NAME?: string }>(
+    await queryInterface.sequelize.query(
+      `SELECT CONSTRAINT_NAME AS name FROM information_schema.table_constraints
       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_TYPE = 'FOREIGN KEY'`,
-    { replacements: [TABLE], type: QueryTypes.SELECT, transaction },
-  )) as Array<{ name?: string; NAME?: string }>;
+      { replacements: [TABLE], type: QueryTypes.SELECT, transaction },
+    ),
+  );
   return new Set(rows.map(nameOf));
 }
 
 async function count(queryInterface: QueryInterface, sql: string, transaction: Transaction): Promise<number> {
-  const rows = (await queryInterface.sequelize.query(sql, { type: QueryTypes.SELECT, transaction })) as Array<{ n: number | string }>;
+  const rows = objects<{ n: number | string }>(await queryInterface.sequelize.query(sql, { type: QueryTypes.SELECT, transaction }));
   return Number(rows[0]?.n ?? 0);
 }
 

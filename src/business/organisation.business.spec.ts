@@ -47,6 +47,7 @@ const orgRow = (over: Record<string, unknown> = {}) => {
     uitheme: "kids",
     brandingconfig: null,
     settingsconfig: null,
+    contentlanguage: null as string | null,
     isdeleted: false,
     ...over,
   };

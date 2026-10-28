@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import AdmZip from "adm-zip";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -43,6 +44,7 @@ jest.mock("src/business/token.business", () => ({
 }));
 jest.mock("axios", () => ({ __esModule: true, default: { post: jest.fn(), put: jest.fn(), get: jest.fn() } }));
 
+const sha = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const X = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const Y = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -63,7 +65,7 @@ const treeOf = (owner: Owner, base: number, country: string, freeCountry: string
     subject: id(1), curriculum: id(2), grade: id(3), level: id(4), lesson: id(5), practice: id(6), quiz: id(7),
     learning: id(8), plan: id(9), document: id(10), document2: id(11), question: id(12), question2: id(13),
     practiceQuestion: id(14), quizQuestion: id(15), levelQuestion: id(16), baseline: id(17), baselineQuestion: id(18),
-    school: id(20), school2: id(21), standard: id(22), login: id(23), student: id(24), teacherLogin: id(25), link: id(26),
+    school: id(20), school2: id(21), standard: id(22), login: id(23), student: id(24), teacherLogin: id(25), link: id(26), translation: id(27), translation2: id(28),
     names: { school: "សាលា " + base, school2: "សាលាទី២ " + base, curriculum: "ភាសាខ្មែរ " + base },
   };
 };
@@ -116,7 +118,8 @@ const seedTree = (t: Tree) => {
   db.add("curriculums", { curriculumid: t.curriculum, curriculumname: t.names.curriculum, organisationid: o, subjectid: t.subject, curriculumstatus: true });
   db.add("grades", { gradeid: t.grade, gradename: "ថ្នាក់ " + tag, gradeorder: 1, gradestatus: true, curriculumid: t.curriculum });
   db.add("levels", { levelid: t.level, levelname: "កម្រិត " + tag, levelorder: 1, levelstatus: true, gradeid: t.grade });
-  db.add("lessons", { lessonid: t.lesson, lessonname: "មេរៀន " + tag, lessonorder: 1, lessonstatus: true, levelid: t.level });
+  const lessonName = "មេរៀន " + tag;
+  db.add("lessons", { lessonid: t.lesson, lessonname: lessonName, lessonorder: 1, lessonstatus: true, levelid: t.level });
   db.add("lessonpractices", { lessonpracticeid: t.practice, lessonid: t.lesson, lessonpracticename: "Practice " + tag, lessonpracticeorder: 1, lessonpracticestatus: true });
   db.add("lessonquizzes", { lessonquizid: t.quiz, lessonid: t.lesson, lessonquizname: "Quiz " + tag, lessonquizorder: 1, lessonquizstatus: true });
   db.add("documents", { documentid: t.document, documentname: `doc_${tag}.png`, documenttypeid: 2, organisationid: o, documenttags: [], documentlicence: "unspecified", documenttitle: null, documentattribution: null });
@@ -127,6 +130,9 @@ const seedTree = (t: Tree) => {
   db.add("lessonplans", { lessonplanid: t.plan, lessonid: t.lesson, documentid: t.document2, lessonplanname: "Plan " + tag, lessonplanorder: 1, lessonplanstatus: true });
   db.add("questions", { questionid: t.question, questionidentifier: `qi-${tag}`, questiontext: "សួស្តី", templatetypeid: 1, organisationid: o, questionstatus: true });
   db.add("questions", { questionid: t.question2, questionidentifier: `qi2-${tag}`, questiontext: "សួស្តី", templatetypeid: 1, organisationid: o, questionstatus: true });
+  // translations of the lesson's name and the question's text (the question is template 1, whose text is not graded by)
+  db.add("contenttranslations", { translationid: t.translation, organisationid: o, tablename: "lessons", rowid: t.lesson, field: "lessonname", subkey: "", language: "km", text: "Lesson in km " + tag, sourcehash: sha(lessonName), lastupdated: new Date("2026-10-28T05:00:00.000Z") });
+  db.add("contenttranslations", { translationid: t.translation2, organisationid: o, tablename: "questions", rowid: t.question, field: "questiontext", subkey: "", language: "km", text: "Question in km " + tag, sourcehash: sha(String(db.tables.questions.find((q) => q.questionid === t.question)!.questiontext)), lastupdated: new Date("2026-10-28T05:00:00.000Z") });
   db.add("lessonpracticequestions", { lessonpracticequestionid: t.practiceQuestion, lessonpracticeid: t.practice, questionid: t.question, lessonpracticequestionorder: 1, lessonpracticequestionstatus: true });
   db.add("lessonquizquestions", { lessonquizquestionid: t.quizQuestion, lessonquizid: t.quiz, questionid: t.question2, lessonquizquestionorder: 1, lessonquizquestionstatus: true });
   db.add("levelquizquestions", { levelquizquestionid: t.levelQuestion, levelid: t.level, questionid: t.question, lessonid: t.lesson, levelquizquestionorder: 1, levelquizquestionstatus: true });
@@ -171,15 +177,16 @@ const expectedIds = (t: Tree) => ({
   lessonpracticequestions: [t.practiceQuestion],
   lessonquizquestions: [t.quizQuestion],
   levelquizquestions: [t.levelQuestion],
+  contenttranslations: sorted(t.translation, t.translation2),
 });
 const PK: Record<keyof ReturnType<typeof expectedIds>, string> = {
   countries: "countryid", schools: "schoolid", standards: "standardid", subjects: "subjectid", curriculums: "curriculumid",
   questions: "questionid", documents: "documentid", curriculumbaselines: "curriculumbaselineid", baselinequestion: "baselinequestionid",
   grades: "gradeid", levels: "levelid", lessons: "lessonid", lessonlearnings: "lessonlearningid", lessonlearningdocuments: "lessonlearningdocumentid", lessonplans: "lessonplanid",
   lessonpractices: "lessonpracticeid", lessonquizzes: "lessonquizid", lessonpracticequestions: "lessonpracticequestionid",
-  lessonquizquestions: "lessonquizquestionid", levelquizquestions: "levelquizquestionid",
+  lessonquizquestions: "lessonquizquestionid", levelquizquestions: "levelquizquestionid", contenttranslations: "translationid",
 };
-const OWNED = ["schools", "curriculums", "questions", "documents", "subjects"] as const;
+const OWNED = ["schools", "curriculums", "questions", "documents", "subjects", "contenttranslations"] as const;
 const everyIdOf = (t: Tree) => Object.values(expectedIds(t)).flat().filter((i) => i !== C_U);
 
 const ORGANISATION_ROW = (organisationid: string) => ({
@@ -190,6 +197,8 @@ const ORGANISATION_ROW = (organisationid: string) => ({
   uitheme: organisationid === X ? "kids" : "corporate",
   brandingconfig: organisationid === X ? { displayname: "អង្គការ ក", tilecolour: "#aabbcc" } : null,
   settingsconfig: { weeklygoal: 3 },
+  // the language the organisation's content is written in: its translations are other languages
+  contentlanguage: "en",
   isdeleted: false,
 });
 
@@ -275,6 +284,34 @@ describe("the content sync is one organisation's", () => {
       expect(raw).not.toContain(Y);
       expect(raw).not.toContain(TY.names.curriculum);
       expect(raw).not.toContain(TU.names.school);
+    });
+
+    it("ends with contenttranslations: X's translations only, each owned by X, with the hash of the text it translated", async () => {
+      const { json } = await download("X's Organisation Admin", "/sync/content");
+      const keys = Object.keys(json);
+      expect(keys[keys.length - 1]).toBe("contenttranslations");
+      expect(json.contenttranslations).toEqual(
+        [TX.translation, TX.translation2].sort().map((translationid) => expect.objectContaining({ translationid, organisationid: X, language: "km", lastupdated: "2026-10-28T05:00:00.000Z" })),
+      );
+      expect(json.organisations[0].contentlanguage).toBe("en");
+      expect(JSON.stringify(json)).not.toContain(TY.translation);
+      expect(JSON.stringify(json)).not.toContain(TU.translation);
+    });
+
+    it("sends no translations, and the organisation's null language, while the organisation has no content language", async () => {
+      db.tables.organisations.find((o) => o.organisationid === X)!.contentlanguage = null;
+      const { json } = await download("X's Organisation Admin", "/sync/content");
+      expect(json.contenttranslations).toEqual([]);
+      expect(json.organisations[0].contentlanguage).toBeNull();
+      expect(contentProblems(json)).toEqual([]);
+    });
+
+    it("leaves out a translation whose lesson is not in the payload instead of failing the export", async () => {
+      db.tables.lessons = db.tables.lessons.filter((l) => l.lessonid !== TX.lesson);
+      const { status, json } = await download("X's Organisation Admin", "/sync/content");
+      expect(status).toBe(200);
+      expect(ids(json.contenttranslations, "translationid")).toEqual([TX.translation2]);
+      expect(contentProblems(json)).toEqual([]);
     });
 
     it("a platform user acting as X, a platform user not acting that names X, and X's own staff get the same payload", async () => {

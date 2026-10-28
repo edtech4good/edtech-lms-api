@@ -470,22 +470,22 @@ export function contentProblems(body: unknown): string[] {
       }
     }
     if (baseLanguage === null) problems.push("contenttranslations: the organisation has no contentlanguage; set it before sending translations.");
-    if (badTable) problems.push(`contenttranslations: ${rows(badTable)} name a tablename that is not translatable`);
-    if (badField) problems.push(`contenttranslations: ${rows(badField)} name a field that its table does not have as translatable text`);
+    if (badTable) problems.push(`contenttranslations: ${rows(badTable)} ${badTable === 1 ? "names" : "name"} a tablename that is not translatable`);
+    if (badField) problems.push(`contenttranslations: ${rows(badField)} ${badField === 1 ? "names" : "name"} a field that its table does not have as translatable text`);
     if (answerBearing) {
       const graded = Object.entries(ANSWER_BEARING_FIELDS)
         .map(([template, fields]) => `template ${template}: ${fields.join(", ")}`)
         .join("; ");
-      problems.push(`contenttranslations: ${rows(answerBearing)} translate a field that an answer is graded by (${graded})`);
+      problems.push(`contenttranslations: ${rows(answerBearing)} translate${answerBearing === 1 ? "s" : ""} a field that an answer is graded by (${graded})`);
     }
-    if (badSubkey) problems.push(`contenttranslations: ${rows(badSubkey)} have a subkey that does not follow its field's rule`);
-    if (badLanguage) problems.push(`contenttranslations: ${rows(badLanguage)} have a language that is not 2 to 8 letters, digits or hyphens`);
-    if (baseLanguageRows) problems.push(`contenttranslations: ${rows(baseLanguageRows)} are in the organisation's own contentlanguage`);
-    if (badText) problems.push(`contenttranslations: ${rows(badText)} have a text that is not a string of 1 to ${TRANSLATION_TEXT_MAX_BYTES} bytes`);
-    if (badHash) problems.push(`contenttranslations: ${rows(badHash)} have a sourcehash that is not 64 hexadecimal characters`);
-    if (badDate) problems.push(`contenttranslations: ${rows(badDate)} have a lastupdated that is not a date`);
-    if (repeated) problems.push(`contenttranslations: ${rows(repeated)} repeat a table, row, field, subkey and language that is already in the payload`);
-    for (const [table, n] of missingParent) problems.push(`contenttranslations: ${rows(n)} name a ${table} row (rowid) that is not in the payload`);
+    if (badSubkey) problems.push(`contenttranslations: ${rows(badSubkey)} ${badSubkey === 1 ? "has" : "have"} a subkey that does not follow its field's rule`);
+    if (badLanguage) problems.push(`contenttranslations: ${rows(badLanguage)} ${badLanguage === 1 ? "has" : "have"} a language that is not 2 to 8 letters, digits or hyphens`);
+    if (baseLanguageRows) problems.push(`contenttranslations: ${rows(baseLanguageRows)} ${baseLanguageRows === 1 ? "is" : "are"} in the organisation's own contentlanguage`);
+    if (badText) problems.push(`contenttranslations: ${rows(badText)} ${badText === 1 ? "has" : "have"} a text that is not a string of 1 to ${TRANSLATION_TEXT_MAX_BYTES} bytes`);
+    if (badHash) problems.push(`contenttranslations: ${rows(badHash)} ${badHash === 1 ? "has" : "have"} a sourcehash that is not 64 hexadecimal characters`);
+    if (badDate) problems.push(`contenttranslations: ${rows(badDate)} ${badDate === 1 ? "has" : "have"} a lastupdated that is not a date`);
+    if (repeated) problems.push(`contenttranslations: ${rows(repeated)} repeat${repeated === 1 ? "s" : ""} a table, row, field, subkey and language that is already in the payload`);
+    for (const [table, n] of missingParent) problems.push(`contenttranslations: ${rows(n)} ${n === 1 ? "names" : "name"} a ${table} row (rowid) that is not in the payload`);
   }
 
   for (const { table, column, to } of LISTS) {
