@@ -31,6 +31,7 @@ const MAX_ENTRY_BYTES = 20 * 1024 * 1024;
 const TICK = /\s+[\u2713\u2714]\s*$/; // the tick is separated from the option text by whitespace
 const OPTION = /^([A-Za-z])\.\s+(.+)$/;
 const NUMBER_PREFIX = /^[0-9\u17e0-\u17e9]+[.)]\s+/;
+const MODULE_TITLE = /^Module\s+(\d+)\b/i;
 
 class ParseRefused extends Error {
   constructor(problems) {
@@ -243,15 +244,41 @@ function readProgramme(file) {
 }
 
 /**
+ * The module number: from the English module title (`Module 2: ...`, any case) and/or `options.module` (`--module N`).
+ * One of them is enough; both must agree; neither is refused. Pushes the reason to `problems` and returns null when there is none.
+ */
+function moduleNumberOf(titleEn, fromOption, problems) {
+  const m = MODULE_TITLE.exec(titleEn);
+  const fromTitle = m ? Number(m[1]) : null;
+  if (fromTitle !== null && !(Number.isSafeInteger(fromTitle) && fromTitle >= 1)) {
+    problems.push("A2 (module title): the module number must be a whole number from 1");
+    return null;
+  }
+  if (fromOption !== undefined && !(Number.isSafeInteger(fromOption) && fromOption >= 1)) {
+    problems.push("--module must be a whole number from 1");
+    return null;
+  }
+  if (fromTitle !== null && fromOption !== undefined && fromTitle !== fromOption) {
+    problems.push(`the module number is ${fromTitle} in the title (A2) but --module says ${fromOption}`);
+    return null;
+  }
+  const number = fromTitle ?? fromOption ?? null;
+  if (number === null) problems.push('the module number is unknown: the title in A2 does not begin "Module N", and --module was not given');
+  return number;
+}
+
+/**
  * Row 2 of the sheet (`cells`: { A2, B2, ... }) to content.json.
- * `options.module` is the module number used in identifiers and file names (default 1);
+ * The module number comes from the English title in A2 (`Module N ...`) or `options.module`; they must agree and one must exist.
  * `options.videoSource` is the local name of the video, printed by the seed (optional);
- * `options.programme` is `{ en, km }`, the programme's name (optional; from normaliseProgramme).
+ * `options.programme` is `{ en, km }`, the programme's name (optional here; from normaliseProgramme; the seed refuses a file without it).
+ * Module 1's lesson names one of the seed's fixed lesson ids; a later module's lesson has no id (its order is its slot).
  */
 function parseCells(cells, options = {}) {
-  const module = options.module ?? 1;
   const problems = [];
   const moduleTitle = splitBilingual(cells.A2, "A2 (module title)", problems);
+  // A title that is itself refused has no English line to read a number from; that is the one reason given, not a second one about the number.
+  const module = problems.length === 0 ? moduleNumberOf(moduleTitle.en, options.module, problems) : null;
   const lessonTitle = splitBilingual(cells.B2, "B2 (lesson title)", problems);
   // A lesson number the spreadsheet puts in front of the English title only ("1 Title") duplicates `order`; it goes when the
   // Khmer title carries no number. If the Khmer has one too, both stay exactly as written.
@@ -264,11 +291,10 @@ function parseCells(cells, options = {}) {
   if (problems.length > 0) throw new ParseRefused(problems);
   return {
     ...(options.programme ? { programme: { en: options.programme.en, km: options.programme.km } } : {}),
-    curriculum: { name: moduleTitle },
-    level: { name: moduleTitle },
+    module: { number: module, name: moduleTitle },
     lessons: [
       {
-        id: LESSON_IDS[0],
+        ...(module === 1 ? { id: LESSON_IDS[0] } : {}),
         order: 1,
         name: lessonTitle,
         video: { ref, filename: `dcrs-m${module}-l1.mp4`, ...(options.videoSource ? { source: options.videoSource } : {}) },

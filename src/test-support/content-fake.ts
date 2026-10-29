@@ -242,7 +242,7 @@ const UNIQUE_KEYS: Partial<Record<ContentTable, readonly string[]>> = {
 };
 const lower = (v: unknown) => String(v ?? "").toLowerCase();
 // what the wrapper adds to a row: never copied back into it
-const INSTANCE_ONLY = new Set(["get", "getDataValue", "setDataValue", "save", "reload", "update", "destroy", "toJSON", "getGrade"]);
+const INSTANCE_ONLY = new Set(["get", "getDataValue", "setDataValue", "save", "reload", "update", "destroy", "toJSON", "getGrade", "getLevel"]);
 
 export class ContentFake {
   tables: Record<string, Row[]> = {};
@@ -358,6 +358,13 @@ export class ContentFake {
       instance.getGrade = async () => {
         const grade = this.tables.grades.find((g) => g.gradeid === row.gradeid);
         return grade ? this.wrap("grades", grade) : null;
+      };
+    }
+    // the association accessor a lesson's points recompute reads its level through
+    if (table === "lessons") {
+      instance.getLevel = async () => {
+        const level = this.tables.levels.find((l) => l.levelid === row.levelid);
+        return level ? this.wrap("levels", level) : null;
       };
     }
     return instance;

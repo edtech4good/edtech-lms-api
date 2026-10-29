@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 import {
   grades,
   lessons,
+  levelquizquestions,
   levels,
   levelsAttributes,
 } from "../models/data-models/init-models";
@@ -177,6 +178,7 @@ export class LevelBusiness {
   updateLevel = async (level: levelsAttributes, user: any) => {
     const tempdt = await this.getLevelid(level.levelid);
     if (tempdt) {
+      const previousGradeid = tempdt.gradeid;
       tempdt.levelname = level.levelname;
       tempdt.leveldescription = level.leveldescription;
       tempdt.levelorder = level.levelorder;
@@ -199,6 +201,8 @@ export class LevelBusiness {
       });
       //await tempdt.reload();
       await new LevelBusiness().updateLevelPoints(tempdt);
+      // a level moved to another grade leaves the first grade's total
+      if (previousGradeid !== tempdt.gradeid) await new LevelBusiness().updateGradePoints(previousGradeid);
       return tempdt;
     } else {
       return null;
@@ -223,6 +227,8 @@ export class LevelBusiness {
     if (tempdt) {
       tempdt.levelstatus = true;
       await tempdt.save({ fields: ["levelstatus"] });
+      // the grade's points count the levels that are switched on
+      await new LevelBusiness().updateGradePoints(tempdt.gradeid);
       return true;
     } else {
       return false;
@@ -234,6 +240,8 @@ export class LevelBusiness {
     if (tempdt) {
       tempdt.levelstatus = false;
       await tempdt.save({ fields: ["levelstatus"] });
+      // the grade's points count the levels that are switched on
+      await new LevelBusiness().updateGradePoints(tempdt.gradeid);
       return true;
     } else {
       return false;
@@ -266,30 +274,53 @@ export class LevelBusiness {
     return tempdt > 0;
   };
 
+  /**
+   * A level's `points` are the sum of the `total_points` of its lessons that a learner can reach (not deleted, switched on: the
+   * student API serves no other), plus its `quiz_points` ONLY WHEN the level has a level quiz, that is at least one active
+   * `levelquizquestions` row (`levelquizquestionstatus`, the same "active" the student API reports as `level_has_quiz`): a learner
+   * can only earn the quiz points through that quiz, so a level without one is not worth them. `quiz_points` itself is left as it is.
+   * Then the grade's are recomputed (`updateGradePoints`). Called wherever a lesson or a level's quiz questions change.
+   */
   updateLevelPoints = async (level?: levels, levelid?: string, ) => {
     if (level) {
       const lessonspoints = await lessons.findAll({
         where: {
           levelid: level ? level.levelid : levelid,
+          isdeleted: false,
+          lessonstatus: true,
         },
         attributes: [
           [fn("sum", col("total_points")), "total_points"],
         ],
       });
-      level.points = +lessonspoints[0]?.total_points + +level.quiz_points;
-      await level.save({ fields: ["points"] });
-      const grade = await level.getGrade();
-      const lvls = await levels.findAll({
-        where: {
-          gradeid: grade.gradeid
-        },
-        attributes: [
-          [fn("sum", col("points")), "points"],
-        ],
+      const quizRows = await levelquizquestions.count({
+        where: { levelid: level.levelid, levelquizquestionstatus: true },
       });
-      grade.points = lvls[0]?.points ?? 0;
-      await grade.save({ fields: ["points"]});
+      level.points = +(lessonspoints[0]?.total_points ?? 0) + (quizRows > 0 ? +(level.quiz_points ?? 0) : 0);
+      await level.save({ fields: ["points"] });
+      await this.updateGradePoints(level.gradeid);
     }
+  };
+
+  /**
+   * A grade's `points` are the sum of the `points` of its levels that are switched on and not deleted: what a learner's progress
+   * (`points * 100 / grade.points`, on the student API) is out of. Called wherever a level is written, switched on or off, moved or deleted.
+   */
+  updateGradePoints = async (gradeid: string) => {
+    const grade = await grades.findOne({ where: { gradeid } });
+    if (!grade) return;
+    const lvls = await levels.findAll({
+      where: {
+        gradeid,
+        levelstatus: true,
+        isdeleted: false,
+      },
+      attributes: [
+        [fn("sum", col("points")), "points"],
+      ],
+    });
+    grade.points = lvls[0]?.points ?? 0;
+    await grade.save({ fields: ["points"]});
   };
 
   updateLevelQuizPoints = async (user: any) => {

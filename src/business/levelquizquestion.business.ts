@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { lessons, levelquizquestions, levelquizquestionsAttributes, levels, questions } from '../models/data-models/init-models';
 import { OrgContext } from 'src/decorators/org.decorator';
 import { andScope, findOwnedLevel, findOwnedLevelQuizQuestion } from './content-scope';
+import { LevelBusiness } from './level.business';
 
 /**
  * Built with the caller's context, every read and write here is limited to the rows in scope (a row of another
@@ -13,10 +14,21 @@ import { andScope, findOwnedLevel, findOwnedLevelQuizQuestion } from './content-
 export class LevelQuizQuestionBusiness {
     constructor(private readonly org?: OrgContext) {}
 
+    /**
+     * A level is worth its `quiz_points` only while it has at least one active level-quiz question (LevelBusiness.updateLevelPoints),
+     * so adding, switching on or off, or removing a question recomputes the level's points (and its grade's).
+     */
+    private recomputeLevelPoints = async (levelid: string) => {
+        const level = await levels.findOne({ where: { levelid } });
+        if (level) await new LevelBusiness().updateLevelPoints(level);
+    };
+
     createLevelQuizQuestion = async (levelquizquestion: levelquizquestionsAttributes) => {
         levelquizquestion.levelquizquestionid = uuidv4();
         levelquizquestion.levelquizquestionstatus = true;
-        return await levelquizquestions.create(levelquizquestion);
+        const created = await levelquizquestions.create(levelquizquestion);
+        await this.recomputeLevelPoints(created.levelid);
+        return created;
     };
     getLevelQuizQuestionbyid = async (levelquizquestionid: string) => {
         if (this.org) {
@@ -139,6 +151,7 @@ export class LevelQuizQuestionBusiness {
         const tempdt = await this.getLevelQuizQuestionid(levelquizquestionid);
         if (tempdt) {
             await tempdt.destroy();
+            await this.recomputeLevelPoints(tempdt.levelid);
             return true;
         } else {
             return false;
@@ -150,6 +163,7 @@ export class LevelQuizQuestionBusiness {
         if (tempdt) {
             tempdt.levelquizquestionstatus = true;
             await tempdt.save({ fields: ['levelquizquestionstatus'] });
+            await this.recomputeLevelPoints(tempdt.levelid);
             return true;
         } else {
             return false;
@@ -173,6 +187,7 @@ export class LevelQuizQuestionBusiness {
         if (tempdt) {
             tempdt.levelquizquestionstatus = false;
             await tempdt.save({ fields: ['levelquizquestionstatus'] });
+            await this.recomputeLevelPoints(tempdt.levelid);
             return true;
         } else {
             return false;
