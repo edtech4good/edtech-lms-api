@@ -52,8 +52,9 @@ const refusal = (c: Json): string[] => {
 describe("parsing the cells of row 2", () => {
   it("produces the content.json the seed reads, text copied exactly", () => {
     const c = parseCells(cells(), { videoSource: "lesson_final.mp4" });
-    expect(c.curriculum.name).toEqual({ en: "Module 1 \u00b7 Example title", km: km("module") });
-    expect(c.level).toEqual(c.curriculum);
+    expect(c.module).toEqual({ number: 1, name: { en: "Module 1 \u00b7 Example title", km: km("module") } });
+    expect("curriculum" in c || "level" in c).toBe(false); // the old shape's keys are gone
+    expect("programme" in c).toBe(false); // none was given
     const [lesson] = c.lessons;
     expect(lesson).toMatchObject({
       id: ID.lesson1,
@@ -92,7 +93,7 @@ describe("parsing the cells of row 2", () => {
   });
 
   it("what it produces is accepted by the seed's validator", () => {
-    expect(() => validateContent(parseCells(cells()), ID)).not.toThrow();
+    expect(() => validateContent(parseCells(cells(), { programme: { en: "Example programme", km: km("programme") } }), ID)).not.toThrow();
   });
 
   it("finds the correct option by the tick at the end of the line, wherever it is", () => {
@@ -277,6 +278,131 @@ describe("the folder the converter writes content.json into", () => {
   });
 });
 
+describe("the module number", () => {
+  const titled = (title: string) => cells({ A2: \`\${title}\n\${km("module")}\` });
+  const numberOf = (c: Json, options: Json = {}) => parseCells(c, options).module.number;
+
+  it("is read from the English title in A2: Module N, any case, any number of digits", () => {
+    expect(numberOf(titled("Module 1: Business Vision"))).toBe(1);
+    expect(numberOf(titled("Module 2 \u00b7 Example"))).toBe(2);
+    expect(numberOf(titled("MODULE 12 - Example"))).toBe(12);
+    expect(numberOf(titled("module  3"))).toBe(3);
+    expect(parseCells(titled("Module 2: Money")).module).toEqual({ number: 2, name: { en: "Module 2: Money", km: km("module") } });
+  });
+
+  it("is read from --module when the title has no number", () => {
+    for (const title of ["Business Vision", "Modules 2", "Module two", "Module", "Module 2a", "My Module 2"]) {
+      expect(numberOf(titled(title), { module: 3 })).toBe(3);
+    }
+  });
+
+  it("may be given by both when they agree", () => {
+    expect(numberOf(titled("Module 2: Money"), { module: 2 })).toBe(2);
+  });
+
+  it("is refused when the title and --module disagree, saying both numbers", () => {
+    expect(refusal2(titled("Module 2: Money"), { module: 3 })).toEqual(["the module number is 2 in the title (A2) but --module says 3"]);
+    expect(refusal2(titled("Module 1: Vision"), { module: 2 })).toEqual(["the module number is 1 in the title (A2) but --module says 2"]);
+  });
+
+  it("is refused when there is neither", () => {
+    expect(refusal2(titled("Business Vision"), {})).toEqual(['the module number is unknown: the title in A2 does not begin "Module N", and --module was not given']);
+    expect(refusal2(titled("Module"), {})).toEqual(['the module number is unknown: the title in A2 does not begin "Module N", and --module was not given']);
+    // and the old default of 1 is gone: no number is not Module 1
+    expect(refusal2(cells({ A2: \`Example title\n\${km("module")}\` }), {})).toHaveLength(1);
+  });
+
+  it("is refused when --module is not a whole number from 1, or the title's number is zero", () => {
+    for (const bad of [0, -1, 1.5, NaN]) expect(refusal2(titled("Business Vision"), { module: bad })).toEqual(["--module must be a whole number from 1"]);
+    expect(refusal2(titled("Module 0: Zero"), {})).toEqual(["A2 (module title): the module number must be a whole number from 1"]);
+  });
+
+  const refusal2 = (c: Json, options: Json): string[] => {
+    try {
+      parseCells(c, options);
+    } catch (e) {
+      expect(e).toBeInstanceOf(ParseRefused);
+      return (e as { problems: string[] }).problems;
+    }
+    throw new Error("expected the cells to be refused");
+  };
+
+  it("makes Module 1 what the seed has always read: its fixed lesson id, dcrs-m1 file and DCRS-M1 identifiers", () => {
+    const c = parseCells(titled("Module 1: Vision"), { programme: { en: "P", km: km("p") } });
+    expect(c.lessons[0].id).toBe(ID.lesson1);
+    expect(c.lessons[0].video.filename).toBe("dcrs-m1-l1.mp4");
+    expect(c.lessons[0].practice[0].ident).toBe("DCRS-M1-P1");
+  });
+
+  it("makes a later module's lesson without an id, its video file and identifiers by the module's number, and what the seed's validator accepts", () => {
+    const c = parseCells(titled("Module 2: Money"), { programme: { en: "P", km: km("p") }, videoSource: "synthetic.mp4" });
+    expect(c.module.number).toBe(2);
+    expect("id" in c.lessons[0]).toBe(false);
+    expect(c.lessons[0]).toMatchObject({ order: 1, video: { ref: "REF-1", filename: "dcrs-m2-l1.mp4", source: "synthetic.mp4" } });
+    expect(c.lessons[0].practice.map((q: Json) => q.ident)).toEqual(["DCRS-M2-P1", "DCRS-M2-P2"]);
+    expect(c.lessons[0].quiz.map((q: Json) => q.ident)).toEqual(["DCRS-M2-Q1", "DCRS-M2-Q2"]);
+    expect(() => validateContent(c, ID)).not.toThrow();
+    // --module alone gives the same file
+    expect(parseCells(titled("Money"), { module: 2, programme: { en: "P", km: km("p") }, videoSource: "synthetic.mp4" }).lessons).toEqual(c.lessons);
+  });
+
+  describe("the command", () => {
+    const keys = ["A2", "B2", "C2", "D2", "E2", "F2", "G2"];
+    const dirs: string[] = [];
+    afterAll(() => dirs.forEach((d) => fs.rmSync(d, { recursive: true, force: true })));
+    const tmp = (): string => {
+      const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dcrs-mod-")));
+      dirs.push(d);
+      return d;
+    };
+    const book = (c: Json): string => {
+      const file = path.join(tmp(), "book.xlsx");
+      fs.writeFileSync(
+        file,
+        xlsx({
+          "xl/worksheets/sheet1.xml": sheetXml(keys.map((k, i) => \`<c r="\${k}" t="s"><v>\${i}</v></c>\`).join("")),
+          "xl/sharedStrings.xml": sstXml(keys.map((k) => \`<si><t xml:space="preserve">\${c[k].replace(/&/g, "&amp;").replace(/</g, "&lt;")}</t></si>\`)),
+        }),
+      );
+      return file;
+    };
+    const run = (file: string, outDir: string, extra: string[] = []) =>
+      spawnSync(process.execPath, [path.join(path.resolve(__dirname, "..", ".."), "scripts", "dcrs-content-from-xlsx.js"), file, outDir, ...extra], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+    it("--module N names the module when the title has none, the title wins alone, and a disagreement or no number writes nothing", () => {
+      const untitled = book(titled("Money"));
+      const out2 = tmp();
+      expect(run(untitled, out2, ["--module", "2"]).status).toBe(0);
+      expect(JSON.parse(fs.readFileSync(path.join(out2, "content.json"), "utf8")).module.number).toBe(2);
+
+      const out1 = tmp();
+      const result = run(book(titled("Module 1: Vision")), out1);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toMatch(/content\.json written: module 1, 1 lesson, 2 practice and 2 quiz questions, no programme name\./);
+      expect(result.stdout).toMatch(/seed:dcrs refuses a content\.json without one/);
+
+      const clash = tmp();
+      const refused = run(book(titled("Module 2: Money")), clash, ["--module", "3"]);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain("the module number is 2 in the title (A2) but --module says 3");
+      expect(fs.existsSync(path.join(clash, "content.json"))).toBe(false);
+
+      const neither = tmp();
+      const none = run(untitled, neither);
+      expect(none.status).toBe(1);
+      expect(none.stderr).toContain("the module number is unknown");
+      expect(fs.existsSync(path.join(neither, "content.json"))).toBe(false);
+
+      const bad = run(untitled, tmp(), ["--module", "0"]);
+      expect(bad.status).toBe(1);
+      expect(bad.stderr).toContain("--module must be a whole number from 1");
+    });
+  });
+});
+
 describe("the programme name", () => {
   const programme = { en: "Example programme", km: km("programme") };
   const refused = (raw: unknown): string[] => {
@@ -292,7 +418,7 @@ describe("the programme name", () => {
   it("parseCells writes it into content.json, and leaves it out when there is none", () => {
     const c = parseCells(cells(), { programme });
     expect(c.programme).toEqual(programme);
-    expect(c.curriculum.name.en).toBe("Module 1 \u00b7 Example title"); // the module title is untouched
+    expect(c.module.name.en).toBe("Module 1 \u00b7 Example title"); // the module title is untouched
     expect(() => validateContent(c, ID)).not.toThrow();
     expect("programme" in parseCells(cells())).toBe(false);
     expect("programme" in parseCells(cells(), { programme: undefined })).toBe(false);

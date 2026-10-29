@@ -3,7 +3,11 @@
  * Dev-only helper: reads the programme author's spreadsheet and writes the
  * content.json that `npm run seed:dcrs -- --content <dir>` reads.
  *
- *   node scripts/dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module 1] [--video-source name.mp4] [--programme <file>]
+ *   node scripts/dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module N] [--video-source name.mp4] [--programme <file>]
+ *
+ * The module number is read from the English module title in A2 ("Module 2: ..."); `--module N` gives it when the title has none,
+ * and must agree with the title when it has one. A file with neither is refused. Module 1 keeps the seed's fixed ids; a later
+ * module is a new level of the same programme (see scripts/lib/dcrs-content-plan.js).
  *
  * The programme's name is not in the spreadsheet: it is read from `programme.json` next to the spreadsheet when there is
  * one, or from the file `--programme` names (which takes its place), and written into content.json as `programme`.
@@ -56,7 +60,7 @@ function main(argv) {
     else if (argv[i].startsWith("--")) fail(`unknown option ${argv[i]}`);
     else args.push(argv[i]);
   }
-  if (args.length !== 2) fail("usage: dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module 1] [--video-source name.mp4] [--programme <file>]");
+  if (args.length !== 2) fail("usage: dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module N] [--video-source name.mp4] [--programme <file>]");
   if (options.module !== undefined && !(Number.isInteger(options.module) && options.module >= 1)) fail("--module must be a whole number from 1");
   if (options.videoSource !== undefined && !/^[A-Za-z0-9._-]+$/.test(options.videoSource)) fail("--video-source must be a plain file name");
 
@@ -83,8 +87,9 @@ function main(argv) {
   fs.writeFileSync(path.join(outDir, "content.json"), `${JSON.stringify(content, null, 2)}\n`, { flag: "wx" });
   const lesson = content.lessons[0];
   console.log(
-    `content.json written: ${content.lessons.length} lesson, ${lesson.practice.length} practice and ${lesson.quiz.length} quiz questions, ${content.programme ? "with" : "no"} programme name.`,
+    `content.json written: module ${content.module.number}, ${content.lessons.length} lesson, ${lesson.practice.length} practice and ${lesson.quiz.length} quiz questions, ${content.programme ? "with" : "no"} programme name.`,
   );
+  if (!content.programme) console.log("note: there is no programme name, and seed:dcrs refuses a content.json without one (add programme.json next to the spreadsheet, or use --programme).");
 }
 
 function fail(message) {
