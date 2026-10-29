@@ -177,6 +177,7 @@ export class LevelBusiness {
   updateLevel = async (level: levelsAttributes, user: any) => {
     const tempdt = await this.getLevelid(level.levelid);
     if (tempdt) {
+      const previousGradeid = tempdt.gradeid;
       tempdt.levelname = level.levelname;
       tempdt.leveldescription = level.leveldescription;
       tempdt.levelorder = level.levelorder;
@@ -199,6 +200,8 @@ export class LevelBusiness {
       });
       //await tempdt.reload();
       await new LevelBusiness().updateLevelPoints(tempdt);
+      // a level moved to another grade leaves the first grade's total
+      if (previousGradeid !== tempdt.gradeid) await new LevelBusiness().updateGradePoints(previousGradeid);
       return tempdt;
     } else {
       return null;
@@ -223,6 +226,8 @@ export class LevelBusiness {
     if (tempdt) {
       tempdt.levelstatus = true;
       await tempdt.save({ fields: ["levelstatus"] });
+      // the grade's points count the levels that are switched on
+      await new LevelBusiness().updateGradePoints(tempdt.gradeid);
       return true;
     } else {
       return false;
@@ -234,6 +239,8 @@ export class LevelBusiness {
     if (tempdt) {
       tempdt.levelstatus = false;
       await tempdt.save({ fields: ["levelstatus"] });
+      // the grade's points count the levels that are switched on
+      await new LevelBusiness().updateGradePoints(tempdt.gradeid);
       return true;
     } else {
       return false;
@@ -266,11 +273,16 @@ export class LevelBusiness {
     return tempdt > 0;
   };
 
+  /**
+   * A level's `points` are the sum of the `total_points` of its lessons that are not deleted plus its `quiz_points`; then the
+   * grade's are recomputed (`updateGradePoints`).
+   */
   updateLevelPoints = async (level?: levels, levelid?: string, ) => {
     if (level) {
       const lessonspoints = await lessons.findAll({
         where: {
           levelid: level ? level.levelid : levelid,
+          isdeleted: false,
         },
         attributes: [
           [fn("sum", col("total_points")), "total_points"],
@@ -278,18 +290,29 @@ export class LevelBusiness {
       });
       level.points = +lessonspoints[0]?.total_points + +level.quiz_points;
       await level.save({ fields: ["points"] });
-      const grade = await level.getGrade();
-      const lvls = await levels.findAll({
-        where: {
-          gradeid: grade.gradeid
-        },
-        attributes: [
-          [fn("sum", col("points")), "points"],
-        ],
-      });
-      grade.points = lvls[0]?.points ?? 0;
-      await grade.save({ fields: ["points"]});
+      await this.updateGradePoints(level.gradeid);
     }
+  };
+
+  /**
+   * A grade's `points` are the sum of the `points` of its levels that are switched on and not deleted: what a learner's progress
+   * (`points * 100 / grade.points`, on the student API) is out of. Called wherever a level is written, switched on or off, moved or deleted.
+   */
+  updateGradePoints = async (gradeid: string) => {
+    const grade = await grades.findOne({ where: { gradeid } });
+    if (!grade) return;
+    const lvls = await levels.findAll({
+      where: {
+        gradeid,
+        levelstatus: true,
+        isdeleted: false,
+      },
+      attributes: [
+        [fn("sum", col("points")), "points"],
+      ],
+    });
+    grade.points = lvls[0]?.points ?? 0;
+    await grade.save({ fields: ["points"]});
   };
 
   updateLevelQuizPoints = async (user: any) => {

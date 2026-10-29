@@ -8,6 +8,8 @@
  * The module number is read from the English module title in A2 ("Module 2: ..."); `--module N` gives it when the title has none,
  * and must agree with the title when it has one. A file with neither is refused. Module 1 keeps the seed's fixed ids; a later
  * module is a new level of the same programme (see scripts/lib/dcrs-content-plan.js).
+ * The converter writes every lesson with `order: 1` (one-lesson modules), so a module of several lessons needs a merged content.json
+ * until the client's Module 2 format is known.
  *
  * The programme's name is not in the spreadsheet: it is read from `programme.json` next to the spreadsheet when there is
  * one, or from the file `--programme` names (which takes its place), and written into content.json as `programme`.
