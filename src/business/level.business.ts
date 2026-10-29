@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 import {
   grades,
   lessons,
+  levelquizquestions,
   levels,
   levelsAttributes,
 } from "../models/data-models/init-models";
@@ -274,8 +275,11 @@ export class LevelBusiness {
   };
 
   /**
-   * A level's `points` are the sum of the `total_points` of its lessons that are not deleted plus its `quiz_points`; then the
-   * grade's are recomputed (`updateGradePoints`).
+   * A level's `points` are the sum of the `total_points` of its lessons that a learner can reach (not deleted, switched on: the
+   * student API serves no other), plus its `quiz_points` ONLY WHEN the level has a level quiz, that is at least one active
+   * `levelquizquestions` row (`levelquizquestionstatus`, the same "active" the student API reports as `level_has_quiz`): a learner
+   * can only earn the quiz points through that quiz, so a level without one is not worth them. `quiz_points` itself is left as it is.
+   * Then the grade's are recomputed (`updateGradePoints`). Called wherever a lesson or a level's quiz questions change.
    */
   updateLevelPoints = async (level?: levels, levelid?: string, ) => {
     if (level) {
@@ -283,12 +287,16 @@ export class LevelBusiness {
         where: {
           levelid: level ? level.levelid : levelid,
           isdeleted: false,
+          lessonstatus: true,
         },
         attributes: [
           [fn("sum", col("total_points")), "total_points"],
         ],
       });
-      level.points = +lessonspoints[0]?.total_points + +level.quiz_points;
+      const quizRows = await levelquizquestions.count({
+        where: { levelid: level.levelid, levelquizquestionstatus: true },
+      });
+      level.points = +(lessonspoints[0]?.total_points ?? 0) + (quizRows > 0 ? +(level.quiz_points ?? 0) : 0);
       await level.save({ fields: ["points"] });
       await this.updateGradePoints(level.gradeid);
     }

@@ -39,6 +39,8 @@ export class LessonBusiness {
     lesson.created_at = new Date();
     lesson.created_by = user?.lmsuserid;
     const ls = await lessons.create(lesson);
+    // the level's points are out of its lessons
+    await this.updatePoints(undefined, ls.levelid);
     return ls;
   };
   getLessonbyid = async (lessonid: string) => {
@@ -187,6 +189,7 @@ export class LessonBusiness {
   updateLesson = async (lesson: lessonsAttributes, user: any) => {
     const tempdt = await this.getLessonid(lesson.lessonid);
     if (tempdt) {
+      const previousLevelid = tempdt.levelid;
       tempdt.lessonname = lesson.lessonname;
       tempdt.lessondescription = lesson.lessondescription;
       tempdt.lessonorder = lesson.lessonorder;
@@ -209,6 +212,8 @@ export class LessonBusiness {
       });
       //await tempdt.reload();
       await this.updatelearningpracticequiz(tempdt.lessonid);
+      // a lesson moved to another level leaves the first level's points (the new level's were recomputed above)
+      if (previousLevelid !== tempdt.levelid) await this.updatePoints(undefined, previousLevelid);
       return tempdt;
     } else {
       return null;
@@ -221,6 +226,8 @@ export class LessonBusiness {
       tempdt.deleted_at = new Date();
       tempdt.deleted_by = user.lmsuserid;
       await tempdt.save({ fields: ["isdeleted", 'deleted_at', 'deleted_by'] });
+      // a deleted lesson is no longer in its level's points
+      await this.updatePoints(undefined, tempdt.levelid);
       return true;
     } else {
       return false;
@@ -232,6 +239,8 @@ export class LessonBusiness {
     if (tempdt) {
       tempdt.lessonstatus = true;
       await tempdt.save({ fields: ["lessonstatus"] });
+      // a lesson that is switched on is in its level's points
+      await this.updatePoints(undefined, tempdt.levelid);
       return true;
     } else {
       return false;
@@ -243,6 +252,8 @@ export class LessonBusiness {
     if (tempdt) {
       tempdt.lessonstatus = false;
       await tempdt.save({ fields: ["lessonstatus"] });
+      // a lesson that is switched off is not (a learner reaches none)
+      await this.updatePoints(undefined, tempdt.levelid);
       return true;
     } else {
       return false;
