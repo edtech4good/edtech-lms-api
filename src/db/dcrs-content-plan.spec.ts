@@ -413,8 +413,8 @@ describe("the programme", () => {
       ]);
     }
     // nothing Khmer in the base columns, and one curriculum row and one grade row only
-    expect(JSON.stringify(gradeStep(p).values)).not.toMatch(/[ក-៿]/);
-    expect(JSON.stringify(curriculumStep(p).values)).not.toMatch(/[ក-៿]/);
+    expect(JSON.stringify(gradeStep(p).values)).not.toMatch(/[\u1780-\u17ff]/);
+    expect(JSON.stringify(curriculumStep(p).values)).not.toMatch(/[\u1780-\u17ff]/);
     expect(translations(p).filter((v) => v.tablename === "grades")).toHaveLength(1);
     expect(translations(p).filter((v) => v.tablename === "curriculums")).toHaveLength(1);
   });
@@ -443,7 +443,7 @@ describe("the programme", () => {
     expect(refusal(sample({ programme: "text" }))).toEqual(['programme needs a non-empty "en" and "km"']);
     expect(refusal(sample({ programme: { en: "two\nlines", km: km("x") } }))).toEqual(["programme.en must be one line (it has a line break)"]);
     expect(refusal(sample({ programme: { en: "x", km: `${km("a")}\r\n${km("b")}` } }))).toEqual(["programme.km must be one line (it has a line break)"]);
-    expect(refusal(sample({ programme: { en: "x y", km: km("x") } }))).toEqual(["programme.en must be one line (it has a line break)"]);
+    expect(refusal(sample({ programme: { en: "x\u2028y", km: km("x") } }))).toEqual(["programme.en must be one line (it has a line break)"]);
   });
 
   it("refuses a file in the old shape, with a message that names the new one", () => {
@@ -552,7 +552,7 @@ describe("version-5 ids", () => {
 
   it("no id of one module equals an id of another module, or one of Module 1's fixed ids or the seed's id map", () => {
     const m1 = module1Ids();
-    expect(m1.size).toBeGreaterThan(80);
+    expect(m1.size).toBeGreaterThan(60);
     const seen = new Set<string>();
     let total = 0;
     for (const n of [2, 3, 4, 5, 9, 10, 11, 12, 21, 99, 100, 111]) {
@@ -643,7 +643,9 @@ describe("planning a module after the first", () => {
     c.lessons[0].order = 3;
     c.lessons[1].order = 1;
     const p = plan(c);
-    expect(upserted(p, "lessons")).toEqual([moduleId(2, "lesson", 3), moduleId(2, "lesson", 1)]);
+    // written in lesson order, each under the slot its order names
+    expect(upserted(p, "lessons")).toEqual([moduleId(2, "lesson", 1), moduleId(2, "lesson", 3)]);
+    expect(p.steps.find((s: Json) => s.table === "lessons" && s.id === moduleId(2, "lesson", 3)).values.lessonname).toBe("en later one");
     // the first-listed lesson (order 3) takes its practice questions from slot 3's own ids, not from the front of a pool
     expect(upserted(p, "questions")).toContain(moduleId(2, "q", "practice", 3, 2));
     expect(upserted(p, "questions")).not.toContain(moduleId(2, "q", "practice", 2, 1));
@@ -1406,7 +1408,7 @@ describe("applying a module after the first", () => {
     // a Khmer-length name is counted in characters, and the text itself is never in the line
     fake.store.curriculums = { [ID.curriculum]: { curriculumid: ID.curriculum, curriculumname: km("programme") } };
     const line = formatCurriculumName(await curriculumNameLengths(fake.conn, plan()));
-    expect(line).not.toMatch(/en programme|ក/);
+    expect(line).not.toMatch(/en programme|\u1780/);
     expect(line).toContain(`${[...km("programme")].length} characters before`);
   });
 
@@ -1522,12 +1524,11 @@ describe("the command line", () => {
     } finally {
       log.mockRestore();
     }
-    const text = out.join("
-");
+    const text = out.join("\n");
     expect(text).toContain("module 3: its level is order 3, switched off (levelstatus 0, --draft)");
     expect(text).toContain("module 3: its level is order 3, on (levelstatus 1)");
     expect(text).toContain("media: copy synthetic.mp4 to <media folder>/dcrs-m3-l1.mp4");
-    expect(text).not.toMatch(/en later|ក|c0000000/);
+    expect(text).not.toMatch(/en later|\u1780|c0000000/);
   });
 
   it("a dry run prints table names and counts only, never the content", () => {

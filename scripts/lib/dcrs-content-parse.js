@@ -277,7 +277,8 @@ function moduleNumberOf(titleEn, fromOption, problems) {
 function parseCells(cells, options = {}) {
   const problems = [];
   const moduleTitle = splitBilingual(cells.A2, "A2 (module title)", problems);
-  const module = moduleNumberOf(moduleTitle.en, options.module, problems);
+  // A title that is itself refused has no English line to read a number from; that is the one reason given, not a second one about the number.
+  const module = problems.length === 0 ? moduleNumberOf(moduleTitle.en, options.module, problems) : null;
   const lessonTitle = splitBilingual(cells.B2, "B2 (lesson title)", problems);
   // A lesson number the spreadsheet puts in front of the English title only ("1 Title") duplicates `order`; it goes when the
   // Khmer title carries no number. If the Khmer has one too, both stay exactly as written.

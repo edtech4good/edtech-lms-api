@@ -279,7 +279,7 @@ describe("the folder the converter writes content.json into", () => {
 });
 
 describe("the module number", () => {
-  const titled = (title: string) => cells({ A2: \`\${title}\n\${km("module")}\` });
+  const titled = (title: string) => cells({ A2: `${title}\n${km("module")}` });
   const numberOf = (c: Json, options: Json = {}) => parseCells(c, options).module.number;
 
   it("is read from the English title in A2: Module N, any case, any number of digits", () => {
@@ -309,7 +309,7 @@ describe("the module number", () => {
     expect(refusal2(titled("Business Vision"), {})).toEqual(['the module number is unknown: the title in A2 does not begin "Module N", and --module was not given']);
     expect(refusal2(titled("Module"), {})).toEqual(['the module number is unknown: the title in A2 does not begin "Module N", and --module was not given']);
     // and the old default of 1 is gone: no number is not Module 1
-    expect(refusal2(cells({ A2: \`Example title\n\${km("module")}\` }), {})).toHaveLength(1);
+    expect(refusal2(cells({ A2: `Example title\n${km("module")}` }), {})).toHaveLength(1);
   });
 
   it("is refused when --module is not a whole number from 1, or the title's number is zero", () => {
@@ -360,8 +360,8 @@ describe("the module number", () => {
       fs.writeFileSync(
         file,
         xlsx({
-          "xl/worksheets/sheet1.xml": sheetXml(keys.map((k, i) => \`<c r="\${k}" t="s"><v>\${i}</v></c>\`).join("")),
-          "xl/sharedStrings.xml": sstXml(keys.map((k) => \`<si><t xml:space="preserve">\${c[k].replace(/&/g, "&amp;").replace(/</g, "&lt;")}</t></si>\`)),
+          "xl/worksheets/sheet1.xml": sheetXml(keys.map((k, i) => `<c r="${k}" t="s"><v>${i}</v></c>`).join("")),
+          "xl/sharedStrings.xml": sstXml(keys.map((k) => `<si><t xml:space="preserve">${c[k].replace(/&/g, "&amp;").replace(/</g, "&lt;")}</t></si>`)),
         }),
       );
       return file;
