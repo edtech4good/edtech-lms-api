@@ -673,7 +673,7 @@ describe("content is confined to the caller's organisation", () => {
         code: "BAD_GATEWAY",
         cause: "The student server refused this server's request.",
         hint: "This is a setup problem between the two servers, not your sign-in.",
-        message: "Published. The push to the learner server failed; a platform admin can re-push from Sync Content. The student server refused this server's request.",
+        message: "Published. The push to the learner server failed; an Admin or Organisation Admin can send it again with Sync Content. The student server refused this server's request.",
       });
       expect(JSON.stringify(res.body)).not.toContain("secret-detail");
       expect(db.tables.curriculumpublications.map((p) => [p.curriculumid, p.status])).toEqual([[TX.curriculum, "published"]]);

@@ -1007,9 +1007,13 @@ describe("the content sync is one organisation's", () => {
       expect(ids(call.json.studentusers, "schooluserid")).toEqual([TX.login]);
       expect(JSON.stringify(call.json)).not.toContain(TY.login);
       expect(JSON.stringify(call.json)).not.toContain(TY.school);
-      // and Y's second school, named by name or id, is not there for it
+      // and Y's second school (it has no learners, so only the scoping can keep it from being found: an unscoped lookup would
+      // answer "There are no students to sync."), named by name or id, gets exactly the answer of a school that is not there
+      const absent = said(await send(who, "post", `/sync/cloud/${MISSING}/students`));
+      expect(absent.status).toBe(404);
+      expect(absent.body.errormessage).toBe("That school doesn't exist.");
       for (const school of [TY.school2, TY.names.school2]) {
-        expect((await send(who, "post", `/sync/cloud/${encodeURIComponent(school)}/students`)).status).toBe(404);
+        expect(said(await send(who, "post", `/sync/cloud/${encodeURIComponent(school)}/students`))).toEqual(absent);
       }
       expect(axios.put).toHaveBeenCalledTimes(1);
     });

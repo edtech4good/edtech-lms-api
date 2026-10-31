@@ -80,7 +80,7 @@ export interface PushOutcome {
   reason?: "nocloud" | "nothingpublished";
 }
 
-const FAILED_SUFFIX = "The push to the learner server failed; a platform admin can re-push from Sync Content.";
+const FAILED_SUFFIX = "The push to the learner server failed; an Admin or Organisation Admin can send it again with Sync Content.";
 
 export const skippedNoCloud = (verb: PushVerb): PushOutcome => ({
   status: "skipped",

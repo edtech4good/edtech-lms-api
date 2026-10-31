@@ -19,8 +19,10 @@ import { QueryInterface } from "sequelize";
  * back. There is one Organisation Admin role row, shared by every organisation: its staff are told apart by the
  * organisation on their account, not by the role.
  *
- * Down removes the two grants from Organisation Admin and nothing from any other role. (A token issued before this
- * ran keeps its old permission list until the bearer logs in again.)
+ * Down removes the two grants from Organisation Admin and nothing from any other role. It removes them BY NAME, so it
+ * would also remove a grant an operator had added by hand before `up` ran (none exist: the 2 Oct migration withheld both,
+ * and nothing has granted them to this role since). (A token issued before this ran keeps its old permission list until
+ * the bearer logs in again.)
  */
 const ORGANISATION_ADMIN_ROLE_ID = "unb3Fy8p"; // Role.organisationadmin
 const NAMES = ["sync_content", "sync_students"];
