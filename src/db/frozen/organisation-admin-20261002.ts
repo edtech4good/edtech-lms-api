@@ -31,6 +31,12 @@
  * `convertRolesPermsToArrayOfString`, a full bypass of the permission guard.
  * no-role-holds-every-permission.spec.ts fails if this list ever gets there.
  *
+ * Since 31 Oct 2026 the role also holds `sync_content` and `sync_students`, which this list
+ * (and ORGANISATION_ADMIN_WITHHELD_20261002 below) still records as withheld on 2 Oct: they were
+ * granted by their own migration, 20261031120100-grant-organisation-admin-sync-permissions, because
+ * a sync is now one organisation's (src/business/sync-target.ts). The two names below are what the
+ * 2 Oct migration granted, not what the role holds today.
+ *
  * DO NOT EDIT. A change to what the role holds is a new migration with its own
  * frozen list. This file lives outside src/db/migrations because sequelize-cli
  * would try to run it.

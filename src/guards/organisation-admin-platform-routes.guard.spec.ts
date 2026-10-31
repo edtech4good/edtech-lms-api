@@ -336,27 +336,36 @@ describe("an Organisation Admin on the platform routes", () => {
     });
   });
 
-  describe("the two sync-to-cloud routes (they push to the cloud server with the server key, for every organisation)", () => {
-    const SYNC_ROUTES: Array<[string, string]> = [
-      ["POST /sync/cloud", "/sync/cloud"],
-      ["POST /sync/cloud/:schoolname/students", "/sync/cloud/Sample%20School/students"],
+  // Not platform routes any more (31 Oct 2026, edtech-lms-ui#148): a sync is one organisation's, and the routes ask for
+  // `sync_content` / `sync_students` instead of naming the Admin and Super Admin roles. The Organisation Admin role is
+  // granted both by 20261031120100-grant-organisation-admin-sync-permissions. What the pushes send, and to whom, is
+  // proved in src/modules/sync/sync-scope.leak.spec.ts.
+  describe("the two sync-to-cloud routes (a sync is one organisation's: they ask for sync_content / sync_students)", () => {
+    const SYNC_ROUTES: Array<[string, string, string, string]> = [
+      ["POST /sync/cloud", "/sync/cloud", "sync_content", "sync_students"],
+      ["POST /sync/cloud/:schoolname/students", "/sync/cloud/Sample%20School/students", "sync_students", "sync_content"],
     ];
     // an Admin who is a platform user, not acting as an organisation: a caller who names the organisation to push in the body
     const admin = () =>
       bearer({
         lmsuserid: "u-admin",
         lmsuserroles: [Role.admin],
-        permissions: ["view_school"],
+        permissions: ["view_school", "sync_content", "sync_students"],
         organisationid: null,
         isplatform: true,
       });
     const post = (path: string, token: string) => request(app.getHttpServer()).post(path).set("Authorization", token).send({ organisationid: ORG });
 
-    it.each(SYNC_ROUTES)("%s: refuses an Organisation Admin with 403, and nothing is pushed", async (_label, path) => {
+    it.each(SYNC_ROUTES)("%s: refuses an Organisation Admin who does not hold the route's permission with 403, and nothing is pushed", async (_label, path, _own, other) => {
       await post(path, orgAdmin()).expect(403);
-      await post(path, orgAdmin("sync_content")).expect(403);
+      await post(path, orgAdmin(other)).expect(403);
       expect(mocks.cloudPut).not.toHaveBeenCalled();
       expect(mocks.syncontentVersion3).not.toHaveBeenCalled();
+    });
+
+    it.each(SYNC_ROUTES)("%s: admits an Organisation Admin who holds the route's permission, which pushes once", async (_label, path, own) => {
+      await post(path, orgAdmin(own)).expect(200);
+      expect(mocks.cloudPut).toHaveBeenCalledTimes(1);
     });
 
     it.each(SYNC_ROUTES)("%s: still admits Admin (the control), which pushes once", async (_label, path) => {

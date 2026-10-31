@@ -22,9 +22,12 @@ import { findOwnedSchool, resolveOwnedSchoolSegment } from "src/business/school-
 import { SyncBusiness } from "src/business/sync.business";
 import { planContentSync, refuseRetiredFormat } from "src/business/sync-target";
 import { AccessGuard } from "src/guards/access.guard";
-import { Role, TokenType } from "src/models/enums";
+import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
+import { TokenType } from "src/models/enums";
+import { Permission } from "src/models/enums/permissions.enum";
 import { Org, OrgContext } from "src/decorators/org.decorator";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 
 const zipped = (json: string) => {
   const zip = new AdmZip();
@@ -73,7 +76,7 @@ export class SyncController {
   }
 
   @OrgPolicy("owned", {
-    note: "Re-pushes one organisation's PUBLISHED set (format 3; the same payload as GET sync/content, so a draft edit is never in it, and an organisation with no published curriculum pushes empty content and the student marks its curricula deleted: run `npm run publish:initial` first) with the organisation named in the request header. A publish, a retire and the delete of a published curriculum already push it by themselves; this is for a platform admin to push it again after one of those pushes failed, or for an organisation with no publisher. A platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired.",
+    note: "Re-pushes one organisation's PUBLISHED set (format 3; the same payload as GET sync/content, so a draft edit is never in it, and an organisation with no published curriculum pushes empty content and the student marks its curricula deleted: run `npm run publish:initial` first) with the organisation named in the request header. A publish, a retire and the delete of a published curriculum already push it by themselves; this is for an Admin or Organisation Admin of the organisation (or the platform, acting as it or naming it) to push it again after one of those pushes failed, or for an organisation with no publisher. Needs the `sync_content` permission. A platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired.",
     enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
   })
   @Post("cloud")
@@ -89,9 +92,12 @@ export class SyncController {
     status: 500,
     description: "Server error",
   })
-  // Not Role.organisationadmin: this pushes to the cloud server with the server key. (A publish pushes by itself, with the
-  // same key, performed by central for whoever published; the key itself is never the organisation admin's.)
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
+  // The permission, not a role name: Admin and Organisation Admin hold sync_content (Organisation Admin since
+  // 20261031120100-grant-organisation-admin-sync-permissions), the platform has it through the superadmin wildcard, a
+  // Teacher does not. The key stays central's: it is used by pushOrganisationSet, never handed to the caller, and the
+  // organisation pushed is the token's own (planContentSync: naming another is the 404 of an absent one).
+  @RequirePermissions(Permission.SYNC_CONTENT)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   async synconline(
     @Org() org: OrgContext,
@@ -108,7 +114,7 @@ export class SyncController {
   }
 
   @OrgPolicy("owned", {
-    note: "Pushes only the learners of one school of the caller's organisation, with that school's organisation named in the request header.",
+    note: "Pushes only the learners of one school of the caller's organisation, with that school's organisation named in the request header. Needs the `sync_students` permission.",
     enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
   })
   @Post("cloud/:schoolname/students")
@@ -124,8 +130,10 @@ export class SyncController {
     status: 500,
     description: "Server error",
   })
-  // Not Role.organisationadmin: this pushes to the cloud server with the server key.
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.admin, Role.superadmin))
+  // The permission, not a role name (see POST cloud above). The school is looked up among the caller's own schools
+  // (resolveOwnedSchoolSegment / findOwnedSchool), so another organisation's school is the 404 of an absent one.
+  @RequirePermissions(Permission.SYNC_STUDENTS)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   @HttpCode(HttpStatus.OK)
   async synconlineschool(@Param("schoolname") schoolname: string, @Org() org: OrgContext) {
     // The segment names the school by NAME (as before) or by id, among the caller's schools; resolved once, here.

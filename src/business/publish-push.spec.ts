@@ -206,7 +206,7 @@ describe("publish pushes the published set", () => {
 describe("a push that fails does not undo the publish", () => {
   const SECRET = "secret-detail";
   const refuses = (status: number, data: unknown = {}) => ({ isAxiosError: true, message: SECRET, response: { status, data }, config: { headers: { Authorization: Config.fortyk.api.serversynckey }, url: `${LEARNER_SERVER}/import/master` } });
-  const LEAD = "Published. The push to the learner server failed; a platform admin can re-push from Sync Content.";
+  const LEAD = "Published. The push to the learner server failed; an Admin or Organisation Admin can send it again with Sync Content.";
 
   it.each([
     ["the server key is refused (401)", refuses(401), ErrorCode.BAD_GATEWAY, "The student server refused this server's request."],
@@ -349,7 +349,7 @@ describe("retire pushes the published set", () => {
     await publishAndPush(orgX, USER, A);
     put.mockRejectedValue({ isAxiosError: true, response: { status: 403 } });
     const res = await retireAndPush(orgX, A);
-    expect(res.push).toMatchObject({ status: "failed", code: ErrorCode.BAD_GATEWAY, message: "Retired. The push to the learner server failed; a platform admin can re-push from Sync Content. The student server refused this server's request." });
+    expect(res.push).toMatchObject({ status: "failed", code: ErrorCode.BAD_GATEWAY, message: "Retired. The push to the learner server failed; an Admin or Organisation Admin can send it again with Sync Content. The student server refused this server's request." });
     expect(res.retired).toBe(true);
     expect(tx.rollback).not.toHaveBeenCalled();
   });
