@@ -82,9 +82,16 @@ const transaction = { commit: jest.fn(), rollback: jest.fn(), LOCK: { SHARE: "SH
 const bearer = (claims: Record<string, unknown>) =>
   `Bearer ${sign({ jti: "test-jti", ...claims }, Config.fortyk.api.applicationsecret, { expiresIn: "5m" })}`;
 const PERMS = [...ORGANISATION_ADMIN_PERMISSIONS_20261002];
+// The two sync permissions the pushes ask for: Admin holds both (20260716160000), Organisation Admin since
+// 20261031120100-grant-organisation-admin-sync-permissions, the platform through the superadmin wildcard; a Teacher holds
+// neither (read-only permissions).
+const SYNC_PERMS = ["sync_content", "sync_students"];
+const TEACHER_PERMS = ["view_school", "view_student", "view_curriculum"];
 const callers = {
-  "X's Organisation Admin": bearer({ lmsuserid: "oa", lmsuserroles: [Role.organisationadmin], permissions: PERMS, organisationid: X, isplatform: false }),
-  "X's Admin": bearer({ lmsuserid: "ad", lmsuserroles: [Role.admin], permissions: PERMS, organisationid: X, isplatform: false }),
+  "X's Organisation Admin": bearer({ lmsuserid: "oa", lmsuserroles: [Role.organisationadmin], permissions: [...PERMS, ...SYNC_PERMS], organisationid: X, isplatform: false }),
+  "X's Organisation Admin before the grant": bearer({ lmsuserid: "oa", lmsuserroles: [Role.organisationadmin], permissions: PERMS, organisationid: X, isplatform: false }),
+  "X's Admin": bearer({ lmsuserid: "ad", lmsuserroles: [Role.admin], permissions: [...PERMS, ...SYNC_PERMS], organisationid: X, isplatform: false }),
+  "X's Teacher": bearer({ lmsuserid: "te", lmsuserroles: [Role.teacher], permissions: TEACHER_PERMS, organisationid: X, isplatform: false }),
   "a platform user acting as X": bearer({ lmsuserid: "p", lmsuserroles: [Role.superadmin], permissions: ["superadmin", ...PERMS], organisationid: X, isplatform: true }),
   "a platform user not acting": bearer({ lmsuserid: "p", lmsuserroles: [Role.superadmin], permissions: ["superadmin", ...PERMS], organisationid: null, isplatform: true }),
   "a server token": `Bearer ${Config.fortyk.api.applicationapikey}`,
@@ -92,7 +99,9 @@ const callers = {
 } as const;
 type Who = keyof typeof callers;
 const IN_X: Who[] = ["X's Organisation Admin", "X's Admin", "a platform user acting as X"];
-const PUSHERS_IN_X: Who[] = ["X's Admin", "a platform user acting as X"];
+const PUSHERS_IN_X: Who[] = ["X's Organisation Admin", "X's Admin", "a platform user acting as X"];
+/** Staff of X who may not push: a Teacher, and an Organisation Admin whose token does not carry the permission. */
+const REFUSED_IN_X: Who[] = ["X's Teacher", "X's Organisation Admin before the grant"];
 const NOT_ACTING: Who = "a platform user not acting";
 
 type Row = Record<string, unknown>;
@@ -607,8 +616,7 @@ describe("the content sync is one organisation's", () => {
       expect(schoolReads()).toBe(0);
     });
 
-    // (an Organisation Admin is not admitted to the push at all: 403, below)
-    it.each(CALLERS.filter(([who]) => who !== "X's Organisation Admin"))("POST /sync/cloud with a format in the body: %s is refused (400) with the retirement message, whatever the value, and nothing is sent", async (who) => {
+    it.each(CALLERS)("POST /sync/cloud with a format in the body: %s is refused (400) with the retirement message, whatever the value, and nothing is sent", async (who) => {
       for (const format of [2, 3, "2", "3", "", null, [2]]) {
         const res = await send(who, "post", "/sync/cloud", { format, organisationid: X });
         expect({ format, ...said(res) }).toEqual({ format, ...REFUSAL });
@@ -617,7 +625,7 @@ describe("the content sync is one organisation's", () => {
       expect(schoolReads()).toBe(0);
     });
 
-    it.each(CALLERS.filter(([who]) => who !== "X's Organisation Admin"))("POST /sync/cloud with a format in the query: %s is refused (400) with the retirement message, and nothing is sent", async (who) => {
+    it.each(CALLERS)("POST /sync/cloud with a format in the query: %s is refused (400) with the retirement message, and nothing is sent", async (who) => {
       for (const format of ["2", "3", "", "2&format=3"]) {
         const res = await send(who, "post", `/sync/cloud?format=${format}`, { organisationid: X });
         expect({ format, ...said(res) }).toEqual({ format, ...REFUSAL });
@@ -636,7 +644,7 @@ describe("the content sync is one organisation's", () => {
     it("a caller with no scope still gets what it got before (401/403), not the format refusal", async () => {
       expect((await send("a server token", "get", "/sync/content?format=2")).status).toBe(401);
       expect((await send("a school-user token", "get", "/sync/content?format=2")).status).toBe(401);
-      expect((await send("X's Organisation Admin", "post", "/sync/cloud", { format: 2 })).status).toBe(403);
+      expect((await send("X's Teacher", "post", "/sync/cloud", { format: 2 })).status).toBe(403);
       expect((await send("a school-user token", "post", "/sync/cloud", { format: 2 })).status).toBe(403);
     });
 
@@ -875,10 +883,44 @@ describe("the content sync is one organisation's", () => {
       expect(JSON.stringify(res.body)).not.toContain("secret-detail");
     });
 
-    it("X's Organisation Admin is not admitted to the push, and a school-user token is not either (403)", async () => {
-      expect((await send("X's Organisation Admin", "post", "/sync/cloud")).status).toBe(403);
+    it.each(REFUSED_IN_X)("%s is not admitted to the push (403): the route asks for sync_content, and nothing is read or sent", async (who) => {
+      for (const body of [undefined, { organisationid: X }, { organisationid: Y }]) {
+        const res = await send(who, "post", "/sync/cloud", body);
+        expect({ body, status: res.status, code: res.body.code }).toEqual({ body, status: 403, code: "NOT_ALLOWED" });
+      }
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+
+    it("a school-user token is not admitted either (403)", async () => {
       expect((await send("a school-user token", "post", "/sync/cloud")).status).toBe(403);
       expect(axios.put).not.toHaveBeenCalled();
+    });
+
+    it("holding sync_students alone does not open the content push, and sync_content alone does not open the students push", async () => {
+      const only = (name: string) => bearer({ lmsuserid: "oa", lmsuserroles: [Role.organisationadmin], permissions: [name], organisationid: X, isplatform: false });
+      const as = (token: string, path: string) => request(app.getHttpServer()).post(path).set("Authorization", token).set("Connection", "close");
+      expect((await as(only("sync_students"), "/sync/cloud")).status).toBe(403);
+      expect((await as(only("sync_content"), `/sync/cloud/${TX.school}/students`)).status).toBe(403);
+      expect(axios.put).not.toHaveBeenCalled();
+      expect((await as(only("sync_content"), "/sync/cloud")).status).toBe(200);
+      expect((await as(only("sync_students"), `/sync/cloud/${TX.school}/students`)).status).toBe(200);
+      expect(axios.put).toHaveBeenCalledTimes(2);
+    });
+
+    // The organisation pushed is the token's, whatever the request says: not the body, the query, a header, or its spelling.
+    it.each(PUSHERS_IN_X)("%s: no parameter turns the push to Y: the body names Y in any spelling, the query and a header name Y, and X's content is what is sent", async (who) => {
+      for (const organisationid of [Y, Y.toUpperCase(), ` ${Y} `, [Y], { id: Y }]) {
+        const res = await send(who, "post", "/sync/cloud", { organisationid });
+        expect([404, 400]).toContain(res.status);
+      }
+      expect(axios.put).not.toHaveBeenCalled();
+      await request(app.getHttpServer()).post(`/sync/cloud?organisationid=${Y}`).set("Authorization", callers[who]).set("X-Organisation-Id", Y).set("Connection", "close").expect(200);
+      expect(axios.put).toHaveBeenCalledTimes(1);
+      const call = pushed();
+      expect(call.headers["X-Organisation-Id"]).toBe(X);
+      expect(call.json.organisationid).toBe(X);
+      expect(ids(call.json.curriculums, "curriculumid")).toEqual([TX.curriculum]);
+      expect(JSON.stringify(call.json)).not.toContain(Y);
     });
 
     it("a platform user not acting names the organisation in the body: that organisation's content, with its id in the header", async () => {
@@ -947,8 +989,29 @@ describe("the content sync is one organisation's", () => {
       expect(pushed().headers).not.toHaveProperty("X-Organisation-Id");
     });
 
-    it("X's Organisation Admin is not admitted (403)", async () => {
-      expect((await send("X's Organisation Admin", "post", `/sync/cloud/${TX.school}/students`)).status).toBe(403);
+    it.each(REFUSED_IN_X)("%s is not admitted (403): the route asks for sync_students, and nothing is sent", async (who) => {
+      for (const school of [TX.school, TY.school]) {
+        expect((await send(who, "post", `/sync/cloud/${school}/students`)).status).toBe(403);
+      }
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+
+    it.each(PUSHERS_IN_X)("%s: sends X's learners and none of Y's, whichever school it names, and X's own school with a Y organisation named in the query or a header is still X's", async (who) => {
+      await request(app.getHttpServer())
+        .post(`/sync/cloud/${TX.school}/students?organisationid=${Y}`)
+        .set("Authorization", callers[who]).set("X-Organisation-Id", Y).set("Connection", "close")
+        .send({ organisationid: Y, schoolid: TY.school }).expect(200);
+      const call = pushed();
+      expect(call.headers["X-Organisation-Id"]).toBe(X);
+      expect(call.json.schoolid).toBe(TX.school);
+      expect(ids(call.json.studentusers, "schooluserid")).toEqual([TX.login]);
+      expect(JSON.stringify(call.json)).not.toContain(TY.login);
+      expect(JSON.stringify(call.json)).not.toContain(TY.school);
+      // and Y's second school, named by name or id, is not there for it
+      for (const school of [TY.school2, TY.names.school2]) {
+        expect((await send(who, "post", `/sync/cloud/${encodeURIComponent(school)}/students`)).status).toBe(404);
+      }
+      expect(axios.put).toHaveBeenCalledTimes(1);
     });
   });
 

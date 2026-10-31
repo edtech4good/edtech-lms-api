@@ -19,19 +19,25 @@ const ROLE_LISTS = (r: RouteRecord): string[][] =>
 const admits = (r: RouteRecord, role: string) => ROLE_LISTS(r).every((list) => list.length === 0 || list.includes(role));
 
 /**
- * The only routes where Admin is admitted and the role is deliberately NOT: they
- * push to the cloud server with the server key, for every organisation at once.
+ * The routes where Admin is admitted and the role is deliberately NOT: none. The two pushes to the cloud server
+ * (POST /sync/cloud, POST /sync/cloud/:schoolname/students) were the exceptions until 31 Oct 2026; they ask for the
+ * `sync_content` / `sync_students` permission now (no role list), and a sync is one organisation's.
  */
-const PLATFORM_WIDE = ["POST /sync/cloud", "POST /sync/cloud/:schoolname/students"];
+const PLATFORM_WIDE: string[] = [];
+/** The pushes, and the permission each asks for through CheckPermissionsGuard. */
+const SYNC_PUSHES: Array<[string, string]> = [
+  ["POST /sync/cloud", "sync_content"],
+  ["POST /sync/cloud/:schoolname/students", "sync_students"],
+];
 const keyOf = (r: RouteRecord) => `${r.method} ${r.path}`;
 
-describe("Organisation Admin is admitted wherever Admin is, except the platform-wide pushes", () => {
+describe("Organisation Admin is admitted wherever Admin is", () => {
   let routes: RouteRecord[];
   beforeAll(async () => {
     routes = await enumerateRoutes();
   });
 
-  it("every route that admits Admin admits Organisation Admin, except exactly the platform-wide pushes; and never the other way round", () => {
+  it("every route that admits Admin admits Organisation Admin; and never the other way round", () => {
     const admin = routes.filter((r) => admits(r, "Role.admin")).map(keyOf);
     const org = routes.filter((r) => admits(r, "Role.organisationadmin")).map(keyOf);
     expect(admin.length).toBeGreaterThan(0);
@@ -39,16 +45,18 @@ describe("Organisation Admin is admitted wherever Admin is, except the platform-
     expect(org.filter((k) => !admin.includes(k))).toEqual([]);
   });
 
-  it("every explicit role list that names Admin names Organisation Admin, except those platform-wide pushes", () => {
+  it("every explicit role list that names Admin names Organisation Admin", () => {
     const lacking = routes.filter((r) => ROLE_LISTS(r).some((list) => list.includes("Role.admin") && !list.includes("Role.organisationadmin")));
     expect(lacking.map(keyOf).sort()).toEqual([...PLATFORM_WIDE].sort());
   });
 
-  it("the platform-wide pushes name Admin and Super Admin and not Organisation Admin", () => {
-    for (const key of PLATFORM_WIDE) {
+  it("the two sync pushes name no role at all: each asks for its permission (and the guards that read it), so Admin, Organisation Admin and the platform pass the same check", () => {
+    for (const [key, permission] of SYNC_PUSHES) {
       const r = routes.find((x) => keyOf(x) === key)!;
       expect(r).toBeDefined();
-      expect(ROLE_LISTS(r)).toEqual([["Role.admin", "Role.superadmin"]]);
+      expect(ROLE_LISTS(r)).toEqual([[]]);
+      expect(r.guards).toContain("CheckPermissionsGuard");
+      expect(r.permissions).toEqual([permission]);
     }
   });
 

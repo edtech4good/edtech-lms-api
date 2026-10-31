@@ -126,6 +126,7 @@ const NEEDS_REAL_DATA: string[] = [
   "20261001120100-seed-organisation-permissions.ts",
   "20261002120000-seed-organisation-admin-role.ts",
   "20261027120100-seed-publish-curriculum-permission.ts",
+  "20261031120100-grant-organisation-admin-sync-permissions.ts",
   "20261006120000-require-school-and-organisation-links.ts",
   "20261006120100-require-content-owners.ts",
 ];
