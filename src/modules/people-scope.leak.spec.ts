@@ -1095,6 +1095,22 @@ describe("people and schools are confined to the caller's organisation", () => {
     const ownRow = () => rowFor(STU_X, USR_X, "learnerx", NAME_X, "ភាសាខ្មែរ ក", "ថ្នាក់ទី១");
     const yRow = () => rowFor(STU_Y, USR_Y, "learnery", NAME_Y, "ភាសាខ្មែរ ខ", "ថ្នាក់ទី២");
     const firstName = (id: string) => db.tables.students.find((s) => s.studentid === id)!.studentfirstname;
+    const classOf = (id: string) => db.tables.students.find((s) => s.studentid === id)!.standard;
+    it.each(IN_X)("%s: a class that is deleted is not one a learner can be put on: the answer is the one a class nobody has gets, and nothing is written", async (who) => {
+      const unknown = await refuses(who, "put", "/student/update", { students: [{ ...ownRow(), standard: "ថ្នាក់ដែលមិនមាន" }] });
+      expect(unknown.status).toBe(400);
+      db.tables.standards.find((k) => k.standardid === K_X)!.isdeleted = true;
+      const res = await refuses(who, "put", "/student/update", { students: [ownRow()] });
+      expect(said(res)).toEqual(said(unknown));
+      expect(res.body.fields).toEqual([{ field: "standard", message: "That school or class doesn't exist." }]);
+      expect(classOf(STU_X)).toBe(K_X);
+    });
+    it.each(IN_X)("%s: a deleted class of the same name does not hide the live one: the learner is put on the live class", async (who) => {
+      // (listed before the live class, so that taking the first row found would be the wrong one)
+      db.tables.standards.unshift({ standardid: uuid(504), standardname: "ថ្នាក់ទី១", schoolid: S_X, schoolname: NAME_X, isdeleted: true });
+      await send(who, "put", "/student/update", { students: [ownRow()] }).expect(200);
+      expect(classOf(STU_X)).toBe(K_X);
+    });
         const curriculumsOf = (id: string) => db.tables.students.find((s) => s.studentid === id)!.curriculumids;
     it.each(IN_X)("%s: a curriculum of Y's with the same name as X's is not X's: the file enrols X's learner on X's, and writes nothing about Y", async (who) => {
       db.add("curriculums", { curriculumid: uuid(303), curriculumname: "ភាសាខ្មែរ ក", organisationid: Y, curriculumstatus: true });

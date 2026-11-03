@@ -37,12 +37,14 @@ const CLASS_ONE = uuid(501); // in S_ONE
 const CLASS_TWO = uuid(502); // in S_TWO, the same name
 const CLASS_Y = uuid(503); // Y's, with a learner
 const CLASS_EMPTY = uuid(504); // in S_ONE, nobody in it
+const CLASS_NO_SCHOOL = uuid(505); // an older class that belongs to no school
 const MISSING = uuid(999);
 
 const db = new ContentFake();
 const transaction = { commit: jest.fn(), rollback: jest.fn(), LOCK: { SHARE: "SHARE", UPDATE: "UPDATE" } };
 const bearer = (claims: Record<string, unknown>) =>
   `Bearer ${sign({ jti: "test-jti", ...claims }, Config.fortyk.api.applicationsecret, { expiresIn: "5m" })}`;
+const platform = bearer({ lmsuserid: "p", lmsuserroles: [Role.superadmin], permissions: ["superadmin", ...ORGANISATION_ADMIN_PERMISSIONS_20261002], organisationid: null, isplatform: true });
 const xAdmin = bearer({ lmsuserid: "oa", lmsuserroles: [Role.organisationadmin], permissions: [...ORGANISATION_ADMIN_PERMISSIONS_20261002], organisationid: X, isplatform: false });
 
 let n = 1000;
@@ -180,6 +182,40 @@ describe("DELETE /standard/:standardid refuses a class that still has learners",
     await withBody(CLASS_EMPTY, { standardid: CLASS_ONE }).expect(200);
     expect(isDeleted(CLASS_EMPTY)).toBe(true);
     expect(isDeleted(CLASS_ONE)).toBe(false);
+  });
+
+  it("the class named in the path decides what the delete checks: a standardid in the query changes nothing", async () => {
+    learner(S_ONE, CLASS_ONE);
+    const withQuery = (id: string, standardid: string) => request(app.getHttpServer()).delete(`/standard/${id}`).query({ standardid }).set("Authorization", xAdmin).set("Connection", "close");
+    expect(said(await withQuery(CLASS_ONE, CLASS_EMPTY))).toEqual(refusal(1));
+    expect(isDeleted(CLASS_ONE)).toBe(false);
+    await withQuery(CLASS_EMPTY, CLASS_ONE).expect(200);
+    expect(isDeleted(CLASS_EMPTY)).toBe(true);
+    expect(isDeleted(CLASS_ONE)).toBe(false);
+  });
+
+  it("several learners holding the class's name in its school are each counted", async () => {
+    learner(S_ONE, CLASS_NAME);
+    learner(S_ONE, CLASS_NAME);
+    learner(S_ONE, CLASS_NAME);
+    expect(said(await del(CLASS_ONE))).toEqual(refusal(3));
+  });
+
+  it("two groups of name rows, written differently, are added together with the learners holding the id", async () => {
+    learner(S_ONE, CLASS_NAME);
+    learner(S_ONE, CLASS_NAME);
+    learner(S_ONE, ` ${CLASS_NAME}`);
+    learner(S_ONE, CLASS_ONE);
+    expect(said(await del(CLASS_ONE))).toEqual(refusal(4));
+  });
+
+  it("a class that belongs to no school is still counted by its id", async () => {
+    db.add("standards", { standardid: CLASS_NO_SCHOOL, standardname: CLASS_NAME, schoolid: null, schoolname: null });
+    learner(S_ONE, CLASS_NO_SCHOOL);
+    learner(S_ONE, CLASS_NAME); // a name row is not counted for a class with no school
+    const res = await request(app.getHttpServer()).delete(`/standard/${CLASS_NO_SCHOOL}`).set("Authorization", platform).set("Connection", "close");
+    expect(said(res)).toEqual(refusal(1));
+    expect(isDeleted(CLASS_NO_SCHOOL)).toBe(false);
   });
 
   it("another organisation's class is the 404 a missing class gets, unchanged", async () => {
