@@ -2,6 +2,7 @@ import { ValidationError, ValidationErrorItem } from "joi";
 import { BaselineQuestionBusiness } from "src/business/baslinequestion.business";
 import { requestScope } from "src/business/content-scope";
 import { IRequest } from "src/models";
+import { pathParam } from "src/validators/path-param";
 
 export const DeleteBaselineQuestion = async (
   request: IRequest,
@@ -27,7 +28,7 @@ export const DeleteBaselineQuestion = async (
 };
 
 export const BaselineQuestionExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const baselineexists = await new BaselineQuestionBusiness(requestScope(request)).isexistsBaselineQuestionAdded(data.curriculumbaselineid, data.questionid, data.baselinequestionid);
+  const baselineexists = await new BaselineQuestionBusiness(requestScope(request)).isexistsBaselineQuestionAdded(data.curriculumbaselineid, data.questionid, pathParam(request, 'baselinequestionid'));
   if (baselineexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
