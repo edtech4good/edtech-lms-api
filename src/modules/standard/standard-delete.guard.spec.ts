@@ -184,7 +184,7 @@ describe("DELETE /standard/:standardid refuses a class that still has learners",
     expect(isDeleted(CLASS_ONE)).toBe(false);
   });
 
-  it("the class named in the path decides what the delete checks: a standardid in the query changes nothing", async () => {
+  it("the class named in the path decides what the delete checks: naming another class elsewhere in the request changes nothing", async () => {
     learner(S_ONE, CLASS_ONE);
     const withQuery = (id: string, standardid: string) => request(app.getHttpServer()).delete(`/standard/${id}`).query({ standardid }).set("Authorization", xAdmin).set("Connection", "close");
     expect(said(await withQuery(CLASS_ONE, CLASS_EMPTY))).toEqual(refusal(1));
