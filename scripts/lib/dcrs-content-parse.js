@@ -16,7 +16,10 @@
  *    may start with a number) and one line per option, "A. text", the correct one ending " \u2713". The marker
  *    is a Latin letter or one of the first four Khmer letters, taken by position. English and Khmer blocks are
  *    matched by position and must agree on how many questions, how many options and which option is correct;
- *    anything else is refused with the reason. A title line present on one side only is dropped, with a notice.
+ *    anything else is refused with the reason. The lines before the options are the question's head: one line is the stem;
+ *    when BOTH languages have a longer head (a scenario, then the question) every line is kept, joined with a line break, as the
+ *    stem, and the two heads must have the same number of lines. A head of two lines on ONE side only is a title line
+ *    ("Practice N ...") the database does not hold: it is dropped, with a notice, and the last line is the stem.
  *
  * The spreadsheet's text is copied exactly (no trimming inside a line, no normalising), with one
  * exception: a lesson number in front of the English lesson title alone is dropped (see parseCells).
@@ -147,11 +150,11 @@ function parseQuizCell(text, where, problems, notices = []) {
     const optionAt = lines.findIndex((l) => OPTION.test(l));
     const head = optionAt === -1 ? lines : lines.slice(0, optionAt);
     const rest = optionAt === -1 ? [] : lines.slice(optionAt);
-    let title = null;
-    let stem = "";
-    if (head.length === 1) stem = head[0].replace(NUMBER_PREFIX, "");
-    else if (head.length === 2) [title, stem] = head;
-    else problems.push(`${at} must have a stem line, with at most one title line before it; it has ${head.length} lines before the options`);
+    // The head: one line is the stem (its number, if any, goes). Longer, every line is kept (`head`); matchQuestions decides what the two sides
+    // together make of it. `title` and `stem` are the reading of a head of one line (no title) or of a title line and a stem.
+    if (head.length === 0) problems.push(`${at} has an empty stem`);
+    const title = head.length >= 2 ? head[0] : null;
+    const stem = head.length === 1 ? head[0].replace(NUMBER_PREFIX, "") : head.length >= 2 ? head.slice(1).join("\n") : "";
     const options = [];
     rest.forEach((line, j) => {
       const m = OPTION.exec(line);
@@ -179,16 +182,20 @@ function parseQuizCell(text, where, problems, notices = []) {
     if (options.length === 0) problems.push(`${at} has no options`);
     const correct = options.filter((o) => o.correct).length;
     if (options.length > 0 && correct !== 1) problems.push(`${at} has ${correct} options marked correct; it needs exactly 1`);
-    if (stem.length === 0) problems.push(`${at} has an empty stem`);
-    return { title, stem, options };
+    return { head, title, stem, options };
   });
 }
 
 /**
- * English and Khmer questions to questions, matched by position. A title line that only one side has is dropped (the database holds
- * no title), and a notice says so; it is not a reason to refuse.
+ * English and Khmer questions to questions, matched by position. The stem of each:
+ *  - both heads one line: that line (its number goes);
+ *  - both heads longer (a scenario, then the question): every line, joined with a line break, the first line without its number; the two
+ *    heads must have the same number of lines, or the question is refused;
+ *  - a head of two lines on one side and one line on the other: the two-line side has a title line the database holds no place for; it is
+ *    dropped with a notice and the last line is the stem;
+ *  - any other mix (one line against three or more): refused.
  */
-function matchQuestions(en, km, kind, where, ident, problems, notices) {
+function matchQuestions(en, km, kind, where, ident, row, problems, notices) {
   if (en.length !== km.length) {
     problems.push(`${where}: ${en.length} English questions but ${km.length} Khmer`);
     return [];
@@ -196,15 +203,27 @@ function matchQuestions(en, km, kind, where, ident, problems, notices) {
   return en.map((e, i) => {
     const k = km[i];
     const at = `${where} question ${i + 1}`;
-    if ((e.title === null) !== (k.title === null)) notices.push(`${at}: the title line is in ${e.title === null ? "Khmer" : "English"} only; dropped (the database holds no title)`);
+    let stem = { en: e.stem, km: k.stem };
+    const [ne, nk] = [e.head.length, k.head.length];
+    if (ne >= 2 && nk >= 2) {
+      if (ne !== nk) problems.push(`${at} (row ${row}): ${ne} English lines before the options but ${nk} Khmer; both languages must have the same lines`);
+      else stem = { en: e.head.join("\n").replace(NUMBER_PREFIX, ""), km: k.head.join("\n").replace(NUMBER_PREFIX, "") };
+    } else if (ne !== nk) {
+      const longer = ne > nk ? e : k;
+      if (longer.head.length === 2) {
+        notices.push(`${at}: the title line is in ${ne > nk ? "English" : "Khmer"} only; dropped (the database holds no title)`);
+        stem = { en: e.stem, km: k.stem };
+      } else if (longer.head.length > 2) {
+        problems.push(`${at} (row ${row}): ${ne} English lines before the options but ${nk} Khmer; only a two-line head against a one-line head is read as a title line`);
+      }
+    }
     if (e.options.length !== k.options.length) problems.push(`${at}: ${e.options.length} English options but ${k.options.length} Khmer`);
     else if (e.options.findIndex((o) => o.correct) !== k.options.findIndex((o) => o.correct)) {
       problems.push(`${at}: English and Khmer mark a different option correct`);
     }
     return {
       ident: `${ident}${kind}${i + 1}`,
-      ...(e.title !== null && k.title !== null ? { title: { en: e.title, km: k.title } } : {}),
-      text: { en: e.stem, km: k.stem },
+      text: stem,
       options: e.options.map((o, j) => ({ text: { en: o.text, km: k.options[j] ? k.options[j].text : "" }, correct: o.correct })),
     };
   });
@@ -342,6 +361,8 @@ const COLUMNS = ["A", "B", "C", "D", "E", "F", "G"];
  *   `options.keepVideo`: lesson numbers whose existing video stays: `video: { ref, keep: true }` and no file is looked for;
  *   `options.programme`: `{ en, km }`, the programme's name (optional here; from normaliseProgramme; the seed refuses a file without it);
  *   `options.notices`: an array that receives what was changed or taken by position, in words (no refusal).
+ * Every lesson needs a video decision: a file (`videoFolder`, or `videoSource` for a one-lesson sheet) or a place in `keepVideo`; a lesson with
+ * neither is refused, because the import would overwrite its document row with a new file name.
  * The video reference in column C is kept as written and nothing is derived from it.
  * Module 1's first lesson names the seed's fixed lesson id; every other lesson has no id (its order is its slot). Question idents of
  * lesson 1 are DCRS-M<m>-P1, -Q1 (as before); a later lesson's carry its number: DCRS-M<m>-L2-P1.
@@ -390,9 +411,18 @@ function parseCells(cells, options = {}) {
     if (ref.length === 0) problems.push(`C${r} (video reference) is empty`);
     const ident = order === 1 ? `DCRS-M${module}-` : `DCRS-M${module}-L${order}-`;
     const label = `lesson ${order}`;
-    const practice = matchQuestions(parseQuizCell(cells[`D${r}`], `D${r}`, problems, notices), parseQuizCell(cells[`E${r}`], `E${r}`, problems, notices), "P", `${label} practice`, ident, problems, notices);
-    const quiz = matchQuestions(parseQuizCell(cells[`F${r}`], `F${r}`, problems, notices), parseQuizCell(cells[`G${r}`], `G${r}`, problems, notices), "Q", `${label} quiz`, ident, problems, notices);
+    const practice = matchQuestions(parseQuizCell(cells[`D${r}`], `D${r}`, problems, notices), parseQuizCell(cells[`E${r}`], `E${r}`, problems, notices), "P", `${label} practice`, ident, r, problems, notices);
+    const quiz = matchQuestions(parseQuizCell(cells[`F${r}`], `F${r}`, problems, notices), parseQuizCell(cells[`G${r}`], `G${r}`, problems, notices), "Q", `${label} quiz`, ident, r, problems, notices);
     const source = keep.has(order) ? undefined : sources[order] ?? (order === 1 && rows.length === 1 ? options.videoSource : undefined);
+    // A lesson that is not kept is written a video file name, and the import overwrites its document row with it: so it must have a file
+    // (with --video-folder, a lesson without its file is refused by videoSourcesOf; --video-source on a sheet of several lessons is refused above).
+    // Without --video-folder (or --video-source) and --keep-video, lesson 1 would be written a name and lose the video its row has today.
+    if (!keep.has(order) && source === undefined && options.videoFolder === undefined && options.videoSource === undefined) {
+      problems.push(
+        `lesson ${order} (row ${r}): no video file is given for it, and its document row would be overwritten with a new file name; ` +
+          "use --video-folder (with its file in it) or --video-source, or name the lesson in --keep-video to leave its existing video alone",
+      );
+    }
     return {
       ...(module === 1 && order === 1 ? { id: LESSON_IDS[0] } : {}),
       order,

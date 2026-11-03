@@ -75,7 +75,7 @@ const bcryptjs = require("bcryptjs");
 const md5 = require("crypto-js/md5");
 const { ensureOrganisation, fillAndVerifyOwners } = require("./lib/seed-organisations");
 const { planContent } = require("./lib/dcrs-content-plan");
-const { applyPlan, preflight, readExisting, formatReport, curriculumNameLengths, formatCurriculumName } = require("./lib/dcrs-content-apply");
+const { applyPlan, preflight, readExisting, keptDocumentIds, formatReport, curriculumNameLengths, formatCurriculumName } = require("./lib/dcrs-content-apply");
 const { prepare, refuse, printDryRun, levelSwitchOf, describeSwitch, describeMedia } = require("./lib/dcrs-content-cli");
 
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
@@ -459,16 +459,18 @@ async function main() {
     // Content mode: the real text over the placeholder rows, in one transaction, then counted.
     const contentReport = contentPlan ? await applyPlan(conn, contentPlan) : null;
 
+    // A kept lesson video's document row is left exactly as it is: not even a NULL owner is filled (and it is not checked for one).
+    const keptDocuments = new Set(contentPlan ? keptDocumentIds(contentPlan) : []);
     // INSERT IGNORE turns a refused row into a silent skip: fill an owner this seed's rows still lack, then check they are all there and owned.
     await fillAndVerifyOwners(conn, [
       { table: "schools", key: "schoolid", ids: [ID.school], column: "organisationid", value: organisationid },
       { table: "subjects", key: "subjectid", ids: [ID.subject], column: "organisationid", value: organisationid },
       { table: "curriculums", key: "curriculumid", ids: [ID.curriculum], column: "organisationid", value: organisationid },
-      { table: "documents", key: "documentid", ids: lessons.map((l) => l.doc), column: "organisationid", value: organisationid },
+      { table: "documents", key: "documentid", ids: lessons.map((l) => l.doc).filter((id) => !keptDocuments.has(id)), column: "organisationid", value: organisationid },
       { table: "questions", key: "questionid", ids: QUESTIONS.map((Q) => ID[Q.key]), column: "organisationid", value: organisationid },
       { table: "schoolusers", key: "schooluserid", ids: [ID.studentUser, ID.facilitatorUser], column: "schoolid", value: ID.school },
       { table: "students", key: "studentid", ids: [ID.student, ID.facilitator], column: "schoolid", value: ID.school },
-    ]);
+    ].filter((e) => e.ids.length > 0));
 
     const [[counts]] = await conn.query(`
       SELECT (SELECT COUNT(*) FROM students WHERE schoolname = 'Mekong Inclusive Ventures') AS students,

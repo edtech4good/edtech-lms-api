@@ -15,7 +15,8 @@
  *
  * Videos. `--video-folder <dir>` is the folder holding one file per lesson, M<module>-L<lesson>-MP4.mp4 (both numbers two digits), matched
  * to the lesson by its row; each lesson's file is recorded as its `video.source`, and the seed prints the copy to make to dcrs-m<module>-l<lesson>.mp4.
- * A lesson without its file is refused, naming the lesson, unless its video is kept. `--keep-video 1` (or `1,3`) keeps the video the
+ * A lesson without its file is refused, naming the lesson, unless its video is kept; so is a lesson for which no video option was given at all
+ * (without --video-folder, --video-source or --keep-video the import would give lesson 1 a new file name and overwrite its document row). `--keep-video 1` (or `1,3`) keeps the video the
  * lesson's document row already has: content.json says `video: { ref, keep: true }`, no file is looked for, and the import writes nothing
  * to that document (nor copies a file). `--video-source` is the older single-lesson form (one file name, recorded for the one lesson).
  * The video reference in column C is kept as written and printed; nothing is derived from it (its typos are the author's).
