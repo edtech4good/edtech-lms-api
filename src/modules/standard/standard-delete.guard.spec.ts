@@ -57,11 +57,21 @@ const withoutReference = (body: Record<string, unknown>) => {
   return rest;
 };
 const said = (res: request.Response) => ({ status: res.status, body: withoutReference(res.body) });
+/** The whole refusal: the sentence is on the field `standardid`; the top-level message is the generic one every 400 of this kind has. */
 const refusal = (count: number) => ({
   status: 400,
   body: {
     error: true,
-    message: `That class has ${count} ${count === 1 ? "learner" : "learners"} and can't be deleted. Move or remove them first.`,
+    code: "INVALID_INPUT",
+    data: false,
+    errormessage: "Some of the information isn't valid.",
+    fields: [
+      {
+        field: "standardid",
+        message: `That class has ${count} ${count === 1 ? "learner" : "learners"} and can't be deleted. Move or remove them first.`,
+      },
+    ],
+    hint: "Check the highlighted fields.",
   },
 });
 
@@ -157,9 +167,19 @@ describe("DELETE /standard/:standardid refuses a class that still has learners",
     expect(db.snapshot()).toEqual(before);
   });
 
-  it("the name is compared as school names are: surrounding spaces and case do not matter", async () => {
+  it("the name is compared as school names are: surrounding spaces do not matter", async () => {
     learner(S_ONE, ` ${CLASS_NAME} `);
     expect(said(await del(CLASS_ONE))).toEqual(refusal(1));
+  });
+
+  it("the class named in the path decides what the delete checks, whatever else the request carries", async () => {
+    learner(S_ONE, CLASS_ONE);
+    const withBody = (id: string, body: object) => request(app.getHttpServer()).delete(`/standard/${id}`).set("Authorization", xAdmin).set("Connection", "close").send(body);
+    expect(said(await withBody(CLASS_ONE, { standardid: CLASS_EMPTY }))).toEqual(refusal(1));
+    expect(isDeleted(CLASS_ONE)).toBe(false);
+    await withBody(CLASS_EMPTY, { standardid: CLASS_ONE }).expect(200);
+    expect(isDeleted(CLASS_EMPTY)).toBe(true);
+    expect(isDeleted(CLASS_ONE)).toBe(false);
   });
 
   it("another organisation's class is the 404 a missing class gets, unchanged", async () => {
