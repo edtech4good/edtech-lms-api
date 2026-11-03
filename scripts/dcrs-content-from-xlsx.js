@@ -3,13 +3,23 @@
  * Dev-only helper: reads the programme author's spreadsheet and writes the
  * content.json that `npm run seed:dcrs -- --content <dir>` reads.
  *
- *   node scripts/dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module N] [--video-source name.mp4] [--programme <file>]
+ *   node scripts/dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module N] [--programme <file>]
+ *       [--video-folder <dir>] [--keep-video N[,N...]] [--video-source name.mp4]
  *
  * The module number is read from the English module title in A2 ("Module 2: ..."); `--module N` gives it when the title has none,
  * and must agree with the title when it has one. A file with neither is refused. Module 1 keeps the seed's fixed ids; a later
  * module is a new level of the same programme (see scripts/lib/dcrs-content-plan.js).
- * The converter writes every lesson with `order: 1` (one-lesson modules), so a module of several lessons needs a merged content.json
- * until the client's Module 2 format is known.
+ * The sheet is ONE module with one lesson per row: row 2 is lesson 1, row 3 lesson 2, and so on, to the first row with no lesson
+ * title in column B (the row order is the lesson number). Module 1's lesson 1 keeps the seed's fixed ids; every later lesson, and every
+ * lesson of a later module, has its ids derived from its place (scripts/lib/dcrs-content-plan.js).
+ *
+ * Videos. `--video-folder <dir>` is the folder holding one file per lesson, M<module>-L<lesson>-MP4.mp4 (both numbers two digits), matched
+ * to the lesson by its row; each lesson's file is recorded as its `video.source`, and the seed prints the copy to make to dcrs-m<module>-l<lesson>.mp4.
+ * A lesson without its file is refused, naming the lesson, unless its video is kept; so is a lesson for which no video option was given at all
+ * (without --video-folder, --video-source or --keep-video the import would give lesson 1 a new file name and overwrite its document row). `--keep-video 1` (or `1,3`) keeps the video the
+ * lesson's document row already has: content.json says `video: { ref, keep: true }`, no file is looked for, and the import writes nothing
+ * to that document (nor copies a file). `--video-source` is the older single-lesson form (one file name, recorded for the one lesson).
+ * The video reference in column C is kept as written and printed; nothing is derived from it (its typos are the author's).
  *
  * The programme's name is not in the spreadsheet: it is read from `programme.json` next to the spreadsheet when there is
  * one, or from the file `--programme` names (which takes its place), and written into content.json as `programme`.
@@ -55,6 +65,14 @@ function main(argv) {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--module") options.module = Number(argv[++i]);
     else if (argv[i] === "--video-source") options.videoSource = argv[++i];
+    else if (argv[i] === "--video-folder") {
+      if (argv[i + 1] === undefined || argv[i + 1].startsWith("--")) fail("--video-folder needs a folder");
+      options.videoFolder = path.resolve(argv[++i]);
+    } else if (argv[i] === "--keep-video") {
+      const list = argv[++i];
+      if (list === undefined || !/^[0-9]+(,[0-9]+)*$/.test(list)) fail("--keep-video needs lesson numbers, like 1 or 1,3");
+      options.keepVideo = [...(options.keepVideo ?? []), ...list.split(",").map(Number)];
+    }
     else if (argv[i] === "--programme") {
       if (argv[i + 1] === undefined || argv[i + 1].startsWith("--")) fail("--programme needs a file");
       options.programmeFile = argv[++i];
@@ -62,7 +80,7 @@ function main(argv) {
     else if (argv[i].startsWith("--")) fail(`unknown option ${argv[i]}`);
     else args.push(argv[i]);
   }
-  if (args.length !== 2) fail("usage: dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module N] [--video-source name.mp4] [--programme <file>]");
+  if (args.length !== 2) fail("usage: dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module N] [--programme <file>] [--video-folder <dir>] [--keep-video N[,N...]] [--video-source name.mp4]");
   if (options.module !== undefined && !(Number.isInteger(options.module) && options.module >= 1)) fail("--module must be a whole number from 1");
   if (options.videoSource !== undefined && !/^[A-Za-z0-9._-]+$/.test(options.videoSource)) fail("--video-source must be a plain file name");
 
@@ -72,6 +90,7 @@ function main(argv) {
   if (refusal) fail(refusal);
 
   let content;
+  const notices = [];
   try {
     // the programme file named with --programme, else programme.json next to the spreadsheet when there is one
     const sidecar = options.programmeFile ? path.resolve(options.programmeFile) : path.join(path.dirname(file), "programme.json");
@@ -81,15 +100,21 @@ function main(argv) {
       programme = read.programme;
       for (const note of read.notes) console.log(`programme: ${note}`);
     }
-    content = parseCells(readCellsFromXlsx(file), { ...options, programme });
+    content = parseCells(readCellsFromXlsx(file), { ...options, programme, notices });
   } catch (err) {
     if (err instanceof ParseRefused) fail(err.problems.join("\n  "));
     throw err;
   }
   fs.writeFileSync(path.join(outDir, "content.json"), `${JSON.stringify(content, null, 2)}\n`, { flag: "wx" });
-  const lesson = content.lessons[0];
+  for (const note of notices) console.log(`notice: ${note}`);
+  for (const lesson of content.lessons) {
+    const video = lesson.video.keep ? "its existing video is kept" : lesson.video.source ? `video ${lesson.video.source} to ${lesson.video.filename}` : `video ${lesson.video.filename} (no source recorded)`;
+    console.log(`lesson ${lesson.order}: reference "${lesson.video.ref}"; ${lesson.practice.length} practice and ${lesson.quiz.length} quiz questions; ${video}`);
+  }
+  const count = (kind) => content.lessons.reduce((sum, l) => sum + l[kind].length, 0);
+  const n = content.lessons.length;
   console.log(
-    `content.json written: module ${content.module.number}, ${content.lessons.length} lesson, ${lesson.practice.length} practice and ${lesson.quiz.length} quiz questions, ${content.programme ? "with" : "no"} programme name.`,
+    `content.json written: module ${content.module.number}, ${n} lesson${n === 1 ? "" : "s"}, ${count("practice")} practice and ${count("quiz")} quiz questions, ${content.programme ? "with" : "no"} programme name.`,
   );
   if (!content.programme) console.log("note: there is no programme name, and seed:dcrs refuses a content.json without one (add programme.json next to the spreadsheet, or use --programme).");
 }
