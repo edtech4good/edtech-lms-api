@@ -7,6 +7,7 @@ import request from "supertest";
 import { Config, Logger } from "src/config";
 import { ORGANISATION_ADMIN_PERMISSIONS_20261002 } from "src/db/frozen/organisation-admin-20261002";
 import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
+import { BusinessValidationInterceptor } from "src/interceptors";
 import { Role } from "src/models/enums";
 import { SchoolRole } from "src/models/enums/school.role.enum";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
@@ -237,6 +238,18 @@ describe("people and schools are confined to the caller's organisation", () => {
   const pathRowChecked = async (who: Who, method: "get" | "post" | "put" | "delete", foreign: string, missing: string, body: object) => {
     const res = await refuses(who, method, foreign, body);
     const none = await refuses(who, method, missing, body);
+    // The handler checks the row named in the path by itself too: with the business rules taken away, Y's row answers as a
+    // row that is not there does (the same status and body), with every table unchanged.
+    const rules = jest.spyOn(BusinessValidationInterceptor.prototype, "intercept").mockImplementation(async (_context, next) => next.handle());
+    try {
+      const alone = await refuses(who, method, missing, body);
+      expect(alone.status).toBe(404);
+      const aloneForeign = await refuses(who, method, foreign, body);
+      expect(aloneForeign.status).toBe(404);
+      expect(said(aloneForeign)).toEqual(said(alone));
+    } finally {
+      rules.mockRestore();
+    }
     return { res, none };
   };
 

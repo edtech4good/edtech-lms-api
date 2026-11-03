@@ -12,6 +12,7 @@ import request from "supertest";
 import { Config, Logger } from "src/config";
 import { ORGANISATION_ADMIN_PERMISSIONS_20261002 } from "src/db/frozen/organisation-admin-20261002";
 import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
+import { BusinessValidationInterceptor } from "src/interceptors";
 import { Role } from "src/models/enums";
 import { SchoolRole } from "src/models/enums/school.role.enum";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
@@ -53,7 +54,7 @@ import { TranslationsModule } from "./translations/translations.module";
  * caller's rows and none of the others; a platform user not acting still reaches every row, the server token the
  *  routes that admit it, and a school-user token the routes that admit it. The row named in the path is the one
  * checked, whatever else the request names: another organisation's row in the path, with the caller's own row also
- * named by the request, is the 404 an absent one gets.
+ * named by the request, is the answer an absent one gets.
  */
 const tokenExists = jest.fn();
 jest.mock("src/business/token.business", () => ({
@@ -259,8 +260,25 @@ describe("content is confined to the caller's organisation", () => {
   const asAbsentPath = async (who: Who, method: Method, reqOf: (id: string) => Req, param: string, own: string, foreign: string) => {
     const withOwn = (id: string) => `${reqOf(id).path}?${param}=${own}`;
     const absent = said(await refuses(who, method, withOwn(MISSING), reqOf(MISSING).body));
+    // naming the caller's own row as well changes nothing: the answer is the plain request's answer for an id that is not there
+    expect(absent).toEqual(said(await refuses(who, method, reqOf(MISSING).path, reqOf(MISSING).body)));
     expect(said(await refuses(who, method, withOwn(foreign), reqOf(foreign).body))).toEqual(absent);
     expect(said(await refuses(who, method, withOwn(unownedOf(foreign)), reqOf(unownedOf(foreign)).body))).toEqual(absent);
+    // The handler checks the row named in the path by itself too: with the business rules taken away, another organisation's
+    // row and an unowned one still answer as an id that is not there does.
+    const rules = jest.spyOn(BusinessValidationInterceptor.prototype, "intercept").mockImplementation(async (_context, next) => next.handle());
+    try {
+      const alone = said(await refuses(who, method, reqOf(MISSING).path, reqOf(MISSING).body));
+      expect(alone.status).toBe(404);
+      const aloneForeign = said(await refuses(who, method, reqOf(foreign).path, reqOf(foreign).body));
+      const aloneUnowned = said(await refuses(who, method, reqOf(unownedOf(foreign)).path, reqOf(unownedOf(foreign)).body));
+      expect(aloneForeign.status).toBe(404);
+      expect(aloneUnowned.status).toBe(404);
+      expect(aloneForeign).toEqual(alone);
+      expect(aloneUnowned).toEqual(alone);
+    } finally {
+      rules.mockRestore();
+    }
     return absent.status;
   };
   const stored = (table: ContentTable, key: string, id: string) => db.tables[table].find((r) => r[key] === id)!;
@@ -322,7 +340,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/curriculum/${id}`), TY.curriculum, TU.curriculum)).toBe(400);
     });
     it.each(IN_X)("%s: the curriculum in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/curriculum/${id}`), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/curriculum/${id}`), "curriculumid", TX.curriculum, TY.curriculum)).toBe(400);
     });
     it("a platform user not acting: any curriculum, an unowned one too", async () => {
       expect((await send(NOT_ACTING, "delete", `/curriculum/${TY.curriculum}`)).status).toBe(200);
@@ -341,7 +359,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/curriculum/${id}`), TY.curriculum, TU.curriculum)).toBe(400);
     });
     it.each(IN_X)("%s: the curriculum in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/curriculum/${id}`), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/curriculum/${id}`), "curriculumid", TX.curriculum, TY.curriculum)).toBe(400);
     });
     it("a platform user not acting: any curriculum, an unowned one too", async () => {
       expect((await send(NOT_ACTING, "get", `/curriculum/${TY.curriculum}`)).body.data.curriculumid).toBe(TY.curriculum);
@@ -367,7 +385,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/curriculum/${TX.curriculum}`, body(id)), TY.subject, TU.subject)).toBe(400);
     });
     it.each(IN_X)("%s: the curriculum named in the path is the one checked, whatever else the request names", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/curriculum/${id}`, body(TX.subject)), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/curriculum/${id}`, body(TX.subject)), "curriculumid", TX.curriculum, TY.curriculum)).toBe(400);
     });
     it("a platform user not acting: the name is unique within the row's own organisation (X holding a name is no bar to Y's row), and across everything for an unowned row", async () => {
       const nameOf = (id: string) => stored("curriculums", "curriculumid", id).curriculumname as string;
@@ -393,7 +411,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/curriculum/activate/${id}`), TY.curriculum, TU.curriculum)).toBe(400);
     });
     it.each(IN_X)("%s: the curriculum in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/curriculum/activate/${id}`), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/curriculum/activate/${id}`), "curriculumid", TX.curriculum, TY.curriculum)).toBe(400);
     });
     it("a platform user not acting: any curriculum", async () => {
       stored("curriculums", "curriculumid", TU.curriculum).curriculumstatus = false;
@@ -411,7 +429,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/curriculum/deactivate/${id}`), TY.curriculum, TU.curriculum)).toBe(400);
     });
     it.each(IN_X)("%s: the curriculum in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/curriculum/deactivate/${id}`), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/curriculum/deactivate/${id}`), "curriculumid", TX.curriculum, TY.curriculum)).toBe(400);
     });
     it("a platform user not acting: any curriculum", async () => {
       expect((await send(NOT_ACTING, "put", `/curriculum/deactivate/${TY.curriculum}`)).status).toBe(200);
@@ -482,7 +500,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/curriculum/tree/${id}`), TY.curriculum, TU.curriculum)).toBe(400);
     });
     it.each(IN_X)("%s: the curriculum in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/curriculum/tree/${id}`), "curriculumid", TX.curriculum, TY.curriculum)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/curriculum/tree/${id}`), "curriculumid", TX.curriculum, TY.curriculum)).toBe(400);
     });
     it("a platform user not acting: any curriculum's tree", async () => {
       const res = await send(NOT_ACTING, "get", `/curriculum/tree/${TU.curriculum}`);
@@ -853,7 +871,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/subject/${id}`), TY.subject2, TU.subject2)).toBe(400);
     });
     it.each(IN_X)("%s: the subject in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/subject/${id}`), "subjectid", TX.subject2, TY.subject2)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/subject/${id}`), "subjectid", TX.subject2, TY.subject2)).toBe(400);
     });
     it("a platform user not acting: any subject", async () => {
       expect((await send(NOT_ACTING, "delete", `/subject/${TU.subject2}`)).status).toBe(200);
@@ -871,7 +889,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/subject/${id}`), TY.subject, TU.subject)).toBe(400);
     });
     it.each(IN_X)("%s: the subject in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/subject/${id}`), "subjectid", TX.subject2, TY.subject)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/subject/${id}`), "subjectid", TX.subject2, TY.subject)).toBe(400);
     });
     it("a platform user not acting: any subject", async () => {
       expect((await send(NOT_ACTING, "get", `/subject/${TY.subject2}`)).body.data.subjectid).toBe(TY.subject2);
@@ -888,7 +906,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/subject/${id}`, body), TY.subject, TU.subject)).toBe(400);
     });
     it.each(IN_X)("%s: the subject in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/subject/${id}`, body), "subjectid", TX.subject2, TY.subject)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/subject/${id}`, body), "subjectid", TX.subject2, TY.subject)).toBe(400);
     });
     it("a platform user not acting: the name is unique within the row's own organisation, and across everything for an unowned row", async () => {
       const nameOf = (id: string) => stored("subjects", "subjectid", id).subjectname as string;
@@ -962,7 +980,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/grade/${id}`), TY.grade, TU.grade)).toBe(400);
     });
     it.each(IN_X)("%s: the grade in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/grade/${id}`), "gradeid", TX.grade, TY.grade)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/grade/${id}`), "gradeid", TX.grade, TY.grade)).toBe(400);
     });
     it("a platform user not acting: any grade", async () => {
       expect((await send(NOT_ACTING, "delete", `/grade/${TU.grade}`)).status).toBe(200);
@@ -980,7 +998,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/grade/activate/${id}`), TY.grade, TU.grade)).toBe(400);
     });
     it.each(IN_X)("%s: the grade in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/grade/activate/${id}`), "gradeid", TX.grade, TY.grade)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/grade/activate/${id}`), "gradeid", TX.grade, TY.grade)).toBe(400);
     });
     it("a platform user not acting: any grade", async () => {
       stored("grades", "gradeid", TY.grade).gradestatus = false;
@@ -998,7 +1016,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/grade/deactivate/${id}`), TY.grade, TU.grade)).toBe(400);
     });
     it.each(IN_X)("%s: the grade in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/grade/deactivate/${id}`), "gradeid", TX.grade, TY.grade)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/grade/deactivate/${id}`), "gradeid", TX.grade, TY.grade)).toBe(400);
     });
     it("a platform user not acting: any grade", async () => {
       expect((await send(NOT_ACTING, "put", `/grade/deactivate/${TU.grade}`)).status).toBe(200);
@@ -1016,7 +1034,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/grade/${id}`), TY.grade, TU.grade)).toBe(400);
     });
     it.each(IN_X)("%s: the grade in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/grade/${id}`), "gradeid", TX.grade, TY.grade)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/grade/${id}`), "gradeid", TX.grade, TY.grade)).toBe(400);
     });
     it("a platform user not acting: any grade", async () => {
       expect((await send(NOT_ACTING, "get", `/grade/${TU.grade}`)).body.data.gradeid).toBe(TU.grade);
@@ -1055,7 +1073,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/grade/${TX.grade}`, id === MISSING ? body(id) : named(id)), TY.curriculum, TU.curriculum)).toBe(404);
     });
     it.each(IN_X)("%s: the grade in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/grade/${id}`, body(TX.curriculum)), "gradeid", TX.grade, TY.grade)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/grade/${id}`, body(TX.curriculum)), "gradeid", TX.grade, TY.grade)).toBe(400);
     });
     it("a platform user not acting: any grade, into a curriculum of its owner", async () => {
       expect((await send(NOT_ACTING, "put", `/grade/${TY.grade}`, body(TY.curriculum2))).status).toBe(200);
@@ -1128,7 +1146,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/level/${id}`), TY.level, TU.level)).toBe(400);
     });
     it.each(IN_X)("%s: the level in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/level/${id}`), "levelid", TX.level, TY.level)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/level/${id}`), "levelid", TX.level, TY.level)).toBe(400);
     });
     it("a platform user not acting: any level", async () => {
       expect((await send(NOT_ACTING, "delete", `/level/${TU.level}`)).status).toBe(200);
@@ -1146,7 +1164,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/level/activate/${id}`), TY.level, TU.level)).toBe(400);
     });
     it.each(IN_X)("%s: the level in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/level/activate/${id}`), "levelid", TX.level, TY.level)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/level/activate/${id}`), "levelid", TX.level, TY.level)).toBe(400);
     });
     it("a platform user not acting: any level", async () => {
       stored("levels", "levelid", TY.level).levelstatus = false;
@@ -1164,7 +1182,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/level/deactivate/${id}`), TY.level, TU.level)).toBe(400);
     });
     it.each(IN_X)("%s: the level in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/level/deactivate/${id}`), "levelid", TX.level, TY.level)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/level/deactivate/${id}`), "levelid", TX.level, TY.level)).toBe(400);
     });
     it("a platform user not acting: any level", async () => {
       expect((await send(NOT_ACTING, "put", `/level/deactivate/${TU.level}`)).status).toBe(200);
@@ -1182,7 +1200,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/level/${id}`), TY.level, TU.level)).toBe(400);
     });
     it.each(IN_X)("%s: the level in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/level/${id}`), "levelid", TX.level, TY.level)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/level/${id}`), "levelid", TX.level, TY.level)).toBe(400);
     });
     it("a platform user not acting: any level", async () => {
       expect((await send(NOT_ACTING, "get", `/level/${TU.level}`)).body.data.levelid).toBe(TU.level);
@@ -1203,7 +1221,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/level/${TX.level}`, id === MISSING ? body(id) : named(id)), TY.grade, TU.grade)).toBe(404);
     });
     it.each(IN_X)("%s: the level in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/level/${id}`, body(TX.grade)), "levelid", TX.level, TY.level)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/level/${id}`, body(TX.grade)), "levelid", TX.level, TY.level)).toBe(400);
     });
     it("a platform user not acting: any level, into a grade of its owner", async () => {
       expect((await send(NOT_ACTING, "put", `/level/${TY.level}`, body(TY.grade))).status).toBe(200);
@@ -1238,7 +1256,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/level/quiz/question/${id}`), TY.level, TU.level)).toBe(400);
     });
     it.each(IN_X)("%s: the level in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/level/quiz/question/${id}`), "levelid", TX.level, TY.level)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/level/quiz/question/${id}`), "levelid", TX.level, TY.level)).toBe(400);
     });
     it("a platform user not acting: any level's questions", async () => {
       expect(idsOf((await send(NOT_ACTING, "get", `/level/quiz/question/${TY.level}`)).body.data, "levelquizquestionid")).toEqual([TY.levelQuestion]);
@@ -1257,9 +1275,9 @@ describe("content is confined to the caller's organisation", () => {
     it.each(IN_X)("%s: Y's or an unowned question answers as an absent question does, nothing written", async (who) => {
       expect(await asAbsent(who, "post", (id) => at(TX.level, id), TY.question, TU.question)).toBe(400);
     });
-    it.each(IN_X)("%s: the level and the question in the path are the ones checked, before any owner is compared (404, not the 400 for two owners)", async (who) => {
-      expect(await asAbsentPath(who, "post", (id) => at(id, TX.question2), "levelid", TX.level, TY.level)).toBe(404);
-      expect(await asAbsentPath(who, "post", (id) => at(TX.level, id), "questionid", TX.question2, TY.question)).toBe(404);
+    it.each(IN_X)("%s: the level and the question in the path are the ones checked, before any owner is compared (the answer for an absent one, not the one for two owners)", async (who) => {
+      expect(await asAbsentPath(who, "post", (id) => at(id, TX.question2), "levelid", TX.level, TY.level)).toBe(400);
+      expect(await asAbsentPath(who, "post", (id) => at(TX.level, id), "questionid", TX.question2, TY.question)).toBe(400);
     });
     it("a platform user not acting: any level, with a question of the same owner", async () => {
       expect((await send(NOT_ACTING, "post", at(TY.level, TY.question2).path)).status).toBe(200);
@@ -1276,7 +1294,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/level/quiz/question/${id}`), TY.levelQuestion, TU.levelQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/level/quiz/question/${id}`), "levelquizquestionid", TX.levelQuestion, TY.levelQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/level/quiz/question/${id}`), "levelquizquestionid", TX.levelQuestion, TY.levelQuestion)).toBe(400);
     });
     it("a platform user not acting: any level quiz question", async () => {
       expect((await send(NOT_ACTING, "delete", `/level/quiz/question/${TU.levelQuestion}`)).status).toBe(200);
@@ -1294,7 +1312,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/level/quiz/question/activate/${id}`), TY.levelQuestion, TU.levelQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/level/quiz/question/activate/${id}`), "levelquizquestionid", TX.levelQuestion, TY.levelQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/level/quiz/question/activate/${id}`), "levelquizquestionid", TX.levelQuestion, TY.levelQuestion)).toBe(400);
     });
     it("a platform user not acting: any level quiz question", async () => {
       stored("levelquizquestions", "levelquizquestionid", TY.levelQuestion).levelquizquestionstatus = false;
@@ -1312,7 +1330,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/level/quiz/question/deactivate/${id}`), TY.levelQuestion, TU.levelQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/level/quiz/question/deactivate/${id}`), "levelquizquestionid", TX.levelQuestion, TY.levelQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/level/quiz/question/deactivate/${id}`), "levelquizquestionid", TX.levelQuestion, TY.levelQuestion)).toBe(400);
     });
     it("a platform user not acting: any level quiz question", async () => {
       expect((await send(NOT_ACTING, "put", `/level/quiz/question/deactivate/${TU.levelQuestion}`)).status).toBe(200);
@@ -1329,7 +1347,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/level/quiz/question/order/${id}/5`), TY.levelQuestion, TU.levelQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/level/quiz/question/order/${id}/5`), "levelquizquestionid", TX.levelQuestion, TY.levelQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/level/quiz/question/order/${id}/5`), "levelquizquestionid", TX.levelQuestion, TY.levelQuestion)).toBe(400);
     });
     it("a platform user not acting: any level quiz question", async () => {
       expect((await send(NOT_ACTING, "put", `/level/quiz/question/order/${TY.levelQuestion}/5`)).status).toBe(200);
@@ -1350,7 +1368,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => at(TX.levelQuestion, id), TY.lesson, TU.lesson)).toBe(404);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => at(id, TX.lesson2), "levelquizquestionid", TX.levelQuestion, TY.levelQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => at(id, TX.lesson2), "levelquizquestionid", TX.levelQuestion, TY.levelQuestion)).toBe(400);
     });
     it("a platform user not acting: any row, with a lesson of its owner", async () => {
       expect((await send(NOT_ACTING, "put", at(TY.levelQuestion, TY.lesson2).path, at(TY.levelQuestion, TY.lesson2).body)).status).toBe(200);
@@ -1369,7 +1387,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/practice/${id}`), TY.lesson, TU.lesson)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/practice/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/practice/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: any lesson's practices", async () => {
       expect(idsOf((await send(NOT_ACTING, "get", `/lesson/practice/${TU.lesson}`)).body.data, "lessonpracticeid")).toEqual(sorted(TU.practice, TU.practice2));
@@ -1386,7 +1404,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/practice/${TX.lesson}/${id}`), TY.practice, TU.practice)).toBe(400);
     });
     it.each(IN_X)("%s: the practice in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/practice/${TX.lesson}/${id}`), "lessonpracticeid", TX.practice, TY.practice)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/practice/${TX.lesson}/${id}`), "lessonpracticeid", TX.practice, TY.practice)).toBe(400);
     });
     it("a platform user not acting: any practice", async () => {
       expect((await send(NOT_ACTING, "get", `/lesson/practice/${TU.lesson}/${TU.practice}`)).body.data.lessonpracticeid).toBe(TU.practice);
@@ -1405,7 +1423,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "post", (id) => r(`/lesson/practice/${id}`, id === MISSING ? body : named(id)), TY.lesson, TU.lesson)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "post", (id) => r(`/lesson/practice/${id}`, body), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "post", (id) => r(`/lesson/practice/${id}`, body), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: to any lesson", async () => {
       expect((await send(NOT_ACTING, "post", `/lesson/practice/${TU.lesson}`, body)).status).toBe(200);
@@ -1423,7 +1441,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/practice/activate/${id}`), TY.practice, TU.practice)).toBe(400);
     });
     it.each(IN_X)("%s: the practice in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/activate/${id}`), "lessonpracticeid", TX.practice, TY.practice)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/activate/${id}`), "lessonpracticeid", TX.practice, TY.practice)).toBe(400);
     });
     it("a platform user not acting: any practice", async () => {
       stored("lessonpractices", "lessonpracticeid", TY.practice).lessonpracticestatus = false;
@@ -1441,7 +1459,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/practice/deactivate/${id}`), TY.practice, TU.practice)).toBe(400);
     });
     it.each(IN_X)("%s: the practice in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/deactivate/${id}`), "lessonpracticeid", TX.practice, TY.practice)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/deactivate/${id}`), "lessonpracticeid", TX.practice, TY.practice)).toBe(400);
     });
     it("a platform user not acting: any practice", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/practice/deactivate/${TU.practice}`)).status).toBe(200);
@@ -1458,7 +1476,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/practice/order/${id}/5`), TY.practice, TU.practice)).toBe(400);
     });
     it.each(IN_X)("%s: the practice in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/order/${id}/5`), "lessonpracticeid", TX.practice, TY.practice)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/order/${id}/5`), "lessonpracticeid", TX.practice, TY.practice)).toBe(400);
     });
     it("a platform user not acting: any practice", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/practice/order/${TY.practice}/5`)).status).toBe(200);
@@ -1480,7 +1498,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/practice/${TX.practice}`, id === MISSING ? body(id) : named(id)), TY.lesson, TU.lesson)).toBe(404);
     });
     it.each(IN_X)("%s: the practice in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/${id}`, body(TX.lesson)), "lessonpracticeid", TX.practice, TY.practice)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/${id}`, body(TX.lesson)), "lessonpracticeid", TX.practice, TY.practice)).toBe(400);
     });
     it("a platform user not acting: any practice, into a lesson of its owner", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/practice/${TY.practice}`, body(TY.lesson2))).status).toBe(200);
@@ -1497,7 +1515,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/lesson/practice/${id}`), TY.practice, TU.practice)).toBe(400);
     });
     it.each(IN_X)("%s: the practice in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/practice/${id}`), "lessonpracticeid", TX.practice, TY.practice)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/practice/${id}`), "lessonpracticeid", TX.practice, TY.practice)).toBe(400);
     });
     it("a platform user not acting: any practice", async () => {
       expect((await send(NOT_ACTING, "delete", `/lesson/practice/${TU.practice}`)).status).toBe(200);
@@ -1516,7 +1534,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/practice/question/${id}`), TY.practice, TU.practice)).toBe(400);
     });
     it.each(IN_X)("%s: the practice in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/practice/question/${id}`), "lessonpracticeid", TX.practice, TY.practice)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/practice/question/${id}`), "lessonpracticeid", TX.practice, TY.practice)).toBe(400);
     });
     it("a platform user not acting: any practice's questions", async () => {
       expect(idsOf((await send(NOT_ACTING, "get", `/lesson/practice/question/${TY.practice}`)).body.data, "lessonpracticequestionid")).toEqual([TY.practiceQuestion]);
@@ -1535,9 +1553,9 @@ describe("content is confined to the caller's organisation", () => {
     it.each(IN_X)("%s: Y's or an unowned question answers as an absent question does, nothing written", async (who) => {
       expect(await asAbsent(who, "post", (id) => at(TX.practice, id), TY.question, TU.question)).toBe(400);
     });
-    it.each(IN_X)("%s: the practice and the question in the path are the ones checked, before any owner is compared (404, not the 400 for two owners)", async (who) => {
-      expect(await asAbsentPath(who, "post", (id) => at(id, TX.question2), "lessonpracticeid", TX.practice, TY.practice)).toBe(404);
-      expect(await asAbsentPath(who, "post", (id) => at(TX.practice, id), "questionid", TX.question2, TY.question)).toBe(404);
+    it.each(IN_X)("%s: the practice and the question in the path are the ones checked, before any owner is compared (the answer for an absent one, not the one for two owners)", async (who) => {
+      expect(await asAbsentPath(who, "post", (id) => at(id, TX.question2), "lessonpracticeid", TX.practice, TY.practice)).toBe(400);
+      expect(await asAbsentPath(who, "post", (id) => at(TX.practice, id), "questionid", TX.question2, TY.question)).toBe(400);
     });
     it("a platform user not acting: any practice, with a question of the same owner", async () => {
       expect((await send(NOT_ACTING, "post", at(TY.practice, TY.question2).path)).status).toBe(200);
@@ -1555,7 +1573,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/practice/question/activate/${id}`), TY.practiceQuestion, TU.practiceQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/question/activate/${id}`), "lessonpracticequestionid", TX.practiceQuestion, TY.practiceQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/question/activate/${id}`), "lessonpracticequestionid", TX.practiceQuestion, TY.practiceQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       stored("lessonpracticequestions", "lessonpracticequestionid", TY.practiceQuestion).lessonpracticequestionstatus = false;
@@ -1573,7 +1591,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/practice/question/deactivate/${id}`), TY.practiceQuestion, TU.practiceQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/question/deactivate/${id}`), "lessonpracticequestionid", TX.practiceQuestion, TY.practiceQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/question/deactivate/${id}`), "lessonpracticequestionid", TX.practiceQuestion, TY.practiceQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/practice/question/deactivate/${TU.practiceQuestion}`)).status).toBe(200);
@@ -1590,7 +1608,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/practice/question/order/${id}/5`), TY.practiceQuestion, TU.practiceQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/question/order/${id}/5`), "lessonpracticequestionid", TX.practiceQuestion, TY.practiceQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/practice/question/order/${id}/5`), "lessonpracticequestionid", TX.practiceQuestion, TY.practiceQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/practice/question/order/${TY.practiceQuestion}/5`)).status).toBe(200);
@@ -1607,7 +1625,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/lesson/practice/question/${id}`), TY.practiceQuestion, TU.practiceQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/practice/question/${id}`), "lessonpracticequestionid", TX.practiceQuestion, TY.practiceQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/practice/question/${id}`), "lessonpracticequestionid", TX.practiceQuestion, TY.practiceQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "delete", `/lesson/practice/question/${TU.practiceQuestion}`)).status).toBe(200);
@@ -1626,7 +1644,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/quiz/${id}`), TY.lesson, TU.lesson)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/quiz/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/quiz/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: any lesson's quizs", async () => {
       expect(idsOf((await send(NOT_ACTING, "get", `/lesson/quiz/${TU.lesson}`)).body.data, "lessonquizid")).toEqual(sorted(TU.quiz, TU.quiz2));
@@ -1643,7 +1661,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/quiz/${TX.lesson}/${id}`), TY.quiz, TU.quiz)).toBe(400);
     });
     it.each(IN_X)("%s: the quiz in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/quiz/${TX.lesson}/${id}`), "lessonquizid", TX.quiz, TY.quiz)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/quiz/${TX.lesson}/${id}`), "lessonquizid", TX.quiz, TY.quiz)).toBe(400);
     });
     it("a platform user not acting: any quiz", async () => {
       expect((await send(NOT_ACTING, "get", `/lesson/quiz/${TU.lesson}/${TU.quiz}`)).body.data.lessonquizid).toBe(TU.quiz);
@@ -1662,7 +1680,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "post", (id) => r(`/lesson/quiz/${id}`, id === MISSING ? body : named(id)), TY.lesson, TU.lesson)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "post", (id) => r(`/lesson/quiz/${id}`, body), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "post", (id) => r(`/lesson/quiz/${id}`, body), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: to any lesson", async () => {
       expect((await send(NOT_ACTING, "post", `/lesson/quiz/${TU.lesson}`, body)).status).toBe(200);
@@ -1680,7 +1698,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/quiz/activate/${id}`), TY.quiz, TU.quiz)).toBe(400);
     });
     it.each(IN_X)("%s: the quiz in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/activate/${id}`), "lessonquizid", TX.quiz, TY.quiz)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/activate/${id}`), "lessonquizid", TX.quiz, TY.quiz)).toBe(400);
     });
     it("a platform user not acting: any quiz", async () => {
       stored("lessonquizzes", "lessonquizid", TY.quiz).lessonquizstatus = false;
@@ -1698,7 +1716,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/quiz/deactivate/${id}`), TY.quiz, TU.quiz)).toBe(400);
     });
     it.each(IN_X)("%s: the quiz in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/deactivate/${id}`), "lessonquizid", TX.quiz, TY.quiz)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/deactivate/${id}`), "lessonquizid", TX.quiz, TY.quiz)).toBe(400);
     });
     it("a platform user not acting: any quiz", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/quiz/deactivate/${TU.quiz}`)).status).toBe(200);
@@ -1715,7 +1733,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/quiz/order/${id}/5`), TY.quiz, TU.quiz)).toBe(400);
     });
     it.each(IN_X)("%s: the quiz in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/order/${id}/5`), "lessonquizid", TX.quiz, TY.quiz)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/order/${id}/5`), "lessonquizid", TX.quiz, TY.quiz)).toBe(400);
     });
     it("a platform user not acting: any quiz", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/quiz/order/${TY.quiz}/5`)).status).toBe(200);
@@ -1737,7 +1755,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/quiz/${TX.quiz}`, id === MISSING ? body(id) : named(id)), TY.lesson, TU.lesson)).toBe(404);
     });
     it.each(IN_X)("%s: the quiz in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/${id}`, body(TX.lesson)), "lessonquizid", TX.quiz, TY.quiz)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/${id}`, body(TX.lesson)), "lessonquizid", TX.quiz, TY.quiz)).toBe(400);
     });
     it("a platform user not acting: any quiz, into a lesson of its owner", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/quiz/${TY.quiz}`, body(TY.lesson2))).status).toBe(200);
@@ -1754,7 +1772,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/lesson/quiz/${id}`), TY.quiz, TU.quiz)).toBe(400);
     });
     it.each(IN_X)("%s: the quiz in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/quiz/${id}`), "lessonquizid", TX.quiz, TY.quiz)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/quiz/${id}`), "lessonquizid", TX.quiz, TY.quiz)).toBe(400);
     });
     it("a platform user not acting: any quiz", async () => {
       expect((await send(NOT_ACTING, "delete", `/lesson/quiz/${TU.quiz}`)).status).toBe(200);
@@ -1773,7 +1791,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/quiz/question/${id}`), TY.quiz, TU.quiz)).toBe(400);
     });
     it.each(IN_X)("%s: the quiz in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/quiz/question/${id}`), "lessonquizid", TX.quiz, TY.quiz)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/quiz/question/${id}`), "lessonquizid", TX.quiz, TY.quiz)).toBe(400);
     });
     it("a platform user not acting: any quiz's questions", async () => {
       expect(idsOf((await send(NOT_ACTING, "get", `/lesson/quiz/question/${TY.quiz}`)).body.data, "lessonquizquestionid")).toEqual([TY.quizQuestion]);
@@ -1792,9 +1810,9 @@ describe("content is confined to the caller's organisation", () => {
     it.each(IN_X)("%s: Y's or an unowned question answers as an absent question does, nothing written", async (who) => {
       expect(await asAbsent(who, "post", (id) => at(TX.quiz, id), TY.question, TU.question)).toBe(400);
     });
-    it.each(IN_X)("%s: the quiz and the question in the path are the ones checked, before any owner is compared (404, not the 400 for two owners)", async (who) => {
-      expect(await asAbsentPath(who, "post", (id) => at(id, TX.question2), "lessonquizid", TX.quiz, TY.quiz)).toBe(404);
-      expect(await asAbsentPath(who, "post", (id) => at(TX.quiz, id), "questionid", TX.question2, TY.question)).toBe(404);
+    it.each(IN_X)("%s: the quiz and the question in the path are the ones checked, before any owner is compared (the answer for an absent one, not the one for two owners)", async (who) => {
+      expect(await asAbsentPath(who, "post", (id) => at(id, TX.question2), "lessonquizid", TX.quiz, TY.quiz)).toBe(400);
+      expect(await asAbsentPath(who, "post", (id) => at(TX.quiz, id), "questionid", TX.question2, TY.question)).toBe(400);
     });
     it("a platform user not acting: any quiz, with a question of the same owner", async () => {
       expect((await send(NOT_ACTING, "post", at(TY.quiz, TY.question2).path)).status).toBe(200);
@@ -1812,7 +1830,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/quiz/question/activate/${id}`), TY.quizQuestion, TU.quizQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/question/activate/${id}`), "lessonquizquestionid", TX.quizQuestion, TY.quizQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/question/activate/${id}`), "lessonquizquestionid", TX.quizQuestion, TY.quizQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       stored("lessonquizquestions", "lessonquizquestionid", TY.quizQuestion).lessonquizquestionstatus = false;
@@ -1830,7 +1848,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/quiz/question/deactivate/${id}`), TY.quizQuestion, TU.quizQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/question/deactivate/${id}`), "lessonquizquestionid", TX.quizQuestion, TY.quizQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/question/deactivate/${id}`), "lessonquizquestionid", TX.quizQuestion, TY.quizQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/quiz/question/deactivate/${TU.quizQuestion}`)).status).toBe(200);
@@ -1847,7 +1865,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/quiz/question/order/${id}/5`), TY.quizQuestion, TU.quizQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/question/order/${id}/5`), "lessonquizquestionid", TX.quizQuestion, TY.quizQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/quiz/question/order/${id}/5`), "lessonquizquestionid", TX.quizQuestion, TY.quizQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/quiz/question/order/${TY.quizQuestion}/5`)).status).toBe(200);
@@ -1864,7 +1882,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/lesson/quiz/question/${id}`), TY.quizQuestion, TU.quizQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/quiz/question/${id}`), "lessonquizquestionid", TX.quizQuestion, TY.quizQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/quiz/question/${id}`), "lessonquizquestionid", TX.quizQuestion, TY.quizQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "delete", `/lesson/quiz/question/${TU.quizQuestion}`)).status).toBe(200);
@@ -1920,7 +1938,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/lesson/${id}`), TY.lesson, TU.lesson)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: any lesson", async () => {
       expect((await send(NOT_ACTING, "delete", `/lesson/${TU.lesson}`)).status).toBe(200);
@@ -1938,7 +1956,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/activate/${id}`), TY.lesson, TU.lesson)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/activate/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/activate/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: any lesson", async () => {
       stored("lessons", "lessonid", TY.lesson).lessonstatus = false;
@@ -1956,7 +1974,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/deactivate/${id}`), TY.lesson, TU.lesson)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/deactivate/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/deactivate/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: any lesson", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/deactivate/${TU.lesson}`)).status).toBe(200);
@@ -1974,7 +1992,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/${id}`), TY.lesson, TU.lesson)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: any lesson", async () => {
       expect((await send(NOT_ACTING, "get", `/lesson/${TU.lesson}`)).body.data.lessonid).toBe(TU.lesson);
@@ -1999,7 +2017,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/${TX.lesson}`, id === MISSING ? body(id) : named(id)), TY.level, TU.level)).toBe(404);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/${id}`, body(TX.level)), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/${id}`, body(TX.level)), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: any lesson, into a level of its owner", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/${TY.lesson}`, body(TY.level2))).status).toBe(200);
@@ -2034,7 +2052,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/learning/${id}`), TY.lesson, TU.lesson)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/learning/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/learning/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: any lesson's learnings", async () => {
       expect(idsOf((await send(NOT_ACTING, "get", `/lesson/learning/${TU.lesson}`)).body.data, "lessonlearningid")).toEqual([TU.learning]);
@@ -2051,7 +2069,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/learning/${TX.lesson}/${id}`), TY.learning, TU.learning)).toBe(400);
     });
     it.each(IN_X)("%s: the learning in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/learning/${TX.lesson}/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/learning/${TX.lesson}/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(400);
     });
     it("a platform user not acting: any learning", async () => {
       expect((await send(NOT_ACTING, "get", `/lesson/learning/${TU.lesson}/${TU.learning}`)).body.data.lessonlearningid).toBe(TU.learning);
@@ -2071,7 +2089,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "post", (id) => r(`/lesson/learning/${TX.lesson}`, body(id)), TY.document, TU.document)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "post", (id) => r(`/lesson/learning/${id}`, body(TX.document2)), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "post", (id) => r(`/lesson/learning/${id}`, body(TX.document2)), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: to any lesson, with a document of its owner", async () => {
       expect((await send(NOT_ACTING, "post", `/lesson/learning/${TU.lesson}`, body(TU.document2))).status).toBe(200);
@@ -2089,7 +2107,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/learning/activate/${id}`), TY.learning, TU.learning)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/learning/activate/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/learning/activate/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       stored("lessonlearnings", "lessonlearningid", TY.learning).lessonlearningstatus = false;
@@ -2107,7 +2125,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/learning/deactivate/${id}`), TY.learning, TU.learning)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/learning/deactivate/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/learning/deactivate/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/learning/deactivate/${TU.learning}`)).status).toBe(200);
@@ -2124,7 +2142,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/learning/order/${id}/5`), TY.learning, TU.learning)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/learning/order/${id}/5`), "lessonlearningid", TX.learning, TY.learning)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/learning/order/${id}/5`), "lessonlearningid", TX.learning, TY.learning)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/learning/order/${TY.learning}/5`)).status).toBe(200);
@@ -2145,7 +2163,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/learning/${TX.learning}`, body(id)), TY.document, TU.document)).toBe(404);
     });
     it.each(IN_X)("%s: the learning in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/learning/${id}`, body(TX.document2)), "lessonlearningid", TX.learning, TY.learning)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/learning/${id}`, body(TX.document2)), "lessonlearningid", TX.learning, TY.learning)).toBe(400);
     });
     it("a platform user not acting: any learning, with a document of its owner", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/learning/${TY.learning}`, { ...body(TY.document2), lessonid: TY.lesson })).status).toBe(200);
@@ -2162,7 +2180,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/lesson/learning/${id}`), TY.learning, TU.learning)).toBe(400);
     });
     it.each(IN_X)("%s: the learning in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/learning/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/learning/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(400);
     });
     it("a platform user not acting: any learning", async () => {
       expect((await send(NOT_ACTING, "delete", `/lesson/learning/${TU.learning}`)).status).toBe(200);
@@ -2942,7 +2960,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/plan/${id}`), TY.lesson, TU.lesson)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/plan/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/plan/${id}`), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: any lesson's plans", async () => {
       expect(idsOf((await send(NOT_ACTING, "get", `/lesson/plan/${TU.lesson}`)).body.data, "lessonplanid")).toEqual([TU.plan]);
@@ -2959,7 +2977,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/lesson/plan/${TX.lesson}/${id}`), TY.plan, TU.plan)).toBe(400);
     });
     it.each(IN_X)("%s: the plan in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/plan/${TX.lesson}/${id}`), "lessonplanid", TX.plan, TY.plan)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/lesson/plan/${TX.lesson}/${id}`), "lessonplanid", TX.plan, TY.plan)).toBe(400);
     });
     it("a platform user not acting: any plan", async () => {
       expect((await send(NOT_ACTING, "get", `/lesson/plan/${TU.lesson}/${TU.plan}`)).body.data.lessonplanid).toBe(TU.plan);
@@ -2979,7 +2997,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "post", (id) => r(`/lesson/plan/${TX.lesson}`, body(id)), TY.document, TU.document)).toBe(400);
     });
     it.each(IN_X)("%s: the lesson in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "post", (id) => r(`/lesson/plan/${id}`, body(TX.document2)), "lessonid", TX.lesson, TY.lesson)).toBe(404);
+      expect(await asAbsentPath(who, "post", (id) => r(`/lesson/plan/${id}`, body(TX.document2)), "lessonid", TX.lesson, TY.lesson)).toBe(400);
     });
     it("a platform user not acting: to any lesson, with a document of its owner", async () => {
       expect((await send(NOT_ACTING, "post", `/lesson/plan/${TU.lesson}`, body(TU.document2))).status).toBe(200);
@@ -2997,7 +3015,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/plan/activate/${id}`), TY.learning, TU.learning)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/plan/activate/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/plan/activate/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       stored("lessonlearnings", "lessonlearningid", TY.learning).lessonlearningstatus = false;
@@ -3015,7 +3033,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/plan/deactivate/${id}`), TY.learning, TU.learning)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/plan/deactivate/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/plan/deactivate/${id}`), "lessonlearningid", TX.learning, TY.learning)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/plan/deactivate/${TU.learning}`)).status).toBe(200);
@@ -3032,7 +3050,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/plan/order/${id}/5`), TY.learning, TU.learning)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/plan/order/${id}/5`), "lessonlearningid", TX.learning, TY.learning)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/plan/order/${id}/5`), "lessonlearningid", TX.learning, TY.learning)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/plan/order/${TY.learning}/5`)).status).toBe(200);
@@ -3053,7 +3071,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/lesson/plan/${TX.plan}`, body(id)), TY.document, TU.document)).toBe(404);
     });
     it.each(IN_X)("%s: the plan in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/plan/${id}`, body(TX.document2)), "lessonplanid", TX.plan, TY.plan)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/lesson/plan/${id}`, body(TX.document2)), "lessonplanid", TX.plan, TY.plan)).toBe(400);
     });
     it("a platform user not acting: any plan, with a document of its owner", async () => {
       expect((await send(NOT_ACTING, "put", `/lesson/plan/${TY.plan}`, { ...body(TY.document2), lessonid: TY.lesson })).status).toBe(200);
@@ -3070,7 +3088,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/lesson/plan/${id}`), TY.plan, TU.plan)).toBe(400);
     });
     it.each(IN_X)("%s: the plan in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/plan/${id}`), "lessonplanid", TX.plan, TY.plan)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/lesson/plan/${id}`), "lessonplanid", TX.plan, TY.plan)).toBe(400);
     });
     it("a platform user not acting: any plan", async () => {
       expect((await send(NOT_ACTING, "delete", `/lesson/plan/${TU.plan}`)).status).toBe(200);
@@ -3108,7 +3126,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/question/${id}`), TY.question, TU.question)).toBe(400);
     });
     it.each(IN_X)("%s: the question in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/question/${id}`), "questionid", TX.question, TY.question)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/question/${id}`), "questionid", TX.question, TY.question)).toBe(400);
     });
     it("a platform user not acting: any question", async () => {
       expect((await send(NOT_ACTING, "delete", `/question/${TU.question}`)).status).toBe(200);
@@ -3126,7 +3144,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/question/${id}`), TY.question, TU.question)).toBe(400);
     });
     it.each(IN_X)("%s: the question in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/question/${id}`), "questionid", TX.question, TY.question)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/question/${id}`), "questionid", TX.question, TY.question)).toBe(400);
     });
     it("a platform user not acting: any question", async () => {
       expect((await send(NOT_ACTING, "get", `/question/${TU.question}`)).body.data.questionid).toBe(TU.question);
@@ -3147,7 +3165,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/question/${id}`, body), TY.question, TU.question)).toBe(400);
     });
     it.each(IN_X)("%s: the question in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/question/${id}`, body), "questionid", TX.question, TY.question)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/question/${id}`, body), "questionid", TX.question, TY.question)).toBe(400);
     });
     it("a platform user not acting: the identifier is unique within the row's own organisation, and across everything for an unowned row", async () => {
       const identifierOf = (id: string) => stored("questions", "questionid", id).questionidentifier as string;
@@ -3246,7 +3264,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/question/activate/${id}`), TY.question, TU.question)).toBe(400);
     });
     it.each(IN_X)("%s: the question in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/question/activate/${id}`), "questionid", TX.question, TY.question)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/question/activate/${id}`), "questionid", TX.question, TY.question)).toBe(400);
     });
     it("a platform user not acting: any question", async () => {
       stored("questions", "questionid", TY.question).questionstatus = false;
@@ -3264,7 +3282,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/question/deactivate/${id}`), TY.question, TU.question)).toBe(400);
     });
     it.each(IN_X)("%s: the question in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/question/deactivate/${id}`), "questionid", TX.question, TY.question)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/question/deactivate/${id}`), "questionid", TX.question, TY.question)).toBe(400);
     });
     it("a platform user not acting: any question", async () => {
       expect((await send(NOT_ACTING, "put", `/question/deactivate/${TU.question}`)).status).toBe(200);
@@ -3281,7 +3299,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/question/${id}/questionidentifier/new-identifier`), TY.question, TU.question)).toBe(400);
     });
     it.each(IN_X)("%s: the question in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/question/${id}/questionidentifier/new-identifier`), "questionid", TX.question, TY.question)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/question/${id}/questionidentifier/new-identifier`), "questionid", TX.question, TY.question)).toBe(400);
     });
     it("a platform user not acting: any question", async () => {
       expect((await send(NOT_ACTING, "put", `/question/${TU.question}/questionidentifier/new-identifier`)).status).toBe(200);
@@ -3310,7 +3328,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/questiontag/${id}`), TY.questionTag, TU.questionTag)).toBe(400);
     });
     it.each(IN_X)("%s: the tag in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/questiontag/${id}`), "questiontagid", TX.questionTag, TY.questionTag)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/questiontag/${id}`), "questiontagid", TX.questionTag, TY.questionTag)).toBe(400);
     });
     it("a platform user not acting: any tag", async () => {
       expect((await send(NOT_ACTING, "delete", `/questiontag/${TU.questionTag}`)).status).toBe(200);
@@ -3328,7 +3346,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/questiontag/${id}`), TY.questionTag, TU.questionTag)).toBe(400);
     });
     it.each(IN_X)("%s: the tag in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/questiontag/${id}`), "questiontagid", TX.questionTag, TY.questionTag)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/questiontag/${id}`), "questiontagid", TX.questionTag, TY.questionTag)).toBe(400);
     });
     it("a platform user not acting: any tag", async () => {
       expect((await send(NOT_ACTING, "get", `/questiontag/${TU.questionTag}`)).body.data.questiontagid).toBe(TU.questionTag);
@@ -3345,7 +3363,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/questiontag/${id}`, body), TY.questionTag, TU.questionTag)).toBe(400);
     });
     it.each(IN_X)("%s: the tag in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/questiontag/${id}`, body), "questiontagid", TX.questionTag, TY.questionTag)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/questiontag/${id}`, body), "questiontagid", TX.questionTag, TY.questionTag)).toBe(400);
     });
     it("a platform user not acting: the name is unique within the row's own organisation, and across everything for an unowned row", async () => {
       const put = (id: string, questiontagname: string) => send(NOT_ACTING, "put", `/questiontag/${id}`, { questiontagname });
@@ -3396,7 +3414,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/documenttag/${id}`), TY.documentTag, TU.documentTag)).toBe(400);
     });
     it.each(IN_X)("%s: the tag in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/documenttag/${id}`), "documenttagid", TX.documentTag, TY.documentTag)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/documenttag/${id}`), "documenttagid", TX.documentTag, TY.documentTag)).toBe(400);
     });
     it("a platform user not acting: any tag", async () => {
       expect((await send(NOT_ACTING, "delete", `/documenttag/${TU.documentTag}`)).status).toBe(200);
@@ -3414,7 +3432,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "get", (id) => r(`/documenttag/${id}`), TY.documentTag, TU.documentTag)).toBe(400);
     });
     it.each(IN_X)("%s: the tag in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "get", (id) => r(`/documenttag/${id}`), "documenttagid", TX.documentTag, TY.documentTag)).toBe(404);
+      expect(await asAbsentPath(who, "get", (id) => r(`/documenttag/${id}`), "documenttagid", TX.documentTag, TY.documentTag)).toBe(400);
     });
     it("a platform user not acting: any tag", async () => {
       expect((await send(NOT_ACTING, "get", `/documenttag/${TU.documentTag}`)).body.data.documenttagid).toBe(TU.documentTag);
@@ -3431,7 +3449,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/documenttag/${id}`, body), TY.documentTag, TU.documentTag)).toBe(400);
     });
     it.each(IN_X)("%s: the tag in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/documenttag/${id}`, body), "documenttagid", TX.documentTag, TY.documentTag)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/documenttag/${id}`, body), "documenttagid", TX.documentTag, TY.documentTag)).toBe(400);
     });
     it("a platform user not acting: the name is unique within the row's own organisation, and across everything for an unowned row", async () => {
       const put = (id: string, documenttagname: string) => send(NOT_ACTING, "put", `/documenttag/${id}`, { documenttagname });
@@ -3971,7 +3989,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/curriculumbaseline/${id}`), TY.baseline, TU.baseline)).toBe(400);
     });
     it.each(IN_X)("%s: the baseline in the path is the one checked, and its questions are not touched", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/curriculumbaseline/${id}`), "curriculumbaselineid", TX.baseline, TY.baseline)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/curriculumbaseline/${id}`), "curriculumbaselineid", TX.baseline, TY.baseline)).toBe(400);
     });
     it("a platform user not acting: any baseline", async () => {
       expect((await send(NOT_ACTING, "delete", `/curriculumbaseline/${TU.baseline}`)).status).toBe(200);
@@ -3997,7 +4015,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/curriculumbaseline/update/${TX.baseline}`, body(TX.curriculum, [id])), TY.school, TU.school)).toBe(404);
     });
     it.each(IN_X)("%s: the baseline in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/curriculumbaseline/update/${id}`, body(TX.curriculum)), "curriculumbaselineid", TX.baseline, TY.baseline)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/curriculumbaseline/update/${id}`, body(TX.curriculum)), "curriculumbaselineid", TX.baseline, TY.baseline)).toBe(400);
     });
     it("a platform user not acting: the name (of a type) is unique within the baseline's own organisation, and across everything for an unowned one", async () => {
       // (a baseline of a type is one a year a curriculum: the existing ones are from earlier years)
@@ -4029,7 +4047,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/curriculumbaseline/activate/${TX.baseline}/${id}`), TY.curriculum, TU.curriculum)).toBe(404);
     });
     it.each(IN_X)("%s: the baseline in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/curriculumbaseline/activate/${id}/${TX.curriculum}`), "curriculumbaselineid", TX.baseline, TY.baseline)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/curriculumbaseline/activate/${id}/${TX.curriculum}`), "curriculumbaselineid", TX.baseline, TY.baseline)).toBe(400);
     });
     it("a platform user not acting: any baseline", async () => {
       stored("curriculumbaseline", "curriculumbaselineid", TY.baseline).baselinestatus = false;
@@ -4047,7 +4065,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/curriculumbaseline/deactivate/${id}`), TY.baseline, TU.baseline)).toBe(400);
     });
     it.each(IN_X)("%s: the baseline in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/curriculumbaseline/deactivate/${id}`), "curriculumbaselineid", TX.baseline, TY.baseline)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/curriculumbaseline/deactivate/${id}`), "curriculumbaselineid", TX.baseline, TY.baseline)).toBe(400);
     });
     it("a platform user not acting: any baseline", async () => {
       expect((await send(NOT_ACTING, "put", `/curriculumbaseline/deactivate/${TU.baseline}`)).status).toBe(200);
@@ -4207,7 +4225,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/baselinequestion/activate/${id}`), TY.baselineQuestion, TU.baselineQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/baselinequestion/activate/${id}`), "baselinequestionid", TX.baselineQuestion, TY.baselineQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/baselinequestion/activate/${id}`), "baselinequestionid", TX.baselineQuestion, TY.baselineQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       stored("baselinequestion", "baselinequestionid", TY.baselineQuestion).baselinequestionstatus = false;
@@ -4225,7 +4243,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/baselinequestion/deactivate/${id}`), TY.baselineQuestion, TU.baselineQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/baselinequestion/deactivate/${id}`), "baselinequestionid", TX.baselineQuestion, TY.baselineQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/baselinequestion/deactivate/${id}`), "baselinequestionid", TX.baselineQuestion, TY.baselineQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "put", `/baselinequestion/deactivate/${TU.baselineQuestion}`)).status).toBe(200);
@@ -4242,7 +4260,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "put", (id) => r(`/baselinequestion/order/${id}/5`), TY.baselineQuestion, TU.baselineQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "put", (id) => r(`/baselinequestion/order/${id}/5`), "baselinequestionid", TX.baselineQuestion, TY.baselineQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "put", (id) => r(`/baselinequestion/order/${id}/5`), "baselinequestionid", TX.baselineQuestion, TY.baselineQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "put", `/baselinequestion/order/${TY.baselineQuestion}/5`)).status).toBe(200);
@@ -4259,7 +4277,7 @@ describe("content is confined to the caller's organisation", () => {
       expect(await asAbsent(who, "delete", (id) => r(`/baselinequestion/${id}`), TY.baselineQuestion, TU.baselineQuestion)).toBe(400);
     });
     it.each(IN_X)("%s: the row in the path is the one checked", async (who) => {
-      expect(await asAbsentPath(who, "delete", (id) => r(`/baselinequestion/${id}`), "baselinequestionid", TX.baselineQuestion, TY.baselineQuestion)).toBe(404);
+      expect(await asAbsentPath(who, "delete", (id) => r(`/baselinequestion/${id}`), "baselinequestionid", TX.baselineQuestion, TY.baselineQuestion)).toBe(400);
     });
     it("a platform user not acting: any row", async () => {
       expect((await send(NOT_ACTING, "delete", `/baselinequestion/${TU.baselineQuestion}`)).status).toBe(200);

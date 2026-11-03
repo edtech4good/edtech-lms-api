@@ -5,6 +5,7 @@ import { CurriculumBaseLineBusiness } from "src/business/curriculumbaseline.busi
 import { nameScope, requestScope } from "src/business/content-scope";
 import { ownerOfCurriculum, ownerOfCurriculumBaseline } from "src/business/content-owner";
 import { IRequest } from "src/models/IRequest";
+import { pathParam } from "src/validators/path-param";
 
 export const CreateCurriculumBaseLine = async (
   request: IRequest,
@@ -73,11 +74,11 @@ export const CurriculumBaseLineName = async (
   const curriculumbaselineexists =
     await new CurriculumBaseLineBusiness(
       // (the baseline being renamed, or for a new one the curriculum it is for)
-      data.curriculumbaselineid
-        ? await nameScope(request, ownerOfCurriculumBaseline, data.curriculumbaselineid)
+      pathParam(request, 'curriculumbaselineid')
+        ? await nameScope(request, ownerOfCurriculumBaseline, pathParam(request, 'curriculumbaselineid'))
         : await nameScope(request, ownerOfCurriculum, data.curriculumid),
     ).getCurriculumBaseLineNameExits(
-      data.curriculumbaselineid,
+      pathParam(request, 'curriculumbaselineid'),
       data.baselinename,
       data.baselinetype,
     );

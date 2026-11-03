@@ -10,6 +10,7 @@ import { LessonQuizQuestionBusiness } from 'src/business/lessonquizquestion.busi
 import { requestScope } from "src/business/content-scope";
 import { IRequest } from 'src/models/IRequest';
 import { DeleteDocument } from '../document/document.business.validator';
+import { pathParam } from "src/validators/path-param";
 
 export const CreateLesson = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const lessonexists = await new LessonBusiness(requestScope(request)).isexistsLessonName({
@@ -100,7 +101,7 @@ export const DeleteLesson = async (request: IRequest, data: any): Promise<Array<
 export const DeleteLessonLearningDocument = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> =>
   data.documentid === null || data.documentid === undefined ? [] : DeleteDocument(request, data);
 export const LessonLearningExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const levelexists = await new LessonLearningBusiness(requestScope(request)).isexistsLessonLearningAdded(data.lessonid, data.documentid, data.lessonlearningid);
+  const levelexists = await new LessonLearningBusiness(requestScope(request)).isexistsLessonLearningAdded(data.lessonid, data.documentid, pathParam(request, 'lessonlearningid'));
   if (levelexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -116,7 +117,7 @@ export const LessonLearningExists = async (request: IRequest, data: any): Promis
   return [];
 };
 export const LessonPlanExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const levelexists = await new LessonPlanBusiness(requestScope(request)).isexistsLessonPlanAdded(data.lessonid, data.documentid, data.lessonplanid);
+  const levelexists = await new LessonPlanBusiness(requestScope(request)).isexistsLessonPlanAdded(data.lessonid, data.documentid, pathParam(request, 'lessonplanid'));
   if (levelexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -167,7 +168,7 @@ export const DeleteLessonPlan = async (request: IRequest, data: any): Promise<Ar
 };
 
 export const LessonPracticeExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const levelexists = await new LessonPracticeBusiness(requestScope(request)).isexistsLessonPracticeAdded(data.lessonid, data.lessonpracticename, data.lessonpracticeid);
+  const levelexists = await new LessonPracticeBusiness(requestScope(request)).isexistsLessonPracticeAdded(data.lessonid, data.lessonpracticename, pathParam(request, 'lessonpracticeid'));
   if (levelexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -201,7 +202,7 @@ export const DeleteLessonPractice = async (request: IRequest, data: any): Promis
 };
 
 export const LessonQuizExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const levelexists = await new LessonQuizBusiness(requestScope(request)).isexistsLessonQuizAdded(data.lessonid, data.lessonquizname, data.lessonquizid);
+  const levelexists = await new LessonQuizBusiness(requestScope(request)).isexistsLessonQuizAdded(data.lessonid, data.lessonquizname, pathParam(request, 'lessonquizid'));
   if (levelexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -252,7 +253,7 @@ export const DeleteLessonQuizQuestion = async (request: IRequest, data: any): Pr
 };
 
 export const LessonQuizQuestionExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const lessonexists = await new LessonQuizQuestionBusiness(requestScope(request)).isexistsLessonQuizQuestionAdded(data.lessonquizid, data.questionid, data.lessonquizquestionid);
+  const lessonexists = await new LessonQuizQuestionBusiness(requestScope(request)).isexistsLessonQuizQuestionAdded(data.lessonquizid, data.questionid, pathParam(request, 'lessonquizquestionid'));
   if (lessonexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
@@ -286,7 +287,7 @@ export const DeleteLessonPracticeQuestion = async (request: IRequest, data: any)
 };
 
 export const LessonPracticeQuestionExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const lessonexists = await new LessonPracticeQuestionBusiness(requestScope(request)).isexistsLessonPracticeQuestionAdded(data.lessonpracticeid, data.questionid, data.lessonpracticequestionid);
+  const lessonexists = await new LessonPracticeQuestionBusiness(requestScope(request)).isexistsLessonPracticeQuestionAdded(data.lessonpracticeid, data.questionid, pathParam(request, 'lessonpracticequestionid'));
   if (lessonexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
