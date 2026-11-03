@@ -19,6 +19,7 @@ import { lessonquizzes } from "src/models/data-models/lessonquizzes";
 import { lessons } from "src/models/data-models/lessons";
 import { levelquizquestions } from "src/models/data-models/levelquizquestions";
 import { levels } from "src/models/data-models/levels";
+import { lmsusers } from "src/models/data-models/lmsusers";
 import { organisationcountry } from "src/models/data-models/organisationcountry";
 import { organisations } from "src/models/data-models/organisations";
 import { schoolcontributedata } from "src/models/data-models/schoolcontributedata";
@@ -99,6 +100,7 @@ const MODELS = {
   schoolcontributedata: [schoolcontributedata, "schoolcontributeid"],
   organisationcountry: [organisationcountry, "organisationcountryid"],
   organisations: [organisations, "organisationid"],
+  lmsusers: [lmsusers, "lmsuserid"],
   // what the reports read
   studentprogress: [studentprogress, "studentprogressid"],
   studentlessonsprogress: [studentlessonsprogress, "studentlessonprogressid"],
