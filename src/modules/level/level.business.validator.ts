@@ -4,6 +4,7 @@ import { LevelBusiness } from 'src/business';
 import { LevelQuizQuestionBusiness } from 'src/business/levelquizquestion.business';
 import { requestScope } from "src/business/content-scope";
 import { IRequest } from 'src/models/IRequest';
+import { pathParam } from "src/validators/path-param";
 
 export const CreateLevel = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
   const levelexists = await new LevelBusiness(requestScope(request)).isexistsLevelName({
@@ -103,7 +104,7 @@ export const DeleteLevelQuizQuestion = async (request: IRequest, data: any): Pro
 };
 
 export const LevelQuizQuestionExists = async (request: IRequest, data: any): Promise<Array<ValidationError | null | undefined>> => {
-  const levelexists = await new LevelQuizQuestionBusiness(requestScope(request)).isexistsLevelQuizQuestionAdded(data.levelid, data.questionid, data.levelquizquestionid);
+  const levelexists = await new LevelQuizQuestionBusiness(requestScope(request)).isexistsLevelQuizQuestionAdded(data.levelid, data.questionid, pathParam(request, 'levelquizquestionid'));
   if (levelexists) {
     const error = new ValidationError('Validation', [], {});
     error.details = [];
