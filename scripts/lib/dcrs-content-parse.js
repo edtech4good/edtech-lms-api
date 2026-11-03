@@ -416,10 +416,13 @@ function parseCells(cells, options = {}) {
     const source = keep.has(order) ? undefined : sources[order] ?? (order === 1 && rows.length === 1 ? options.videoSource : undefined);
     // A lesson that is not kept is written a video file name, and the import overwrites its document row with it: so it must have a file
     // (with --video-folder, a lesson without its file is refused by videoSourcesOf; --video-source on a sheet of several lessons is refused above).
-    // Without --video-folder (or --video-source) and --keep-video, lesson 1 would be written a name and lose the video its row has today.
+    // Without --video-folder (or --video-source) and --keep-video, Module 1's lesson 1 would be written a name and lose the video its row has today;
+    // any other lesson would get a document row naming a file that nothing copies.
     if (!keep.has(order) && source === undefined && options.videoFolder === undefined && options.videoSource === undefined) {
       problems.push(
-        `lesson ${order} (row ${r}): no video file is given for it, and its document row would be overwritten with a new file name; ` +
+        `lesson ${order} (row ${r}): no video file is given for it, and ${
+          module === 1 && order === 1 ? "its existing document row would be overwritten with a new file name" : "its document row would be written with a file name that has no file behind it"
+        }; ` +
           "use --video-folder (with its file in it) or --video-source, or name the lesson in --keep-video to leave its existing video alone",
       );
     }

@@ -879,10 +879,15 @@ describe("the videos of a sheet", () => {
   it("refuses a lesson with no video decision at all: no folder, no source and no keep, so the import would overwrite its document row", () => {
     // lesson 1 of a module is the one with a video of its own already: a run with no video option must not hand it a new file name
     expect(reasons(sheet(1), {}, true)).toEqual([
-      "lesson 1 (row 2): no video file is given for it, and its document row would be overwritten with a new file name; " +
+      "lesson 1 (row 2): no video file is given for it, and its existing document row would be overwritten with a new file name; " +
         "use --video-folder (with its file in it) or --video-source, or name the lesson in --keep-video to leave its existing video alone",
     ]);
     expect(reasons(sheet(3), { keepVideo: [1] }, true).map((m) => m.slice(0, 40))).toEqual(["lesson 2 (row 3): no video file is given", "lesson 3 (row 4): no video file is given"]);
+    // lessons 2 on have no document row to overwrite: what they would get is a row naming a file nothing copies
+    expect(reasons(sheet(3), { keepVideo: [1] }, true)[0]).toBe(
+      "lesson 2 (row 3): no video file is given for it, and its document row would be written with a file name that has no file behind it; " +
+        "use --video-folder (with its file in it) or --video-source, or name the lesson in --keep-video to leave its existing video alone",
+    );
     // each of the three options is a decision
     expect(() => parseCells(sheet(1), { keepVideo: [1] })).not.toThrow();
     expect(() => parseCells(sheet(1), { videoSource: "a.mp4" })).not.toThrow();
