@@ -13,7 +13,7 @@ import * as path from "path";
 /* eslint-disable @typescript-eslint/no-var-requires */
 const { ID } = require("../../scripts/seed-dcrs-content");
 const { validateContent } = require("../../scripts/lib/dcrs-content-plan");
-const { ParseRefused, readCellsFromXlsx, parseCells, parseQuizCell, normaliseProgramme, readProgramme } = require("../../scripts/lib/dcrs-content-parse");
+const { ParseRefused, readCellsFromXlsx, parseCells, parseQuizCell, normaliseProgramme, readProgramme, videoFileName } = require("../../scripts/lib/dcrs-content-parse");
 const { outputFolderRefusal } = require("../../scripts/dcrs-content-from-xlsx");
 /* eslint-enable @typescript-eslint/no-var-requires */
 
@@ -121,10 +121,9 @@ describe("parsing the cells of row 2", () => {
   });
 
   it("refuses English and Khmer that do not line up, by question count, option count and correct option", () => {
-    expect(refusal(cells({ G2: cells().G2.split("\n\n")[0] }))).toEqual(["quiz: 2 English questions but 1 Khmer"]);
-    expect(refusal(cells({ G2: cells().G2.replace(`\nD. ${km("d")}`, "") }))).toEqual(["quiz question 1: 4 English options but 3 Khmer"]);
-    expect(refusal(cells({ E2: cells().E2.replace(` \u2713`, "").replace(`A. ${km("a")}`, `A. ${km("a")} \u2713`) }))).toEqual(["practice question 1: English and Khmer mark a different option correct"]);
-    expect(refusal(cells({ E2: cells().E2.replace(`${km("t1")}\n`, "") }))).toEqual(["practice question 1: only one of English and Khmer has a title line"]);
+    expect(refusal(cells({ G2: cells().G2.split("\n\n")[0] }))).toEqual(["lesson 1 quiz: 2 English questions but 1 Khmer"]);
+    expect(refusal(cells({ G2: cells().G2.replace(`\nD. ${km("d")}`, "") }))).toEqual(["lesson 1 quiz question 1: 4 English options but 3 Khmer"]);
+    expect(refusal(cells({ E2: cells().E2.replace(` \u2713`, "").replace(`A. ${km("a")}`, `A. ${km("a")} \u2713`) }))).toEqual(["lesson 1 practice question 1: English and Khmer mark a different option correct"]);
   });
 
   it("drops a lesson number from the English title only when the Khmer title has none; otherwise both stay as written", () => {
@@ -560,5 +559,371 @@ describe("the programme name", () => {
       expect(sidecar.status).toBe(1);
       expect(sidecar.stderr).toMatch(/not valid JSON/);
     });
+  });
+});
+
+// ---- a sheet with a lesson on every row ------------------------------------------------------------------------
+
+const KA = ["ក", "ខ", "គ", "ឃ"]; // the Khmer letters ka, kha, ko, kho: option markers A to D
+const opts = (letters: string[], text: (i: number) => string, correct: number) => letters.map((l, i) => `${l}. ${text(i)}${i === correct ? " ✓" : ""}`).join("\n");
+
+/** The cells of lesson row `r` (r >= 2), English and Khmer, with `tag` making its text its own. */
+const lessonCells = (r: number, tag: string, over: Json = {}): Json => ({
+  B: `${r - 1}. Lesson ${tag}\n${km(`lesson ${tag}`)}`,
+  C: `REF-${r}`,
+  D: `Stem p${tag}?\n${opts(["A", "B", "C"], (i) => `en${i}`, 1)}`,
+  E: `${km(`sp${tag}`)}?\n${opts(KA.slice(0, 3), (i) => km(`o${i}`), 1)}`,
+  F: `1. Stem q${tag}?\n${opts(["A", "B", "C", "D"], (i) => `en${i}`, 2)}`,
+  G: `${KD[0]}. ${km(`sq${tag}`)}?\n${opts(KA, (i) => km(`o${i}`), 2)}`,
+  ...over,
+});
+/** A sheet of `n` lessons: the module title in A2 and a lesson on each row from 2. */
+const sheet = (n: number, over: Record<number, Json> = {}): Json => {
+  const out: Json = { A2: `Module 1 · Example title\n${km("module")}` };
+  for (let r = 2; r < 2 + n; r++) for (const [col, v] of Object.entries({ ...lessonCells(r, String(r - 1)), ...(over[r] ?? {}) })) if (v !== undefined) out[`${col}${r}`] = v;
+  return out;
+};
+const reasons = (c: Json, options: Json = {}): string[] => {
+  try {
+    parseCells(c, options);
+  } catch (e) {
+    expect(e).toBeInstanceOf(ParseRefused);
+    return (e as { problems: string[] }).problems;
+  }
+  throw new Error("expected the cells to be refused");
+};
+
+describe("a sheet with one lesson per row", () => {
+  it("reads rows 2 on as lessons 1, 2, 3 in order; lesson 1 names the fixed id and the rest have none", () => {
+    const c = parseCells(sheet(3));
+    expect(c.lessons.map((l: Json) => l.order)).toEqual([1, 2, 3]);
+    expect(c.lessons[0].id).toBe(ID.lesson1);
+    expect(c.lessons[1].id).toBeUndefined();
+    expect(c.lessons.map((l: Json) => l.name.km)).toEqual([km("lesson 1"), km("lesson 2"), km("lesson 3")]);
+    expect(c.lessons.map((l: Json) => l.video.filename)).toEqual(["dcrs-m1-l1.mp4", "dcrs-m1-l2.mp4", "dcrs-m1-l3.mp4"]);
+    // lesson 1 keeps the identifiers it has always had; the others carry their lesson number so none repeats
+    expect(c.lessons[0].practice[0].ident).toBe("DCRS-M1-P1");
+    expect(c.lessons[0].quiz[0].ident).toBe("DCRS-M1-Q1");
+    expect(c.lessons[1].practice[0].ident).toBe("DCRS-M1-L2-P1");
+    expect(c.lessons[2].quiz[0].ident).toBe("DCRS-M1-L3-Q1");
+    expect(() => validateContent(parseCells(sheet(6), { programme: { en: "Programme", km: km("programme") } }), ID)).not.toThrow();
+  });
+
+  it("a later module's lessons have no fixed id at all, and its identifiers carry the module", () => {
+    const cells2 = sheet(2);
+    cells2.A2 = `Module 2 · Example\n${km("module")}`;
+    const c = parseCells(cells2);
+    expect(c.lessons.every((l: Json) => l.id === undefined)).toBe(true);
+    expect(c.lessons.map((l: Json) => l.practice[0].ident)).toEqual(["DCRS-M2-P1", "DCRS-M2-L2-P1"]);
+    expect(c.lessons[1].video.filename).toBe("dcrs-m2-l2.mp4");
+  });
+
+  it("stops at the first row with no lesson title, even when the sheet's dimension runs on", () => {
+    const c = sheet(2);
+    c.C4 = " "; // a cell that holds only a blank is no content
+    c.D4 = "\n";
+    expect(parseCells(c).lessons).toHaveLength(2);
+  });
+
+  it("refuses text below the last lesson, a module title below row 2, more than twelve lessons, and a sheet with no lesson", () => {
+    expect(reasons({ ...sheet(2), D5: "stray" })).toEqual(["D5 has text, but row 4 has no lesson title: the lessons are the rows from 2 to the first row with no title in column B"]);
+    const gap = sheet(3);
+    delete gap.B4; // a lesson row with no title ends the lessons; its other cells are then stray
+    expect(reasons(gap).join("|")).toContain("C4 has text, but row 4 has no lesson title");
+    expect(reasons({ ...sheet(2), A3: "Another module" })).toEqual(["A3: the module title is in A2 only"]);
+    expect(reasons(sheet(13))).toEqual(["the sheet has 13 lessons; a module has room for 12"]);
+    const bare = sheet(1);
+    delete bare.B2;
+    expect(reasons(bare).join("|")).toContain("B2 (lesson title) is empty");
+  });
+
+  it("strips a lesson number, with or without a dot, from the English title only when the Khmer has none", () => {
+    const c = parseCells(sheet(3, { 3: { B: `2. Dotted\n${km("two")}` }, 4: { B: `3 Plain\n${km("three")}` } }));
+    expect(c.lessons.map((l: Json) => l.name.en)).toEqual(["Lesson 1", "Dotted", "Plain"]);
+    const kept = parseCells(sheet(2, { 3: { B: `2. Dotted\n${KD[1]}. ${km("two")}` } }));
+    expect(kept.lessons[1].name).toEqual({ en: "2. Dotted", km: `${KD[1]}. ${km("two")}` });
+  });
+
+  it("says when a title's number is not the row's, and lets the row decide", () => {
+    const notices: string[] = [];
+    const c = parseCells(sheet(2, { 3: { B: `5. Fifth\n${km("two")}` } }), { notices });
+    expect(c.lessons[1].order).toBe(2);
+    expect(notices).toEqual(["B3: the English title began with 5, and this is lesson 2 by its row; the row decides"]);
+    const quiet: string[] = [];
+    parseCells(sheet(3), { notices: quiet });
+    expect(quiet).toEqual([]);
+  });
+
+  it("tolerates a blank line at the end of a title cell", () => {
+    const c = parseCells(sheet(3, { 3: { B: `2. Lesson two\n${km("lesson two")}\n` }, 4: { B: `3. Lesson three\n${km("lesson three")}\n\n` } }));
+    expect(c.lessons.map((l: Json) => l.name.km)).toEqual([km("lesson 1"), km("lesson two"), km("lesson three")]);
+  });
+
+  it("keeps the video reference exactly as written and derives nothing from it, typos and all", () => {
+    const c = parseCells(sheet(3, { 2: { C: "M1-LO1 · clip" }, 3: { C: "  M9-L02 wrong module  " } }));
+    expect(c.lessons.map((l: Json) => l.video.ref)).toEqual(["M1-LO1 · clip", "M9-L02 wrong module", "REF-4"]);
+    expect(c.lessons.map((l: Json) => l.video.filename)).toEqual(["dcrs-m1-l1.mp4", "dcrs-m1-l2.mp4", "dcrs-m1-l3.mp4"]);
+    expect(reasons(sheet(2, { 3: { C: " " } }))).toEqual(["C3 (video reference) is empty"]);
+  });
+
+  it("allows a lesson with no practice and says nothing; a practice cell on one side only is still a mismatch", () => {
+    const c = parseCells(sheet(3, { 4: { D: undefined, E: undefined } }));
+    expect(c.lessons[2].practice).toEqual([]);
+    expect(c.lessons[2].quiz).toHaveLength(1);
+    expect(reasons(sheet(2, { 3: { E: undefined } }))).toEqual(["lesson 2 practice: 1 English questions but 0 Khmer"]);
+  });
+
+  it("names the lesson and the cell in what it refuses", () => {
+    const bad = reasons(sheet(3, { 4: { F: "Stem?\nA. a\nB. b", G: `${km("s")}?\n${KA[0]}. ${km("a")} ✓\n${KA[1]}. ${km("b")}` } }));
+    expect(bad).toEqual(["F4 question 1 has 0 options marked correct; it needs exactly 1", "lesson 3 quiz question 1: English and Khmer mark a different option correct"]);
+    expect(reasons(sheet(3, { 3: { G: undefined } }))).toEqual(["lesson 2 quiz: 1 English questions but 0 Khmer"]);
+  });
+});
+
+describe("the questions of a cell", () => {
+  const parse = (text: string, notices: string[] = []) => {
+    const problems: string[] = [];
+    const out = parseQuizCell(text, "X", problems, notices);
+    return { out, problems };
+  };
+
+  it("takes a blank line between the stem and the options as the same question; questions are separated by blank lines", () => {
+    const { out, problems } = parse(`1. Stem one?\n\nA. a\nB. b ✓\n\n2. Stem two?\n\nA. c ✓\nB. d\n\n\n3. Stem three?\nA. e\nB. f ✓\n\n`);
+    expect(problems).toEqual([]);
+    expect(out.map((q: Json) => [q.stem, q.options.length])).toEqual([["Stem one?", 2], ["Stem two?", 2], ["Stem three?", 2]]);
+    // a title line and a stem line in one block, then the options after a blank line
+    const titled = parse(`Title line\nStem?\n\nA. a ✓\nB. b`);
+    expect(titled.problems).toEqual([]);
+    expect(titled.out[0]).toMatchObject({ title: "Title line", stem: "Stem?" });
+  });
+
+  it("still refuses what is malformed: options with no stem, two stems in a row, a stem with no options", () => {
+    expect(parse(`A. a ✓\nB. b`).problems.join("|")).toContain("X question 1 must have a stem line");
+    expect(parse(`A. a ✓\nB. b`).problems.join("|")).toContain("has an empty stem");
+    expect(parse(`Stem one?\n\nStem two?\n\nA. a ✓\nB. b`).problems.join("|")).toContain("X question 1 has no options");
+    expect(parse(`Stem?`).problems.join("|")).toContain("X question 1 has no options");
+    expect(parse(`Stem?\nA. a ✓\nB. b\n\nA. c\nB. d`).problems.join("|")).toContain("X question 2 must have a stem line");
+    expect(parse(`One\nTwo\nThree\n\nA. a ✓\nB. b`).problems.join("|")).toContain("it has 3 lines before the options");
+  });
+
+  it("takes the Khmer letters ka, kha, ko, kho as the markers A to D, by position, and a Latin letter as before", () => {
+    const { out, problems } = parse(`Stem?\n${opts(KA, (i) => `t${i}`, 1)}`);
+    expect(problems).toEqual([]);
+    expect(out[0].options.map((o: Json) => [o.text, o.correct])).toEqual([["t0", false], ["t1", true], ["t2", false], ["t3", false]]);
+    const mixed = parse(`Stem?\nA. a\n${KA[1]}. b ✓\nC. c`);
+    expect(mixed.problems).toEqual([]);
+    expect(mixed.out[0].options.map((o: Json) => o.text)).toEqual(["a", "b", "c"]);
+  });
+
+  it("a Khmer letter that is not the place's own is taken by position, with a notice; a fifth Khmer marker, or a Latin letter out of place, is refused", () => {
+    const notices: string[] = [];
+    const { out, problems } = parse(`Stem?\n${KA[0]}. a ✓\n${KA[0]}. b\n${KA[2]}. c`, notices);
+    expect(problems).toEqual([]);
+    expect(out[0].options.map((o: Json) => o.text)).toEqual(["a", "b", "c"]);
+    expect(notices).toEqual(["X question 1: option 2 is marked with the first Khmer letter; taken by position as option B"]);
+    expect(parse(`Stem?\n${KA.map((l) => `${l}. t`).join("\n")}\n${KA[0]}. t ✓`).problems.join("|")).toContain("Khmer option letters run to the fourth option only (found one at position 5)");
+    expect(parse(`Stem?\nA. a ✓\nC. b`).problems.join("|")).toContain("option letters must run A, B, C in order (found C at position 2)");
+  });
+
+  it("does not mistake a stem for an option: a Khmer digit and a full stop is a number, and a stem that starts with a Khmer letter is a stem", () => {
+    // three questions, each a stem that begins with a Khmer digit and a full stop, a blank line, then Khmer-letter options
+    const text = [1, 2, 3]
+      .map((n) => `${String.fromCharCode(0x17e0 + n)}. ${km(`stem ${n}`)}?\n\n${opts(KA, (i) => km(`o${i}`), n % 4)}`)
+      .join("\n\n");
+    const { out, problems } = parse(text);
+    expect(problems).toEqual([]);
+    expect(out).toHaveLength(3);
+    expect(out.map((q: Json) => q.stem)).toEqual([1, 2, 3].map((n) => `${km(`stem ${n}`)}?`));
+    // a stem starting with a Khmer consonant that is one of the four markers, but with no full stop after it
+    const bare = parse(`${KA[0]}${km("word")}?\n${opts(["A", "B"], (i) => `t${i}`, 0)}`);
+    expect(bare.problems).toEqual([]);
+    expect(bare.out[0].stem).toBe(`${KA[0]}${km("word")}?`);
+    // and a line that does start with one of the four letters, a full stop and a space is an option, however it looks: with nothing before it there is no stem
+    expect(parse(`${KA[0]}. ${km("x")} ✓\nA. b`).problems.join("|")).toContain("has an empty stem");
+  });
+
+  it("drops a title line that only one side has, with a notice, and keeps one both sides have", () => {
+    const notices: string[] = [];
+    const c = parseCells(
+      sheet(2, {
+        2: { D: `Practice 1 — english only\nStem?\n${opts(["A", "B", "C"], (i) => `en${i}`, 1)}` },
+        3: { E: `${km("tt")}\n${km("ss")}?\n${opts(KA.slice(0, 3), (i) => km(`o${i}`), 1)}` },
+      }),
+      { notices },
+    );
+    expect(c.lessons[0].practice[0].title).toBeUndefined();
+    expect(c.lessons[0].practice[0].text).toEqual({ en: "Stem?", km: `${km("sp1")}?` });
+    expect(c.lessons[1].practice[0].title).toBeUndefined();
+    expect(notices).toEqual([
+      "lesson 1 practice question 1: the title line is in English only; dropped (the database holds no title)",
+      "lesson 2 practice question 1: the title line is in Khmer only; dropped (the database holds no title)",
+    ]);
+    const both = parseCells(sheet(1, { 2: { D: `T\nStem?\n${opts(["A", "B"], (i) => `en${i}`, 0)}`, E: `${km("t")}\n${km("s")}?\n${opts(KA.slice(0, 2), (i) => km(`o${i}`), 0)}` } }));
+    expect(both.lessons[0].practice[0].title).toEqual({ en: "T", km: km("t") });
+  });
+});
+
+describe("the videos of a sheet", () => {
+  const made: string[] = [];
+  const folder = (files: Record<string, string | null> = {}): string => {
+    const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dcrs-vid-")));
+    made.push(d);
+    for (const [name, text] of Object.entries(files)) if (text !== null) fs.writeFileSync(path.join(d, name), text);
+    return d;
+  };
+  afterAll(() => {
+    for (const d of made) fs.rmSync(d, { recursive: true, force: true });
+  });
+  const all = (n: number): Record<string, string> => Object.fromEntries(Array.from({ length: n }, (_, i) => [videoFileName(1, i + 1), "x"]));
+
+  it("names a lesson's file M<module>-L<lesson>-MP4.mp4, each number to two digits", () => {
+    expect(videoFileName(1, 2)).toBe("M01-L02-MP4.mp4");
+    expect(videoFileName(12, 10)).toBe("M12-L10-MP4.mp4");
+  });
+
+  it("records each lesson's file as its source, matched by order", () => {
+    const c = parseCells(sheet(3), { videoFolder: folder(all(3)) });
+    expect(c.lessons.map((l: Json) => l.video)).toEqual([
+      { ref: "REF-2", filename: "dcrs-m1-l1.mp4", source: "M01-L01-MP4.mp4" },
+      { ref: "REF-3", filename: "dcrs-m1-l2.mp4", source: "M01-L02-MP4.mp4" },
+      { ref: "REF-4", filename: "dcrs-m1-l3.mp4", source: "M01-L03-MP4.mp4" },
+    ]);
+  });
+
+  it("with lesson 1 kept needs no file for it, and writes it as a kept video with no filename and no source", () => {
+    const files = all(3);
+    delete files[videoFileName(1, 1)];
+    const c = parseCells(sheet(3), { videoFolder: folder(files), keepVideo: [1] });
+    expect(c.lessons[0].video).toEqual({ ref: "REF-2", keep: true });
+    expect(c.lessons[1].video.source).toBe("M01-L02-MP4.mp4");
+    expect(() => validateContent(parseCells(sheet(3), { videoFolder: folder(files), keepVideo: [1], programme: { en: "P", km: km("p") } }), ID)).not.toThrow();
+    // without a folder a kept lesson is still a kept lesson
+    expect(parseCells(sheet(2), { keepVideo: [1] }).lessons[0].video).toEqual({ ref: "REF-2", keep: true });
+  });
+
+  it("refuses a lesson that is not kept and has no file, naming the lesson and the file", () => {
+    const files = all(3);
+    delete files[videoFileName(1, 3)];
+    expect(reasons(sheet(3), { videoFolder: folder(files) })).toEqual(["lesson 3: its video M01-L03-MP4.mp4 is not in the folder (or is not a file with something in it)"]);
+    // lesson 1 absent and not kept is refused the same way
+    const noFirst = all(2);
+    delete noFirst[videoFileName(1, 1)];
+    expect(reasons(sheet(2), { videoFolder: folder(noFirst) })).toEqual(["lesson 1: its video M01-L01-MP4.mp4 is not in the folder (or is not a file with something in it)"]);
+    // an empty file, a directory and a link are not videos
+    const odd = folder({ ...all(3), [videoFileName(1, 2)]: "" });
+    expect(reasons(sheet(3), { videoFolder: odd })[0]).toContain("lesson 2:");
+    const dir = folder(all(3));
+    fs.rmSync(path.join(dir, videoFileName(1, 3)));
+    fs.mkdirSync(path.join(dir, videoFileName(1, 3)));
+    expect(reasons(sheet(3), { videoFolder: dir })[0]).toContain("lesson 3:");
+    const link = folder(all(3));
+    fs.rmSync(path.join(link, videoFileName(1, 3)));
+    fs.symlinkSync(path.join(link, videoFileName(1, 1)), path.join(link, videoFileName(1, 3)));
+    expect(reasons(sheet(3), { videoFolder: link })[0]).toContain("lesson 3:");
+  });
+
+  it("refuses every missing lesson at once, and a folder that is not there", () => {
+    expect(reasons(sheet(3), { videoFolder: folder({}) })).toHaveLength(3);
+    expect(reasons(sheet(2), { videoFolder: path.join(os.tmpdir(), "dcrs-vid-absent-folder") })).toEqual(["--video-folder is not a readable folder"]);
+  });
+
+  it("notes a file that no lesson uses, and the file of a lesson whose video is kept", () => {
+    const notices: string[] = [];
+    parseCells(sheet(2), { videoFolder: folder({ ...all(2), [videoFileName(1, 5)]: "x", "notes.txt": "x" }), keepVideo: [1], notices });
+    expect(notices).toEqual(["lesson 1: its video is kept, so M01-L01-MP4.mp4 in the folder is not used", "M01-L05-MP4.mp4 in the folder matches no lesson of this module; not used"]);
+  });
+
+  it("refuses to keep a lesson the sheet does not have, and --video-source on a sheet of several lessons or with a folder", () => {
+    expect(reasons(sheet(2), { keepVideo: [3] })).toEqual(["--keep-video 3: the sheet has no lesson 3"]);
+    expect(reasons(sheet(2), { videoSource: "a.mp4" })).toEqual(["--video-source is for a spreadsheet with one lesson; use --video-folder for a module of several"]);
+    expect(reasons(sheet(1), { videoSource: "a.mp4", videoFolder: folder(all(1)) })).toEqual(["--video-source and --video-folder cannot be used together"]);
+    expect(parseCells(sheet(1), { videoSource: "a.mp4" }).lessons[0].video.source).toBe("a.mp4");
+  });
+});
+
+describe("the converter, end to end", () => {
+  const repoRoot = path.resolve(__dirname, "..", "..");
+  const made: string[] = [];
+  const tmp = (): string => {
+    const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dcrs-e2e-")));
+    made.push(d);
+    return d;
+  };
+  afterAll(() => {
+    for (const d of made) fs.rmSync(d, { recursive: true, force: true });
+  });
+  const book = (dir: string, c: Json): string => {
+    const byRow = new Map<number, string[]>();
+    const strings: string[] = [];
+    for (const [ref, text] of Object.entries(c)) {
+      const row = Number(/\d+/.exec(ref)![0]);
+      byRow.set(row, [...(byRow.get(row) ?? []), `<c r="${ref}" t="s"><v>${strings.length}</v></c>`]);
+      strings.push(`<si><t xml:space="preserve">${String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;")}</t></si>`);
+    }
+    const rows = [...byRow.entries()].sort(([a], [b]) => a - b).map(([r, cs]) => `<row r="${r}">${cs.join("")}</row>`).join("");
+    const file = path.join(dir, "book.xlsx");
+    fs.writeFileSync(
+      file,
+      xlsx({
+        "xl/worksheets/sheet1.xml": `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows}</sheetData></worksheet>`,
+        "xl/sharedStrings.xml": sstXml(strings),
+      }),
+    );
+    return file;
+  };
+  const run = (...args: string[]) => spawnSync(process.execPath, [path.join(repoRoot, "scripts", "dcrs-content-from-xlsx.js"), ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const programme = (dir: string): string => {
+    const f = path.join(dir, "programme-name.json");
+    fs.writeFileSync(f, JSON.stringify({ programme: { en: "Example programme", km: km("programme") } }));
+    return f;
+  };
+
+  it("converts a sheet of three lessons with a video folder and lesson 1 kept: content.json, the references and the notices printed", () => {
+    const src = tmp();
+    const vids = tmp();
+    for (const n of [2, 3]) fs.writeFileSync(path.join(vids, videoFileName(1, n)), "x");
+    const file = book(src, sheet(3, { 2: { C: "M1-LO1 reference" } }));
+    const out = tmp();
+    const r = run(file, out, "--programme", programme(src), "--video-folder", vids, "--keep-video", "1");
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const content = JSON.parse(fs.readFileSync(path.join(out, "content.json"), "utf8"));
+    expect(content.lessons.map((l: Json) => l.order)).toEqual([1, 2, 3]);
+    expect(content.lessons[0].video).toEqual({ ref: "M1-LO1 reference", keep: true });
+    expect(content.lessons[1].video).toEqual({ ref: "REF-3", filename: "dcrs-m1-l2.mp4", source: "M01-L02-MP4.mp4" });
+    expect(() => validateContent(content, ID)).not.toThrow();
+    // the reference is printed as written; nothing else of the sheet's text is
+    expect(r.stdout).toContain('lesson 1: reference "M1-LO1 reference"; 1 practice and 1 quiz questions; its existing video is kept');
+    expect(r.stdout).toContain('lesson 2: reference "REF-3"; 1 practice and 1 quiz questions; video M01-L02-MP4.mp4 to dcrs-m1-l2.mp4');
+    expect(r.stdout).toContain("content.json written: module 1, 3 lessons, 3 practice and 3 quiz questions, with programme name.");
+    expect(r.stdout).not.toContain("Stem");
+  });
+
+  it("refuses a lesson whose video is missing, naming it, and writes nothing", () => {
+    const src = tmp();
+    const vids = tmp();
+    fs.writeFileSync(path.join(vids, videoFileName(1, 2)), "x");
+    const out = tmp();
+    const r = run(book(src, sheet(3)), out, "--programme", programme(src), "--video-folder", vids, "--keep-video", "1");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("lesson 3: its video M01-L03-MP4.mp4 is not in the folder");
+    expect(fs.existsSync(path.join(out, "content.json"))).toBe(false);
+  });
+
+  it("refuses --keep-video and --video-folder with nothing after them, or a lesson that is not a number", () => {
+    const src = tmp();
+    const file = book(src, sheet(2));
+    expect(run(file, tmp(), "--keep-video").stderr).toMatch(/--keep-video needs lesson numbers/);
+    expect(run(file, tmp(), "--keep-video", "one").stderr).toMatch(/--keep-video needs lesson numbers/);
+    expect(run(file, tmp(), "--video-folder").stderr).toMatch(/--video-folder needs a folder/);
+    expect(run(file, tmp(), "--keep-video", "7").stderr).toContain("--keep-video 7: the sheet has no lesson 7");
+  });
+
+  it("prints the notices for what it changed or took by position", () => {
+    const src = tmp();
+    const file = book(src, sheet(2, { 2: { D: `Practice 1 — english only\nStem?\n${opts(["A", "B"], (i) => `en${i}`, 0)}`, E: `${km("s")}?\n${opts(KA.slice(0, 2), (i) => km(`o${i}`), 0)}` } }));
+    const r = run(file, tmp(), "--programme", programme(src));
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("notice: lesson 1 practice question 1: the title line is in English only; dropped (the database holds no title)");
   });
 });
