@@ -21,7 +21,7 @@ import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
 import { assertEnrolmentFits, ownerOfSchool } from "./content-owner";
-import { normaliseSchoolName, withSchoolIds } from "./school-identity";
+import { isSameSchoolName, normaliseSchoolName, withSchoolIds } from "./school-identity";
 import { andInOwnedSchools, findOwnedStudent, requireOwnedSchoolByName } from "./school-scope";
 import { OrgContext } from "src/decorators/org.decorator";
 import { schoolScope } from "./school-scope";
@@ -375,8 +375,23 @@ export class StudentBusiness {
   getstudentcountbyschool = (schoolid: string) =>
     students.count({ where: { schoolid } });
 
-  getstudentcountbystandard = (standard: string) =>
-    students.count({ where: { standard } });
+  /**
+   * The learners still in a class: those whose `standard` is the class's id and who have not been deleted
+   * (a deleted learner keeps the column and has `isdeleted` set). A learner row that still holds the class's
+   * NAME instead of its id counts too, but only inside the class's own school: two schools can each have a
+   * class of the same name. The column is a foreign key to the classes' ids (20261023120000), so the name match is a
+   * fallback for data that has not been migrated yet, not something a migrated database can hold. Names are compared
+   * as school names are (trim, NFC, lower case), never by collation.
+   */
+  getlivestudentcountbyclass = async (standardid: string, standardname: string | null | undefined, schoolid: string | null | undefined) => {
+    const byId = await students.count({ where: { standard: standardid, isdeleted: false } });
+    if (!schoolid || !standardname) return byId;
+    const others = (await students.count({
+      where: { schoolid, isdeleted: false, standard: { [Op.ne]: standardid } },
+      group: ["standard"],
+    })) as unknown as Array<{ standard: string | null; count: number }>;
+    return others.reduce((sum, g) => (isSameSchoolName(g.standard, standardname) ? sum + Number(g.count) : sum), byId);
+  };
 
   deletestudent = async (
     schooluserid: string,
@@ -763,7 +778,7 @@ WHERE
       // The error names the row (`students.<i>.schoolname`), so a batch that fails says which learner.
       const school = await requireOwnedSchoolByName(org, x.schoolname, transaction, `students.${rowindex}.schoolname`);
       const standard = await standards.findOne({
-        where: { standardname: x.standard },
+        where: { standardname: x.standard, isdeleted: false },
         attributes: ['standardid','standardname'],
         include: [
           {

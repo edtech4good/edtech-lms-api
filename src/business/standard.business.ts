@@ -132,18 +132,15 @@ export class StandardBusiness {
     return tempdt > 0;
   };
 
-  standardstudentexists = async (standardid: string) => {
+  /** How many learners are in the class: see `getlivestudentcountbyclass`. A class that is not there has none. */
+  standardstudentcount = async (standardid: string) => {
     const where: WhereOptions<standardsAttributes> = {
       standardid,
       isdeleted: false,
     };
-    const tempdt = await standards.findOne({ where });
-
-    const count = await new StudentBusiness().getstudentcountbystandard(
-      tempdt?.standardname || ""
-    );
-
-    return count > 0;
+    const klass = await standards.findOne({ where });
+    if (!klass) return 0;
+    return new StudentBusiness().getlivestudentcountbyclass(klass.standardid, klass.standardname, klass.schoolid);
   };
 
   migrateStandards = async () => {
