@@ -68,7 +68,8 @@ export const DeleteStandard = async (
 ): Promise<Array<ValidationError | null | undefined>> => {
   // The class must be one of the caller's (404 otherwise: the same as one that does not exist).
   await findOwnedStandard(orgOrServerOf(request.user), data.standardid);
-  if (await new StandardBusiness().standardstudentexists(data.standardid)) {
+  const learners = await new StandardBusiness().standardstudentcount(data.standardid);
+  if (learners > 0) {
     const error = new ValidationError("Validation", [], {});
     error.details = [];
     const erroritem: ValidationErrorItem = {
@@ -76,8 +77,7 @@ export const DeleteStandard = async (
       path: ["standardid"],
       type: "any.invalid",
     };
-    erroritem.message =
-      "That standard has students and can't be deleted.";
+    erroritem.message = `That class has ${learners} ${learners === 1 ? "learner" : "learners"} and can't be deleted. Move or remove them first.`;
     error.details.push(erroritem);
     return [error];
   }

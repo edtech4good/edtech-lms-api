@@ -692,7 +692,9 @@ describe("people and schools are confined to the caller's organisation", () => {
       expect(res.status).toBe(404);
       expect(said(res)).toEqual(said(none));
     });
+    // a class with learners is refused (standard-delete.guard.spec.ts); this one has none left
     it.each(IN_X)("%s: deletes X's class", async (who) => {
+      db.tables.students.find((s) => s.studentid === STU_X)!.isdeleted = true;
       await send(who, "delete", `/standard/${K_X}`).expect(200);
       expect(db.tables.standards.find((k) => k.standardid === K_X)!.isdeleted).toBe(true);
     });
@@ -701,6 +703,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       await expectNotFoundLikeMissing(who, "delete", `/standard/${K_U}`, `/standard/${MISSING}`);
     });
     it("a platform user not acting: deletes any class", async () => {
+      db.tables.students.find((s) => s.studentid === STU_Y)!.isdeleted = true;
       await send("a platform user not acting", "delete", `/standard/${K_Y}`).expect(200);
       expect(db.tables.standards.find((k) => k.standardid === K_Y)!.isdeleted).toBe(true);
     });
