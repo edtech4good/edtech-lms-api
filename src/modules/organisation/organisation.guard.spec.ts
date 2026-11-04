@@ -257,4 +257,50 @@ describe("Organisation routes: staff token + Super Admin role + permission", () 
       expect(route.business).toHaveBeenCalled();
     });
   });
+  describe("PUT /organisation/:id carrying requireLessonQuizPass", () => {
+    const path = `/organisation/${ORG_ID}`;
+    const body = { ...validUpdate, requireLessonQuizPass: true };
+
+    it("passes the platform with update_organisation, and the value reaches the business call as a boolean", async () => {
+      await request(app.getHttpServer()).put(path).set("Authorization", platformWithAll).send(body).expect(200);
+      expect(business.updateorganisation.mock.calls[0][1]).toMatchObject({ requireLessonQuizPass: true });
+    });
+
+    it("passes false through as false, and leaves it undefined when omitted", async () => {
+      await request(app.getHttpServer()).put(path).set("Authorization", platformWithAll).send({ ...validUpdate, requireLessonQuizPass: false }).expect(200);
+      expect(business.updateorganisation.mock.calls[0][1].requireLessonQuizPass).toBe(false);
+      await request(app.getHttpServer()).put(path).set("Authorization", platformWithAll).send(validUpdate).expect(200);
+      expect(business.updateorganisation.mock.calls[1][1].requireLessonQuizPass).toBeUndefined();
+    });
+
+    it("refuses an organisation admin, even of this very organisation and holding update_organisation, with 403 and no write", async () => {
+      const ownAdmin = bearer({
+        lmsuserid: "u3",
+        lmsuserroles: [Role.superadmin],
+        permissions: [...ALL, "superadmin"],
+        organisationid: ORG_ID,
+        isplatform: false,
+      });
+      const res = await request(app.getHttpServer()).put(path).set("Authorization", ownAdmin).send(body).expect(403);
+      expect(res.body.code).toBe("NOT_ALLOWED");
+      expect(businessCalls()).toBe(0);
+    });
+
+    it("refuses the admin of a different organisation with 403 and no write", async () => {
+      await request(app.getHttpServer()).put(path).set("Authorization", orgStaff([Role.superadmin], [...ALL, "superadmin"])).send(body).expect(403);
+      expect(businessCalls()).toBe(0);
+    });
+
+    it("refuses a platform user without update_organisation with 403 and no write", async () => {
+      await request(app.getHttpServer()).put(path).set("Authorization", staff([Role.superadmin], ["view_organisation"])).send(body).expect(403);
+      expect(businessCalls()).toBe(0);
+    });
+
+    it("refuses text, a number and a raw settingsconfig with 400 and no write", async () => {
+      for (const extra of [{ requireLessonQuizPass: "true" }, { requireLessonQuizPass: 1 }, { settingsconfig: { requireLessonQuizPass: true } }]) {
+        await request(app.getHttpServer()).put(path).set("Authorization", platformWithAll).send({ ...validUpdate, ...extra }).expect(400);
+      }
+      expect(business.updateorganisation).not.toHaveBeenCalled();
+    });
+  });
 });

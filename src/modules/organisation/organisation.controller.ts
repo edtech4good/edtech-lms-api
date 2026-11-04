@@ -237,6 +237,7 @@ export class OrganisationController {
         brandingconfig: body.brandingconfig,
         organisationstatus: body.organisationstatus,
         contentlanguage: body.contentlanguage,
+        requireLessonQuizPass: body.requireLessonQuizPass,
       },
       body.countryids,
       user,

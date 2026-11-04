@@ -306,6 +306,26 @@ describe("updateorganisation", () => {
     expect(fieldsOf(updateorganisation, update({ countryids: [] }))).toEqual(["countryids"]);
   });
 
+  it("requireLessonQuizPass must be a real boolean: true and false pass, text, numbers and null do not", () => {
+    expect(run(updateorganisation, update({ requireLessonQuizPass: true }))).toEqual([]);
+    expect(run(updateorganisation, update({ requireLessonQuizPass: false }))).toEqual([]);
+    expect(run(updateorganisation, update())).toEqual([]);
+    for (const bad of ["true", "false", 1, 0, null, {}, []]) {
+      expect(fieldsOf(updateorganisation, update({ requireLessonQuizPass: bad }))).toEqual(["requireLessonQuizPass"]);
+    }
+  });
+
+  it("requireLessonQuizPass is not accepted on create", () => {
+    expect(run(createorganisation, create({ requireLessonQuizPass: true }))).toEqual([
+      { field: "body", message: "This request contains a field that isn't allowed." },
+    ]);
+  });
+
+  it("still refuses a raw settingsconfig, alone or beside the named field", () => {
+    expect(fieldsOf(updateorganisation, update({ settingsconfig: { requireLessonQuizPass: true } }))).toEqual(["settingsconfig"]);
+    expect(fieldsOf(updateorganisation, update({ settingsconfig: {}, requireLessonQuizPass: true }))).toEqual(["settingsconfig"]);
+  });
+
   it("refuses settingsconfig and unknown fields", () => {
     expect(fieldsOf(updateorganisation, update({ settingsconfig: {} }))).toEqual(["settingsconfig"]);
     expect(fieldsOf(updateorganisation, update({ organisationid: UUID }))).toEqual(["body"]);
