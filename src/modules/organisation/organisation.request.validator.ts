@@ -190,7 +190,9 @@ export const updateorganisation: RequestValidator = {
     // check, since a mismatch is refused anyway.)
     organisationcode: joi.string().max(64).label("Organisation Code"),
     organisationpreset: joi.string().max(64).label("Organisation Preset"),
-    // Not writable through the API in this package.
+    // The one setting that is writable: a strict boolean (not "true", not 1, not null), left unchanged when omitted.
+    requireLessonQuizPass: joi.boolean().strict().optional().label("Learners must pass the quiz"),
+    // The rest of the settings are not writable through the API in this package.
     settingsconfig: joi.any().forbidden().label("Settings"),
   }),
   params: joi.object().keys({ organisationid }),

@@ -30,6 +30,8 @@ export type OrganisationView = Omit<
   uitheme: string;
   isdeleted: boolean;
   countries: OrganisationCountryView[];
+  /** Only on a full row (GET by id and the write responses); the list does not load `settingsconfig`, so it has none. */
+  requireLessonQuizPass?: boolean;
 };
 
 export interface OrganisationPaging {
@@ -93,6 +95,10 @@ export interface NewOrganisation {
  * deliberately not here, and `settingsconfig` is not either: they are not
  * writable in this package. `save({ fields })` below is built from this list,
  * so even a caller that smuggles them in cannot persist them.
+ *
+ * The one setting that is writable has its own named, typed field
+ * (`requireLessonQuizPass`) and nothing else of `settingsconfig` is: see
+ * `mergeQuizPassSetting`.
  */
 export interface OrganisationChanges {
   organisationname: string;
@@ -102,7 +108,42 @@ export interface OrganisationChanges {
   organisationstatus?: boolean;
   /** Left unchanged when undefined; null clears it. */
   contentlanguage?: string | null;
+  /** Left unchanged when undefined. Writes only this one key inside `settingsconfig`. */
+  requireLessonQuizPass?: boolean;
 }
+
+/** The key inside `settingsconfig` that the student API reads (a strict `true` turns the rule on). */
+export const REQUIRE_LESSON_QUIZ_PASS_KEY = "requireLessonQuizPass";
+
+/**
+ * What is stored in `settingsconfig`, as a plain object. The column is JSON; with this driver it
+ * normally reads back as an object, but a JSON string is accepted too, and null, an array or
+ * anything else that is not an object counts as "no settings yet".
+ */
+const settingsOf = (stored: unknown): Record<string, unknown> => {
+  let value: unknown = stored;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      value = null;
+    }
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  // Own enumerable keys only, copied one by one: a stored `__proto__` key stays a plain key.
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>));
+};
+
+/** The stored settings with that one key set and every other key kept. A new object, so the model sees the change. */
+export const mergeQuizPassSetting = (stored: unknown, requireLessonQuizPass: boolean): Record<string, unknown> => ({
+  ...settingsOf(stored),
+  [REQUIRE_LESSON_QUIZ_PASS_KEY]: requireLessonQuizPass,
+});
+
+/** Whether the rule is on: only a strict `true` counts, as in the student API. */
+export const quizPassOf = (stored: unknown): boolean => settingsOf(stored)[REQUIRE_LESSON_QUIZ_PASS_KEY] === true;
 
 /** What the list returns: every column but `settingsconfig` (the full row is for GET by id). */
 const LIST_COLUMNS: Array<keyof organisationsAttributes> = [
@@ -409,6 +450,10 @@ export class OrganisationBusiness {
         row.contentlanguage = language;
         fields.push("contentlanguage");
       }
+      if (changes.requireLessonQuizPass !== undefined) {
+        row.settingsconfig = mergeQuizPassSetting(row.settingsconfig, changes.requireLessonQuizPass);
+        fields.push("settingsconfig");
+      }
       row.updated_at = new Date();
       row.updated_by = user.lmsuserid;
       await row.save({ fields, transaction: tnx });
@@ -593,8 +638,13 @@ export class OrganisationBusiness {
   private toView = (
     row: organisations,
     linked: OrganisationCountryView[],
-  ): OrganisationView => ({
-    ...(row.get({ plain: true }) as Omit<OrganisationView, "countries">),
-    countries: linked,
-  });
+  ): OrganisationView => {
+    const plain = row.get({ plain: true }) as Omit<OrganisationView, "countries">;
+    return {
+      ...plain,
+      countries: linked,
+      // the list selects no `settingsconfig`: the flag is only given where the column was read
+      ...(plain.settingsconfig !== undefined ? { requireLessonQuizPass: quizPassOf(plain.settingsconfig) } : {}),
+    };
+  };
 }

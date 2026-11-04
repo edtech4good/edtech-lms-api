@@ -52,6 +52,12 @@ export class OrganisationUpdateRequest {
       "The language the organisation's content text is written in (2 to 8 letters, digits and hyphens, such as en). Its translations are other languages. Left unchanged when omitted; null clears it. Refused while the organisation holds translations in that language.",
   })
   contentlanguage?: string | null;
+  @ApiProperty({
+    required: false,
+    description:
+      "true or false (a real boolean). When true, a failed lesson quiz earns no points, so the lesson is not complete until the quiz is passed. Left unchanged when omitted. Sets only this one key of the organisation's settings.",
+  })
+  requireLessonQuizPass?: boolean;
   @ApiProperty({ type: [String], description: "The complete set of linked countries: it replaces the current set." })
   countryids: string[];
   @ApiProperty({ required: false, description: "Cannot be changed: accepted only if it equals the stored value." })

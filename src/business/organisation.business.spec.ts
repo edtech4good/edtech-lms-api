@@ -284,6 +284,98 @@ describe("OrganisationBusiness.updateorganisation", () => {
     expect(row.organisationname).toBe("New Name");
   });
 
+  describe("requireLessonQuizPass", () => {
+    const save = async (stored: unknown, given?: boolean) => {
+      const row = orgRow({ settingsconfig: stored });
+      (organisations.findOne as jest.Mock).mockResolvedValue(row);
+      await new OrganisationBusiness().updateorganisation(
+        "org-1",
+        given === undefined ? changes : { ...changes, requireLessonQuizPass: given },
+        [A],
+        user,
+      );
+      return row;
+    };
+
+    it("turns it on, writing settingsconfig and nothing else new", async () => {
+      const row = await save(null, true);
+      expect(row.settingsconfig).toEqual({ requireLessonQuizPass: true });
+      const { fields } = row.save.mock.calls[0][0];
+      expect(fields).toContain("settingsconfig");
+      expect([...fields].sort()).toEqual(["organisationname", "organisationshortname", "settingsconfig", "updated_at", "updated_by"].sort());
+    });
+
+    it("turns it off with an explicit false, not by dropping the key", async () => {
+      const row = await save({ requireLessonQuizPass: true }, false);
+      expect(row.settingsconfig).toEqual({ requireLessonQuizPass: false });
+      expect(row.save.mock.calls[0][0].fields).toContain("settingsconfig");
+    });
+
+    it("leaves settingsconfig alone when it is omitted", async () => {
+      const stored = { requireLessonQuizPass: true, other: 1 };
+      const row = await save(stored);
+      expect(row.settingsconfig).toBe(stored);
+      expect(row.save.mock.calls[0][0].fields).not.toContain("settingsconfig");
+    });
+
+    it("keeps every other key", async () => {
+      const row = await save({ other: { nested: [1, 2] }, "ខ្មែរ": "ក", requireLessonQuizPass: false }, true);
+      expect(row.settingsconfig).toEqual({ other: { nested: [1, 2] }, "ខ្មែរ": "ក", requireLessonQuizPass: true });
+    });
+
+    it("replaces the stored object instead of changing it in place, so the model sees a change", async () => {
+      const stored = { other: 1 };
+      const row = await save(stored, true);
+      expect(row.settingsconfig).not.toBe(stored);
+      expect(stored).toEqual({ other: 1 });
+    });
+
+    it("works on a null column and on one that reads back as a JSON string", async () => {
+      expect((await save(null, false)).settingsconfig).toEqual({ requireLessonQuizPass: false });
+      expect((await save('{"other":1,"requireLessonQuizPass":true}', false)).settingsconfig).toEqual({ other: 1, requireLessonQuizPass: false });
+      expect((await save("not json", true)).settingsconfig).toEqual({ requireLessonQuizPass: true });
+      expect((await save(["x"], true)).settingsconfig).toEqual({ requireLessonQuizPass: true });
+    });
+
+    it("a stored __proto__ key stays a plain key and does not reach the prototype", async () => {
+      const row = await save(JSON.parse('{"__proto__":{"polluted":1},"other":1}'), true);
+      expect(Object.getPrototypeOf(row.settingsconfig)).toBe(Object.prototype);
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+      expect(row.settingsconfig).toHaveProperty("other", 1);
+    });
+
+    it("a caller cannot smuggle a raw settingsconfig in beside it", async () => {
+      const row = orgRow({ settingsconfig: { keep: 1 } });
+      (organisations.findOne as jest.Mock).mockResolvedValue(row);
+      await new OrganisationBusiness().updateorganisation(
+        "org-1",
+        { ...changes, requireLessonQuizPass: true, ...({ settingsconfig: { evil: 1 } } as object) },
+        [A],
+        user,
+      );
+      expect(row.settingsconfig).toEqual({ keep: 1, requireLessonQuizPass: true });
+    });
+
+    it("reads back on GET by id as a boolean, true only for a strict true; the list rows (no settingsconfig loaded) have none", async () => {
+      const read = async (stored: unknown) => {
+        (organisations.findOne as jest.Mock).mockResolvedValue(orgRow({ settingsconfig: stored }));
+        return new OrganisationBusiness().getorganisationbyid("org-1");
+      };
+      expect((await read({ requireLessonQuizPass: true })).requireLessonQuizPass).toBe(true);
+      expect((await read({ requireLessonQuizPass: false })).requireLessonQuizPass).toBe(false);
+      expect((await read({ requireLessonQuizPass: "true" })).requireLessonQuizPass).toBe(false);
+      expect((await read({ requireLessonQuizPass: 1 })).requireLessonQuizPass).toBe(false);
+      expect((await read(null)).requireLessonQuizPass).toBe(false);
+      expect((await read('{"requireLessonQuizPass":true}')).requireLessonQuizPass).toBe(true);
+      const { settingsconfig: _omitted, ...listRow } = orgRow().get() as Record<string, unknown>;
+      jest.spyOn(organisations, "findAndCountAll").mockResolvedValue({ rows: [{ organisationid: "org-1" }], count: 1 } as never);
+      jest.spyOn(organisations, "findAll").mockResolvedValue([{ organisationid: "org-1", get: () => listRow }] as never);
+      const list = await new OrganisationBusiness().getorganisationall({});
+      expect(list.rows[0]).not.toHaveProperty("requireLessonQuizPass");
+      expect(list.rows[0]).not.toHaveProperty("settingsconfig");
+    });
+  });
+
   it("adds uitheme, brandingconfig and status to the saved fields only when they were given", async () => {
     const row = orgRow();
     (organisations.findOne as jest.Mock).mockResolvedValue(row);
