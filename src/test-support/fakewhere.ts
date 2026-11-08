@@ -73,6 +73,14 @@ const isTrimWhere = (where: unknown): where is { attribute: { fn: string; args: 
 // `where(fn("JSON_SEARCH", fn("LOWER", cast(col(c), "CHAR")), "one", fn("LOWER", pattern), escape), { [Op.ne]: null })`:
 // is the pattern found, whatever the case, in one of the column's texts?
 type TagSearchArgs = [{ args: [{ val: { col: string } }] }, string, { args: [string] }, string?];
+// `where(fn("LOWER", col(c)), text)`: the stored value lowered, compared exactly with the text (as a binary comparison would)
+const isLowerWhere = (where: unknown): where is { attribute: { fn: string; args: Array<{ col: string }> }; logic: string } =>
+  typeof where === "object" &&
+  where !== null &&
+  (where as { constructor: { name: string } }).constructor.name === "Where" &&
+  (where as { attribute?: { fn?: string } }).attribute?.fn === "LOWER" &&
+  typeof (where as { attribute?: { args?: Array<{ col?: string }> } }).attribute?.args?.[0]?.col === "string";
+
 const isTagSearch = (where: unknown): where is { attribute: { fn: string; args: TagSearchArgs }; logic: object } =>
   typeof where === "object" &&
   where !== null &&
@@ -115,6 +123,9 @@ export const rowMatches = (row: Row, where: unknown, ignoreCase: ReadonlyArray<s
   if (where === undefined || where === null) return true;
   if (isTrimWhere(where)) {
     return String(row[where.attribute.args[0].col] ?? "").trim().toLowerCase() === String(where.logic).toLowerCase();
+  }
+  if (isLowerWhere(where)) {
+    return String(row[where.attribute.args[0].col] ?? "").toLowerCase() === String(where.logic);
   }
   if (isTagSearch(where)) {
     const [lowered, mode, loweredPattern, escape] = where.attribute.args;

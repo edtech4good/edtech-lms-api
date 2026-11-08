@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **294** routes, **283** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
+Of **296** routes, **285** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 255 | 255 | 0 | 0 |
+| owned | 257 | 257 | 0 | 0 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 0 | 0 | 0 | 0 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **294** | **283** | **11** | **0** |
+| **all** | **296** | **285** | **11** | **0** |
 
 ## Policies
 
@@ -338,11 +338,13 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | GET | `/student/download-students` | StudentController.sync | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
 | POST | `/student/migrate-standardid` | StudentController.migrateStandards | platform | yes |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.superadmin), PlatformGuard | One-off migration across all organisations; platform only. |
 | POST | `/student/migrate-subject-curriculum` | StudentController.migrateSubjectCurriculum | platform | yes |  |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.superadmin), PlatformGuard | One-off migration across all organisations; platform only. |
+| POST | `/student/one` | StudentController.createOne | owned | yes | `src/modules/students/student-add-one.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.superadmin, Role.admin, Role.organisationadmin) | The school and the class must be the caller's; only the new account is pushed. |
 | GET | `/student/stats/:studentid` | StudentController.getstudentstats | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | GET | `/student/stats/:studentid/level` | StudentController.getstudentlevelstats | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | GET | `/student/stats/:studentid/practice` | StudentController.getstudentpracticestats | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | GET | `/student/stats/:studentid/quiz` | StudentController.getstudentquizstats | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | PUT | `/student/update` | StudentController.updateStudents | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) |  |
+| GET | `/student/username-available` | StudentController.usernameAvailable | owned | yes | `src/modules/students/student-add-one.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.superadmin, Role.admin, Role.organisationadmin) | The username check answers only whether a name is free. |
 | POST | `/subject` | SubjectController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_subject] |  |
 | DELETE | `/subject/:subjectid` | SubjectController.delete | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_subject] |  |
 | GET | `/subject/:subjectid` | SubjectController.get | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_subject] |  |

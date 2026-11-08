@@ -28,6 +28,7 @@ import {
 } from "@nestjs/swagger";
 import { isValid, parse } from "date-fns";
 import { json2csv } from "json-2-csv";
+import { addLearner, pushNewLearner, usernameAvailable } from "src/business/add-learner";
 import { pushToCloud, studentsFile } from "src/business/cloud-push";
 import { assertEnrolmentFits } from "src/business/content-owner";
 import { findOwnedSchool, findOwnedStandard, findOwnedStudent, resolveOwnedSchoolRef } from "src/business/school-scope";
@@ -200,6 +201,35 @@ export class StudentController {
         pageindex: body?.pageindex || 0,
         pagesize: body?.pagesize || 0,
       },
+    };
+  }
+
+  @OrgPolicy("owned", { note: "The username check answers only whether a name is free.", enforcedBy: "src/modules/students/student-add-one.spec.ts" })
+  @Get("username-available")
+  @ApiResponse({ status: 200, description: "Whether the username is free" })
+  @ApiResponse({ status: 400, description: "The value is not a valid username" })
+  @ApiQuery({ name: "username", required: true, type: String })
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin, Role.admin, Role.organisationadmin))
+  @HttpCode(HttpStatus.OK)
+  async usernameAvailable(@Query("username") username: unknown, @Org() _org: OrgContext): Promise<{ available: boolean }> {
+    return usernameAvailable(username);
+  }
+
+  @OrgPolicy("owned", { note: "The school and the class must be the caller's; only the new account is pushed.", enforcedBy: "src/modules/students/student-add-one.spec.ts" })
+  @Post("one")
+  @ApiResponse({ status: 201, description: "Learner added" })
+  @ApiResponse({ status: 400, description: "A field is invalid" })
+  @ApiBody({ required: true, type: Object })
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin, Role.admin, Role.organisationadmin))
+  @HttpCode(HttpStatus.CREATED)
+  async createOne(@Body() body: unknown, @Org() org: OrgContext): Promise<any> {
+    const added = await addLearner(org, body);
+    const push = await pushNewLearner(added);
+    return {
+      schooluserid: added.schooluserid,
+      schoolusername: added.schoolusername,
+      studentname: added.studentname,
+      push,
     };
   }
 

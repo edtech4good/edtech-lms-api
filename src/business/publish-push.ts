@@ -99,7 +99,7 @@ export const skippedNothingPublished = (verb: PushVerb): PushOutcome => ({
  * reference (the act itself succeeded, so there is no error answer to carry one), so that sentence is dropped from the hint
  * and what remains is kept.
  */
-const withoutReference = (hint: string | undefined): string | undefined => {
+export const withoutReference = (hint: string | undefined): string | undefined => {
   const kept = hint?.replace(/\s*(?:If it keeps happening, c|C)ontact support with the reference\.\s*$/, "").trim();
   return kept ? kept : undefined;
 };
