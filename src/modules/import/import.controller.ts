@@ -38,6 +38,7 @@ import { RequirePermissions } from "src/decorators/requirePermissions.decorator"
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { Permission } from "src/models/enums/permissions.enum";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+import { LOGIN_HANDLE_MESSAGE, loginHandleFieldErrors } from "src/validators/login-handle";
 
 @ApiTags("Import")
 @Controller("import")
@@ -116,6 +117,11 @@ export class ImportController {
       )
     ) {
       throw new ApiError(ErrorCode.FILE_REJECTED, "That file is missing a username or password for one or more teachers.");
+    }
+    // The same username rule as the teacher form: 2 to 16 English letters or numbers.
+    const badusernames = loginHandleFieldErrors(newteachers, "teacherusername");
+    if (badusernames.length > 0) {
+      throw new ApiError(ErrorCode.INVALID_INPUT, LOGIN_HANDLE_MESSAGE, { fields: badusernames });
     }
     const tb = new TeacherBusiness();
     // The segment names the school by NAME (as before) or by id; resolved once, here.
