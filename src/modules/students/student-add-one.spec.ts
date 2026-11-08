@@ -1,11 +1,13 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { ThrottlerModule } from "@nestjs/throttler";
 import axios from "axios";
 import { sign } from "jsonwebtoken";
 import request from "supertest";
 import { Config, Logger } from "src/config";
 import { ORGANISATION_ADMIN_PERMISSIONS_20261002 } from "src/db/frozen/organisation-admin-20261002";
 import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
+import { schoolusers } from "src/models/data-models/schoolusers";
 import { students } from "src/models/data-models/students";
 import { Role } from "src/models/enums";
 import { SchoolRole } from "src/models/enums/school.role.enum";
@@ -126,7 +128,7 @@ describe("adding one learner", () => {
 
   beforeAll(async () => {
     jest.spyOn(Logger, "warn").mockImplementation(() => Logger);
-    const moduleRef = await Test.createTestingModule({ controllers: [StudentController], providers: [JwtAccessStrategy] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [ThrottlerModule.forRoot({ ttl: 60, limit: 1000 })], controllers: [StudentController], providers: [JwtAccessStrategy] }).compile();
     app = moduleRef.createNestApplication();
     app.useGlobalFilters(new GlobalExceptionFilter());
     await app.listen(0);
@@ -340,12 +342,14 @@ describe("adding one learner", () => {
         const res = await refuses("X's Admin", "/student/one", goodBody({ standard: K_X2 }));
         expect(res.status).toBe(404);
       });
-      it("a curriculum of another organisation is refused, one that does not exist is a 400 naming curriculumids", async () => {
+      it("a curriculum of another organisation is answered exactly as one that does not exist: a 400 naming curriculumids", async () => {
         const foreign = await refuses("X's Admin", "/student/one", goodBody({ curriculumids: [CUR_X, CUR_Y] }));
         expect(foreign.status).toBe(400);
+        expect(foreign.body.fields).toEqual([{ field: "curriculumids", message: "Choose curricula that exist." }]);
         const missing = await refuses("X's Admin", "/student/one", goodBody({ curriculumids: [MISSING] }));
         expect(missing.status).toBe(400);
         expect(missing.body.fields).toEqual([{ field: "curriculumids", message: "Choose curricula that exist." }]);
+        expect(said(foreign)).toEqual(said(missing));
       });
       it("a platform user who is not acting as an organisation is asked to choose one", async () => {
         const res = await refuses("a platform user not acting", "/student/one", goodBody());
@@ -360,6 +364,16 @@ describe("adding one learner", () => {
     });
 
     describe("the transaction", () => {
+      it("writes the login and the learner inside the transaction it commits", async () => {
+        const loginWrite = jest.spyOn(schoolusers, "bulkCreate");
+        const learnerWrite = jest.spyOn(students, "bulkCreate");
+        await send("X's Admin", "post", "/student/one", goodBody()).expect(201);
+        expect(loginWrite).toHaveBeenCalledTimes(1);
+        expect(learnerWrite).toHaveBeenCalledTimes(1);
+        expect((loginWrite.mock.calls[0][1] as { transaction?: unknown }).transaction).toBe(transaction);
+        expect((learnerWrite.mock.calls[0][1] as { transaction?: unknown }).transaction).toBe(transaction);
+        expect(transaction.commit).toHaveBeenCalledTimes(1);
+      });
       it("rolls back, and does not commit, when the learner row cannot be written", async () => {
         jest.spyOn(students, "bulkCreate").mockRejectedValueOnce(new Error("insert failed"));
         const res = await send("X's Admin", "post", "/student/one", goodBody());
@@ -391,7 +405,8 @@ describe("adding one learner", () => {
         (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("connect ECONNREFUSED"), { isAxiosError: true, config: { headers: { Authorization: "SECRET-KEY" } } }));
         const res = await send("X's Admin", "post", "/student/one", goodBody()).expect(201);
         expect(res.body.push.status).toBe("failed");
-        expect(res.body.push.message).toContain("Run Sync Students for this school");
+        expect(res.body.push.message).toBe("The account was saved, but the learning server did not answer. Run Sync Students for this school on the Schools screen.");
+        expect(res.body.push).not.toHaveProperty("hint");
         expect(JSON.stringify(res.body)).not.toContain("SECRET-KEY");
         expect(db.createdIn("schoolusers")).toHaveLength(1);
         expect(transaction.commit).toHaveBeenCalledTimes(1);
@@ -410,6 +425,39 @@ describe("adding one learner", () => {
         expect(res.body.push).toEqual({ status: "skipped", reason: "nocloud", message: "Added. No learner server is set up here, so nothing was pushed." });
         expect(axios.put).not.toHaveBeenCalled();
         expect(db.createdIn("schoolusers")).toHaveLength(1);
+      });
+    });
+
+    describe("the username check's rate limit", () => {
+      let limited: INestApplication;
+      beforeEach(async () => {
+        const moduleRef = await Test.createTestingModule({
+          imports: [ThrottlerModule.forRoot({ ttl: 60, limit: 1000 })],
+          controllers: [StudentController],
+          providers: [JwtAccessStrategy],
+        }).compile();
+        limited = moduleRef.createNestApplication();
+        limited.useGlobalFilters(new GlobalExceptionFilter());
+        await limited.listen(0);
+      });
+      afterEach(async () => limited.close());
+      const check = (token?: string) => {
+        const r = request(limited.getHttpServer()).get("/student/username-available?username=fresh7").set("Connection", "close");
+        return token ? r.set("Authorization", token) : r;
+      };
+
+      it("allows 60 checks a minute and refuses the 61st with 429", async () => {
+        for (let i = 0; i < 60; i++) {
+          await check(callers["X's Admin"]).expect(200);
+        }
+        const res = await check(callers["X's Admin"]).expect(429);
+        expect(res.body.code).toBe("TOO_MANY_ATTEMPTS");
+      });
+      it("requests refused by authentication do not use up the allowance", async () => {
+        for (let i = 0; i < 70; i++) {
+          await check().expect(401);
+        }
+        await check(callers["X's Admin"]).expect(200);
       });
     });
   });

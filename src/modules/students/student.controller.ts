@@ -26,6 +26,7 @@ import {
   ApiTags,
   getSchemaPath,
 } from "@nestjs/swagger";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { isValid, parse } from "date-fns";
 import { json2csv } from "json-2-csv";
 import { addLearner, pushNewLearner, usernameAvailable } from "src/business/add-learner";
@@ -209,7 +210,9 @@ export class StudentController {
   @ApiResponse({ status: 200, description: "Whether the username is free" })
   @ApiResponse({ status: 400, description: "The value is not a valid username" })
   @ApiQuery({ name: "username", required: true, type: String })
-  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin, Role.admin, Role.organisationadmin))
+  // after the role check, so refused requests do not use up the allowance; per client IP, as the sign-in routes are
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin, Role.admin, Role.organisationadmin), ThrottlerGuard)
+  @Throttle(60, 60)
   @HttpCode(HttpStatus.OK)
   async usernameAvailable(@Query("username") username: unknown, @Org() _org: OrgContext): Promise<{ available: boolean }> {
     return usernameAvailable(username);

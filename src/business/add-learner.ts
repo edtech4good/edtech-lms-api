@@ -16,7 +16,7 @@ import { isLoginHandle } from "src/validators/login-handle";
 import { cloudConfigured, pushToCloud, studentsFile } from "./cloud-push";
 import { assertEnrolmentFits } from "./content-owner";
 import { scopeOf } from "./org-scope";
-import { PushOutcome, withoutReference } from "./publish-push";
+import { PushOutcome } from "./publish-push";
 import { findOwnedSchool, findOwnedStandard } from "./school-scope";
 import { SchoolUserBusiness } from "./schooluser.business";
 import { StudentBusiness } from "./student.business";
@@ -225,7 +225,8 @@ export const addLearner = async (org: OrgContext, body: unknown): Promise<AddedL
     const school = await findOwnedSchool(org, input.schoolid, { transaction: tnx, field: "schoolid" });
     await findOwnedStandard(org, input.standard, tnx, school.schoolid);
     const found = await curriculums.findAll({
-      where: { curriculumid: { [Op.in]: input.curriculumids }, isdeleted: false },
+      // only the school's own organisation's curricula: another organisation's are answered as if they did not exist
+      where: { curriculumid: { [Op.in]: input.curriculumids }, organisationid: school.organisationid, isdeleted: false },
       attributes: ["curriculumid"],
       transaction: tnx,
     });
@@ -293,7 +294,7 @@ export const addLearner = async (org: OrgContext, body: unknown): Promise<AddedL
   }
 };
 
-const SYNC_ADVICE = "Run Sync Students for this school to send the account.";
+const PUSH_FAILED_MESSAGE = "The account was saved, but the learning server did not answer. Run Sync Students for this school on the Schools screen.";
 
 /**
  * Sends the one new account to the student server (the same file `?cloud=true` of the CSV import sends for the logins it
@@ -325,12 +326,10 @@ export const pushNewLearner = async (added: Pick<AddedLearner, "schooluserid" | 
       code: mapped.code,
       status: mapped.status,
     });
-    const hint = withoutReference(mapped.hint);
     return {
       status: "failed",
-      message: `Added on central. The learner server did not take the account, so the learner cannot sign in yet. ${SYNC_ADVICE} ${mapped.errormessage}`,
+      message: PUSH_FAILED_MESSAGE,
       cause: mapped.errormessage,
-      ...(hint ? { hint } : {}),
       code: mapped.code,
     };
   }
