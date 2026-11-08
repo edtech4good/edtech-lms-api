@@ -1,5 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { sign } from "jsonwebtoken";
 import request from "supertest";
 import { Config, Logger } from "src/config";
@@ -124,6 +125,7 @@ describe("attaching refuses a cross-owner link", () => {
   beforeAll(async () => {
     jest.spyOn(Logger, "warn").mockImplementation(() => Logger);
     const moduleRef = await Test.createTestingModule({
+      imports: [ThrottlerModule.forRoot({ ttl: 60, limit: 1000 })],
       controllers: [
         LessonPracticeQuestionController, LessonQuizQuestionController, LevelQuizQuestionController, LessonLearningController, LessonPlanController,
         BaselinequestionController, CurriculumBaseLineController, CurriculumController, QuestionController, DocumentController,
