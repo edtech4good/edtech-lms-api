@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import AdmZip from "adm-zip";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { ThrottlerModule } from "@nestjs/throttler";
 import axios from "axios";
 import FormData from "form-data";
 import { sign } from "jsonwebtoken";
@@ -229,6 +230,7 @@ describe("the content sync is one organisation's", () => {
   beforeAll(async () => {
     jest.spyOn(Logger, "warn").mockImplementation(() => Logger);
     const moduleRef = await Test.createTestingModule({
+      imports: [ThrottlerModule.forRoot({ ttl: 60, limit: 1000 })],
       controllers: [SyncController, StudentController, TeacherController],
       providers: [JwtAccessStrategy],
     }).compile();

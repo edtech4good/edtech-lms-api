@@ -1,6 +1,7 @@
 import AdmZip from "adm-zip";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { ThrottlerModule } from "@nestjs/throttler";
 import axios from "axios";
 import { sign } from "jsonwebtoken";
 import request from "supertest";
@@ -175,6 +176,7 @@ describe("people and schools are confined to the caller's organisation", () => {
   beforeAll(async () => {
     jest.spyOn(Logger, "warn").mockImplementation(() => Logger);
     const moduleRef = await Test.createTestingModule({
+      imports: [ThrottlerModule.forRoot({ ttl: 60, limit: 1000 })],
       controllers: [SchoolController, StandardController, StudentController, TeacherController, SchoolContributeController, ExportController, ImportController, CountryController],
       providers: [JwtAccessStrategy],
     }).compile();

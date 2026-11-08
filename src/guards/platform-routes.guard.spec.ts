@@ -1,5 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { sign } from "jsonwebtoken";
 import request from "supertest";
 import { Config, Logger } from "src/config";
@@ -153,6 +154,7 @@ describe("The twelve platform routes that gained PlatformGuard", () => {
   beforeAll(async () => {
     jest.spyOn(Logger, "warn").mockImplementation(() => Logger);
     const moduleRef = await Test.createTestingModule({
+      imports: [ThrottlerModule.forRoot({ ttl: 60, limit: 1000 })],
       controllers: [
         CountryController,
         RolePermissionController,

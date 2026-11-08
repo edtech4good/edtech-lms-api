@@ -1,5 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { sign } from "jsonwebtoken";
 import request from "supertest";
 import { Config } from "src/config";
@@ -56,6 +57,7 @@ describe("GET student/all requires view_student", () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
+      imports: [ThrottlerModule.forRoot({ ttl: 60, limit: 1000 })],
       controllers: [StudentController],
       providers: [JwtAccessStrategy],
     }).compile();
