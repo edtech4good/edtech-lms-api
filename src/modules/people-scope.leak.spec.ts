@@ -966,6 +966,34 @@ describe("people and schools are confined to the caller's organisation", () => {
     });
   });
 
+  describe("PUT /student/:schooluserid/disabled", () => {
+    const login = (id: string) => db.tables.schoolusers.find((s) => s.schooluserid === id)!;
+    const path = (id: string) => `/student/${id}/disabled`;
+    it.each(IN_X)("%s: disables and enables X's learner, and no other login", async (who) => {
+      await send(who, "put", path(USR_X), { disabled: true }).expect(200);
+      expect(login(USR_X).isdisabled).toBe(true);
+      expect(db.tables.schoolusers.filter((s) => s.isdisabled === true).map((s) => s.schooluserid)).toEqual([USR_X]);
+      await send(who, "put", path(USR_X), { disabled: false }).expect(200);
+      expect(login(USR_X).isdisabled).toBe(false);
+    });
+    it.each(IN_X)("%s: another organisation's learner, the unowned school's and a teacher are the 404 a learner that is not there gets, unchanged, nothing pushed", async (who) => {
+      await expectNotFoundLikeMissing(who, "put", path(USR_Y), path(MISSING), { disabled: true });
+      await expectNotFoundLikeMissing(who, "put", path(USR_U), path(MISSING), { disabled: true });
+      await expectNotFoundLikeMissing(who, "put", path(TCH_X), path(MISSING), { disabled: true });
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a learner removed from the roster is the same 404", async (who) => {
+      login(USR_X).isdeleted = true;
+      db.tables.students.find((s) => s.schooluserid === USR_X)!.isdeleted = true;
+      await expectNotFoundLikeMissing(who, "put", path(USR_X), path(MISSING), { disabled: true });
+    });
+    it("a platform user not acting is asked to choose an organisation, and nothing is written", async () => {
+      const res = await refuses("a platform user not acting", "put", path(USR_Y), { disabled: true });
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation.");
+    });
+  });
+
   describe("GET /student/:studentid", () => {
     it.each(MARKER)("%s: the last login asked of the student API carries the organisation header (%s)", async (who, marker) => {
       await send(who, "get", `/student/${STU_X}`).expect(200);
@@ -1339,6 +1367,32 @@ describe("people and schools are confined to the caller's organisation", () => {
     it("a platform user not acting: removes any teacher", async () => {
       await send("a platform user not acting", "delete", `/teacher/${TCH_Y}`).expect(200);
       expect(db.tables.schoolusers.find((s) => s.schooluserid === TCH_Y)!.isdeleted).toBe(true);
+    });
+  });
+
+  describe("PUT /teacher/:schooluserid/disabled", () => {
+    const login = (id: string) => db.tables.schoolusers.find((s) => s.schooluserid === id)!;
+    const path = (id: string) => `/teacher/${id}/disabled`;
+    it.each(IN_X)("%s: disables and enables X's teacher, and no other login", async (who) => {
+      await send(who, "put", path(TCH_X), { disabled: true }).expect(200);
+      expect(login(TCH_X).isdisabled).toBe(true);
+      expect(db.tables.schoolusers.filter((s) => s.isdisabled === true).map((s) => s.schooluserid)).toEqual([TCH_X]);
+      await send(who, "put", path(TCH_X), { disabled: false }).expect(200);
+      expect(login(TCH_X).isdisabled).toBe(false);
+    });
+    it.each(IN_X)("%s: another organisation's teacher and a learner are the 404 a teacher that is not there gets, unchanged, nothing pushed", async (who) => {
+      await expectNotFoundLikeMissing(who, "put", path(TCH_Y), path(MISSING), { disabled: true });
+      await expectNotFoundLikeMissing(who, "put", path(USR_X), path(MISSING), { disabled: true });
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a teacher removed from the roster is the same 404", async (who) => {
+      login(TCH_X).isdeleted = true;
+      await expectNotFoundLikeMissing(who, "put", path(TCH_X), path(MISSING), { disabled: true });
+    });
+    it("a platform user not acting is asked to choose an organisation, and nothing is written", async () => {
+      const res = await refuses("a platform user not acting", "put", path(TCH_Y), { disabled: true });
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation.");
     });
   });
 
@@ -1857,6 +1911,15 @@ describe("people and schools are confined to the caller's organisation", () => {
           ...Object.fromEntries(unowned.map((id) => [id, null])),
         });
       });
+      if (["/student", "/teacher"].includes(path)) {
+        it.each(IN_X)("%s: every row says whether its login is disabled, as a boolean", async (who) => {
+          const res = await listOf(who, path).expect(200);
+          expect(res.body.data.data.map((r: Row) => r.isdisabled)).toEqual([false]);
+          db.tables.schoolusers.find((u) => u.schooluserid === (path === "/student" ? USR_X : TCH_X))!.isdisabled = true;
+          const again = await listOf(who, path).expect(200);
+          expect(again.body.data.data.map((r: Row) => r.isdisabled)).toEqual([true]);
+        });
+      }
       it("a platform user not acting: an organisation filter narrows the list to that organisation's rows, and the total with it", async () => {
         const res = await listOf(NOT_ACTING, path, [{ key: "organisationid", value: Y }]).expect(200);
         expect(idsOf(res.body.data.data, key)).toEqual(sorted(...theirs));

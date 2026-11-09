@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Put,
   Query,
   UseGuards,
   UseInterceptors,
@@ -21,6 +22,7 @@ import {
   ApiTags,
   getSchemaPath,
 } from "@nestjs/swagger";
+import { disabledAnswer, pushChangedAccount, setAccountDisabled } from "src/business/account-disable";
 import { addTeacher, pushNewTeacher } from "src/business/add-teacher";
 import { pushToCloud, teachersFile } from "src/business/cloud-push";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
@@ -192,6 +194,27 @@ export class TeacherController {
       error: false,
       data: true,
     };
+  }
+
+  @OrgPolicy("owned", { note: "The account must be a teacher of the caller's schools; only this account is pushed.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
+  @Put(":schooluserid/disabled")
+  @ApiResponse({ status: 200, description: "The teacher is disabled or enabled" })
+  @ApiResponse({ status: 400, description: "The body is not { disabled: true | false }" })
+  @ApiResponse({ status: 404, description: "No such teacher" })
+  @ApiParam({ name: `schooluserid`, type: "string", required: true })
+  @ApiBody({ required: true, type: Object })
+  @RequirePermissions(Permission.UPDATE_TEACHER)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  async setDisabled(
+    @Param("schooluserid") schooluserid: string,
+    @Body() body: unknown,
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
+  ): Promise<any> {
+    const change = await setAccountDisabled("teacher", org, user.lmsuserid, schooluserid, body);
+    const push = await pushChangedAccount("teacher", change);
+    return disabledAnswer(change, push);
   }
 
   @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })

@@ -1,24 +1,21 @@
 import { v4 as uuidv4 } from "uuid";
 import { OrgContext } from "src/decorators/org.decorator";
-import { ApiError, ApiFieldError } from "src/models/ApiError";
-import { ErrorCode } from "src/models/enums/errorcode.enum";
+import { ApiFieldError } from "src/models/ApiError";
 import { SchoolRole } from "src/models/enums/school.role.enum";
 import { dbinstance } from "src/services/dbservice";
 import { UNKNOWN_FIELD_MESSAGE } from "src/services/joi-message.service";
 import { isLoginHandle } from "src/validators/login-handle";
 import {
-  failedPush,
   invalid,
   isUniqueViolation,
-  LEARNER_PUSH_TIMEOUT_MS,
   ORGANISATION_MESSAGE,
   passwordIsStrong,
   PASSWORD_MESSAGE,
+  pushOneAccount,
   USERNAME_MESSAGE,
   usernameTaken,
   usernameTakenError,
 } from "./add-learner";
-import { cloudConfigured, pushToCloud, teachersFile } from "./cloud-push";
 import { scopeOf } from "./org-scope";
 import { PushOutcome } from "./publish-push";
 import { findOwnedSchool } from "./school-scope";
@@ -115,29 +112,11 @@ export const addTeacher = async (org: OrgContext, body: unknown): Promise<AddedT
 
 const PUSH_FAILED_MESSAGE = "The account was saved, but the learning server did not answer. Run Sync Teachers for this school on the Schools screen.";
 
-/**
- * Sends the one new account to the student server (the same file `?cloud=true` of the CSV import sends for the logins it
- * created). Never throws: the account is on central either way, and the outcome says which way the push went. Call it only
- * after the account has committed.
- */
-export const pushNewTeacher = async (added: Pick<AddedTeacher, "schooluserid" | "schoolid" | "organisationid">): Promise<PushOutcome> => {
-  if (!cloudConfigured()) {
-    return { status: "skipped", reason: "nocloud", message: "Added. No learner server is set up here, so nothing was pushed." };
-  }
-  try {
-    const rows = await new SchoolUserBusiness().getschoolteachersbyid([added.schooluserid], { withSchoolId: true });
-    if (rows.length === 0) {
-      throw new ApiError(ErrorCode.NOT_FOUND, "There are no teachers to sync.");
-    }
-    await pushToCloud(
-      "teachers",
-      "teachers.ini",
-      JSON.stringify(teachersFile(added.schoolid, rows.map((x) => x.get({ plain: true })))),
-      added.organisationid,
-      { timeoutMs: LEARNER_PUSH_TIMEOUT_MS },
-    );
-    return { status: "pushed", message: "Added. The teacher can sign in now." };
-  } catch (error) {
-    return failedPush(error, "push of a new teacher to the learner server failed", PUSH_FAILED_MESSAGE);
-  }
-};
+/** Sends the one new teacher to the student server (see `pushOneAccount`). */
+export const pushNewTeacher = (added: Pick<AddedTeacher, "schooluserid" | "schoolid" | "organisationid">): Promise<PushOutcome> =>
+  pushOneAccount("teacher", added, {
+    pushed: "Added. The teacher can sign in now.",
+    skipped: "Added. No learner server is set up here, so nothing was pushed.",
+    failed: PUSH_FAILED_MESSAGE,
+    failedLog: "push of a new teacher to the learner server failed",
+  });
