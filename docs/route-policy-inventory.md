@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **300** routes, **289** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
+Of **302** routes, **291** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 261 | 261 | 0 | 0 |
+| owned | 263 | 263 | 0 | 0 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 0 | 0 | 0 | 0 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **300** | **289** | **11** | **0** |
+| **all** | **302** | **291** | **11** | **0** |
 
 ## Policies
 
@@ -333,6 +333,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | POST | `/student` | StudentController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | DELETE | `/student/:schooluserid` | StudentController.deleteuser | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[delete_student] |  |
 | PUT | `/student/:schooluserid/disabled` | StudentController.setDisabled | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[update_student] | The account must be a learner of the caller's schools; only this account is pushed. |
+| PUT | `/student/:schooluserid/password` | StudentController.resetPassword | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[update_student] | The account must be a learner of the caller's schools; only this account is pushed. |
 | GET | `/student/:studentid` | StudentController.getuser | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | GET | `/student/all` | StudentController.getAllStudents | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS), CheckPermissionsGuard[view_student] |  |
 | POST | `/student/create` | StudentController.createall | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin), AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) | The optional cloud push must send only the learners created by this call. |
@@ -358,6 +359,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | POST | `/teacher` | TeacherController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_teacher] |  |
 | DELETE | `/teacher/:schooluserid` | TeacherController.deleteuser | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_teacher] |  |
 | PUT | `/teacher/:schooluserid/disabled` | TeacherController.setDisabled | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_teacher] | The account must be a teacher of the caller's schools; only this account is pushed. |
+| PUT | `/teacher/:schooluserid/password` | TeacherController.resetPassword | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_teacher] | The account must be a teacher of the caller's schools; only this account is pushed. |
 | POST | `/teacher/create` | TeacherController.createall | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) | The optional cloud push must send only the teachers created by this call. |
 | POST | `/teacher/one` | TeacherController.createOne | owned | yes | `src/modules/teachers/teacher-add-one.spec.ts` |  |  | AccessGuard(ACCESS, Role.superadmin, Role.admin, Role.organisationadmin) | The school must be the caller's; only the new account is pushed. |
 | GET | `/translations/:tablename/:rowid` | TranslationsController.list | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum, view_grade, view_level, view_lesson, view_lessonlearning, view_lessonpractice, view_lessonquiz, view_question] |  |

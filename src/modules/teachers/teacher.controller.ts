@@ -23,6 +23,7 @@ import {
   getSchemaPath,
 } from "@nestjs/swagger";
 import { disabledAnswer, pushChangedAccount, setAccountDisabled } from "src/business/account-disable";
+import { passwordAnswer, pushResetAccount, resetAccountPassword } from "src/business/account-password";
 import { addTeacher, pushNewTeacher } from "src/business/add-teacher";
 import { pushToCloud, teachersFile } from "src/business/cloud-push";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
@@ -215,6 +216,27 @@ export class TeacherController {
     const change = await setAccountDisabled("teacher", org, user.lmsuserid, schooluserid, body);
     const push = await pushChangedAccount("teacher", change);
     return disabledAnswer(change, push);
+  }
+
+  @OrgPolicy("owned", { note: "The account must be a teacher of the caller's schools; only this account is pushed.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
+  @Put(":schooluserid/password")
+  @ApiResponse({ status: 200, description: "The teacher's password is changed" })
+  @ApiResponse({ status: 400, description: "The body is not { password } with a password that follows the rule" })
+  @ApiResponse({ status: 404, description: "No such teacher" })
+  @ApiParam({ name: `schooluserid`, type: "string", required: true })
+  @ApiBody({ required: true, type: Object })
+  @RequirePermissions(Permission.UPDATE_TEACHER)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(
+    @Param("schooluserid") schooluserid: string,
+    @Body() body: unknown,
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
+  ): Promise<any> {
+    const change = await resetAccountPassword("teacher", org, user.lmsuserid, schooluserid, body);
+    const push = await pushResetAccount("teacher", change);
+    return passwordAnswer(change, push);
   }
 
   @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
