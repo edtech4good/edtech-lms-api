@@ -13,7 +13,7 @@ import { SchoolRole } from "src/models/enums/school.role.enum";
 import { dbinstance } from "src/services/dbservice";
 import { UNKNOWN_FIELD_MESSAGE } from "src/services/joi-message.service";
 import { isLoginHandle } from "src/validators/login-handle";
-import { cloudConfigured, pushToCloud, studentsFile } from "./cloud-push";
+import { cloudConfigured, pushToCloud, studentsFile, teachersFile } from "./cloud-push";
 import { assertEnrolmentFits } from "./content-owner";
 import { scopeOf } from "./org-scope";
 import { PushOutcome } from "./publish-push";
@@ -298,32 +298,71 @@ export const addLearner = async (org: OrgContext, body: unknown): Promise<AddedL
 
 const PUSH_FAILED_MESSAGE = "The account was saved, but the learning server did not answer. Run Sync Students for this school on the Schools screen.";
 
+/** What one account push says, in each of its three outcomes, and the line it logs when it fails. */
+export interface AccountPushWords {
+  pushed: string;
+  skipped: string;
+  failed: string;
+  failedLog: string;
+}
+
+/** The account a push sends: its login, its school, and the organisation that owns the school. */
+export interface PushedAccount {
+  schooluserid: string;
+  schoolid: string;
+  organisationid: string | null;
+}
+
 /**
- * Sends the one new account to the student server (the same file `?cloud=true` of the CSV import sends for the logins it
- * created). Never throws: the account is on central either way, and the outcome says which way the push went. Call it
- * only after the account has committed.
+ * Sends one account (a learner's or a teacher's, by `kind`) to the student server: the same file `?cloud=true` of the CSV
+ * import sends for the logins it created, holding that one account. Never throws: the account is on central either way, and
+ * the outcome says which way the push went. Call it only after the account has committed. Adding an account and disabling
+ * or enabling one share it.
  */
-export const pushNewLearner = async (added: Pick<AddedLearner, "schooluserid" | "schoolid" | "organisationid">): Promise<PushOutcome> => {
+export const pushOneAccount = async (kind: "learner" | "teacher", account: PushedAccount, words: AccountPushWords): Promise<PushOutcome> => {
   if (!cloudConfigured()) {
-    return { status: "skipped", reason: "nocloud", message: "Added. No learner server is set up here, so nothing was pushed." };
+    return { status: "skipped", reason: "nocloud", message: words.skipped };
   }
   try {
-    const rows = await new SchoolUserBusiness().getschooluserbyid([added.schooluserid], { withSchoolId: true });
-    if (rows.length === 0) {
-      throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to sync.");
+    if (kind === "learner") {
+      const rows = await new SchoolUserBusiness().getschooluserbyid([account.schooluserid], { withSchoolId: true });
+      if (rows.length === 0) {
+        throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to sync.");
+      }
+      await pushToCloud(
+        "students",
+        "students.ini",
+        JSON.stringify(studentsFile(account.schoolid, rows.map((x) => x.get({ plain: true })))),
+        account.organisationid,
+        { timeoutMs: LEARNER_PUSH_TIMEOUT_MS },
+      );
+    } else {
+      const rows = await new SchoolUserBusiness().getschoolteachersbyid([account.schooluserid], { withSchoolId: true });
+      if (rows.length === 0) {
+        throw new ApiError(ErrorCode.NOT_FOUND, "There are no teachers to sync.");
+      }
+      await pushToCloud(
+        "teachers",
+        "teachers.ini",
+        JSON.stringify(teachersFile(account.schoolid, rows.map((x) => x.get({ plain: true })))),
+        account.organisationid,
+        { timeoutMs: LEARNER_PUSH_TIMEOUT_MS },
+      );
     }
-    await pushToCloud(
-      "students",
-      "students.ini",
-      JSON.stringify(studentsFile(added.schoolid, rows.map((x) => x.get({ plain: true })))),
-      added.organisationid,
-      { timeoutMs: LEARNER_PUSH_TIMEOUT_MS },
-    );
-    return { status: "pushed", message: "Added. The learner can sign in now." };
+    return { status: "pushed", message: words.pushed };
   } catch (error) {
-    return failedPush(error, "push of a new learner to the learner server failed", PUSH_FAILED_MESSAGE);
+    return failedPush(error, words.failedLog, words.failed);
   }
 };
+
+/** Sends the one new learner to the student server (see `pushOneAccount`). */
+export const pushNewLearner = (added: Pick<AddedLearner, "schooluserid" | "schoolid" | "organisationid">): Promise<PushOutcome> =>
+  pushOneAccount("learner", added, {
+    pushed: "Added. The learner can sign in now.",
+    skipped: "Added. No learner server is set up here, so nothing was pushed.",
+    failed: PUSH_FAILED_MESSAGE,
+    failedLog: "push of a new learner to the learner server failed",
+  });
 
 /**
  * The outcome of a push of one new account that did not succeed: logged by error class and mapped code only (an axios error

@@ -29,6 +29,7 @@ import {
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { isValid, parse } from "date-fns";
 import { json2csv } from "json-2-csv";
+import { disabledAnswer, pushChangedAccount, setAccountDisabled } from "src/business/account-disable";
 import { addLearner, pushNewLearner, usernameAvailable } from "src/business/add-learner";
 import { pushToCloud, studentsFile } from "src/business/cloud-push";
 import { assertEnrolmentFits } from "src/business/content-owner";
@@ -371,6 +372,27 @@ export class StudentController {
       error: false,
       data: true,
     };
+  }
+
+  @OrgPolicy("owned", { note: "The account must be a learner of the caller's schools; only this account is pushed.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
+  @Put(":schooluserid/disabled")
+  @ApiResponse({ status: 200, description: "The learner is disabled or enabled" })
+  @ApiResponse({ status: 400, description: "The body is not { disabled: true | false }" })
+  @ApiResponse({ status: 404, description: "No such learner" })
+  @ApiParam({ name: `schooluserid`, type: "string", required: true })
+  @ApiBody({ required: true, type: Object })
+  @RequirePermissions(Permission.UPDATE_STUDENT)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  async setDisabled(
+    @Param("schooluserid") schooluserid: string,
+    @Body() body: unknown,
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
+  ): Promise<any> {
+    const change = await setAccountDisabled("learner", org, user.lmsuserid, schooluserid, body);
+    const push = await pushChangedAccount("learner", change);
+    return disabledAnswer(change, push);
   }
 
   @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })

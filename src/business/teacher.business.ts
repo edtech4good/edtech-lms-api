@@ -108,6 +108,8 @@ export class TeacherBusiness {
         return {
           ...x.get({ plain: true }),
           schooluserpasswordhash: undefined,
+          // whether the login is disabled: the student server refuses its sign-in
+          isdisabled: Boolean(x.isdisabled),
           // the organisation of the teacher's school (the admin's platform view names it)
           organisationid: owners.get(x.schoolid) ?? null,
         };

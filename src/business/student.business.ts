@@ -242,6 +242,8 @@ export class StudentBusiness {
         ...tempdata,
         // the organisation of the learner's school (the admin's platform view names it)
         organisationid: owners.get(tempdata.schoolid) ?? null,
+        // whether the login is disabled: the student server refuses its sign-in
+        isdisabled: Boolean(tempdata.schooluser?.isdisabled),
         lastlogin: lastlogin ? lastlogin : null,
         schooluser: null,
         ...Object.fromEntries(
