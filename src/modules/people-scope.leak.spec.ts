@@ -994,6 +994,31 @@ describe("people and schools are confined to the caller's organisation", () => {
     });
   });
 
+  describe("PUT /student/:schooluserid/password", () => {
+    const login = (id: string) => db.tables.schoolusers.find((s) => s.schooluserid === id)!;
+    const path = (id: string) => `/student/${id}/password`;
+    it.each(IN_X)("%s: resets the password of X's learner, and no other login's", async (who) => {
+      await send(who, "put", path(USR_X), { password: "Newpass456" }).expect(200);
+      expect(login(USR_X).schooluserpasswordhash).not.toBe("hash");
+      expect(db.tables.schoolusers.filter((s) => s.schooluserpasswordhash !== "hash").map((s) => s.schooluserid)).toEqual([USR_X]);
+    });
+    it.each(IN_X)("%s: another organisation's learner, the unowned school's and a teacher are the 404 a learner that is not there gets, unchanged, nothing pushed", async (who) => {
+      for (const id of [USR_Y, USR_U, TCH_X]) await expectNotFoundLikeMissing(who, "put", path(id), path(MISSING), { password: "Newpass456" });
+      expect(axios.put).not.toHaveBeenCalled();
+      expect(db.tables.schoolusers.filter((s) => s.schooluserpasswordhash !== "hash")).toEqual([]);
+    });
+    it.each(IN_X)("%s: a learner removed from the roster is the same 404", async (who) => {
+      login(USR_X).isdeleted = true;
+      db.tables.students.find((s) => s.schooluserid === USR_X)!.isdeleted = true;
+      await expectNotFoundLikeMissing(who, "put", path(USR_X), path(MISSING), { password: "Newpass456" });
+    });
+    it("a platform user not acting is asked to choose an organisation, and nothing is written", async () => {
+      const res = await refuses("a platform user not acting", "put", path(USR_Y), { password: "Newpass456" });
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation.");
+    });
+  });
+
   describe("GET /student/:studentid", () => {
     it.each(MARKER)("%s: the last login asked of the student API carries the organisation header (%s)", async (who, marker) => {
       await send(who, "get", `/student/${STU_X}`).expect(200);
@@ -1391,6 +1416,30 @@ describe("people and schools are confined to the caller's organisation", () => {
     });
     it("a platform user not acting is asked to choose an organisation, and nothing is written", async () => {
       const res = await refuses("a platform user not acting", "put", path(TCH_Y), { disabled: true });
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation.");
+    });
+  });
+
+  describe("PUT /teacher/:schooluserid/password", () => {
+    const login = (id: string) => db.tables.schoolusers.find((s) => s.schooluserid === id)!;
+    const path = (id: string) => `/teacher/${id}/password`;
+    it.each(IN_X)("%s: resets the password of X's teacher, and no other login's", async (who) => {
+      await send(who, "put", path(TCH_X), { password: "Newpass456" }).expect(200);
+      expect(login(TCH_X).schooluserpasswordhash).not.toBe("hash");
+      expect(db.tables.schoolusers.filter((s) => s.schooluserpasswordhash !== "hash").map((s) => s.schooluserid)).toEqual([TCH_X]);
+    });
+    it.each(IN_X)("%s: another organisation's teacher and a learner are the 404 a teacher that is not there gets, unchanged, nothing pushed", async (who) => {
+      for (const id of [TCH_Y, USR_X]) await expectNotFoundLikeMissing(who, "put", path(id), path(MISSING), { password: "Newpass456" });
+      expect(axios.put).not.toHaveBeenCalled();
+      expect(db.tables.schoolusers.filter((s) => s.schooluserpasswordhash !== "hash")).toEqual([]);
+    });
+    it.each(IN_X)("%s: a teacher removed from the roster is the same 404", async (who) => {
+      login(TCH_X).isdeleted = true;
+      await expectNotFoundLikeMissing(who, "put", path(TCH_X), path(MISSING), { password: "Newpass456" });
+    });
+    it("a platform user not acting is asked to choose an organisation, and nothing is written", async () => {
+      const res = await refuses("a platform user not acting", "put", path(TCH_Y), { password: "Newpass456" });
       expect(res.status).toBe(400);
       expect(res.body.errormessage).toBe("Choose an organisation.");
     });

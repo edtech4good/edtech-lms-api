@@ -1,3 +1,4 @@
+import { Transaction } from "sequelize";
 import { OrgContext } from "src/decorators/org.decorator";
 import { ApiFieldError } from "src/models/ApiError";
 import { schoolusers } from "src/models/data-models/schoolusers";
@@ -52,6 +53,63 @@ const WORDS: Record<AccountKind, { word: string; sync: string }> = {
   teacher: { word: "teacher", sync: "Sync Teachers" },
 };
 
+export interface ChangedLogin {
+  schooluserid: string;
+  schoolusername: string;
+  schoolid: string;
+  organisationid: string | null;
+}
+
+/**
+ * Runs one change to the caller's learner or teacher login in one transaction (committed here), or throws and writes nothing.
+ * A platform user who is not acting as an organisation is asked to choose one; `validate` runs next and may refuse the body;
+ * the login must be one of the caller's schools' with the role of `kind` (a learner also needs a live learner row), else the
+ * 404 of an account that is not there; `write` then updates it inside the transaction. Disabling and resetting a password
+ * share it.
+ */
+export const changeAccount = async <T>(
+  kind: AccountKind,
+  org: OrgContext,
+  schooluserid: unknown,
+  validate: () => T,
+  write: (login: schoolusers, tnx: Transaction, input: T) => Promise<void>,
+): Promise<ChangedLogin & { input: T }> => {
+  const scope = scopeOf(org); // 403 for a caller with no scope
+  if (scope.kind === "platform") {
+    throw invalid([{ field: "schooluserid", message: ORGANISATION_MESSAGE }], ORGANISATION_MESSAGE);
+  }
+  const input = validate();
+  const role = kind === "learner" ? SchoolRole.STUDENT : SchoolRole.TEACHER;
+  const absent = kind === "learner" ? studentNotFound : teacherNotFound;
+  const id = typeof schooluserid === "string" ? schooluserid : null;
+  let login: schoolusers | null = null;
+  const tnx = await dbinstance.getdbinstance().transaction();
+  try {
+    if (kind === "learner") {
+      // a learner whose row is deleted is gone, whatever its login says
+      await findOwnedStudent(org, { schooluserid: id, isdeleted: false }, tnx);
+    }
+    login = await schoolusers.findOne({
+      where: await andInOwnedSchools({ schooluserid: id, schooluserrole: role, isdeleted: false }, org, tnx),
+      transaction: tnx,
+    });
+    if (!login) throw absent();
+    await write(login, tnx, input);
+    await tnx.commit();
+  } catch (error) {
+    await tnx.rollback();
+    throw error;
+  }
+  const owners = await ownersOfSchools([login.schoolid]);
+  return {
+    schooluserid: login.schooluserid,
+    schoolusername: login.schoolusername,
+    schoolid: login.schoolid,
+    organisationid: owners.get(login.schoolid) ?? null,
+    input,
+  };
+};
+
 /**
  * Writes `isdisabled` on the caller's learner or teacher in one transaction (committed here), or throws and writes nothing.
  * A platform user who is not acting as an organisation is asked to choose one.
@@ -63,40 +121,19 @@ export const setAccountDisabled = async (
   schooluserid: unknown,
   body: unknown,
 ): Promise<DisabledChange> => {
-  const scope = scopeOf(org); // 403 for a caller with no scope
-  if (scope.kind === "platform") {
-    throw invalid([{ field: "schooluserid", message: ORGANISATION_MESSAGE }], ORGANISATION_MESSAGE);
-  }
-  const disabled = validateDisabledBody(body);
-  const role = kind === "learner" ? SchoolRole.STUDENT : SchoolRole.TEACHER;
-  const absent = kind === "learner" ? studentNotFound : teacherNotFound;
-  const id = typeof schooluserid === "string" ? schooluserid : null;
-  let schoolid = "";
-  let resolved = "";
-  const tnx = await dbinstance.getdbinstance().transaction();
-  try {
-    if (kind === "learner") {
-      // a learner whose row is deleted is gone, whatever its login says
-      await findOwnedStudent(org, { schooluserid: id, isdeleted: false }, tnx);
-    }
-    const login = await schoolusers.findOne({
-      where: await andInOwnedSchools({ schooluserid: id, schooluserrole: role, isdeleted: false }, org, tnx),
-      transaction: tnx,
-    });
-    if (!login) throw absent();
-    await schoolusers.update(
-      { isdisabled: disabled, updated_at: new Date(), updated_by: actor },
-      { where: { schooluserid: login.schooluserid }, transaction: tnx },
-    );
-    await tnx.commit();
-    schoolid = login.schoolid;
-    resolved = login.schooluserid;
-  } catch (error) {
-    await tnx.rollback();
-    throw error;
-  }
-  const owners = await ownersOfSchools([schoolid]);
-  return { schooluserid: resolved, disabled, schoolid, organisationid: owners.get(schoolid) ?? null };
+  const changed = await changeAccount(
+    kind,
+    org,
+    schooluserid,
+    () => validateDisabledBody(body),
+    async (login, tnx, disabled) => {
+      await schoolusers.update(
+        { isdisabled: disabled, updated_at: new Date(), updated_by: actor },
+        { where: { schooluserid: login.schooluserid }, transaction: tnx },
+      );
+    },
+  );
+  return { schooluserid: changed.schooluserid, disabled: changed.input, schoolid: changed.schoolid, organisationid: changed.organisationid };
 };
 
 /** Sends the one changed account to the student server (see `pushOneAccount`); never throws. */
