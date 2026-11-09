@@ -90,7 +90,7 @@ export const passwordIsStrong = (password: unknown): password is string =>
   DIGIT.test(password) &&
   !WHITESPACE.test(password);
 
-const plainName = (value: unknown, required: boolean): { value?: string; message?: string } => {
+export const plainName = (value: unknown, required: boolean): { value?: string; message?: string } => {
   if (value === undefined || value === null || (typeof value === "string" && value.trim() === "" && !required)) {
     return required ? { message: `Enter a name of ${NAME_MIN} to ${NAME_MAX} characters.` } : {};
   }
@@ -103,6 +103,33 @@ const plainName = (value: unknown, required: boolean): { value?: string; message
     return { message: `Enter a name of ${min} to ${NAME_MAX} characters.` };
   }
   return { value: trimmed };
+};
+
+/** A class id as a form sends it: a non-empty string of at most 250 characters, else `undefined`. */
+export const classIdValue = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim() !== "" && value.length <= 250 ? value : undefined;
+
+/** A list of 1 to 50 curriculum ids, without repeats, else `undefined`. */
+export const curriculumIdsValue = (value: unknown): string[] | undefined =>
+  Array.isArray(value) &&
+  value.length >= 1 &&
+  value.length <= CURRICULA_MAX &&
+  value.every((c) => typeof c === "string" && c.trim() !== "" && c.length <= 36)
+    ? [...new Set(value as string[])]
+    : undefined;
+
+/** Gender 1 or 2 (a number or its digit), else `undefined`. */
+export const genderValue = (value: unknown): 1 | 2 | undefined =>
+  value === 1 || value === "1" ? 1 : value === 2 || value === "2" ? 2 : undefined;
+
+export const DATE_MESSAGE = "Enter a real date in the past, as YYYY-MM-DD.";
+
+/** A real date before today, 1900 or later, as YYYY-MM-DD (local midnight), else `undefined`. */
+export const birthDateValue = (value: unknown, now: Date): Date | undefined => {
+  if (typeof value !== "string" || !DATE_ONLY.test(value)) return undefined;
+  const parsed = parse(value, "yyyy-MM-dd", now);
+  if (!isValid(parsed) || format(parsed, "yyyy-MM-dd") !== value || parsed.getFullYear() < 1900 || parsed >= startOfDay(now)) return undefined;
+  return parsed;
 };
 
 /**
@@ -123,20 +150,11 @@ export const validateAddLearner = (body: unknown, now: Date = new Date()): AddLe
   const schoolid = typeof raw.schoolid === "string" && UUID.test(raw.schoolid) ? raw.schoolid : undefined;
   if (schoolid === undefined) bad("schoolid", "Choose a school.");
 
-  const standard = typeof raw.standard === "string" && raw.standard.trim() !== "" && raw.standard.length <= 250 ? raw.standard : undefined;
+  const standard = classIdValue(raw.standard);
   if (standard === undefined) bad("standard", CLASS_MESSAGE);
 
-  let curriculumids: string[] | undefined;
-  if (
-    Array.isArray(raw.curriculumids) &&
-    raw.curriculumids.length >= 1 &&
-    raw.curriculumids.length <= CURRICULA_MAX &&
-    raw.curriculumids.every((c) => typeof c === "string" && c.trim() !== "" && c.length <= 36)
-  ) {
-    curriculumids = [...new Set(raw.curriculumids as string[])];
-  } else {
-    bad("curriculumids", "Choose at least one curriculum.");
-  }
+  const curriculumids = curriculumIdsValue(raw.curriculumids);
+  if (curriculumids === undefined) bad("curriculumids", "Choose at least one curriculum.");
 
   const first = plainName(raw.studentfirstname, true);
   if (first.message) bad("studentfirstname", first.message);
@@ -149,22 +167,13 @@ export const validateAddLearner = (body: unknown, now: Date = new Date()): AddLe
   const password = raw.password;
   if (!passwordIsStrong(password)) bad("password", PASSWORD_MESSAGE);
 
-  const gender = raw.genderid === 1 || raw.genderid === "1" ? 1 : raw.genderid === 2 || raw.genderid === "2" ? 2 : undefined;
+  const gender = genderValue(raw.genderid);
   if (gender === undefined) bad("genderid", "Choose a gender.");
 
   let dateofbirth: Date | undefined;
   if (raw.dateofbirth !== undefined && raw.dateofbirth !== null && raw.dateofbirth !== "") {
-    const dateMessage = "Enter a real date in the past, as YYYY-MM-DD.";
-    if (typeof raw.dateofbirth !== "string" || !DATE_ONLY.test(raw.dateofbirth)) {
-      bad("dateofbirth", dateMessage);
-    } else {
-      const parsed = parse(raw.dateofbirth, "yyyy-MM-dd", now);
-      if (!isValid(parsed) || format(parsed, "yyyy-MM-dd") !== raw.dateofbirth || parsed.getFullYear() < 1900 || parsed >= startOfDay(now)) {
-        bad("dateofbirth", dateMessage);
-      } else {
-        dateofbirth = parsed;
-      }
-    }
+    dateofbirth = birthDateValue(raw.dateofbirth, now);
+    if (dateofbirth === undefined) bad("dateofbirth", DATE_MESSAGE);
   }
 
   if (errors.length > 0) throw invalid(errors, "Check the highlighted fields.");
