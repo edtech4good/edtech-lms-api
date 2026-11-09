@@ -1019,6 +1019,58 @@ describe("people and schools are confined to the caller's organisation", () => {
     });
   });
 
+  describe("GET /student/:schooluserid/details", () => {
+    const path = (id: string) => `/student/${id}/details`;
+    it.each(IN_X)("%s: reads X's learner's details", async (who) => {
+      const res = await send(who, "get", path(USR_X)).expect(200);
+      expect(res.body).toMatchObject({ schooluserid: USR_X, schoolid: S_X, studentfirstname: KHMER_FIRST.X, standard: K_X, curriculumids: [CUR_X] });
+      expect(JSON.stringify(res.body)).not.toContain("hash");
+    });
+    it.each(IN_X)("%s: another organisation's learner, the unowned school's and a teacher are the 404 a learner that is not there gets", async (who) => {
+      for (const id of [USR_Y, USR_U, TCH_X]) await expectNotFoundLikeMissing(who, "get", path(id), path(MISSING));
+    });
+    it.each(IN_X)("%s: a learner removed from the roster is the same 404", async (who) => {
+      db.tables.students.find((s) => s.studentid === STU_X)!.isdeleted = true;
+      await expectNotFoundLikeMissing(who, "get", path(USR_X), path(MISSING));
+    });
+    it("a platform user not acting is asked to choose an organisation", async () => {
+      const res = await send("a platform user not acting", "get", path(USR_Y));
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation.");
+    });
+  });
+
+  describe("PUT /student/:schooluserid/details", () => {
+    const path = (id: string) => `/student/${id}/details`;
+    const edit = { studentfirstname: "ដារ៉ា", studentlastname: "", genderid: 2, dateofbirth: null, standard: K_X, curriculumids: [CUR_X] };
+    const row = (id: string) => db.tables.students.find((s) => s.studentid === id)!;
+    const unchanged = () => db.tables.students.filter((s) => s.studentfirstname === edit.studentfirstname);
+    it.each(IN_X)("%s: edits X's learner, and no other learner", async (who) => {
+      await send(who, "put", path(USR_X), edit).expect(200);
+      expect(row(STU_X)).toMatchObject({ studentfirstname: edit.studentfirstname, genderid: 2 });
+      expect(unchanged().map((s) => s.studentid)).toEqual([STU_X]);
+    });
+    it.each(IN_X)("%s: another organisation's learner, the unowned school's and a teacher are the 404 a learner that is not there gets, unchanged, nothing pushed", async (who) => {
+      for (const id of [USR_Y, USR_U, TCH_X]) await expectNotFoundLikeMissing(who, "put", path(id), path(MISSING), edit);
+      expect(axios.put).not.toHaveBeenCalled();
+      expect(unchanged()).toEqual([]);
+    });
+    it.each(IN_X)("%s: another organisation's class and curriculum are refused for X's learner", async (who) => {
+      expect((await send(who, "put", path(USR_X), { ...edit, standard: K_Y })).status).toBe(400);
+      expect((await send(who, "put", path(USR_X), { ...edit, curriculumids: [CUR_Y] })).status).toBe(400);
+      expect(unchanged()).toEqual([]);
+    });
+    it.each(IN_X)("%s: a learner removed from the roster is the same 404", async (who) => {
+      row(STU_X).isdeleted = true;
+      await expectNotFoundLikeMissing(who, "put", path(USR_X), path(MISSING), edit);
+    });
+    it("a platform user not acting is asked to choose an organisation, and nothing is written", async () => {
+      const res = await refuses("a platform user not acting", "put", path(USR_Y), edit);
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation.");
+    });
+  });
+
   describe("GET /student/:studentid", () => {
     it.each(MARKER)("%s: the last login asked of the student API carries the organisation header (%s)", async (who, marker) => {
       await send(who, "get", `/student/${STU_X}`).expect(200);

@@ -33,6 +33,7 @@ import { disabledAnswer, pushChangedAccount, setAccountDisabled } from "src/busi
 import { passwordAnswer, pushResetAccount, resetAccountPassword } from "src/business/account-password";
 import { addLearner, pushNewLearner, usernameAvailable } from "src/business/add-learner";
 import { pushToCloud, studentsFile } from "src/business/cloud-push";
+import { editAnswer, editLearner, getLearnerDetails, pushEditedLearner } from "src/business/learner-details";
 import { assertEnrolmentFits } from "src/business/content-owner";
 import { findOwnedSchool, findOwnedStandard, findOwnedStudent, resolveOwnedSchoolRef } from "src/business/school-scope";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
@@ -394,6 +395,39 @@ export class StudentController {
     const change = await setAccountDisabled("learner", org, user.lmsuserid, schooluserid, body);
     const push = await pushChangedAccount("learner", change);
     return disabledAnswer(change, push);
+  }
+
+  @OrgPolicy("owned", { note: "The account must be a learner of the caller's schools.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
+  @Get(":schooluserid/details")
+  @ApiResponse({ status: 200, description: "The learner's details, as the edit form shows them" })
+  @ApiResponse({ status: 404, description: "No such learner" })
+  @ApiParam({ name: `schooluserid`, type: "string", required: true })
+  @RequirePermissions(Permission.VIEW_STUDENT)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  async getDetails(@Param("schooluserid") schooluserid: string, @Org() org: OrgContext): Promise<any> {
+    return getLearnerDetails(org, schooluserid);
+  }
+
+  @OrgPolicy("owned", { note: "The account must be a learner of the caller's schools, the class one of that school's; only this account is pushed.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
+  @Put(":schooluserid/details")
+  @ApiResponse({ status: 200, description: "The learner's details are saved" })
+  @ApiResponse({ status: 400, description: "The body does not follow the rules of the add form" })
+  @ApiResponse({ status: 404, description: "No such learner" })
+  @ApiParam({ name: `schooluserid`, type: "string", required: true })
+  @ApiBody({ required: true, type: Object })
+  @RequirePermissions(Permission.UPDATE_STUDENT)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  async editDetails(
+    @Param("schooluserid") schooluserid: string,
+    @Body() body: unknown,
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
+  ): Promise<any> {
+    const edited = await editLearner(org, user.lmsuserid, schooluserid, body);
+    const push = await pushEditedLearner(edited);
+    return editAnswer(edited, push);
   }
 
   @OrgPolicy("owned", { note: "The account must be a learner of the caller's schools; only this account is pushed.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
