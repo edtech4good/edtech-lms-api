@@ -11,7 +11,9 @@ export class dbinstance {
             this.sequelize = new Sequelize(Config.fortyk.api.database.name, Config.fortyk.api.database.user, Config.fortyk.api.database.password, {
                 host: Config.fortyk.api.database.host,
                 port: Config.fortyk.api.database.port,
-                dialect: 'mysql'
+                dialect: 'mysql',
+                // Database statements are printed only when DB_LOG_SQL=1 (development).
+                logging: process.env.DB_LOG_SQL === '1' ? console.log : false
             });
         }
         return this.sequelize;
