@@ -360,8 +360,23 @@ export const pushOneAccount = async (kind: "learner" | "teacher", account: Pushe
     }
     return { status: "pushed", message: words.pushed };
   } catch (error) {
-    return failedPush(error, words.failedLog, words.failed);
+    return failedPush(error, words.failedLog, kind === "learner" && learnerServerLacksRefs(error) ? MISSING_REFS_MESSAGE : words.failed);
   }
+};
+
+export const MISSING_REFS_MESSAGE = "Saved, but the learning server doesn't have this class or curriculum yet. Run Sync Content, then Sync Students for this school.";
+
+const REF_FIELDS = ["standard", "curriculumid", "curriculumids"];
+
+/**
+ * Did the student server refuse the learner (400) because its fields name the class or the curriculum, which that server does
+ * not hold yet? Only the field names are read; nothing of its answer is relayed.
+ */
+const learnerServerLacksRefs = (error: unknown): boolean => {
+  const e = error as { isAxiosError?: boolean; response?: { status?: number; data?: { fields?: unknown } } } | null;
+  if (!e?.isAxiosError || e.response?.status !== 400) return false;
+  const fields = e.response.data?.fields;
+  return Array.isArray(fields) && fields.some((f) => typeof f?.field === "string" && REF_FIELDS.includes(f.field));
 };
 
 /** Sends the one new learner to the student server (see `pushOneAccount`). */

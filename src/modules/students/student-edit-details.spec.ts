@@ -484,6 +484,23 @@ describe("reading and editing one learner's details", () => {
         expect(learnerRow(L_X).studentfirstname).toBe(NEW_FIRST);
         expect(transaction.commit).toHaveBeenCalledTimes(1);
       });
+      it("the student server refusing the class or the curriculum (400) says to run Sync Content first, then Sync Students", async () => {
+        for (const field of ["standard", "curriculumid", "curriculumids"]) {
+          (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { errormessage: "SERVER-TEXT", fields: [{ field, message: "SERVER-TEXT" }] } }, config: { headers: { Authorization: "SECRET-KEY" } } }));
+          const res = await put("X's Admin", L_X, goodBody()).expect(200);
+          expect(res.body.push.status).toBe("failed");
+          expect(res.body.push.message).toBe("Saved, but the learning server doesn't have this class or curriculum yet. Run Sync Content, then Sync Students for this school.");
+          expect(JSON.stringify(res.body)).not.toContain("SECRET-KEY");
+          expect(learnerRow(L_X).studentfirstname).toBe(NEW_FIRST);
+        }
+      });
+      it("another 400 from the student server keeps the Sync Students message", async () => {
+        (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { errormessage: "x", fields: [{ field: "genderid", message: "x" }] } } }));
+        const res = await put("X's Admin", L_X, goodBody()).expect(200);
+        expect(res.body.push.status).toBe("failed");
+        expect(res.body.push.message).toContain("Run Sync Students for this school on the Schools screen.");
+        expect(res.body.push.message).not.toContain("Sync Content");
+      });
       it("a timed-out push is a failed outcome too", async () => {
         (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("timeout of 15000ms exceeded"), { isAxiosError: true, code: "ECONNABORTED" }));
         expect((await put("X's Admin", L_X, goodBody()).expect(200)).body.push.status).toBe("failed");
