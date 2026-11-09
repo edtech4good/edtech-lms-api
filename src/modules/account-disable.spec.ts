@@ -61,6 +61,7 @@ const T_X = uuid(421);
 const T_X_OTHER = uuid(424);
 const T_Y = uuid(422);
 const T_GONE = uuid(426);
+const T_STU = uuid(431); // a teacher login that also has a live learner row
 const MISSING = uuid(999);
 
 const db = new ContentFake();
@@ -117,6 +118,8 @@ const seed = () => {
   login(T_X_OTHER, "teacherx2", SchoolRole.TEACHER, S_X);
   login(T_Y, "teachery", SchoolRole.TEACHER, S_Y);
   login(T_GONE, "teachergone", SchoolRole.TEACHER, S_X, { isdeleted: true });
+  login(T_STU, "teacherstu", SchoolRole.TEACHER, S_X);
+  learner(406, T_STU, S_X);
 };
 
 describe("disabling and enabling one learner or teacher", () => {
@@ -230,6 +233,16 @@ describe("disabling and enabling one learner or teacher", () => {
       it("an Admin without the update permission is refused (403), nothing written", async () => {
         const res = await refuses("an Admin without the update permissions", route, own, { disabled: true });
         expect(res.status).toBe(403);
+      });
+    });
+
+    describe("a teacher login that has a live learner row", () => {
+      it("is the same 404 on the learner route, and nothing is written or sent", async () => {
+        if (route !== "student") return;
+        const res = await refuses("X's Admin", route, T_STU, { disabled: true });
+        expect(res.status).toBe(404);
+        expect(said(res)).toEqual(said(await refuses("X's Admin", route, MISSING, { disabled: true })));
+        expect(login(T_STU).isdisabled).toBe(false);
       });
     });
 
