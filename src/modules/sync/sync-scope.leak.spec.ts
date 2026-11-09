@@ -1021,6 +1021,114 @@ describe("the content sync is one organisation's", () => {
     });
   });
 
+  // ───────────────────────────── POST /sync/cloud/:schoolname/teachers ─────────────────────────────
+  describe("POST /sync/cloud/:schoolname/teachers", () => {
+    it.each(PUSHERS_IN_X)("%s: pushes the school's teachers as { schoolid, teachers }, each row carrying its school, with the school's organisation in the header", async (who) => {
+      await send(who, "post", `/sync/cloud/${encodeURIComponent(TX.names.school)}/teachers`).expect(200);
+      expect(axios.put).toHaveBeenCalledTimes(1);
+      const call = pushed();
+      expect(call.url).toBe(`${Config.fortyk.api.rpi.cloud}/import/teachers`);
+      expect(call.headers).toMatchObject({ Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": X });
+      expect(call.entries).toEqual(["teachers.ini"]);
+      expect(Object.keys(call.json).sort()).toEqual(["schoolid", "teachers"]);
+      expect(call.json.schoolid).toBe(TX.school);
+      expect(ids(call.json.teachers, "schooluserid")).toEqual([TX.teacherLogin]);
+      for (const row of call.json.teachers as Row[]) {
+        expect(row.schoolid).toBe(TX.school);
+        expect(row.schooluserrole).toBe(SchoolRole.TEACHER);
+      }
+    });
+
+    it("the school can be named by its id", async () => {
+      await send("X's Admin", "post", `/sync/cloud/${TX.school}/teachers`).expect(200);
+      expect(pushed().json.schoolid).toBe(TX.school);
+    });
+
+    it("sends the school's teachers and none of its learners, and none of another school's teachers", async () => {
+      db.add("schoolusers", {
+        schooluserid: uuid(980), schoolusername: "teachertwo", schooluserrole: SchoolRole.TEACHER, schoolid: TX.school2, schoolname: TX.names.school2,
+        schooluserstatus: true, schooluserpasswordhash: "hash",
+      });
+      db.add("schoolusers", {
+        schooluserid: uuid(981), schoolusername: "teacherthree", schooluserrole: SchoolRole.TEACHER, schoolid: TX.school, schoolname: TX.names.school,
+        schooluserstatus: true, schooluserpasswordhash: "hash",
+      });
+      await send("X's Admin", "post", `/sync/cloud/${TX.school}/teachers`).expect(200);
+      expect(ids(pushed().json.teachers, "schooluserid")).toEqual([TX.teacherLogin, uuid(981)].sort());
+      expect(JSON.stringify(pushed().json)).not.toContain(TX.login);
+      expect(JSON.stringify(pushed().json)).not.toContain(uuid(980));
+    });
+
+    it("like Sync Students, a deleted or a disabled teacher is sent with its flags, so the student server refuses that login too", async () => {
+      db.add("schoolusers", {
+        schooluserid: uuid(982), schoolusername: "teachergone", schooluserrole: SchoolRole.TEACHER, schoolid: TX.school, schoolname: TX.names.school,
+        schooluserstatus: true, isdeleted: true, schooluserpasswordhash: "hash",
+      });
+      db.add("schoolusers", {
+        schooluserid: uuid(983), schoolusername: "teacheroff", schooluserrole: SchoolRole.TEACHER, schoolid: TX.school, schoolname: TX.names.school,
+        schooluserstatus: true, isdisabled: true, schooluserpasswordhash: "hash",
+      });
+      await send("X's Admin", "post", `/sync/cloud/${TX.school}/teachers`).expect(200);
+      const rows = pushed().json.teachers as Row[];
+      expect(ids(rows, "schooluserid")).toEqual([TX.teacherLogin, uuid(982), uuid(983)].sort());
+      expect(rows.find((r) => r.schooluserid === uuid(982))?.isdeleted).toBe(true);
+      expect(rows.find((r) => r.schooluserid === uuid(983))?.isdisabled).toBe(true);
+    });
+
+    it("a school with no teachers is a 404 \"There are no teachers to sync.\": nothing is sent", async () => {
+      const res = await send("X's Admin", "post", `/sync/cloud/${TX.school2}/teachers`);
+      expect(res.status).toBe(404);
+      expect(res.body.errormessage).toBe("There are no teachers to sync.");
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+
+    it.each(PUSHERS_IN_X)("%s: another organisation's school, and a school with no organisation, are the 404 of a school that is not there: nothing is sent", async (who) => {
+      const absent = await send(who, "post", `/sync/cloud/${MISSING}/teachers`);
+      expect(absent.status).toBe(404);
+      expect(absent.body.errormessage).toBe("That school doesn't exist.");
+      for (const school of [TY.names.school, TY.school, TY.school2, TY.names.school2, TU.names.school]) {
+        expect(said(await send(who, "post", `/sync/cloud/${encodeURIComponent(school)}/teachers`))).toEqual(said(absent));
+      }
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+
+    it("a platform user not acting reaches any school; the header names that school's organisation", async () => {
+      await send(NOT_ACTING, "post", `/sync/cloud/${encodeURIComponent(TY.names.school)}/teachers`).expect(200);
+      expect(pushed().headers["X-Organisation-Id"]).toBe(Y);
+      expect(pushed().json.schoolid).toBe(TY.school);
+      expect(ids(pushed().json.teachers, "schooluserid")).toEqual([TY.teacherLogin]);
+    });
+
+    it.each(REFUSED_IN_X)("%s is not admitted (403): the route asks for sync_students, and nothing is sent", async (who) => {
+      for (const school of [TX.school, TY.school]) {
+        expect((await send(who, "post", `/sync/cloud/${school}/teachers`)).status).toBe(403);
+      }
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+
+    it("holding sync_content alone does not open it, and sync_students alone does", async () => {
+      const only = (name: string) => bearer({ lmsuserid: "oa", lmsuserroles: [Role.organisationadmin], permissions: [name], organisationid: X, isplatform: false });
+      const as = (token: string) => request(app.getHttpServer()).post(`/sync/cloud/${TX.school}/teachers`).set("Authorization", token).set("Connection", "close");
+      expect((await as(only("sync_content"))).status).toBe(403);
+      expect(axios.put).not.toHaveBeenCalled();
+      expect((await as(only("sync_students"))).status).toBe(200);
+      expect(axios.put).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(PUSHERS_IN_X)("%s: X's own school with a Y organisation named in the query, a header or the body is still X's, and sends none of Y's teachers", async (who) => {
+      await request(app.getHttpServer())
+        .post(`/sync/cloud/${TX.school}/teachers?organisationid=${Y}`)
+        .set("Authorization", callers[who]).set("X-Organisation-Id", Y).set("Connection", "close")
+        .send({ organisationid: Y, schoolid: TY.school }).expect(200);
+      const call = pushed();
+      expect(call.headers["X-Organisation-Id"]).toBe(X);
+      expect(call.json.schoolid).toBe(TX.school);
+      expect(ids(call.json.teachers, "schooluserid")).toEqual([TX.teacherLogin]);
+      expect(JSON.stringify(call.json)).not.toContain(TY.teacherLogin);
+      expect(JSON.stringify(call.json)).not.toContain(TY.school);
+    });
+  });
+
   // ───────────────────────────── the roster pushes of ?cloud=true ─────────────────────────────
   describe("the roster pushes", () => {
     const newStudent = (n: number) => ({
@@ -1077,6 +1185,7 @@ describe("the content sync is one organisation's", () => {
     const routes: Array<[string, Method, () => string, () => object | undefined]> = [
       ["POST /sync/cloud (the content push)", "post", () => "/sync/cloud", () => undefined],
       ["POST /sync/cloud/:schoolname/students", "post", () => `/sync/cloud/${encodeURIComponent(TX.names.school)}/students`, () => undefined],
+      ["POST /sync/cloud/:schoolname/teachers", "post", () => `/sync/cloud/${encodeURIComponent(TX.names.school)}/teachers`, () => undefined],
       ["POST /student/create?cloud=true", "post", () => "/student/create?cloud=true", () => ({ schoolid: TX.school, standard: TX.standard, curriculumid: [TX.curriculum], students: [learner] })],
       ["POST /teacher/create?cloud=true", "post", () => "/teacher/create?cloud=true", () => ({ schoolname: TX.names.school, teachers: [{ schoolusername: "newteacher1", schooluserpasswordhash: "pass1234" }] })],
     ];

@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **296** routes, **285** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
+Of **298** routes, **287** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 257 | 257 | 0 | 0 |
+| owned | 259 | 259 | 0 | 0 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 0 | 0 | 0 | 0 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **296** | **285** | **11** | **0** |
+| **all** | **298** | **287** | **11** | **0** |
 
 ## Policies
 
@@ -352,10 +352,12 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | POST | `/subject/create` | SubjectController.create | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_subject] |  |
 | POST | `/sync/cloud` | SyncController.synconline | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[sync_content] | Re-pushes one organisation's PUBLISHED set (format 3; the same payload as GET sync/content, so a draft edit is never in it, and an organisation with no published curriculum pushes empty content and the student marks its curricula deleted: run `npm run publish:initial` first) with the organisation named in the request header. A publish, a retire and the delete of a published curriculum already push it by themselves; this is for an Admin or Organisation Admin of the organisation (or the platform, acting as it or naming it) to push it again after one of those pushes failed, or for an organisation with no publisher. Needs the `sync_content` permission. A platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired. |
 | POST | `/sync/cloud/:schoolname/students` | SyncController.synconlineschool | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[sync_students] | Pushes only the learners of one school of the caller's organisation, with that school's organisation named in the request header. Needs the `sync_students` permission. |
+| POST | `/sync/cloud/:schoolname/teachers` | SyncController.synconlineschoolteachers | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[sync_students] | Pushes only the teachers of one school of the caller's organisation, with that school's organisation named in the request header. Needs the `sync_students` permission. |
 | GET | `/sync/content` | SyncController.syncContent | owned | yes | `src/modules/sync/sync-scope.leak.spec.ts` |  | yes | AccessGuard(ACCESS) | One organisation's PUBLISHED content (format 3): the latest publication of each of its published curricula, merged, with its live schools, standards, subjects and countries; a draft edit never reaches it, and neither does a curriculum that is unpublished, retired or deleted. An organisation with no published curriculum gets the live tables and empty content, so the student marks its curricula deleted: run `npm run publish:initial` first. A platform user who is not acting as an organisation must name the organisation. A request that sends a format is refused (400): format 2 is retired. School-user tokens pass the guards but @Org() answers 401. |
 | POST | `/teacher` | TeacherController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_teacher] |  |
 | DELETE | `/teacher/:schooluserid` | TeacherController.deleteuser | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[delete_teacher] |  |
 | POST | `/teacher/create` | TeacherController.createall | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin) | The optional cloud push must send only the teachers created by this call. |
+| POST | `/teacher/one` | TeacherController.createOne | owned | yes | `src/modules/teachers/teacher-add-one.spec.ts` |  |  | AccessGuard(ACCESS, Role.superadmin, Role.admin, Role.organisationadmin) | The school must be the caller's; only the new account is pushed. |
 | GET | `/translations/:tablename/:rowid` | TranslationsController.list | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_curriculum, view_grade, view_level, view_lesson, view_lessonlearning, view_lessonpractice, view_lessonquiz, view_question] |  |
 | PUT | `/translations/:tablename/:rowid` | TranslationsController.put | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_curriculum, update_grade, update_level, update_lesson, update_lessonlearning, update_lessonpractice, update_lessonquiz, update_question] |  |
 | DELETE | `/translations/:tablename/:rowid/:language` | TranslationsController.remove | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_curriculum, update_grade, update_level, update_lesson, update_lessonlearning, update_lessonpractice, update_lessonquiz, update_question] |  |
