@@ -122,11 +122,23 @@ describe("roster payload getters keep schoolid out of the login and the included
       expect(selected).not.toMatch(/organisationid/);
     });
 
+    it("getschoolteachersbyschoolid (sync/cloud/:schoolname/teachers) selects schoolid, and filters on the school and the teacher role", async () => {
+      const sql = await capture((b) => b.getschoolteachersbyschoolid("school-1", { withSchoolId: true }));
+      const selected = selectedOf(sql);
+      expect(selected).toMatch(/`schoolid`/);
+      expect(selected).toMatch(/`schoolname`/);
+      expect(selected).not.toMatch(/organisationid/);
+      expect(sql).not.toMatch(/JOIN/);
+      expect(sql).toMatch(/`schoolid` = 'school-1'/);
+      expect(sql).toMatch(/`schooluserrole` = 3/);
+    });
+
     it("without it the same getters still keep schoolid out (so the checks above can fail)", async () => {
       for (const sql of [
         await capture((b) => b.getschooluserbyschoolid("school-1", true, {})),
         await capture((b) => b.getschooluserbyid(["u1"], {})),
         await capture((b) => b.getschoolteachersbyid(["t1"], {})),
+        await capture((b) => b.getschoolteachersbyschoolid("school-1", {})),
         await capture((b) => b.getschooluserbyschoolid("school-1", true, { withSchoolId: false })),
       ]) {
         expect(selectedOf(sql)).not.toMatch(/schoolid/);

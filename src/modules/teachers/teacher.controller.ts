@@ -21,6 +21,7 @@ import {
   ApiTags,
   getSchemaPath,
 } from "@nestjs/swagger";
+import { addTeacher, pushNewTeacher } from "src/business/add-teacher";
 import { pushToCloud, teachersFile } from "src/business/cloud-push";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { TeacherBusiness } from "src/business/teacher.business";
@@ -94,6 +95,23 @@ export class TeacherController {
         pageindex: body?.pageindex || 0,
         pagesize: body?.pagesize || 0,
       },
+    };
+  }
+
+  @OrgPolicy("owned", { note: "The school must be the caller's; only the new account is pushed.", enforcedBy: "src/modules/teachers/teacher-add-one.spec.ts" })
+  @Post("one")
+  @ApiResponse({ status: 201, description: "Teacher added" })
+  @ApiResponse({ status: 400, description: "A field is invalid" })
+  @ApiBody({ required: true, type: Object })
+  @UseGuards(AccessGuard(TokenType.ACCESS, Role.superadmin, Role.admin, Role.organisationadmin))
+  @HttpCode(HttpStatus.CREATED)
+  async createOne(@Body() body: unknown, @Org() org: OrgContext): Promise<any> {
+    const added = await addTeacher(org, body);
+    const push = await pushNewTeacher(added);
+    return {
+      schooluserid: added.schooluserid,
+      schoolusername: added.schoolusername,
+      push,
     };
   }
 

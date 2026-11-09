@@ -74,12 +74,21 @@ export interface AddLearnerInput {
   dateofbirth?: Date;
 }
 
-const invalid = (fields: ApiFieldError[], message?: string) =>
+export const invalid = (fields: ApiFieldError[], message?: string) =>
   new ApiError(ErrorCode.INVALID_INPUT, message ?? fields[0]?.message, { fields });
 
-const usernameTakenError = () => invalid([{ field: "schoolusername", message: USERNAME_TAKEN_MESSAGE }]);
+export const usernameTakenError = () => invalid([{ field: "schoolusername", message: USERNAME_TAKEN_MESSAGE }]);
 
 const lengthOf = (text: string) => [...text].length;
+
+/** The password rule of the account forms: 8 to 32 characters, at least one letter and one digit, no whitespace. */
+export const passwordIsStrong = (password: unknown): password is string =>
+  typeof password === "string" &&
+  lengthOf(password) >= 8 &&
+  lengthOf(password) <= 32 &&
+  LETTER.test(password) &&
+  DIGIT.test(password) &&
+  !WHITESPACE.test(password);
 
 const plainName = (value: unknown, required: boolean): { value?: string; message?: string } => {
   if (value === undefined || value === null || (typeof value === "string" && value.trim() === "" && !required)) {
@@ -138,14 +147,7 @@ export const validateAddLearner = (body: unknown, now: Date = new Date()): AddLe
   if (schoolusername === undefined) bad("schoolusername", USERNAME_MESSAGE);
 
   const password = raw.password;
-  const strong =
-    typeof password === "string" &&
-    lengthOf(password) >= 8 &&
-    lengthOf(password) <= 32 &&
-    LETTER.test(password) &&
-    DIGIT.test(password) &&
-    !WHITESPACE.test(password);
-  if (!strong) bad("password", PASSWORD_MESSAGE);
+  if (!passwordIsStrong(password)) bad("password", PASSWORD_MESSAGE);
 
   const gender = raw.genderid === 1 || raw.genderid === "1" ? 1 : raw.genderid === 2 || raw.genderid === "2" ? 2 : undefined;
   if (gender === undefined) bad("genderid", "Choose a gender.");
@@ -199,7 +201,7 @@ export const usernameAvailable = async (value: unknown): Promise<{ available: bo
   return { available: !(await usernameTaken(value as string)) };
 };
 
-const isUniqueViolation = (error: unknown) => (error as { name?: string } | null)?.name === "SequelizeUniqueConstraintError";
+export const isUniqueViolation = (error: unknown) => (error as { name?: string } | null)?.name === "SequelizeUniqueConstraintError";
 
 export interface AddedLearner {
   schooluserid: string;
@@ -319,18 +321,25 @@ export const pushNewLearner = async (added: Pick<AddedLearner, "schooluserid" | 
     );
     return { status: "pushed", message: "Added. The learner can sign in now." };
   } catch (error) {
-    const mapped = new GlobalExceptionFilter().map(error);
-    // class and mapped code only: an axios error carries the request's config, which holds the server key
-    Logger.error("push of a new learner to the learner server failed", {
-      originalerrorclass: (error as { constructor?: { name?: string } } | null)?.constructor?.name,
-      code: mapped.code,
-      status: mapped.status,
-    });
-    return {
-      status: "failed",
-      message: PUSH_FAILED_MESSAGE,
-      cause: mapped.errormessage,
-      code: mapped.code,
-    };
+    return failedPush(error, "push of a new learner to the learner server failed", PUSH_FAILED_MESSAGE);
   }
+};
+
+/**
+ * The outcome of a push of one new account that did not succeed: logged by error class and mapped code only (an axios error
+ * carries the request's config, which holds the server key), and answered with the message the admin is given.
+ */
+export const failedPush = (error: unknown, logLine: string, message: string): PushOutcome => {
+  const mapped = new GlobalExceptionFilter().map(error);
+  Logger.error(logLine, {
+    originalerrorclass: (error as { constructor?: { name?: string } } | null)?.constructor?.name,
+    code: mapped.code,
+    status: mapped.status,
+  });
+  return {
+    status: "failed",
+    message,
+    cause: mapped.errormessage,
+    code: mapped.code,
+  };
 };

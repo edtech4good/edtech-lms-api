@@ -1292,6 +1292,37 @@ describe("people and schools are confined to the caller's organisation", () => {
     });
   });
 
+  describe("POST /teacher/one", () => {
+    const one = (schoolid: string, schoolusername = "newteacher1") => ({ schoolid, schoolusername, password: "mango2tree" });
+    it.each(IN_X)("%s: creates a teacher login in X's school, with the school's own name and no learner row", async (who) => {
+      await send(who, "post", "/teacher/one", one(S_X)).expect(201);
+      expect(db.createdIn("schoolusers")).toHaveLength(1);
+      expect(db.createdIn("schoolusers")[0]).toMatchObject({ schoolusername: "newteacher1", schoolid: S_X, schoolname: NAME_X, schooluserrole: SchoolRole.TEACHER });
+      expect(db.createdIn("students")).toHaveLength(0);
+    });
+    it.each(IN_X)("%s: Y's school and the unowned one are the 404 a school that is not there gets, and nothing is written or pushed", async (who) => {
+      const foreign = await refuses(who, "post", "/teacher/one", one(S_Y));
+      const unowned = await refuses(who, "post", "/teacher/one", one(S_U));
+      const missing = await refuses(who, "post", "/teacher/one", one(MISSING));
+      expect(foreign.status).toBe(404);
+      expect(said(foreign)).toEqual(said(missing));
+      expect(said(unowned)).toEqual(said(missing));
+      db.nothingCreated();
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+    it("a platform user not acting is asked to choose an organisation, and nothing is written", async () => {
+      const res = await refuses("a platform user not acting", "post", "/teacher/one", one(S_Y));
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation.");
+      db.nothingCreated();
+    });
+    it("a server token is refused (401)", async () => {
+      const res = await refuses("a server token", "post", "/teacher/one", one(S_X));
+      expect(res.status).toBe(401);
+      db.nothingCreated();
+    });
+  });
+
   describe("DELETE /teacher/:schooluserid", () => {
     it.each(IN_X)("%s: the row in the path is the one checked: Y's teacher, with X's own teacher named in the request, is the 404 a missing teacher gets, unchanged", async (who) => {
       const { res, none } = await pathRowChecked(who, "delete", `/teacher/${TCH_Y}`, `/teacher/${MISSING}`, { schooluserid: TCH_X });

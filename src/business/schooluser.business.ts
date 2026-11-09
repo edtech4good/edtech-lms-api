@@ -8,6 +8,7 @@ import {
 } from "src/models/data-models/schoolusers";
 import { students, studentsAttributes } from "src/models/data-models/students";
 import { OrgContext } from "src/decorators/org.decorator";
+import { SchoolRole } from "src/models/enums/school.role.enum";
 import { withSchoolIds } from "./school-identity";
 import { andInOwnedSchools } from "./school-scope";
 import { studentApiAttributes, studentApiRosterAttributes } from "./student-api-payload";
@@ -107,6 +108,18 @@ export class SchoolUserBusiness {
       attributes: rosterAttributes(options),
     });
   };
+
+  /**
+   * A school's teachers, for the cloud push of Sync Teachers. Like the learners' roster (`getschooluserbyschoolid`), it
+   * filters `schooluserstatus` and NOT `isdeleted` or `isdisabled`: a deleted or disabled teacher is sent with its flags, so
+   * the student API refuses that login too.
+   */
+  getschoolteachersbyschoolid = async (schoolid: string, options: RosterOptions = {}) =>
+    schoolusers.findAll({
+      where: { schoolid, schooluserrole: SchoolRole.TEACHER, schooluserstatus: true },
+      attributes: rosterAttributes(options),
+      order: [["schooluserid", "ASC"]],
+    });
 
   getuser = async (schooluserid: string) => {
     const _user = await schoolusers.findOne({ where: { schooluserid } });

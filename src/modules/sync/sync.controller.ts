@@ -15,7 +15,7 @@ import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { ApiBearerAuth, ApiResponse, ApiTags } from "@nestjs/swagger";
 import AdmZip from "adm-zip";
-import { pushToCloud, studentsFile } from "src/business/cloud-push";
+import { pushToCloud, studentsFile, teachersFile } from "src/business/cloud-push";
 import { pushOrganisationSet } from "src/business/publish-push";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { findOwnedSchool, resolveOwnedSchoolSegment } from "src/business/school-scope";
@@ -149,6 +149,39 @@ export class SyncController {
       "students",
       "students.ini",
       JSON.stringify(studentsFile(school.schoolid, studentusers.map((x) => x.get({ plain: true })))),
+      school.organisationid,
+    );
+  }
+
+  @OrgPolicy("owned", {
+    note: "Pushes only the teachers of one school of the caller's organisation, with that school's organisation named in the request header. Needs the `sync_students` permission.",
+    enforcedBy: "src/modules/sync/sync-scope.leak.spec.ts",
+  })
+  @Post("cloud/:schoolname/teachers")
+  @ApiResponse({
+    status: 200,
+    description: "Sync to cloud teachers sucesfully",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "There are no teachers to sync",
+  })
+  // The twin of Sync Students, under the same permission (a separate one would need a seed change). The segment names the
+  // school by name or by id, among the caller's schools: another organisation's school is the 404 of an absent one.
+  @RequirePermissions(Permission.SYNC_STUDENTS)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  async synconlineschoolteachers(@Param("schoolname") schoolname: string, @Org() org: OrgContext) {
+    const found = await resolveOwnedSchoolSegment(org, schoolname, { forRead: true });
+    const school = await findOwnedSchool(org, found.schoolid, { includeDeleted: true });
+    const teachers = await new SchoolUserBusiness().getschoolteachersbyschoolid(school.schoolid, { withSchoolId: true });
+    if (teachers.length <= 0) {
+      throw new ApiError(ErrorCode.NOT_FOUND, "There are no teachers to sync.");
+    }
+    return pushToCloud(
+      "teachers",
+      "teachers.ini",
+      JSON.stringify(teachersFile(school.schoolid, teachers.map((x) => x.get({ plain: true })))),
       school.organisationid,
     );
   }
