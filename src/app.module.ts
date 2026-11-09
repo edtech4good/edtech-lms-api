@@ -6,6 +6,7 @@ import { ThrottlerModule } from "@nestjs/throttler";
 import { MorganInterceptor, MorganModule } from "nest-morgan";
 import { AppController } from "./app.controller";
 import { Config } from "./config";
+import { REQUEST_LOG_FORMAT, registerRequestLogTokens } from "./request-log";
 import { AuthModule } from "./modules/auth/auth.module";
 import { CommonControllerModule } from "./modules/common";
 import { CurriculumModule } from "./modules/curriculum";
@@ -55,9 +56,10 @@ const providers = () => {
     JwtVerifyEmailStrategy,
   ];
   if (Config.fortyk.api.debug === true) {
+    registerRequestLogTokens();
     temp.push({
       provide: APP_INTERCEPTOR,
-      useClass: MorganInterceptor("combined"),
+      useClass: MorganInterceptor(REQUEST_LOG_FORMAT),
     });
   }
 
