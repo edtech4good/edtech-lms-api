@@ -325,6 +325,13 @@ describe("adding one teacher", () => {
         expect(transaction.commit).toHaveBeenCalledTimes(1);
         expect(JSON.stringify((Logger.error as jest.Mock).mock.calls)).not.toContain("SECRET-KEY");
       });
+      it("a 400 naming the class keeps the teacher's own failed message", async () => {
+        (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { errormessage: "SERVER-TEXT", hint: "SERVER-TEXT", fields: [{ field: "standard", message: "SERVER-TEXT" }] } } }));
+        const res = await send("X's Admin", "post", "/teacher/one", goodBody()).expect(201);
+        expect(res.body.push.status).toBe("failed");
+        expect(res.body.push.message).toBe("The account was saved, but the learning server did not answer. Run Sync Teachers for this school on the Schools screen.");
+        expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
+      });
       it("a timed-out push is a failed outcome too", async () => {
         (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("timeout of 15000ms exceeded"), { isAxiosError: true, code: "ECONNABORTED" }));
         const res = await send("X's Admin", "post", "/teacher/one", goodBody()).expect(201);

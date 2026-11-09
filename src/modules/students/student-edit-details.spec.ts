@@ -486,11 +486,12 @@ describe("reading and editing one learner's details", () => {
       });
       it("the student server refusing the class or the curriculum (400) says to run Sync Content first, then Sync Students", async () => {
         for (const field of ["standard", "curriculumid", "curriculumids"]) {
-          (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { errormessage: "SERVER-TEXT", fields: [{ field, message: "SERVER-TEXT" }] } }, config: { headers: { Authorization: "SECRET-KEY" } } }));
+          (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { errormessage: "SERVER-TEXT", hint: "SERVER-TEXT", fields: [{ field, message: "SERVER-TEXT" }] } }, config: { headers: { Authorization: "SECRET-KEY" } } }));
           const res = await put("X's Admin", L_X, goodBody()).expect(200);
           expect(res.body.push.status).toBe("failed");
           expect(res.body.push.message).toBe("Saved, but the learning server doesn't have this class or curriculum yet. Run Sync Content, then Sync Students for this school.");
           expect(JSON.stringify(res.body)).not.toContain("SECRET-KEY");
+          expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
           expect(learnerRow(L_X).studentfirstname).toBe(NEW_FIRST);
         }
       });
