@@ -96,7 +96,7 @@ export const CENTRAL_ACTIVITY: ActivityCheck[] = [
   byLearnerOrLogin("studentlearningsprogress", studentlearningprogress),
   byLearner("studentgradesprogress", studentgradesprogress),
   byLearner("studentlevelsprogress", studentlevelsprogress),
-  byLearnerOrLogin("studentlessonsprogress", studentlessonsprogress),
+  byLearner("studentlessonsprogress", studentlessonsprogress),
   byLearner("studentpoints", studentpoints),
   byLearner("studentactives", studentactives),
 ];
