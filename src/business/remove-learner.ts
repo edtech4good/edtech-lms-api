@@ -23,7 +23,7 @@ import { ORGANISATION_MESSAGE, failedPush } from "./add-learner";
 import { cloudConfigured, removeLearnerFromCloud, CloudRemoval } from "./cloud-push";
 import { scopeOf } from "./org-scope";
 import { ownersOfSchools } from "./row-owner";
-import { andInOwnedSchools, findOwnedStudent, studentNotFound } from "./school-scope";
+import { andInOwnedSchools, findOwnedStudent, ownedSchoolIds, studentNotFound } from "./school-scope";
 
 /**
  * Removing one learner who has never signed in and has no progress (`POST student/:schooluserid/remove`), so the username can
@@ -32,19 +32,22 @@ import { andInOwnedSchools, findOwnedStudent, studentNotFound } from "./school-s
  * asked. Anything with a sign-in or progress keeps the existing way out: Disable.
  *
  * The order, and why:
- * 1. Resolve the learner among the caller's schools, and look for central activity. Both read through the pool, so both come
+ * 1. Resolve the learner among the caller's schools (every learner row of the login must be in them), and look for central activity. Both read through the pool, so both come
  *    before the transaction opens (a read through the pool while a transaction is open can starve the pool).
  * 2. Ask the learning server (when one is set up). Its 409 is a refusal; no answer, a timeout or any other status is a 503 and
  *    nothing is removed anywhere.
- * 3. One transaction on central: lock the login row, look for central activity again, hard-delete the tokens, the learner rows
- *    and the login. A failure here after the learning server removed the account is answered as such; a retry finds the account
- *    absent on the learning server and finishes here.
+ * 3. One transaction on central: lock the login row and its learner rows, look for central activity again, hard-delete the tokens,
+ *    the learner rows and the login. A failure here after the learning server removed the account is answered as such (a refusal
+ *    from the lock or the re-check too, since the learning server's copy is already gone); a retry finds the account absent on the
+ *    learning server and finishes here.
  */
 
 export const ACTIVITY_MESSAGE = "This learner has signed in or has progress, so it can't be removed. Disable it instead.";
 export const ELSEWHERE_MESSAGE = "The learning server holds this account under another school, so nothing was removed. Run Sync Students for this school, then try again.";
 export const UNREACHABLE_MESSAGE = "The learning server didn't answer, so nothing was removed. Try again later.";
 export const HALF_REMOVED_MESSAGE = "Removed from the learning server, but not here. Try again.";
+export const KEPT_MESSAGE =
+  "This learner was removed from the learning server, but has activity here, so it was kept. Run Sync Students for this school to restore it on the learning server.";
 
 /** Gives up on the learning server after this long (the same limit as the push of one account). */
 export const REMOVE_TIMEOUT_MS = 15_000;
@@ -108,8 +111,9 @@ const hasCentralActivity = async (ids: Ids, transaction?: Transaction): Promise<
   return false;
 };
 
-const studentIdsOf = async (schooluserid: string, transaction?: Transaction): Promise<string[]> =>
-  (await students.findAll({ where: { schooluserid }, attributes: ["studentid"], transaction })).map((r) => r.studentid);
+/** Every learner row of the login (live or not), with the school each is in; locked `FOR UPDATE` inside a transaction. */
+const learnerRowsOf = async (schooluserid: string, transaction?: Transaction) =>
+  students.findAll({ where: { schooluserid }, attributes: ["studentid", "schoolid"], transaction, lock: transaction ? transaction.LOCK.UPDATE : undefined });
 
 export interface RemovedLearner {
   schooluserid: string;
@@ -150,7 +154,11 @@ export const removeLearner = async (org: OrgContext, schooluserid: unknown): Pro
     where: await andInOwnedSchools({ schooluserid: id, schooluserrole: SchoolRole.STUDENT, isdeleted: false }, org),
   });
   if (!login) throw studentNotFound();
-  const ids: Ids = { schooluserid: login.schooluserid, studentids: await studentIdsOf(login.schooluserid) };
+  const rows = await learnerRowsOf(login.schooluserid);
+  // removing destroys every learner row of the login, so every one of them must be the caller's
+  const owned = await ownedSchoolIds(org);
+  if (owned !== undefined && rows.some((r) => !owned.includes(r.schoolid))) throw studentNotFound();
+  const ids: Ids = { schooluserid: login.schooluserid, studentids: rows.map((r) => r.studentid) };
   const username = login.schoolusername;
   const owners = await ownersOfSchools([login.schoolid]);
 
@@ -159,6 +167,8 @@ export const removeLearner = async (org: OrgContext, schooluserid: unknown): Pro
   let there: CloudRemoval | undefined;
   if (cloudConfigured()) there = await askLearningServer(login.schooluserid, owners.get(login.schoolid) ?? null);
 
+  // what the transaction refused with, so a refusal after the learning server removed the account is answered as such
+  let refusal: "gone" | "activity" | undefined;
   const tnx = await dbinstance.getdbinstance().transaction();
   try {
     const locked = await schoolusers.findOne({
@@ -166,9 +176,15 @@ export const removeLearner = async (org: OrgContext, schooluserid: unknown): Pro
       transaction: tnx,
       lock: tnx.LOCK.UPDATE,
     });
-    if (!locked) throw studentNotFound();
-    const current: Ids = { schooluserid: ids.schooluserid, studentids: await studentIdsOf(ids.schooluserid, tnx) };
-    if (await hasCentralActivity(current, tnx)) throw activityError();
+    if (!locked) {
+      refusal = "gone";
+      throw studentNotFound();
+    }
+    const current: Ids = { schooluserid: ids.schooluserid, studentids: (await learnerRowsOf(ids.schooluserid, tnx)).map((r) => r.studentid) };
+    if (await hasCentralActivity(current, tnx)) {
+      refusal = "activity";
+      throw activityError();
+    }
     await tokens.destroy({ where: { lmsuserid: ids.schooluserid }, transaction: tnx });
     await students.destroy({ where: { schooluserid: ids.schooluserid }, transaction: tnx });
     await schoolusers.destroy({ where: { schooluserid: ids.schooluserid }, transaction: tnx });
@@ -179,7 +195,13 @@ export const removeLearner = async (org: OrgContext, schooluserid: unknown): Pro
     } catch (rollbackError) {
       Logger.error("rollback of a learner removal failed", { originalerrorclass: (rollbackError as { constructor?: { name?: string } } | null)?.constructor?.name });
     }
-    if (isApiError(error) || there !== "removed") throw error;
+    if (there !== "removed") throw error;
+    if (isApiError(error)) {
+      // the learning server's copy is already gone: say so, and keep the ids only in the log
+      Logger.error("a learner was removed from the learner server but central refused to remove it", { schooluserid: ids.schooluserid, refusal });
+      if (refusal === "activity") throw new ApiError(ErrorCode.ALREADY_EXISTS, KEPT_MESSAGE);
+      throw error;
+    }
     Logger.error("a learner was removed from the learner server but not from central", {
       originalerrorclass: (error as { constructor?: { name?: string } } | null)?.constructor?.name,
     });

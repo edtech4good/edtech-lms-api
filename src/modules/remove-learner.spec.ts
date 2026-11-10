@@ -10,7 +10,9 @@ import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { Config, Logger } from "src/config";
 import { ORGANISATION_ADMIN_PERMISSIONS_20261002 } from "src/db/frozen/organisation-admin-20261002";
 import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
+import { rpiuseraccess } from "src/models/data-models/rpiuseraccess";
 import { schoolusers } from "src/models/data-models/schoolusers";
+import { students } from "src/models/data-models/students";
 import { tokens } from "src/models/data-models/tokens";
 import { Role } from "src/models/enums";
 import { SchoolRole } from "src/models/enums/school.role.enum";
@@ -75,6 +77,8 @@ const ACTIVITY = "This learner has signed in or has progress, so it can't be rem
 const ELSEWHERE = "The learning server holds this account under another school, so nothing was removed. Run Sync Students for this school, then try again.";
 const UNREACHABLE = "The learning server didn't answer, so nothing was removed. Try again later.";
 const HALF = "Removed from the learning server, but not here. Try again.";
+const KEPT =
+  "This learner was removed from the learning server, but has activity here, so it was kept. Run Sync Students for this school to restore it on the learning server.";
 
 /** One row for the learner in each table the central check covers (by the fake's table name). */
 const ACTIVITY_ROWS: Array<{ table: string; fake: ContentTable; row: Row }> = [
@@ -241,7 +245,7 @@ describe("removing a learner who has never signed in", () => {
       expect(axios.delete).not.toHaveBeenCalled();
       untouched();
     });
-    it("activity that appears after the first look and before the lock is a 409 too, and rolls back", async () => {
+    it("activity that appears after the learning server removed the account is a 409 that says it was kept and how to restore it, and rolls back", async () => {
       // the learning server answers, and a row lands on central before the transaction looks again
       (axios.delete as jest.Mock).mockImplementation(async () => {
         db.add("studentpoints", { studentpointid: "late", studentid: STU_X });
@@ -249,9 +253,46 @@ describe("removing a learner who has never signed in", () => {
       });
       const res = await remove("X's Admin", L_X);
       expect(res.status).toBe(409);
+      expect(res.body.errormessage).toBe(KEPT);
       expect(transaction.rollback).toHaveBeenCalledTimes(1);
       expect(transaction.commit).not.toHaveBeenCalled();
       untouched();
+      // logged by ids only
+      const logged = JSON.stringify((Logger.error as jest.Mock).mock.calls);
+      expect(logged).toContain(L_X);
+      expect(logged).not.toContain("learnerx");
+    });
+    it("activity that appears when the learning server did not remove it (absent) keeps the plain activity message", async () => {
+      (axios.delete as jest.Mock).mockImplementation(async () => {
+        db.add("studentpoints", { studentpointid: "late", studentid: STU_X });
+        return { status: 200, data: { removed: false, absent: true } };
+      });
+      const res = await remove("X's Admin", L_X);
+      expect(res.status).toBe(409);
+      expect(res.body.errormessage).toBe(ACTIVITY);
+    });
+    it("a learner that is gone by the time the transaction locks it stays a 404 after the learning server removed the account, and is logged", async () => {
+      (axios.delete as jest.Mock).mockImplementation(async () => {
+        db.tables.schoolusers = db.tables.schoolusers.filter((r) => r.schooluserid !== L_X);
+        return { status: 200, data: { removed: true } };
+      });
+      const res = await remove("X's Admin", L_X);
+      expect(res.status).toBe(404);
+      expect(transaction.rollback).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify((Logger.error as jest.Mock).mock.calls)).toContain(L_X);
+    });
+    it("locks the login's learner rows FOR UPDATE inside the transaction, before the activity re-check", async () => {
+      await remove("X's Admin", L_X).expect(200);
+      const calls = (students.findAll as jest.Mock).mock.calls;
+      const order = (students.findAll as jest.Mock).mock.invocationCallOrder;
+      const inside = calls.map((c, i) => ({ c: c[0] as { transaction?: unknown; lock?: unknown }, at: order[i] })).filter((x) => x.c.transaction !== undefined);
+      expect(inside).toHaveLength(1);
+      expect(inside[0].c.lock).toBe("UPDATE");
+      const recheck = (rpiuseraccess.count as jest.Mock).mock.calls
+        .map((c, i) => ({ c: c[0] as { transaction?: unknown }, at: (rpiuseraccess.count as jest.Mock).mock.invocationCallOrder[i] }))
+        .filter((x) => x.c.transaction !== undefined);
+      expect(recheck).toHaveLength(1);
+      expect(inside[0].at).toBeLessThan(recheck[0].at);
     });
   });
 
@@ -326,6 +367,13 @@ describe("removing a learner who has never signed in", () => {
       const missing = await refuses(who, MISSING);
       expect(other.status).toBe(404);
       expect(said(other)).toEqual(said(missing));
+      expect(axios.delete).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a login with learner rows in another organisation's school too is the same 404, nothing removed or sent", async (who) => {
+      db.add("students", { studentid: uuid(406), schooluserid: L_X, schoolid: S_Y, schoolname: "x", studentfirstname: "សុខា", studentlastname: "ចាន់", standard: "k", curriculumid: "c", curriculumids: ["c"], genderid: 1, isactive: 1, is_teacher_acc: false, type: "online", isdeleted: false });
+      const res = await refuses(who, L_X);
+      expect(res.status).toBe(404);
+      expect(said(res)).toEqual(said(await refuses(who, MISSING)));
       expect(axios.delete).not.toHaveBeenCalled();
     });
     it.each(IN_X)("%s: a teacher is the same 404", async (who) => {
