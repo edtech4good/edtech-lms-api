@@ -38,9 +38,7 @@ import { logfiles } from "src/models/data-models/logfiles";
 import { studentgradesprogress } from "src/models/data-models/studentgradesprogress";
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
-import { studentpracticesprogress } from "src/models/data-models/studentpracticesprogress";
 import { studentprogress } from "src/models/data-models/studentprogress";
-import { studentquizzesprogress } from "src/models/data-models/studentquizzesprogress";
 import { students } from "src/models/data-models/students";
 import { subjects } from "src/models/data-models/subjects";
 import { syncs } from "src/models/data-models/syncrecord";
@@ -119,8 +117,6 @@ const MODELS = {
   studentprogressquestions: [studentprogressquestions, "studentprogressquestionid"],
   logfiles: [logfiles, "logfileid"],
   // what removing a learner who never signed in looks for
-  studentpracticesprogress: [studentpracticesprogress, "studentpracticeprogressid"],
-  studentquizzesprogress: [studentquizzesprogress, "studentquizprogressid"],
   tokens: [tokens, "token"],
 } as const;
 

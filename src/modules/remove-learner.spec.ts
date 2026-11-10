@@ -1,3 +1,4 @@
+import { Sequelize } from "sequelize";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ThrottlerModule } from "@nestjs/throttler";
@@ -71,6 +72,7 @@ const withoutReference = (body: Row) => {
 const said = (res: request.Response) => ({ status: res.status, body: withoutReference(res.body) });
 
 const ACTIVITY = "This learner has signed in or has progress, so it can't be removed. Disable it instead.";
+const ELSEWHERE = "The learning server holds this account under another school, so nothing was removed. Run Sync Students for this school, then try again.";
 const UNREACHABLE = "The learning server didn't answer, so nothing was removed. Try again later.";
 const HALF = "Removed from the learning server, but not here. Try again.";
 
@@ -81,9 +83,7 @@ const ACTIVITY_ROWS: Array<{ table: string; fake: ContentTable; row: Row }> = [
   { table: "feedbacks", fake: "feedbacks", row: { feedbackid: "a3", created_by: L_X } },
   { table: "syncrecords", fake: "syncs", row: { syncid: "a4", created_by: L_X } },
   { table: "studentprogress", fake: "studentprogress", row: { studentprogressid: "a5", studentid: STU_X } },
-  { table: "studentlearningprogress", fake: "studentlearningprogress", row: { studentlearningprogressid: "a6", studentid: STU_X } },
-  { table: "studentpracticesprogress", fake: "studentpracticesprogress", row: { studentpracticeprogressid: "a7", studentid: STU_X } },
-  { table: "studentquizzesprogress", fake: "studentquizzesprogress", row: { studentquizprogressid: "a8", studentid: STU_X } },
+  { table: "studentlearningsprogress", fake: "studentlearningprogress", row: { studentlearningprogressid: "a6", studentid: STU_X } },
   { table: "studentgradesprogress", fake: "studentgradesprogress", row: { studentgradeprogressid: "a9", studentid: STU_X } },
   { table: "studentlevelsprogress", fake: "studentlevelsprogress", row: { studentlevelprogressid: "b1", studentid: STU_X } },
   { table: "studentlessonsprogress", fake: "studentlessonsprogress", row: { studentlessonprogressid: "b2", studentid: STU_X } },
@@ -216,6 +216,20 @@ describe("removing a learner who has never signed in", () => {
   });
 
   describe("central activity", () => {
+    it("every name in the list is a table central registers", () => {
+      // fresh copies of the models: the ones this file uses are replaced by the in-memory tables
+      let registered = new Set<string>();
+      jest.isolateModules(() => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const fresh = require("src/models/data-models/init-models") as { initModels: (s: unknown) => unknown };
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const Fresh = require("sequelize").Sequelize as typeof Sequelize;
+        const sequelize = new Fresh({ dialect: "mysql" });
+        fresh.initModels(sequelize);
+        registered = new Set(Object.values(sequelize.models).map((m) => m.getTableName() as string));
+      });
+      expect(CENTRAL_ACTIVITY.map((c) => c.table).filter((t) => !registered.has(t))).toEqual([]);
+    });
     it("the check covers each of the tables, and the cases below cover each of them", () => {
       expect(CENTRAL_ACTIVITY.map((c) => c.table).sort()).toEqual(ACTIVITY_ROWS.map((a) => a.table).sort());
     });
@@ -242,7 +256,15 @@ describe("removing a learner who has never signed in", () => {
   });
 
   describe("the learning server", () => {
-    it("a 409 is a 409 with the same message, nothing removed", async () => {
+    it("a 409 with reason elsewhere is a 409 telling the admin to run Sync Students, nothing removed", async () => {
+      (axios.delete as jest.Mock).mockResolvedValue({ status: 409, data: { removed: false, reason: "elsewhere" } });
+      const res = await refuses("X's Admin", L_X);
+      expect(res.status).toBe(409);
+      expect(res.body.errormessage).toBe(ELSEWHERE);
+      expect(transaction.commit).not.toHaveBeenCalled();
+      untouched();
+    });
+    it("a 409 with reason activity is a 409 with the activity message, nothing removed", async () => {
       (axios.delete as jest.Mock).mockResolvedValue({ status: 409, data: { removed: false, reason: "activity" } });
       const res = await refuses("X's Admin", L_X);
       expect(res.status).toBe(409);

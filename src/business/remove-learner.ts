@@ -13,9 +13,7 @@ import { studentlearningprogress } from "src/models/data-models/studentlearningp
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
 import { studentpoints } from "src/models/data-models/studentpoints";
-import { studentpracticesprogress } from "src/models/data-models/studentpracticesprogress";
 import { studentprogress } from "src/models/data-models/studentprogress";
-import { studentquizzesprogress } from "src/models/data-models/studentquizzesprogress";
 import { syncs } from "src/models/data-models/syncrecord";
 import { tokens } from "src/models/data-models/tokens";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
@@ -44,6 +42,7 @@ import { andInOwnedSchools, findOwnedStudent, studentNotFound } from "./school-s
  */
 
 export const ACTIVITY_MESSAGE = "This learner has signed in or has progress, so it can't be removed. Disable it instead.";
+export const ELSEWHERE_MESSAGE = "The learning server holds this account under another school, so nothing was removed. Run Sync Students for this school, then try again.";
 export const UNREACHABLE_MESSAGE = "The learning server didn't answer, so nothing was removed. Try again later.";
 export const HALF_REMOVED_MESSAGE = "Removed from the learning server, but not here. Try again.";
 
@@ -84,7 +83,8 @@ const byLearnerOrLogin = (table: string, model: unknown): ActivityCheck => ({
 });
 
 /**
- * Every central table whose rows would mean the learner has been used. `studentprogressquestions` is reached through
+ * Every central table whose rows would mean the learner has been used. (Central has no practice-progress or quiz-progress table:
+ * those models are never initialised and no migration creates them; only the learning server has them.) `studentprogressquestions` is reached through
  * `studentprogress` (a question row hangs off a progress row), so it needs no check of its own.
  */
 export const CENTRAL_ACTIVITY: ActivityCheck[] = [
@@ -93,9 +93,7 @@ export const CENTRAL_ACTIVITY: ActivityCheck[] = [
   byLogin("feedbacks", feedbacks, "created_by"),
   byLogin("syncrecords", syncs, "created_by"),
   byLearner("studentprogress", studentprogress),
-  byLearnerOrLogin("studentlearningprogress", studentlearningprogress),
-  byLearnerOrLogin("studentpracticesprogress", studentpracticesprogress),
-  byLearnerOrLogin("studentquizzesprogress", studentquizzesprogress),
+  byLearnerOrLogin("studentlearningsprogress", studentlearningprogress),
   byLearner("studentgradesprogress", studentgradesprogress),
   byLearner("studentlevelsprogress", studentlevelsprogress),
   byLearnerOrLogin("studentlessonsprogress", studentlessonsprogress),
@@ -131,6 +129,7 @@ const askLearningServer = async (schooluserid: string, organisationid: string | 
     throw new ApiError(ErrorCode.SERVICE_UNAVAILABLE, UNREACHABLE_MESSAGE);
   }
   if (answer === "activity") throw activityError();
+  if (answer === "elsewhere") throw new ApiError(ErrorCode.ALREADY_EXISTS, ELSEWHERE_MESSAGE);
   return answer;
 };
 

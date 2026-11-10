@@ -68,7 +68,7 @@ export const pushToCloud = async (
 };
 
 /** What the learning server said to a request to remove one learner: it removed it, it never held it, or the learner has activity there. */
-export type CloudRemoval = "removed" | "absent" | "activity";
+export type CloudRemoval = "removed" | "absent" | "activity" | "elsewhere";
 
 /**
  * Asks the learning server to remove one learner who has never signed in (`DELETE import/students/:schooluserid`), with the
@@ -89,7 +89,8 @@ export const removeLearnerFromCloud = async (
     validateStatus: () => true,
     ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
   });
-  if (response.status === 409) return "activity";
+  // a 409 without a reason this server knows is read as activity: either way nothing is removed
+  if (response.status === 409) return (response.data as { reason?: unknown } | null)?.reason === "elsewhere" ? "elsewhere" : "activity";
   const body = (response.data ?? {}) as { removed?: unknown; absent?: unknown };
   if (response.status === 200 && body.removed === true) return "removed";
   if (response.status === 200 && body.removed === false && body.absent === true) return "absent";
