@@ -21,6 +21,7 @@ import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
 import { assertEnrolmentFits, ownerOfSchool } from "./content-owner";
+import { nextCurriculumId } from "./next-curriculum-id";
 import { isSameSchoolName, normaliseSchoolName, withSchoolIds } from "./school-identity";
 import { andInOwnedSchools, findOwnedStudent, requireOwnedSchoolByName } from "./school-scope";
 import { OrgContext } from "src/decorators/org.decorator";
@@ -46,6 +47,9 @@ import { unionBy } from "lodash";
  * caller refuses a file with an unresolved name, the same way whatever the reason, so nothing says which organisation
  * holds a name. `ids` has each resolved curriculum once, in file order.
  */
+/** The message of a CSV row that names a school outside the learner's own organisation. */
+export const OWN_ORGANISATION_SCHOOL_MESSAGE = "Choose a school of the learner's own organisation.";
+
 const curriculumIdsNamed = async (
   names: string[],
   schoolOwner: string | null,
@@ -750,9 +754,16 @@ WHERE
     // Before any row is written: every learner a row names, and every school it names, must be the caller's (else 404 and
     // nothing is written), and the curriculums a row names must be curriculums of the owner of the school it names.
     for (const [rowindex, x] of studentdata.entries()) {
-      await findOwnedStudent(org, { studentid: x.studentid }, transaction);
+      const current = await findOwnedStudent(org, { studentid: x.studentid }, transaction);
       const school = await requireOwnedSchoolByName(org, x.schoolname, transaction, `students.${rowindex}.schoolname`);
       const schoolOwner = await ownerOfSchool(school.schoolid, transaction);
+      // a learner stays in its own organisation: the school a row names is one of the organisation of the school the learner is in
+      // now (for every caller: the platform and the server key too)
+      if ((await ownerOfSchool(current.schoolid, transaction)) !== schoolOwner) {
+        throw new ApiError(ErrorCode.INVALID_INPUT, OWN_ORGANISATION_SCHOOL_MESSAGE, {
+          fields: [{ field: `students.${rowindex}.schoolname`, message: OWN_ORGANISATION_SCHOOL_MESSAGE }],
+        });
+      }
       const names = x.curriculums.split('/');
       const named = await curriculumIdsNamed(names, schoolOwner, org, transaction);
       // a name that is not one of the school's owner's curriculums (a name only another organisation holds is one) is the
@@ -827,7 +838,9 @@ WHERE
           updated_at: new Date(),
           updated_by: lmsuser.lmsuserid,
           is_teacher_acc: (parseInt(x.is_teacher_acc ?? '0') === 1) ? true : false,
-          curriculumids: currs
+          curriculumids: currs,
+          // the single curriculum stays one of the list: the learners list and the reports join on it
+          ...(currs.length > 0 ? { curriculumid: nextCurriculumId(student.curriculumid, currs) } : {}),
         },
         {
           where: { studentid: student.studentid },

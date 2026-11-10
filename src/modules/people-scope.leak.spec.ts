@@ -1095,6 +1095,51 @@ describe("people and schools are confined to the caller's organisation", () => {
     });
   });
 
+  describe("PUT /student/:schooluserid/school", () => {
+    const path = (id: string) => `/student/${id}/school`;
+    const S_X2 = uuid(231); // a second school of X
+    const K_X2 = uuid(511);
+    const NAME_X2 = "សាលាបឋមសិក្សា គ";
+    const move = { schoolid: S_X2, standard: K_X2, curriculumids: [CUR_X] };
+    const row = (id: string) => db.tables.students.find((s) => s.studentid === id)!;
+    const movedLearners = () => db.tables.students.filter((s) => s.schoolid === S_X2);
+    beforeEach(() => {
+      db.add("schools", { schoolid: S_X2, schoolname: NAME_X2, organisationid: X, countryid: C1, curriculums: [CUR_X] });
+      db.add("standards", { standardid: K_X2, standardname: "ថ្នាក់ទី៥", schoolid: S_X2, schoolname: NAME_X2 });
+    });
+    it.each(IN_X)("%s: moves X's learner to another school of X, and no other learner", async (who) => {
+      await send(who, "put", path(USR_X), move).expect(200);
+      expect(row(STU_X)).toMatchObject({ schoolid: S_X2, schoolname: NAME_X2, standard: K_X2 });
+      expect(db.tables.schoolusers.find((s) => s.schooluserid === USR_X)).toMatchObject({ schoolid: S_X2, schoolname: NAME_X2 });
+      expect(movedLearners().map((s) => s.studentid)).toEqual([STU_X]);
+    });
+    it.each(IN_X)("%s: another organisation's learner, the unowned school's and a teacher are the 404 a learner that is not there gets, unchanged, nothing pushed", async (who) => {
+      for (const id of [USR_Y, USR_U, TCH_X]) await expectNotFoundLikeMissing(who, "put", path(id), path(MISSING), move);
+      expect(axios.put).not.toHaveBeenCalled();
+      expect(movedLearners()).toEqual([]);
+    });
+    it.each(IN_X)("%s: another organisation's school, class and curriculum are refused for X's learner, and the unowned school too", async (who) => {
+      expect((await refuses(who, "put", path(USR_X), { ...move, schoolid: S_Y, standard: K_Y, curriculumids: [CUR_Y] })).status).toBe(400);
+      expect((await refuses(who, "put", path(USR_X), { ...move, schoolid: S_U, standard: K_U })).status).toBe(400);
+      expect((await refuses(who, "put", path(USR_X), { ...move, standard: K_Y })).status).toBe(400);
+      expect((await refuses(who, "put", path(USR_X), { ...move, curriculumids: [CUR_Y] })).status).toBe(400);
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: Y's learner cannot be moved into X's school, and X's learner cannot be moved into Y's", async (who) => {
+      await expectNotFoundLikeMissing(who, "put", path(USR_Y), path(MISSING), move);
+      expect(row(STU_Y).schoolid).toBe(S_Y);
+    });
+    it.each(IN_X)("%s: a learner removed from the roster is the same 404", async (who) => {
+      row(STU_X).isdeleted = true;
+      await expectNotFoundLikeMissing(who, "put", path(USR_X), path(MISSING), move);
+    });
+    it("a platform user not acting is asked to choose an organisation, and nothing is written", async () => {
+      const res = await refuses("a platform user not acting", "put", path(USR_Y), move);
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation.");
+    });
+  });
+
   describe("GET /student/:studentid", () => {
     it.each(MARKER)("%s: the last login asked of the student API carries the organisation header (%s)", async (who, marker) => {
       await send(who, "get", `/student/${STU_X}`).expect(200);
@@ -1340,6 +1385,50 @@ describe("people and schools are confined to the caller's organisation", () => {
       expect(onlyY.status).toBe(400);
       expect(said(onlyY)).toEqual(said(nobody));
       expect(onlyY.body.fields).toEqual([{ field: "curriculums", message: "One or more of those curriculums doesn't exist." }]);
+    });
+    describe("a learner stays in its own organisation, and its single curriculum follows the list", () => {
+      const NOT_ACTING = "a platform user not acting" as Who;
+      const OWN_ORG = "Choose a school of the learner's own organisation.";
+      const S_X2 = uuid(231);
+      const K_X2 = uuid(511);
+      const CUR_X2 = uuid(311);
+      const NAME_X2 = "សាលាបឋមសិក្សា គ";
+      const learnerRowOf = (id: string) => db.tables.students.find((s) => s.studentid === id)!;
+      const crossRow = () => rowFor(STU_X, USR_X, "learnerx", NAME_Y, "ភាសាខ្មែរ ខ", "ថ្នាក់ទី២");
+      beforeEach(() => {
+        db.add("curriculums", { curriculumid: CUR_X2, curriculumname: "ភាសាខ្មែរ គ", organisationid: X, curriculumstatus: true });
+        db.add("schools", { schoolid: S_X2, schoolname: NAME_X2, organisationid: X, countryid: C1, curriculums: [CUR_X] });
+        db.add("standards", { standardid: K_X2, standardname: "ថ្នាក់ទី៥", schoolid: S_X2, schoolname: NAME_X2 });
+      });
+      it.each([NOT_ACTING, "a server token" as Who])("%s: a row naming a school of another organisation is refused with the message, naming the row, nothing written", async (who) => {
+        const res = await refuses(who, "put", "/student/update", { students: [crossRow()] });
+        expect(res.status).toBe(400);
+        expect(res.body.errormessage).toBe(OWN_ORG);
+        expect(res.body.fields).toEqual([{ field: "students.0.schoolname", message: OWN_ORG }]);
+        expect(learnerRowOf(STU_X).schoolid).toBe(S_X);
+        expect(axios.put).not.toHaveBeenCalled();
+      });
+      it.each([NOT_ACTING, "a server token" as Who])("%s: the other rows of the file behave as before: the file is refused as a whole, and without the bad row it is applied", async (who) => {
+        const first = await refuses(who, "put", "/student/update", { students: [ownRow(), crossRow()] });
+        expect(first.body.fields).toEqual([{ field: "students.1.schoolname", message: OWN_ORG }]);
+        expect(firstName(STU_X)).toBe(KHMER_FIRST.X);
+        await send(who, "put", "/student/update", { students: [ownRow(), yRow()] }).expect(200);
+        expect(firstName(STU_X)).toBe("ឈ្មោះថ្មី");
+        expect(firstName(STU_Y)).toBe("ឈ្មោះថ្មី");
+      });
+      it.each([NOT_ACTING, "a server token" as Who, ...IN_X])("%s: a school of the learner's own organisation is still a move: both tables, and the single curriculum follows", async (who) => {
+        learnerRowOf(STU_X).curriculumids = [CUR_X, CUR_X2];
+        const row = rowFor(STU_X, USR_X, "learnerx", NAME_X2, "ភាសាខ្មែរ គ", "ថ្នាក់ទី៥");
+        await send(who, "put", "/student/update", { students: [row] }).expect(200);
+        expect(learnerRowOf(STU_X)).toMatchObject({ schoolid: S_X2, schoolname: NAME_X2, standard: K_X2, curriculumids: [CUR_X2], curriculumid: CUR_X2 });
+        expect(db.tables.schoolusers.find((u) => u.schooluserid === USR_X)).toMatchObject({ schoolid: S_X2, schoolname: NAME_X2 });
+      });
+      it.each(IN_X)("%s: the single curriculum is kept while it is still listed, and replaced by the first when it is not", async (who) => {
+        await send(who, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ គ/ភាសាខ្មែរ ក" }] }).expect(200);
+        expect(learnerRowOf(STU_X)).toMatchObject({ curriculumids: [CUR_X2, CUR_X], curriculumid: CUR_X });
+        await send(who, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ គ" }] }).expect(200);
+        expect(learnerRowOf(STU_X)).toMatchObject({ curriculumids: [CUR_X2], curriculumid: CUR_X2 });
+      });
     });
     it.each(IN_X)("%s: edits X's learner", async (who) => {
       await send(who, "put", "/student/update", { students: [ownRow()] }).expect(200);

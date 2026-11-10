@@ -328,6 +328,7 @@ describe("StudentBusiness.updateStudents (PUT /student/update: a learner move be
     user = { schoolusername: "khm.learner", save: jest.fn().mockResolvedValue(undefined) };
     jest.spyOn(students, "findOne").mockResolvedValue({
       studentid: "s1",
+      schoolid: SAMPLE.schoolid,
       schooluser: { schooluserid: "u1", schoolusername: "khm.learner" },
     } as never);
     standard = jest.spyOn(standards, "findOne").mockResolvedValue({ standardid: "std-1" } as never);
