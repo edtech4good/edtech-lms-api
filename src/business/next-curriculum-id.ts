@@ -4,4 +4,3 @@
  */
 export const nextCurriculumId = (current: string | null | undefined, curriculumids: readonly string[]): string =>
   current && curriculumids.includes(current) ? current : curriculumids[0];
-

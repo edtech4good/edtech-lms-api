@@ -35,6 +35,10 @@ import { CountryBusiness } from "./country.business";
 import axios from "axios";
 import { Config } from "src/config";
 import { unionBy } from "lodash";
+
+/** The message of a CSV row that names a school outside the learner's own organisation. */
+export const OWN_ORGANISATION_SCHOOL_MESSAGE = "Choose a school of the learner's own organisation.";
+
 /**
  * The ids of the live curriculums a row of the edit file names, by NAME, resolved name by name. Names are compared as
  * the project compares text (trim, NFC, lower-case: `normaliseSchoolName`). Curriculum names are unique within an
@@ -47,9 +51,6 @@ import { unionBy } from "lodash";
  * caller refuses a file with an unresolved name, the same way whatever the reason, so nothing says which organisation
  * holds a name. `ids` has each resolved curriculum once, in file order.
  */
-/** The message of a CSV row that names a school outside the learner's own organisation. */
-export const OWN_ORGANISATION_SCHOOL_MESSAGE = "Choose a school of the learner's own organisation.";
-
 const curriculumIdsNamed = async (
   names: string[],
   schoolOwner: string | null,

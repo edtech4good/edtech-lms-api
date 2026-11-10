@@ -106,7 +106,7 @@ export const moveLearner = async (org: OrgContext, actor: string | undefined, sc
       const errors: ApiFieldError[] = [];
 
       let target: schools | null = null;
-      if (input.schoolid === locked.schoolid) {
+      if (input.schoolid === learner.schoolid) {
         errors.push({ field: "schoolid", message: DIFFERENT_SCHOOL_MESSAGE });
       } else {
         target = await schools.findOne({
