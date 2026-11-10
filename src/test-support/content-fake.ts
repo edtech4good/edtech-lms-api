@@ -42,6 +42,7 @@ import { studentprogress } from "src/models/data-models/studentprogress";
 import { students } from "src/models/data-models/students";
 import { subjects } from "src/models/data-models/subjects";
 import { syncs } from "src/models/data-models/syncrecord";
+import { tokens } from "src/models/data-models/tokens";
 import { rowMatches, withPrimaryKey } from "./fakewhere";
 
 /**
@@ -115,6 +116,8 @@ const MODELS = {
   studentpoints: [studentpoints, "studentpointid"],
   studentprogressquestions: [studentprogressquestions, "studentprogressquestionid"],
   logfiles: [logfiles, "logfileid"],
+  // what removing a learner who never signed in looks for
+  tokens: [tokens, "token"],
 } as const;
 
 /**

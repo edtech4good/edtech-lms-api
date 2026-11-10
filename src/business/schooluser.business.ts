@@ -182,11 +182,13 @@ export class SchoolUserBusiness {
     });
 
   // Soft delete keeps the row, so its `schoolusername` (a UNIQUE column) stays
-  // occupied — that exact handle cannot be re-enrolled while the deleted row
-  // exists. Deliberate: `schoolUserExists` rejects the reused name cleanly at
-  // create time (not a DB error), and freeing it would mean renaming the row,
-  // which corrupts the learner history this soft delete exists to keep.
-  // Learner usernames are auto-generated, so reuse pressure is near zero.
+  // occupied: that exact handle cannot be re-enrolled while the deleted row
+  // exists. `schoolUserExists` rejects the reused name cleanly at create time
+  // (not a DB error), and freeing it by renaming the row would corrupt the
+  // learner history this soft delete exists to keep. The one way to free a
+  // name is to remove a learner who never signed in and has no progress
+  // (`removeLearner`): that hard-deletes the login and its learner rows, so
+  // nothing is left holding the name.
   deleteschooluser = async (
     schooluserid: string,
     deletedby: string,

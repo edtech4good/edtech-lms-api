@@ -49,7 +49,7 @@ jest.mock("src/business/token.business", () => ({
     validateStaffAccessToken: (...args: unknown[]) => tokenExists(...args),
   })),
 }));
-jest.mock("axios", () => ({ __esModule: true, default: { post: jest.fn(), put: jest.fn() } }));
+jest.mock("axios", () => ({ __esModule: true, default: { post: jest.fn(), put: jest.fn(), delete: jest.fn() } }));
 // the per-learner progress tables are not under test; an export of learners still reaches this
 jest.mock("src/business/studentprogress.business", () => ({
   StudentProgress: jest.fn().mockImplementation(() => ({
@@ -204,6 +204,7 @@ describe("people and schools are confined to the caller's organisation", () => {
     }) as never);
     (axios.post as jest.Mock).mockReset().mockRejectedValue(new Error("no cloud in a test"));
     (axios.put as jest.Mock).mockReset().mockResolvedValue({ status: 200 });
+    (axios.delete as jest.Mock).mockReset().mockResolvedValue({ status: 200, data: { removed: true } });
   });
 
   const send = (who: Who, method: "get" | "post" | "put" | "delete", path: string, body?: object) => {
@@ -989,6 +990,29 @@ describe("people and schools are confined to the caller's organisation", () => {
     });
     it("a platform user not acting is asked to choose an organisation, and nothing is written", async () => {
       const res = await refuses("a platform user not acting", "put", path(USR_Y), { disabled: true });
+      expect(res.status).toBe(400);
+      expect(res.body.errormessage).toBe("Choose an organisation.");
+    });
+  });
+
+  describe("POST /student/:schooluserid/remove", () => {
+    const path = (id: string) => `/student/${id}/remove`;
+    it.each(IN_X)("%s: removes X's learner, and no other login or learner", async (who) => {
+      await send(who, "post", path(USR_X)).expect(200);
+      expect(db.tables.schoolusers.map((s) => s.schooluserid).sort()).toEqual(sorted(USR_Y, USR_U, TCH_X, TCH_Y));
+      expect(db.tables.students.map((s) => s.studentid).sort()).toEqual(sorted(STU_Y, STU_U));
+    });
+    it.each(IN_X)("%s: another organisation's learner, the unowned school's and a teacher are the 404 a learner that is not there gets, unchanged, nothing sent", async (who) => {
+      for (const id of [USR_Y, USR_U, TCH_X]) await expectNotFoundLikeMissing(who, "post", path(id), path(MISSING));
+      expect(axios.delete).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a learner removed from the roster is the same 404", async (who) => {
+      db.tables.schoolusers.find((s) => s.schooluserid === USR_X)!.isdeleted = true;
+      db.tables.students.find((s) => s.schooluserid === USR_X)!.isdeleted = true;
+      await expectNotFoundLikeMissing(who, "post", path(USR_X), path(MISSING));
+    });
+    it("a platform user not acting is asked to choose an organisation, and nothing is removed", async () => {
+      const res = await refuses("a platform user not acting", "post", path(USR_Y));
       expect(res.status).toBe(400);
       expect(res.body.errormessage).toBe("Choose an organisation.");
     });
