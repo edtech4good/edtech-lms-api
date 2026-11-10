@@ -67,6 +67,35 @@ export const pushToCloud = async (
   throw Error(response.data);
 };
 
+/** What the learning server said to a request to remove one learner: it removed it, it never held it, or the learner has activity there. */
+export type CloudRemoval = "removed" | "absent" | "activity";
+
+/**
+ * Asks the learning server to remove one learner who has never signed in (`DELETE import/students/:schooluserid`), with the
+ * server key and the organisation's header. A 200 saying it removed the learner or never held it, and a 409 (the learner has
+ * activity there), are answers; anything else (no answer, a timeout, a 5xx, another status, a 200 that says neither) throws, so
+ * the caller does not go on.
+ */
+export const removeLearnerFromCloud = async (
+  schooluserid: string,
+  organisationid: string | null | undefined,
+  options: PushOptions = {},
+): Promise<CloudRemoval> => {
+  const response = await axios.delete(`${Config.fortyk.api.rpi.cloud}/import/students/${encodeURIComponent(schooluserid)}`, {
+    headers: {
+      Authorization: Config.fortyk.api.serversynckey,
+      ...(organisationid ? { [ORGANISATION_HEADER]: organisationid } : {}),
+    },
+    validateStatus: () => true,
+    ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
+  });
+  if (response.status === 409) return "activity";
+  const body = (response.data ?? {}) as { removed?: unknown; absent?: unknown };
+  if (response.status === 200 && body.removed === true) return "removed";
+  if (response.status === 200 && body.removed === false && body.absent === true) return "absent";
+  throw new Error(`unexpected answer ${response.status}`);
+};
+
 /** What the student API wrote, deleted and marked deleted, per table of the payload (only numbers are relayed). */
 export type PushCounts = Record<string, Record<string, number>>;
 

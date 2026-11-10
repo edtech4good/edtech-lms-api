@@ -33,6 +33,7 @@ import { disabledAnswer, pushChangedAccount, setAccountDisabled } from "src/busi
 import { passwordAnswer, pushResetAccount, resetAccountPassword } from "src/business/account-password";
 import { addLearner, pushNewLearner, usernameAvailable } from "src/business/add-learner";
 import { pushToCloud, studentsFile } from "src/business/cloud-push";
+import { removeLearner } from "src/business/remove-learner";
 import { editAnswer, editLearner, getLearnerDetails, pushEditedLearner } from "src/business/learner-details";
 import { assertEnrolmentFits } from "src/business/content-owner";
 import { findOwnedSchool, findOwnedStandard, findOwnedStudent, resolveOwnedSchoolRef } from "src/business/school-scope";
@@ -449,6 +450,20 @@ export class StudentController {
     const change = await resetAccountPassword("learner", org, user.lmsuserid, schooluserid, body);
     const push = await pushResetAccount("learner", change);
     return passwordAnswer(change, push);
+  }
+
+  @OrgPolicy("owned", { note: "The account must be a learner of the caller's schools; the learning server is asked first and only this account is removed.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
+  @Post(":schooluserid/remove")
+  @ApiResponse({ status: 200, description: "The learner is removed and its username can be used again" })
+  @ApiResponse({ status: 404, description: "No such learner" })
+  @ApiResponse({ status: 409, description: "The learner has signed in or has progress" })
+  @ApiResponse({ status: 503, description: "The learning server did not answer, so nothing was removed" })
+  @ApiParam({ name: `schooluserid`, type: "string", required: true })
+  @RequirePermissions(Permission.DELETE_STUDENT)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  async removeUnused(@Param("schooluserid") schooluserid: string, @Org() org: OrgContext): Promise<any> {
+    return removeLearner(org, schooluserid);
   }
 
   @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
