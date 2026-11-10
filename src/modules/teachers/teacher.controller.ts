@@ -1,5 +1,4 @@
-import { deletedAccountOf, deletedAnswer, pushDeletedAccount } from "src/business/account-delete";
-import { PushedAccount } from "src/business/add-learner";
+import { DeletedLogin, deletedAccountOf, deletedAnswer, pushDeletedAccount } from "src/business/account-delete";
 import {
   Body,
   Controller,
@@ -266,7 +265,7 @@ export class TeacherController {
     @Org() org: OrgContext,
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
-    let deleted: PushedAccount;
+    let deleted: DeletedLogin;
     try {
       // 404 for a teacher that is not the caller's, like one that does not exist.
       await findOwnedTeacher(org, schooluserid, tnx);

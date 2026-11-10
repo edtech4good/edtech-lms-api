@@ -1,7 +1,7 @@
 import { Transaction } from "sequelize";
 import { schoolusers } from "src/models/data-models/schoolusers";
 import { AccountKind } from "./account-disable";
-import { pushOneAccount, PushedAccount } from "./add-learner";
+import { failedPush, pushOneAccount, PushedAccount } from "./add-learner";
 import { PushOutcome } from "./publish-push";
 import { ownersOfSchools } from "./row-owner";
 
@@ -17,25 +17,43 @@ const WORDS: Record<AccountKind, { word: string; sync: string }> = {
   teacher: { word: "teacher", sync: "Sync Teachers" },
 };
 
+/** The login whose delete has just been written: what is read inside the transaction, so the push can follow the commit. */
+export interface DeletedLogin {
+  schooluserid: string;
+  schoolid: string;
+}
+
 /**
- * The school and the owning organisation of a login whose delete has just been written in `tnx`, for the push that follows
- * the commit. Read before the commit, so a failed read rolls the delete back rather than leaving an account that cannot be pushed.
+ * The school of a login whose delete has just been written in `tnx`. Only this read runs inside the transaction: the owner
+ * lookup takes a second pool connection, and a transaction that holds one while it waits for another can stall the pool, so it
+ * waits until `pushDeletedAccount`, after the commit.
  */
-export const deletedAccountOf = async (schooluserid: string, tnx: Transaction): Promise<PushedAccount> => {
+export const deletedAccountOf = async (schooluserid: string, tnx: Transaction): Promise<DeletedLogin> => {
   const login = await schoolusers.findOne({ where: { schooluserid }, transaction: tnx });
-  const schoolid = login?.schoolid as string;
-  const owners = await ownersOfSchools([schoolid]);
-  return { schooluserid, schoolid, organisationid: owners.get(schoolid) ?? null };
+  return { schooluserid, schoolid: login?.schoolid as string };
 };
 
-/** Sends the one deleted account to the student server (see `pushOneAccount`); never throws. Call it after the commit. */
-export const pushDeletedAccount = (kind: AccountKind, account: PushedAccount): Promise<PushOutcome> => {
+/**
+ * Sends the one deleted account to the student server (see `pushOneAccount`); never throws. Call it after the commit. The
+ * owner of the school is read here, outside any transaction; if that read fails the delete stands and the push is `failed`.
+ */
+export const pushDeletedAccount = async (kind: AccountKind, login: DeletedLogin): Promise<PushOutcome> => {
   const { word, sync } = WORDS[kind];
+  const failed = `Deleted, but the learning server did not answer. Run ${sync} for this school on the Schools screen.`;
+  const failedLog = `push of a deleted ${word} to the learner server failed`;
+  let account: PushedAccount;
+  try {
+    const owners = await ownersOfSchools([login.schoolid]);
+    account = { ...login, organisationid: owners.get(login.schoolid) ?? null };
+  } catch (error) {
+    return failedPush(error, failedLog, failed);
+  }
   return pushOneAccount(kind, account, {
     pushed: `Deleted. The ${word} can no longer sign in.`,
     skipped: "Deleted. No learner server is set up here, so nothing was pushed.",
-    failed: `Deleted, but the learning server did not answer. Run ${sync} for this school on the Schools screen.`,
-    failedLog: `push of a deleted ${word} to the learner server failed`,
+    failed,
+    failedLog,
+    missingRefs: "Deleted, but the learning server doesn't have this class or curriculum yet, so the learner can still sign in there. Run Sync Content, then Sync Students for this school.",
   });
 };
 

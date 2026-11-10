@@ -313,6 +313,8 @@ export interface AccountPushWords {
   skipped: string;
   failed: string;
   failedLog: string;
+  /** A learner the student server refuses for a class or curriculum it lacks: this instead of the shared wording. */
+  missingRefs?: string;
 }
 
 /** The account a push sends: its login, its school, and the organisation that owns the school. */
@@ -360,7 +362,7 @@ export const pushOneAccount = async (kind: "learner" | "teacher", account: Pushe
     }
     return { status: "pushed", message: words.pushed };
   } catch (error) {
-    return failedPush(error, words.failedLog, kind === "learner" && learnerServerLacksRefs(error) ? MISSING_REFS_MESSAGE : words.failed);
+    return failedPush(error, words.failedLog, kind === "learner" && learnerServerLacksRefs(error) ? words.missingRefs ?? MISSING_REFS_MESSAGE : words.failed);
   }
 };
 

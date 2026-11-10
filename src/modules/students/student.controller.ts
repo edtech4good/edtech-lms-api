@@ -1,5 +1,4 @@
-import { deletedAccountOf, deletedAnswer, pushDeletedAccount } from "src/business/account-delete";
-import { PushedAccount } from "src/business/add-learner";
+import { DeletedLogin, deletedAccountOf, deletedAnswer, pushDeletedAccount } from "src/business/account-delete";
 import {
   Body,
   Controller,
@@ -478,7 +477,7 @@ export class StudentController {
     @Org() org: OrgContext,
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
-    let deleted: PushedAccount;
+    let deleted: DeletedLogin;
     try {
       // ValidateSchoolUserid confirms the learner exists but not that it is
       // still active, so an already-deleted learner (a stale list, a retry)

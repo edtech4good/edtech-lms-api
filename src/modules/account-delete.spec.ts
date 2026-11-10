@@ -11,6 +11,7 @@ import { Role } from "src/models/enums";
 import { SchoolRole } from "src/models/enums/school.role.enum";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
 import { dbinstance } from "src/services/dbservice";
+import * as rowOwner from "src/business/row-owner";
 import { ContentFake } from "src/test-support/content-fake";
 import { StudentController } from "./students/student.controller";
 import { TeacherController } from "./teachers/teacher.controller";
@@ -89,8 +90,8 @@ const withoutReference = (body: Row) => {
 const said = (res: request.Response) => ({ status: res.status, body: withoutReference(res.body) });
 
 const KINDS = [
-  { kind: "learner", route: "student", own: L_X, other: L_X_OTHER, secondSchool: L_X2, foreign: L_Y, gone: L_GONE, wrongKind: T_X, file: "students.ini", rows: "studentusers", sync: "Sync Students" },
-  { kind: "teacher", route: "teacher", own: T_X, other: T_X_OTHER, secondSchool: undefined, foreign: T_Y, gone: T_GONE, wrongKind: L_X, file: "teachers.ini", rows: "teachers", sync: "Sync Teachers" },
+  { kind: "learner", route: "student", own: L_X, other: L_X_OTHER, secondSchool: L_X2, foreign: L_Y, gone: L_GONE, file: "students.ini", rows: "studentusers", sync: "Sync Students" },
+  { kind: "teacher", route: "teacher", own: T_X, other: T_X_OTHER, secondSchool: undefined, foreign: T_Y, gone: T_GONE, file: "teachers.ini", rows: "teachers", sync: "Sync Teachers" },
 ] as const;
 
 const seed = () => {
@@ -296,18 +297,59 @@ describe("deleting one learner or teacher", () => {
         expect(res.body.push.status).toBe("failed");
         expect(login(own).isdeleted).toBe(true);
       });
-      it("a 400 naming the class gives a learner the Sync Content message and a teacher the delete-failed one", async () => {
+      it("a 400 naming the class gives a learner the Sync Content message (the account is deleted, not saved) and a teacher the delete-failed one", async () => {
         (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { fields: [{ field: "standard", message: "SERVER-TEXT" }] } } }));
         const res = await del("X's Admin", route, own).expect(200);
         expect(res.body.push.status).toBe("failed");
         expect(res.body.push.message).toBe(
           kind === "learner"
-            ? "Saved, but the learning server doesn't have this class or curriculum yet. Run Sync Content, then Sync Students for this school."
+            ? "Deleted, but the learning server doesn't have this class or curriculum yet, so the learner can still sign in there. Run Sync Content, then Sync Students for this school."
             : `Deleted, but the learning server did not answer. Run ${sync} for this school on the Schools screen.`,
         );
         expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
         expect(login(own).isdeleted).toBe(true);
       });
+    });
+
+    describe("the owner of the school", () => {
+      it("is read after the commit, not inside the delete's transaction", async () => {
+        const real = jest.requireActual("src/business/row-owner").ownersOfSchools;
+        jest.spyOn(rowOwner, "ownersOfSchools").mockImplementation(async (...args: Parameters<typeof real>) => {
+          order.push("owners");
+          return real(...args);
+        });
+        await del("X's Admin", route, own).expect(200);
+        expect(order).toEqual(["commit", "owners", "push"]);
+        expect((axios.put as jest.Mock).mock.calls[0][2].headers["X-Organisation-Id"]).toBe(X);
+      });
+      it("a failed read leaves the delete standing and answers 200 with a failed push, nothing sent", async () => {
+        jest.spyOn(rowOwner, "ownersOfSchools").mockRejectedValue(new Error("owner read failed"));
+        const res = await del("X's Admin", route, own).expect(200);
+        expect(res.body.error).toBe(false);
+        expect(res.body.data).toBe(true);
+        expect(res.body.push.status).toBe("failed");
+        expect(res.body.push.message).toBe(`Deleted, but the learning server did not answer. Run ${sync} for this school on the Schools screen.`);
+        expect(login(own).isdeleted).toBe(true);
+        expect(transaction.commit).toHaveBeenCalledTimes(1);
+        expect(transaction.rollback).not.toHaveBeenCalled();
+        expect(axios.put).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe("a login of the other kind", () => {
+    it("DELETE /teacher/:id on a learner's login is the 404 of an account that is not there, nothing written or sent", async () => {
+      const res = await refuses("X's Admin", "teacher", L_X);
+      expect(res.status).toBe(404);
+      expect(login(L_X).isdeleted).toBe(false);
+    });
+    it("DELETE /student/:id on a teacher's login that has a learner row deletes both, and pushes it as a learner", async () => {
+      const res = await del("X's Admin", "student", T_STU).expect(200);
+      expect(res.body.push).toEqual({ status: "pushed", message: "Deleted. The learner can no longer sign in." });
+      expect(login(T_STU).isdeleted).toBe(true);
+      expect(learnerRow(T_STU).isdeleted).toBe(true);
+      expect(mockZipEntries.map((e) => e.name)).toEqual(["students.ini"]);
+      expect((mockZipEntries[0].json.studentusers as Row[]).map((r) => r.schooluserid)).toEqual([T_STU]);
     });
   });
 });
