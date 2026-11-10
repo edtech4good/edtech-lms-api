@@ -1,3 +1,4 @@
+import { DeletedLogin, deletedAccountOf, deletedAnswer, pushDeletedAccount } from "src/business/account-delete";
 import {
   Body,
   Controller,
@@ -264,6 +265,7 @@ export class TeacherController {
     @Org() org: OrgContext,
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
+    let deleted: DeletedLogin;
     try {
       // 404 for a teacher that is not the caller's, like one that does not exist.
       await findOwnedTeacher(org, schooluserid, tnx);
@@ -278,15 +280,13 @@ export class TeacherController {
       if (!teacherDeleted) {
         throw new ApiError(ErrorCode.NOT_FOUND, "That teacher doesn't exist. It may have already been removed.");
       }
+      deleted = await deletedAccountOf(schooluserid, tnx);
       await tnx.commit();
-
-      return {
-        error: false,
-        data: true,
-      };
     } catch (e) {
       await tnx.rollback();
       throw e;
     }
+    // After the commit; never throws. The student server refuses a deleted login.
+    return deletedAnswer(await pushDeletedAccount("teacher", deleted));
   }
 }

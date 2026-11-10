@@ -1,3 +1,4 @@
+import { DeletedLogin, deletedAccountOf, deletedAnswer, pushDeletedAccount } from "src/business/account-delete";
 import {
   Body,
   Controller,
@@ -476,6 +477,7 @@ export class StudentController {
     @Org() org: OrgContext,
   ): Promise<any> {
     const tnx = await dbinstance.getdbinstance().transaction();
+    let deleted: DeletedLogin;
     try {
       // ValidateSchoolUserid confirms the learner exists but not that it is
       // still active, so an already-deleted learner (a stale list, a retry)
@@ -497,16 +499,14 @@ export class StudentController {
         tnx,
         org,
       );
+      deleted = await deletedAccountOf(schooluserid, tnx);
       await tnx.commit();
-
-      return {
-        error: false,
-        data: true,
-      };
     } catch (e) {
       await tnx.rollback();
       throw e;
     }
+    // After the commit; never throws. The student server refuses a deleted login.
+    return deletedAnswer(await pushDeletedAccount("learner", deleted));
   }
 
   @OrgPolicy("owned", { enforcedBy: "src/modules/people-scope.leak.spec.ts" })
