@@ -40,3 +40,29 @@ export const assertPublishedForEnrolment = async (curriculumids: ReadonlyArray<s
   const name = await firstUnpublished(curriculumids, transaction);
   if (name !== undefined) throw unpublishedError(name, field);
 };
+
+/** The curricula a learner row already holds: its list, and its single curriculum. */
+export const heldCurricula = (row: { curriculumids?: unknown; curriculumid?: unknown } | null | undefined): string[] => {
+  let list: unknown = row?.curriculumids;
+  if (typeof list === "string") {
+    try {
+      list = JSON.parse(list);
+    } catch {
+      list = [];
+    }
+  }
+  const held = Array.isArray(list) ? list.filter((v): v is string => typeof v === "string") : [];
+  if (typeof row?.curriculumid === "string") held.push(row.curriculumid);
+  return held;
+};
+
+/** `assertPublishedForEnrolment` for the curricula being ADDED: those the learner does not hold already. A held one that was retired since stays. */
+export const assertPublishedForAdded = async (
+  curriculumids: ReadonlyArray<string>,
+  learner: { curriculumids?: unknown; curriculumid?: unknown } | null | undefined,
+  transaction?: Transaction,
+  field = "curriculumids",
+): Promise<void> => {
+  const held = new Set(heldCurricula(learner));
+  await assertPublishedForEnrolment(curriculumids.filter((id) => !held.has(id)), transaction, field);
+};

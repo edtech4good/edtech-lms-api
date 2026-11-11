@@ -444,6 +444,16 @@ describe("moving one learner to another school", () => {
         expect(res.body.fields).toEqual(ruleFor("មេរៀនដកចេញ"));
       }
     });
+    it("a retired curriculum the learner already has is kept by a move, and adding a retired one is still refused", async () => {
+      learnerRow(L_X).curriculumids = [RETIRED];
+      learnerRow(L_X).curriculumid = RETIRED;
+      const kept = await put("X's Admin", L_X, goodBody({ curriculumids: [RETIRED] }));
+      expect(kept.status).toBe(200);
+      learnerRow(L_X).schoolid = S_X;
+      const added = await put("X's Admin", L_X, goodBody({ curriculumids: [RETIRED, NEVER] }));
+      expect(added.status).toBe(400);
+      expect(added.body.fields).toEqual(ruleFor("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"));
+    });
     it("a curriculum published again after a retirement is accepted, and so is a published one", async () => {
       for (const curriculumids of [[AGAIN], [CUR_X]]) {
         const res = await put("X's Admin", L_X, goodBody({ curriculumids }));

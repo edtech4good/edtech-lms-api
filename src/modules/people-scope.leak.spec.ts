@@ -1325,6 +1325,15 @@ describe("people and schools are confined to the caller's organisation", () => {
         expect(res.status).toBe(400);
         expect(res.body.fields).toEqual(rule("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"));
       });
+      it("a retired curriculum the learner already has is kept: the file is accepted, and adding a never-published one is refused", async () => {
+        const row = db.tables.students.find((st) => st.studentid === STU_X)!;
+        row.curriculumids = [uuid(962)];
+        row.curriculumid = uuid(962);
+        await send("X's Admin", "put", "/student/update", { students: [{ ...ownRow(), curriculums: "មេរៀនដកចេញ" }] }).expect(200);
+        const res = await refuses("X's Admin", "put", "/student/update", { students: [{ ...ownRow(), curriculums: "មេរៀនដកចេញ/មេរៀនមិនទាន់ផ្សព្វផ្សាយ" }] });
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual(rule("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"));
+      });
       it("a retired curriculum is refused the same way, beside a published one too", async () => {
         const res = await refuses("X's Admin", "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ ក/មេរៀនដកចេញ" }] });
         expect(res.status).toBe(400);
