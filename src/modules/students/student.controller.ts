@@ -35,6 +35,7 @@ import { passwordAnswer, pushResetAccount, resetAccountPassword } from "src/busi
 import { addLearner, pushNewLearner, usernameAvailable } from "src/business/add-learner";
 import { pushToCloud, studentsFile } from "src/business/cloud-push";
 import { removeLearner } from "src/business/remove-learner";
+import { moveAnswer, moveLearner, pushMovedLearner } from "src/business/move-learner";
 import { editAnswer, editLearner, getLearnerDetails, pushEditedLearner } from "src/business/learner-details";
 import { assertEnrolmentFits } from "src/business/content-owner";
 import { findOwnedSchool, findOwnedStandard, findOwnedStudent, resolveOwnedSchoolRef } from "src/business/school-scope";
@@ -430,6 +431,28 @@ export class StudentController {
     const edited = await editLearner(org, user.lmsuserid, schooluserid, body);
     const push = await pushEditedLearner(edited);
     return editAnswer(edited, push);
+  }
+
+  @OrgPolicy("owned", { note: "The account must be a learner of the caller's schools and the new school one of the learner's own organisation, the class one of the new school's; only this account is pushed.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
+  @Put(":schooluserid/school")
+  @ApiResponse({ status: 200, description: "The learner is moved to the other school" })
+  @ApiResponse({ status: 400, description: "The school, class or curricula do not follow the rules of the move" })
+  @ApiResponse({ status: 404, description: "No such learner" })
+  @ApiResponse({ status: 409, description: "The login has more than one learner record" })
+  @ApiParam({ name: `schooluserid`, type: "string", required: true })
+  @ApiBody({ required: true, type: Object })
+  @RequirePermissions(Permission.UPDATE_STUDENT)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  @HttpCode(HttpStatus.OK)
+  async moveToSchool(
+    @Param("schooluserid") schooluserid: string,
+    @Body() body: unknown,
+    @User() user: LmsUserToken,
+    @Org() org: OrgContext,
+  ): Promise<any> {
+    const moved = await moveLearner(org, user.lmsuserid, schooluserid, body);
+    const push = await pushMovedLearner(moved);
+    return moveAnswer(moved, push);
   }
 
   @OrgPolicy("owned", { note: "The account must be a learner of the caller's schools; only this account is pushed.", enforcedBy: "src/modules/people-scope.leak.spec.ts" })
