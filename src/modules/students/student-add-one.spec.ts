@@ -134,6 +134,10 @@ const seed = () => {
   db.publish(CUR_X, X);
   db.publish(CUR_X2, X);
   db.publish(CUR_Y, Y);
+  // the grade specs enrol into these, so they are published too
+  db.publish(CUR_TWO, X);
+  db.publish(CUR_NONE, X);
+  db.publish(CUR_DEL, X);
   db.add("schools", { schoolid: S_X, schoolname: "សាលា ក", organisationid: X, countryid: C1, curriculums: [CUR_X] });
   db.add("schools", { schoolid: S_X2, schoolname: "សាលា គ", organisationid: X, countryid: C1, curriculums: [CUR_X] });
   db.add("schools", { schoolid: S_Y, schoolname: "សាលា ខ", organisationid: Y, countryid: C2, curriculums: [CUR_Y] });
@@ -478,6 +482,10 @@ describe("adding one learner", () => {
         db.publish(AGAIN, X, "published", new Date(1000));
         db.publish(AGAIN, X, "withdrawn", new Date(2000));
         db.publish(AGAIN, X, "published", new Date(3000));
+        // each has one grade, so that only the published rule can refuse it
+        for (const [i, id] of [NEVER, RETIRED, AGAIN].entries()) {
+          db.add("grades", { gradeid: uuid(910 + i), curriculumid: id, gradename: "ថ្នាក់ទី១", gradeorder: 1, gradestatus: true, isdeleted: false });
+        }
       });
       it.each(IN_X)("%s: a curriculum never published is a 400 on curriculumids naming it, and nothing is written or sent", async (who) => {
         const res = await refuses(who, "/student/one", goodBody({ curriculumids: [NEVER] }));
@@ -492,6 +500,13 @@ describe("adding one learner", () => {
           expect(res.status).toBe(400);
           expect(res.body.fields).toEqual(ruleFor("មេរៀនដកចេញ"));
         }
+      });
+      it("a request wrong on both rules (an unpublished curriculum and a grade that is not its own) names both fields, nothing written or sent", async () => {
+        const res = await refuses("X's Admin", "/student/one", goodBody({ curriculumids: [NEVER], gradeid: G_X }));
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe("INVALID_INPUT");
+        expect(res.body.errormessage).toBe("Check the highlighted fields.");
+        expect(res.body.fields).toEqual([...ruleFor("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"), { field: "gradeid", message: "Choose a grade of this curriculum." }]);
       });
       it("a curriculum published again after a retirement is accepted, and so is a published one", async () => {
         for (const curriculumids of [[AGAIN], [CUR_X]]) {

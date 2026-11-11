@@ -946,12 +946,23 @@ describe("people and schools are confined to the caller's organisation", () => {
         db.add("curriculums", { curriculumid: RETIRED, curriculumname: "មេរៀនដកចេញ", organisationid: X, curriculumstatus: true });
         db.publish(RETIRED, X, "published", new Date(1000));
         db.publish(RETIRED, X, "withdrawn", new Date(2000));
+        // each has one grade, so that only the published rule can refuse it
+        db.add("grades", { gradeid: uuid(953), curriculumid: NEVER, gradename: "ថ្នាក់ទី១", gradeorder: 1, gradestatus: true, isdeleted: false });
+        db.add("grades", { gradeid: uuid(954), curriculumid: RETIRED, gradename: "ថ្នាក់ទី១", gradeorder: 1, gradestatus: true, isdeleted: false });
       });
       it.each(IN_X)("%s: a curriculum never published refuses the whole file, naming it, and nothing is written or sent", async (who) => {
         const res = await refuses(who, "post", "/student/create?cloud=true", body(S_X, NEVER, K_X));
         expect(res.status).toBe(400);
         expect(res.body.errormessage).toBe("Publish មេរៀនមិនទាន់ផ្សព្វផ្សាយ first, or choose another curriculum.");
         expect(res.body.fields).toEqual(unpublishedRule("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"));
+        expect(axios.put).not.toHaveBeenCalled();
+        db.nothingCreated();
+      });
+      it("a file wrong on both rules (an unpublished curriculum and a grade that is not its own) names both fields, nothing written or sent", async () => {
+        const res = await refuses("X's Admin", "post", "/student/create", { ...body(S_X, NEVER, K_X), gradeid: uuid(954) });
+        expect(res.status).toBe(400);
+        expect(res.body.errormessage).toBe("Check the highlighted fields.");
+        expect(res.body.fields).toEqual([...unpublishedRule("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"), { field: "gradeid", message: "Choose a grade of this curriculum." }]);
         expect(axios.put).not.toHaveBeenCalled();
         db.nothingCreated();
       });
@@ -1343,6 +1354,9 @@ describe("people and schools are confined to the caller's organisation", () => {
         db.add("curriculums", { curriculumid: uuid(962), curriculumname: "មេរៀនដកចេញ", organisationid: X, curriculumstatus: true });
         db.publish(uuid(962), X, "published", new Date(1000));
         db.publish(uuid(962), X, "withdrawn", new Date(2000));
+        // each has one grade, so that only the published rule can refuse it
+        db.add("grades", { gradeid: uuid(963), curriculumid: uuid(961), gradename: "ថ្នាក់ទី១", gradeorder: 1, gradestatus: true, isdeleted: false });
+        db.add("grades", { gradeid: uuid(964), curriculumid: uuid(962), gradename: "ថ្នាក់ទី១", gradeorder: 1, gradestatus: true, isdeleted: false });
       });
       it.each(IN_X)("%s: a curriculum never published refuses the whole file, naming it, and nothing is written", async (who) => {
         const res = await refuses(who, "put", "/student/update", { students: [ownRow(), { ...ownRow(), curriculums: "មេរៀនមិនទាន់ផ្សព្វផ្សាយ" }] });
@@ -1357,6 +1371,13 @@ describe("people and schools are confined to the caller's organisation", () => {
         const res = await refuses("X's Admin", "put", "/student/update", { students: [{ ...ownRow(), curriculums: "មេរៀនដកចេញ/មេរៀនមិនទាន់ផ្សព្វផ្សាយ" }] });
         expect(res.status).toBe(400);
         expect(res.body.fields).toEqual(rule("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"));
+      });
+      it("a row wrong on both rules (an unpublished curriculum and a grade name that is not its own) names both fields, nothing written", async () => {
+        const res = await refuses("X's Admin", "put", "/student/update", { students: [{ ...ownRow(), curriculums: "មេរៀនមិនទាន់ផ្សព្វផ្សាយ", grade: "ថ្នាក់ដែលមិនមាន" }] });
+        expect(res.status).toBe(400);
+        expect(res.body.errormessage).toBe("Check the highlighted fields.");
+        expect(res.body.fields).toEqual([...rule("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"), { field: "students.0.grade", message: "Choose a grade of this curriculum." }]);
+        expect(firstName(STU_X)).not.toBe("ឈ្មោះថ្មី");
       });
       it("a retired curriculum is refused the same way, beside a published one too", async () => {
         const res = await refuses("X's Admin", "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ ក/មេរៀនដកចេញ" }] });

@@ -51,6 +51,8 @@ beforeEach(() => {
   jest.spyOn(schoolName, "assertNameNeverHeld").mockResolvedValue(undefined);
   // nor is the published-curriculum rule of an enrolment
   jest.spyOn(enrolmentPublished, "assertPublishedForEnrolment").mockResolvedValue(undefined);
+  // the routes read the first unpublished curriculum (to report it with the grade rule), not only assert it
+  jest.spyOn(enrolmentPublished, "firstUnpublished").mockResolvedValue(undefined);
   // the by-name lookup is `WHERE TRIM(schoolname) = ?`: a Sequelize where(fn, value), `logic` is the value
   jest.spyOn(schools, "findAll").mockImplementation((async (opts: { where: { logic: string } }) =>
     known.filter((s) => collate(s.schoolname.replace(/^ +| +$/g, "")) === collate(opts.where.logic))) as never);
