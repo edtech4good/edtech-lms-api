@@ -204,6 +204,13 @@ describe("a learner's grade in the file routes", () => {
       expect(res.status).toBe(400);
       db.nothingCreated();
     });
+    it("a teacher account in the file gets the resolved grade too", async () => {
+      await send("post", "/student/create", upload([CUR_ONE], {}, [newRow(1, { is_teacher_acc: "1" }), newRow(2)])).expect(200);
+      expect(db.createdIn("students").map((s) => [s.is_teacher_acc, s.gradeid])).toEqual([[true, G_ONE], [false, G_ONE]]);
+    });
+    it("a teacher account in a file for a several-grade curriculum is refused without a grade", async () => {
+      refusedOn(await refuses("post", "/student/create", upload([CUR_TWO], {}, [newRow(1, { is_teacher_acc: "1" })])), "gradeid", CHOOSE);
+    });
     it("a blank gradeid counts as none", async () => {
       await send("post", "/student/create", upload([CUR_ONE], { gradeid: "" })).expect(200);
       expect(db.createdIn("students").map((s) => s.gradeid)).toEqual([G_ONE, G_ONE]);
@@ -281,9 +288,27 @@ describe("a learner's grade in the file routes", () => {
       refusedOn(res, 1, INVALID);
       expect(gradeOf(L1.studentid)).toBe(G_TWO_B);
     });
-    it("the teacher rows of a file have no grade and are not asked for one", async () => {
-      await update([rowFor(L2, NAME[CUR_NONE], { is_teacher_acc: "1" })]).expect(200);
-      expect(gradeOf(L2.studentid)).toBe(G_ONE);
+    it("a teacher row is graded like any other: a one-grade curriculum gives its grade", async () => {
+      await update([rowFor(L2, NAME[CUR_ONE_B], { is_teacher_acc: "1" })]).expect(200);
+      expect(db.tables.students.find((s) => s.studentid === L2.studentid)).toMatchObject({ curriculumid: CUR_ONE_B, gradeid: G_ONE_B, is_teacher_acc: true });
+    });
+    it("a teacher row changing to a several-grade curriculum without a grade is refused, and with a name is stored", async () => {
+      refusedOn(await refusedUpdate([rowFor(L2, NAME[CUR_TWO], { is_teacher_acc: "1" })]), 0, CHOOSE);
+      await update([rowFor(L2, NAME[CUR_TWO], { is_teacher_acc: "1", grade: GRADE_NAME.B })]).expect(200);
+      expect(gradeOf(L2.studentid)).toBe(G_TWO_B);
+    });
+    it("a teacher row changing to a curriculum with no grade is refused", async () => {
+      refusedOn(await refusedUpdate([rowFor(L2, NAME[CUR_NONE], { is_teacher_acc: "1" })]), 0, NONE);
+    });
+    it("a name that fits two live grades keeps the current grade when it is one of them", async () => {
+      addGrade(uuid(609), CUR_TWO, GRADE_NAME.B, 3);
+      await update([rowFor(L1, NAME[CUR_TWO], { grade: GRADE_NAME.B })]).expect(200);
+      expect(gradeOf(L1.studentid)).toBe(G_TWO_B);
+    });
+    it("a name that fits two live grades, none of them the current one, is refused", async () => {
+      addGrade(uuid(609), CUR_TWO, GRADE_NAME.B, 3);
+      db.tables.students.find((s) => s.studentid === L1.studentid)!.gradeid = G_TWO_A;
+      refusedOn(await refusedUpdate([rowFor(L1, NAME[CUR_TWO], { grade: GRADE_NAME.B })]), 0, INVALID);
     });
   });
 

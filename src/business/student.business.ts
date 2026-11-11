@@ -786,21 +786,21 @@ WHERE
       // refusal a name nobody holds gets, before any row is written
       if (!named.complete) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
       await assertEnrolmentFits(schoolOwner, named.ids, transaction);
-      if (parseInt(x.is_teacher_acc ?? '0') !== 1) {
-        // the grade is one of the learner's primary curriculum (the one it keeps, else the first named); the file names it by
-        // name, compared as the file's other names are, and blank keeps the current one
-        const primary = nextCurriculumId(current.curriculumid, named.ids);
-        const wanted = typeof x.grade === 'string' ? normaliseSchoolName(x.grade) : '';
-        let gradeid: string | undefined;
-        if (wanted !== '') {
-          const match = (await liveGradesOf(primary, transaction)).filter((g) => normaliseSchoolName(g.gradename) === wanted);
-          if (match.length !== 1) throw new ApiError(ErrorCode.INVALID_INPUT, GRADE_INVALID_MESSAGE, { fields: [{ field: `students.${rowindex}.grade`, message: GRADE_INVALID_MESSAGE }] });
-          gradeid = match[0].gradeid;
-        }
-        const resolved = await resolveLearnerGrade({ curriculumid: primary, gradeid, currentGradeid: current.gradeid, transaction });
-        if (!resolved.ok) throw new ApiError(ErrorCode.INVALID_INPUT, resolved.message, { fields: [{ field: `students.${rowindex}.grade`, message: resolved.message }] });
-        gradeByRow.set(rowindex, resolved.gradeid);
+      // every row, a teacher account's too, gets a grade of its primary curriculum (the one it keeps, else the first named); the
+      // file names it by name, compared as the file's other names are, and blank keeps the current one
+      const primary = nextCurriculumId(current.curriculumid, named.ids);
+      const wanted = typeof x.grade === 'string' ? normaliseSchoolName(x.grade) : '';
+      let gradeid: string | undefined;
+      if (wanted !== '') {
+        const match = (await liveGradesOf(primary, transaction)).filter((g) => normaliseSchoolName(g.gradename) === wanted);
+        // a name that fits several grades is the current grade when that is one of them, else it is refused
+        const kept = match.find((g) => g.gradeid === current.gradeid);
+        if (match.length !== 1 && !kept) throw new ApiError(ErrorCode.INVALID_INPUT, GRADE_INVALID_MESSAGE, { fields: [{ field: `students.${rowindex}.grade`, message: GRADE_INVALID_MESSAGE }] });
+        gradeid = (kept ?? match[0]).gradeid;
       }
+      const resolved = await resolveLearnerGrade({ curriculumid: primary, gradeid, currentGradeid: current.gradeid, transaction });
+      if (!resolved.ok) throw new ApiError(ErrorCode.INVALID_INPUT, resolved.message, { fields: [{ field: `students.${rowindex}.grade`, message: resolved.message }] });
+      gradeByRow.set(rowindex, resolved.gradeid);
     }
     for (const [rowindex, x] of studentdata.entries()) {
       const student = await students.findOne({

@@ -306,14 +306,12 @@ export class StudentController {
       if (_body.curriculumid.some((id) => !knownCurricula.has(id))) {
         throw new ApiError(ErrorCode.INVALID_INPUT, curriculumField[0].message, { fields: curriculumField });
       }
-      // one grade for the whole file; teacher accounts in the file have none
+      // one grade for the whole file, teacher accounts in it included
       const gradeNamed = typeof _body.gradeid === "string" && _body.gradeid.trim() !== "" ? _body.gradeid.trim() : undefined;
       if (gradeNamed !== undefined && gradeNamed.length > 36) {
         throw new ApiError(ErrorCode.INVALID_INPUT, GRADE_INVALID_MESSAGE, { fields: [{ field: "gradeid", message: GRADE_INVALID_MESSAGE }] });
       }
-      const learnerGradeid = _body.students.some((x) => parseInt(x.is_teacher_acc ?? "0") !== 1)
-        ? await gradeOrRefuse({ curriculumid: _body.curriculumid[0], gradeid: gradeNamed, transaction: tnx })
-        : undefined;
+      const learnerGradeid = await gradeOrRefuse({ curriculumid: _body.curriculumid[0], gradeid: gradeNamed, transaction: tnx });
       result = await new SchoolUserBusiness().createSchoolUser(
         _body.students.map(
           (x) =>
@@ -363,7 +361,7 @@ export class StudentController {
                 : new Date(),
               familyname: x.familyname,
               fathername: x.fathername,
-              gradeid: parseInt(x.is_teacher_acc ?? '0') === 1 ? undefined : learnerGradeid,
+              gradeid: learnerGradeid,
               mothername: x.mothername,
               schoolname: school.schoolname,
               schoolid: school.schoolid,
