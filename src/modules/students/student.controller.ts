@@ -290,14 +290,15 @@ export class StudentController {
       // Enrolling is a link between the school and each curriculum: refused, before anything is written, when they have different owners
       // (the school is the row read just above).
       await assertEnrolmentFits(school.organisationid, _body.curriculumid, tnx);
-      // The curricula the file names must be live ones of the school's organisation (another's are answered as missing), and
-      // the first of them is the learners' primary curriculum: their grade is one of its grades.
+      // The curricula the file names must exist and be live (whose they are is the owner rule just above: refused when they are
+      // another organisation's, and unowned ones are allowed), and the first of them is the learners' primary curriculum:
+      // their grade is one of its grades.
       const curriculumField = [{ field: "curriculumid", message: "Choose curricula that exist." }];
       if (!Array.isArray(_body.curriculumid) || _body.curriculumid.length === 0) {
         throw new ApiError(ErrorCode.INVALID_INPUT, curriculumField[0].message, { fields: curriculumField });
       }
       const foundCurricula = await curriculums.findAll({
-        where: { curriculumid: { [Op.in]: _body.curriculumid }, organisationid: school.organisationid, isdeleted: false },
+        where: { curriculumid: { [Op.in]: _body.curriculumid }, isdeleted: false },
         attributes: ["curriculumid"],
         transaction: tnx,
       });
