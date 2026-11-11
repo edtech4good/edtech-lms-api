@@ -53,6 +53,8 @@ export class StudentImport {
 export class StudentImportBody {
   @ApiProperty()
   curriculumid: Array<string> = [];
+  @ApiProperty({ required: false, description: "A grade of the first curriculum, for every learner of the file; none uses the curriculum's only grade" })
+  gradeid?: string;
   @ApiProperty()
   schoolid: string = "";
   @ApiProperty()
@@ -120,6 +122,8 @@ export class StudentImportFormat {
   is_teacher_acc: string = '0';
   @ApiProperty()
   curriculums: string = '';
+  @ApiProperty({ required: false, description: "The NAME of a grade of the learner's first curriculum; blank keeps the current grade" })
+  grade?: string = '';
 }
 
 @ApiExtraModels(StudentImportFormat)
@@ -158,4 +162,6 @@ export interface IStudentImportFormat {
   schooluserpasswordhash: string;
   is_teacher_acc: string;
   curriculums: string;
+  /** The name of the learner's grade (blank: none, or keep the current one on upload). */
+  grade?: string;
 }
