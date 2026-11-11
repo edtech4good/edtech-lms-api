@@ -62,6 +62,7 @@ export const showallstudents: RequestValidator = {
 export const importStudents: RequestValidator = {
   body: joi.object().keys(<SchemaMap<StudentImportBody>>{
     curriculumid: joi.array().items(joi.string()).required().label("Curriculum Id"),
+    gradeid: joi.string().max(36).allow("", null).optional().label("Grade"),
     schoolid: joi.string().required().label("School Name"),
     standard: joi.string().allow("", null).label("Standard"),
     students: joi
@@ -237,6 +238,7 @@ export const importUpdatedStudents: RequestValidator = {
           isactive: joi.number().valid(1, 0).required(),
           is_teacher_acc: joi.string().valid("1", "0").allow("").optional(),
           curriculums: joi.string().required().label("Curriculums ID"),
+          grade: joi.string().max(255).allow("", null).optional().label("Grade"),
         })
       )
       .required()

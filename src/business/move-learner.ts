@@ -12,6 +12,7 @@ import { UNKNOWN_FIELD_MESSAGE } from "src/services/joi-message.service";
 import { changeAccount } from "./account-disable";
 import { CLASS_MESSAGE, classIdValue, curriculumIdsValue, invalid, pushOneAccount } from "./add-learner";
 import { assertEnrolmentFits } from "./content-owner";
+import { GRADE_INVALID_MESSAGE, gradeIdValue, resolveLearnerGrade } from "./learner-grade";
 import { nextCurriculumId } from "./next-curriculum-id";
 import { PushOutcome } from "./publish-push";
 import { findOwnedSchool, ownedSchoolIds, studentNotFound } from "./school-scope";
@@ -19,15 +20,15 @@ import { findOwnedSchool, ownedSchoolIds, studentNotFound } from "./school-scope
 /**
  * Moving one learner to another school of the same organisation (`PUT student/:schooluserid/school`).
  *
- * The body is exactly `{ schoolid, standard, curriculumids }`: the new school, one of its classes, and the curricula the learner
- * follows there. Only the school, the class and the curricula change (the single `curriculumid` follows the list, as in the details
+ * The body is `{ schoolid, standard, curriculumids }` and an optional `gradeid`: the new school, one of its classes, the curricula the learner
+ * follows there, and a grade of the first of them. Only the school, the class and the curricula change (the single `curriculumid` follows the list, as in the details
  * edit); the name, the username, the password, the active state and every result stay as they were, and a disabled learner stays
  * disabled. The learner must be one of the caller's schools' (another organisation's, a deleted one and a teacher are all the same
  * 404 as an id that does not exist). The write commits first; then the one learner is pushed to the student server, as a member of
  * the new school's roster, without failing the request, and the answer says which way the push went.
  */
 
-const BODY_KEYS = ["schoolid", "standard", "curriculumids"] as const;
+const BODY_KEYS = ["schoolid", "standard", "curriculumids", "gradeid"] as const;
 
 export const SCHOOL_MESSAGE = "Choose a school.";
 export const DIFFERENT_SCHOOL_MESSAGE = "Choose a different school.";
@@ -39,9 +40,11 @@ export interface LearnerMove {
   schoolid: string;
   standard: string;
   curriculumids: string[];
+  /** A grade of the learner's primary curriculum; none keeps the current one while it still fits, else asks for the only grade. */
+  gradeid?: string;
 }
 
-/** The request body, or a 400 naming every field that is wrong (field names are the body's keys). All three keys are required. */
+/** The request body, or a 400 naming every field that is wrong (field names are the body's keys). All keys but `gradeid` are required. */
 export const validateLearnerMove = (body: unknown): LearnerMove => {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw invalid([{ field: "body", message: "Send the new school as an object." }]);
@@ -57,8 +60,15 @@ export const validateLearnerMove = (body: unknown): LearnerMove => {
   if (standard === undefined) errors.push({ field: "standard", message: CLASS_MESSAGE });
   const curriculumids = curriculumIdsValue(raw.curriculumids);
   if (curriculumids === undefined) errors.push({ field: "curriculumids", message: CURRICULA_MESSAGE });
+  const gradeid = gradeIdValue(raw.gradeid);
+  if (gradeid === null) errors.push({ field: "gradeid", message: GRADE_INVALID_MESSAGE });
   if (errors.length > 0) throw invalid(errors, "Check the highlighted fields.");
-  return { schoolid: schoolid as string, standard: standard as string, curriculumids: curriculumids as string[] };
+  return {
+    schoolid: schoolid as string,
+    standard: standard as string,
+    curriculumids: curriculumids as string[],
+    ...(typeof gradeid === "string" ? { gradeid } : {}),
+  };
 };
 
 export interface MovedLearner {
@@ -136,7 +146,16 @@ export const moveLearner = async (org: OrgContext, actor: string | undefined, sc
       const curriculaExist = input.curriculumids.every((id) => known.has(id));
       if (!curriculaExist) errors.push({ field: "curriculumids", message: CURRICULA_EXIST_MESSAGE });
 
-      if (errors.length > 0 || !target) throw invalid(errors, "Check the highlighted fields.");
+      // the learner's grade is one of its primary curriculum's: named, kept while it fits, or the curriculum's only one
+      const curriculumid = nextCurriculumId(learner.curriculumid, input.curriculumids);
+      let gradeid: string | undefined;
+      if (curriculaExist) {
+        const grade = await resolveLearnerGrade({ curriculumid, gradeid: input.gradeid, currentGradeid: learner.gradeid, transaction: tnx });
+        if (grade.ok) gradeid = grade.gradeid;
+        else errors.push({ field: grade.field, message: grade.message });
+      }
+
+      if (errors.length > 0 || !target || gradeid === undefined) throw invalid(errors, "Check the highlighted fields.");
       await assertEnrolmentFits(target.organisationid, input.curriculumids, tnx);
 
       const now = new Date();
@@ -149,7 +168,8 @@ export const moveLearner = async (org: OrgContext, actor: string | undefined, sc
           schoolid: target.schoolid,
           schoolname: target.schoolname,
           standard: input.standard,
-          curriculumid: nextCurriculumId(learner.curriculumid, input.curriculumids),
+          curriculumid,
+          gradeid,
           curriculumids: input.curriculumids,
           updated_at: now,
           updated_by: actor,

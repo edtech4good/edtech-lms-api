@@ -30,6 +30,7 @@ import {
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { isValid, parse } from "date-fns";
 import { json2csv } from "json-2-csv";
+import { Op } from "sequelize";
 import { disabledAnswer, pushChangedAccount, setAccountDisabled } from "src/business/account-disable";
 import { passwordAnswer, pushResetAccount, resetAccountPassword } from "src/business/account-password";
 import { addLearner, pushNewLearner, usernameAvailable } from "src/business/add-learner";
@@ -38,6 +39,8 @@ import { removeLearner } from "src/business/remove-learner";
 import { moveAnswer, moveLearner, pushMovedLearner } from "src/business/move-learner";
 import { editAnswer, editLearner, getLearnerDetails, pushEditedLearner } from "src/business/learner-details";
 import { assertEnrolmentFits } from "src/business/content-owner";
+import { GRADE_INVALID_MESSAGE, gradeOrRefuse } from "src/business/learner-grade";
+import { curriculums } from "src/models/data-models/curriculums";
 import { findOwnedSchool, findOwnedStandard, findOwnedStudent, resolveOwnedSchoolRef } from "src/business/school-scope";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { StudentBusiness } from "src/business/student.business";
@@ -287,6 +290,28 @@ export class StudentController {
       // Enrolling is a link between the school and each curriculum: refused, before anything is written, when they have different owners
       // (the school is the row read just above).
       await assertEnrolmentFits(school.organisationid, _body.curriculumid, tnx);
+      // The curricula the file names must exist and be live (whose they are is the owner rule just above: refused when they are
+      // another organisation's, and unowned ones are allowed), and the first of them is the learners' primary curriculum:
+      // their grade is one of its grades.
+      const curriculumField = [{ field: "curriculumid", message: "Choose curricula that exist." }];
+      if (!Array.isArray(_body.curriculumid) || _body.curriculumid.length === 0) {
+        throw new ApiError(ErrorCode.INVALID_INPUT, curriculumField[0].message, { fields: curriculumField });
+      }
+      const foundCurricula = await curriculums.findAll({
+        where: { curriculumid: { [Op.in]: _body.curriculumid }, isdeleted: false },
+        attributes: ["curriculumid"],
+        transaction: tnx,
+      });
+      const knownCurricula = new Set(foundCurricula.map((c) => c.curriculumid));
+      if (_body.curriculumid.some((id) => !knownCurricula.has(id))) {
+        throw new ApiError(ErrorCode.INVALID_INPUT, curriculumField[0].message, { fields: curriculumField });
+      }
+      // one grade for the whole file, teacher accounts in it included
+      const gradeNamed = typeof _body.gradeid === "string" && _body.gradeid.trim() !== "" ? _body.gradeid.trim() : undefined;
+      if (gradeNamed !== undefined && gradeNamed.length > 36) {
+        throw new ApiError(ErrorCode.INVALID_INPUT, GRADE_INVALID_MESSAGE, { fields: [{ field: "gradeid", message: GRADE_INVALID_MESSAGE }] });
+      }
+      const learnerGradeid = await gradeOrRefuse({ curriculumid: _body.curriculumid[0], gradeid: gradeNamed, transaction: tnx });
       result = await new SchoolUserBusiness().createSchoolUser(
         _body.students.map(
           (x) =>
@@ -336,7 +361,7 @@ export class StudentController {
                 : new Date(),
               familyname: x.familyname,
               fathername: x.fathername,
-              gradeid: undefined,
+              gradeid: learnerGradeid,
               mothername: x.mothername,
               schoolname: school.schoolname,
               schoolid: school.schoolid,
