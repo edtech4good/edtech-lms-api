@@ -4,7 +4,7 @@ import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
 import { ApiError } from "src/models/ApiError";
 import { organisations } from "src/models/data-models/organisations";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
-import { cloudConfigured, PushCounts, pushToCloud } from "./cloud-push";
+import { cloudConfigured, learningServerAnswer, learningServerLogFields, PushCounts, pushToCloud } from "./cloud-push";
 import { publishCurriculum, PublishResult, publishingOrganisation, retireCurriculum, RetireResult } from "./curriculum-publication";
 import { SyncBusiness } from "./sync.business";
 
@@ -110,7 +110,8 @@ const failedOutcome = (verb: PushVerb, error: unknown): PushOutcome => {
   Logger.error("push of the published set to the learner server failed", {
     originalerrorclass: (error as { constructor?: { name?: string } } | null)?.constructor?.name,
     code: mapped.code,
-    status: mapped.status,
+    status: learningServerAnswer(error)?.status ?? mapped.status,
+    ...learningServerLogFields(error),
   });
   const hint = withoutReference(mapped.hint);
   return {

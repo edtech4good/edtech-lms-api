@@ -413,16 +413,29 @@ describe("adding one learner", () => {
         const logged = JSON.stringify((Logger.error as jest.Mock).mock.calls);
         expect(logged).not.toContain("SECRET-KEY");
       });
-      it("the student server refusing the class or the curriculum (400) says to run Sync Content first, then Sync Students", async () => {
-        for (const field of ["standard", "curriculumid", "curriculumids"]) {
+      it("the student server refusing the school, the class or the curriculum (400) says to run Sync Content first, then Sync Students", async () => {
+        for (const field of ["schoolid", "schoolname", "standard", "curriculumid", "curriculumids"]) {
           (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { errormessage: "SERVER-TEXT", hint: "SERVER-TEXT", fields: [{ field, message: "SERVER-TEXT" }] } }, config: { headers: { Authorization: "SECRET-KEY" } } }));
           const res = await send("X's Admin", "post", "/student/one", goodBody({ schoolusername: `u${field.slice(-3)}${field.length}` })).expect(201);
           expect(res.body.push.status).toBe("failed");
-          expect(res.body.push.message).toBe("Saved, but the learning server doesn't have this class or curriculum yet. Run Sync Content, then Sync Students for this school.");
+          expect(res.body.push.message).toBe("Saved, but the learning server doesn't have this school, class or curriculum yet. Run Sync Content, then Sync Students for this school.");
           expect(JSON.stringify(res.body)).not.toContain("SECRET-KEY");
           expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
           expect(db.createdIn("schoolusers").length).toBeGreaterThan(0);
         }
+      });
+      it("logs the learning server's own status, code and refused fields, not a mapped one, and logs a timeout as no answer", async () => {
+        (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { code: "INVALID_INPUT", errormessage: "SERVER-TEXT", fields: [{ field: "schoolid", message: "SERVER-TEXT" }] } } }));
+        await send("X's Admin", "post", "/student/one", goodBody()).expect(201);
+        const call = (Logger.error as jest.Mock).mock.calls.find((c) => String(c[0]).includes("new learner"));
+        expect(call[1]).toMatchObject({ status: 400, learnerserverstatus: 400, learnerservercode: "INVALID_INPUT", learnerserverfields: ["schoolid"] });
+        expect(JSON.stringify(call)).not.toContain("SERVER-TEXT");
+        (Logger.error as jest.Mock).mockClear();
+        (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("timeout of 15000ms exceeded"), { isAxiosError: true, code: "ECONNABORTED" }));
+        await send("X's Admin", "post", "/student/one", goodBody({ schoolusername: "sokha9" })).expect(201);
+        const timed = (Logger.error as jest.Mock).mock.calls.find((c) => String(c[0]).includes("new learner"));
+        expect(timed[1].status).toBe(503);
+        expect(timed[1]).not.toHaveProperty("learnerserverstatus");
       });
       it("another 400 from the student server keeps the Sync Students message", async () => {
         (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { errormessage: "x", fields: [{ field: "genderid", message: "x" }] } } }));

@@ -313,14 +313,14 @@ describe("disabling and enabling one learner or teacher", () => {
         expect(login(own).isdisabled).toBe(true);
         expect(transaction.commit).toHaveBeenCalledTimes(1);
       });
-      it("a 400 naming the class gives a learner the Sync Content message and a teacher the Sync Teachers one", async () => {
-        (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { errormessage: "SERVER-TEXT", hint: "SERVER-TEXT", fields: [{ field: "standard", message: "SERVER-TEXT" }] } } }));
+      it("a 400 naming the class gives a learner the Sync Content message and a teacher the school-only Sync Teachers one", async () => {
+        (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { errormessage: "SERVER-TEXT", hint: "SERVER-TEXT", fields: [{ field: "schoolname", message: "SERVER-TEXT" }] } } }));
         const res = await put("X's Admin", route, own, { disabled: true }).expect(200);
         expect(res.body.push.status).toBe("failed");
         expect(res.body.push.message).toBe(
           kind === "learner"
-            ? "Saved, but the learning server doesn't have this class or curriculum yet. Run Sync Content, then Sync Students for this school."
-            : `The change was saved, but the learning server did not answer. Run ${sync} for this school on the Schools screen.`,
+            ? "Saved, but the learning server doesn't have this school, class or curriculum yet. Run Sync Content, then Sync Students for this school."
+            : "Saved, but the learning server doesn't have this school yet. Run Sync Content, then Sync Teachers for this school.",
         );
         expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
       });
