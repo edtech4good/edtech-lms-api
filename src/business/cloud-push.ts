@@ -153,7 +153,7 @@ export const rosterApiError = (kind: "students" | "teachers", error: unknown): A
       { hint: "" },
     );
   }
-  if (refusal === "curriculum") {
+  if (refusal === "curriculum" && kind === "students") {
     return new ApiError(ErrorCode.ALREADY_EXISTS, "A curriculum these learners use isn't on the learning server. Publish it, then Sync Students.", { hint: "" });
   }
   return undefined;

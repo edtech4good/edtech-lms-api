@@ -297,14 +297,14 @@ describe("deleting one learner or teacher", () => {
         expect(res.body.push.status).toBe("failed");
         expect(login(own).isdeleted).toBe(true);
       });
-      it("a 400 naming the class gives a learner the Sync Content message (the account is deleted, not saved) and a teacher the delete-failed one", async () => {
+      it("a 400 naming the class gives a learner the Sync Content message (the account is deleted, not saved) and a teacher the school-only Sync Teachers one", async () => {
         (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { fields: [{ field: "schoolid", message: "SERVER-TEXT" }] } } }));
         const res = await del("X's Admin", route, own).expect(200);
         expect(res.body.push.status).toBe("failed");
         expect(res.body.push.message).toBe(
           kind === "learner"
             ? "Deleted, but the learning server doesn't have this school, class or curriculum yet, so the learner can still sign in there. Run Sync Content, then Sync Students for this school."
-            : `Deleted, but the learning server did not answer. Run ${sync} for this school on the Schools screen.`,
+            : "Deleted, but the learning server doesn't have this school yet, so the teacher can still sign in there. Run Sync Content, then Sync Teachers for this school.",
         );
         expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
         expect(login(own).isdeleted).toBe(true);

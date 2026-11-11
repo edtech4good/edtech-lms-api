@@ -315,6 +315,8 @@ export interface AccountPushWords {
   failedLog: string;
   /** A learner the student server refuses for a school, class or curriculum it lacks: this instead of the shared wording. */
   missingRefs?: string;
+  /** A teacher the student server refuses for a school it lacks: this instead of the shared wording. */
+  missingSchool?: string;
 }
 
 /** The account a push sends: its login, its school, and the organisation that owns the school. */
@@ -362,11 +364,29 @@ export const pushOneAccount = async (kind: "learner" | "teacher", account: Pushe
     }
     return { status: "pushed", message: words.pushed };
   } catch (error) {
-    return failedPush(error, words.failedLog, kind === "learner" && learnerServerLacksRefs(error) ? words.missingRefs ?? MISSING_REFS_MESSAGE : words.failed);
+    const message =
+      kind === "learner"
+        ? learnerServerLacksRefs(error)
+          ? words.missingRefs ?? MISSING_REFS_MESSAGE
+          : words.failed
+        : teacherServerLacksSchool(error)
+          ? words.missingSchool ?? MISSING_SCHOOL_MESSAGE
+          : words.failed;
+    return failedPush(error, words.failedLog, message);
   }
 };
 
 export const MISSING_REFS_MESSAGE = "Saved, but the learning server doesn't have this school, class or curriculum yet. Run Sync Content, then Sync Students for this school.";
+
+export const MISSING_SCHOOL_MESSAGE = "Saved, but the learning server doesn't have this school yet. Run Sync Content, then Sync Teachers for this school.";
+
+const SCHOOL_REF_FIELDS = ["schoolid", "schoolname"];
+
+/** Did the student server refuse the teacher (400) because its fields name the school, which that server does not hold yet? Only the field names are read. */
+const teacherServerLacksSchool = (error: unknown): boolean => {
+  const answer = learningServerAnswer(error);
+  return answer?.status === 400 && answer.fields.some((f) => SCHOOL_REF_FIELDS.includes(f));
+};
 
 const REF_FIELDS = ["standard", "curriculumid", "curriculumids", "schoolid", "schoolname"];
 

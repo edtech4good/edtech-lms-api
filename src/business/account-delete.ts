@@ -54,6 +54,7 @@ export const pushDeletedAccount = async (kind: AccountKind, login: DeletedLogin)
     failed,
     failedLog,
     missingRefs: "Deleted, but the learning server doesn't have this school, class or curriculum yet, so the learner can still sign in there. Run Sync Content, then Sync Students for this school.",
+    missingSchool: "Deleted, but the learning server doesn't have this school yet, so the teacher can still sign in there. Run Sync Content, then Sync Teachers for this school.",
   });
 };
 

@@ -1047,6 +1047,7 @@ describe("the content sync is one organisation's", () => {
       const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/teachers`);
       expect(res.status).toBe(409);
       expect(res.body.errormessage).toBe(SCHOOL_WORDS("Sync Teachers"));
+      expect(res.body).not.toHaveProperty("hint");
       expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
     });
 
@@ -1055,7 +1056,15 @@ describe("the content sync is one organisation's", () => {
       const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`);
       expect(res.status).toBe(409);
       expect(res.body.errormessage).toBe(CURRICULUM_WORDS);
+      expect(res.body).not.toHaveProperty("hint");
       expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
+    });
+
+    it("Sync Teachers never says anything about learners: a 400 naming curriculumids is left to the error filter", async () => {
+      (axios.put as jest.Mock).mockRejectedValue(refusal([{ field: "curriculumids", message: "SERVER-TEXT" }]));
+      const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/teachers`);
+      expect(res.status).toBe(500);
+      expect(JSON.stringify(res.body)).not.toContain("learners");
     });
 
     it("a 400 with no fields, or naming another field, answers as it always did", async () => {
