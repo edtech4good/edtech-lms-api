@@ -1021,6 +1021,59 @@ describe("the content sync is one organisation's", () => {
     });
   });
 
+  // ───────────────────────────── a roster the learning server refuses ─────────────────────────────
+  describe("a roster push the learning server refuses by field", () => {
+    const refusal = (fields: Array<{ field: string; message: string }> | undefined, status = 400) =>
+      Object.assign(new Error(`Request failed with status code ${status}`), {
+        isAxiosError: true,
+        response: { status, data: { errormessage: "SERVER-TEXT", ...(fields ? { fields } : {}) } },
+        config: { headers: { Authorization: "SECRET-KEY" } },
+      });
+    const SCHOOL_WORDS = (then: string) => `The learning server doesn't have this school or one of its classes yet. Run Sync Content, then ${then}.`;
+    const CURRICULUM_WORDS = "A curriculum these learners use isn't on the learning server. Publish it, then Sync Students.";
+
+    it.each(["schoolid", "schoolname", "standard"])("Sync Students: a 400 naming %s is a 409 in central's own words", async (field) => {
+      (axios.put as jest.Mock).mockRejectedValue(refusal([{ field, message: "SERVER-TEXT" }]));
+      const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`);
+      expect(res.status).toBe(409);
+      expect(res.body.errormessage).toBe(SCHOOL_WORDS("Sync Students"));
+      expect(res.body).not.toHaveProperty("hint");
+      expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
+      expect(JSON.stringify(res.body)).not.toContain("SECRET-KEY");
+    });
+
+    it.each(["schoolid", "schoolname", "standard"])("Sync Teachers: a 400 naming %s is a 409 that says Sync Teachers", async (field) => {
+      (axios.put as jest.Mock).mockRejectedValue(refusal([{ field, message: "SERVER-TEXT" }]));
+      const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/teachers`);
+      expect(res.status).toBe(409);
+      expect(res.body.errormessage).toBe(SCHOOL_WORDS("Sync Teachers"));
+      expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
+    });
+
+    it("a 400 naming curriculumids is a 409 about the curriculum", async () => {
+      (axios.put as jest.Mock).mockRejectedValue(refusal([{ field: "curriculumids", message: "SERVER-TEXT" }]));
+      const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`);
+      expect(res.status).toBe(409);
+      expect(res.body.errormessage).toBe(CURRICULUM_WORDS);
+      expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
+    });
+
+    it("a 400 with no fields, or naming another field, answers as it always did", async () => {
+      for (const fields of [undefined, [{ field: "genderid", message: "x" }]]) {
+        (axios.put as jest.Mock).mockRejectedValue(refusal(fields));
+        const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`);
+        expect(res.status).toBe(500);
+        expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
+      }
+    });
+
+    it("no answer (a timeout) stays a 503", async () => {
+      (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("timeout of 15000ms exceeded"), { isAxiosError: true, code: "ECONNABORTED" }));
+      const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`);
+      expect(res.status).toBe(503);
+    });
+  });
+
   // ───────────────────────────── POST /sync/cloud/:schoolname/teachers ─────────────────────────────
   describe("POST /sync/cloud/:schoolname/teachers", () => {
     it.each(PUSHERS_IN_X)("%s: pushes the school's teachers as { schoolid, teachers }, each row carrying its school, with the school's organisation in the header", async (who) => {

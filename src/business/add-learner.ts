@@ -13,7 +13,7 @@ import { SchoolRole } from "src/models/enums/school.role.enum";
 import { dbinstance } from "src/services/dbservice";
 import { UNKNOWN_FIELD_MESSAGE } from "src/services/joi-message.service";
 import { isLoginHandle } from "src/validators/login-handle";
-import { cloudConfigured, pushToCloud, studentsFile, teachersFile } from "./cloud-push";
+import { cloudConfigured, learningServerAnswer, learningServerLogFields, pushToCloud, studentsFile, teachersFile } from "./cloud-push";
 import { assertEnrolmentFits } from "./content-owner";
 import { scopeOf } from "./org-scope";
 import { PushOutcome } from "./publish-push";
@@ -313,7 +313,7 @@ export interface AccountPushWords {
   skipped: string;
   failed: string;
   failedLog: string;
-  /** A learner the student server refuses for a class or curriculum it lacks: this instead of the shared wording. */
+  /** A learner the student server refuses for a school, class or curriculum it lacks: this instead of the shared wording. */
   missingRefs?: string;
 }
 
@@ -366,13 +366,13 @@ export const pushOneAccount = async (kind: "learner" | "teacher", account: Pushe
   }
 };
 
-export const MISSING_REFS_MESSAGE = "Saved, but the learning server doesn't have this class or curriculum yet. Run Sync Content, then Sync Students for this school.";
+export const MISSING_REFS_MESSAGE = "Saved, but the learning server doesn't have this school, class or curriculum yet. Run Sync Content, then Sync Students for this school.";
 
-const REF_FIELDS = ["standard", "curriculumid", "curriculumids"];
+const REF_FIELDS = ["standard", "curriculumid", "curriculumids", "schoolid", "schoolname"];
 
 /**
- * Did the student server refuse the learner (400) because its fields name the class or the curriculum, which that server does
- * not hold yet? Only the field names are read; nothing of its answer is relayed.
+ * Did the student server refuse the learner (400) because its fields name the school, the class or the curriculum, which that
+ * server does not hold yet? Only the field names are read; nothing of its answer is relayed.
  */
 const learnerServerLacksRefs = (error: unknown): boolean => {
   const e = error as { isAxiosError?: boolean; response?: { status?: number; data?: { fields?: unknown } } } | null;
@@ -399,7 +399,8 @@ export const failedPush = (error: unknown, logLine: string, message: string): Pu
   Logger.error(logLine, {
     originalerrorclass: (error as { constructor?: { name?: string } } | null)?.constructor?.name,
     code: mapped.code,
-    status: mapped.status,
+    status: learningServerAnswer(error)?.status ?? mapped.status,
+    ...learningServerLogFields(error),
   });
   return {
     status: "failed",

@@ -15,7 +15,7 @@ import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { ApiBearerAuth, ApiResponse, ApiTags } from "@nestjs/swagger";
 import AdmZip from "adm-zip";
-import { pushToCloud, studentsFile, teachersFile } from "src/business/cloud-push";
+import { pushToCloud, rosterApiError, studentsFile, teachersFile } from "src/business/cloud-push";
 import { pushOrganisationSet } from "src/business/publish-push";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { findOwnedSchool, resolveOwnedSchoolSegment } from "src/business/school-scope";
@@ -145,12 +145,16 @@ export class SyncController {
     if (studentusers.length <= 0) {
       throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to sync.");
     }
-    return pushToCloud(
-      "students",
-      "students.ini",
-      JSON.stringify(studentsFile(school.schoolid, studentusers.map((x) => x.get({ plain: true })))),
-      school.organisationid,
-    );
+    try {
+      return await pushToCloud(
+        "students",
+        "students.ini",
+        JSON.stringify(studentsFile(school.schoolid, studentusers.map((x) => x.get({ plain: true })))),
+        school.organisationid,
+      );
+    } catch (error) {
+      throw rosterApiError("students", error) ?? error;
+    }
   }
 
   @OrgPolicy("owned", {
@@ -178,11 +182,15 @@ export class SyncController {
     if (teachers.length <= 0) {
       throw new ApiError(ErrorCode.NOT_FOUND, "There are no teachers to sync.");
     }
-    return pushToCloud(
-      "teachers",
-      "teachers.ini",
-      JSON.stringify(teachersFile(school.schoolid, teachers.map((x) => x.get({ plain: true })))),
-      school.organisationid,
-    );
+    try {
+      return await pushToCloud(
+        "teachers",
+        "teachers.ini",
+        JSON.stringify(teachersFile(school.schoolid, teachers.map((x) => x.get({ plain: true })))),
+        school.organisationid,
+      );
+    } catch (error) {
+      throw rosterApiError("teachers", error) ?? error;
+    }
   }
 }

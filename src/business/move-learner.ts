@@ -177,7 +177,7 @@ export const pushMovedLearner = (moved: Pick<MovedLearner, "schooluserid" | "sch
     skipped: `Moved to ${moved.schoolname}. No learner server is set up here, so nothing was pushed.`,
     failed: `Moved, but the learning server did not answer. Run Sync Students for ${moved.schoolname} on the Schools screen.`,
     failedLog: "push of a moved learner to the learner server failed",
-    missingRefs: `Moved, but the learning server doesn't have this class or curriculum yet. Run Sync Content, then Sync Students for ${moved.schoolname}.`,
+    missingRefs: `Moved, but the learning server doesn't have this school, class or curriculum yet. Run Sync Content, then Sync Students for ${moved.schoolname}.`,
   });
 
 /** The answer of the move route. */

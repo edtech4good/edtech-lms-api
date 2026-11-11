@@ -140,6 +140,71 @@ const refusalOf = (error: unknown): ApiError | undefined => {
   return new ApiError(ErrorCode.INVALID_INPUT, body.errormessage.slice(0, MAX_RELAYED_MESSAGE), { fields });
 };
 
+/**
+ * The answer Sync Students and Sync Teachers give when the learning server refused the roster for a school, class or
+ * curriculum it does not hold yet (409, central's own words); undefined for any other failure, which is left to the error filter.
+ */
+export const rosterApiError = (kind: "students" | "teachers", error: unknown): ApiError | undefined => {
+  const refusal = rosterRefusalOf(error);
+  if (refusal === "school-or-class") {
+    return new ApiError(
+      ErrorCode.ALREADY_EXISTS,
+      `The learning server doesn't have this school or one of its classes yet. Run Sync Content, then Sync ${kind === "students" ? "Students" : "Teachers"}.`,
+      { hint: "" },
+    );
+  }
+  if (refusal === "curriculum") {
+    return new ApiError(ErrorCode.ALREADY_EXISTS, "A curriculum these learners use isn't on the learning server. Publish it, then Sync Students.", { hint: "" });
+  }
+  return undefined;
+};
+
+/** What the learning server answered to a push, read from the failure: its status, its error code and the names of the fields it refused. */
+export interface LearningServerAnswer {
+  status: number;
+  code?: string;
+  fields: string[];
+}
+
+/**
+ * The learning server's answer inside a failed push, when it gave one (an axios error with a response). Only the status, the
+ * code and the field names are read: nothing of its text is relayed. A timeout or a refused connection has no answer.
+ */
+export const learningServerAnswer = (error: unknown): LearningServerAnswer | undefined => {
+  const e = error as { isAxiosError?: boolean; response?: { status?: unknown; data?: { code?: unknown; fields?: unknown } } } | null;
+  if (!e?.isAxiosError || typeof e.response?.status !== "number") return undefined;
+  const data = e.response.data;
+  const raw: unknown[] = Array.isArray(data?.fields) ? (data?.fields as unknown[]) : [];
+  const fields = raw
+    .map((f) => (f as { field?: unknown } | null)?.field)
+    .filter((f): f is string => typeof f === "string")
+    .map((f) => f.slice(0, 100));
+  return { status: e.response.status, ...(typeof data?.code === "string" ? { code: data.code.slice(0, 100) } : {}), fields };
+};
+
+/** The log fields for a failed push: the learning server's status, code and refused fields when it answered. */
+export const learningServerLogFields = (error: unknown): Record<string, unknown> => {
+  const answer = learningServerAnswer(error);
+  return answer ? { learnerserverstatus: answer.status, learnerservercode: answer.code, learnerserverfields: answer.fields } : {};
+};
+
+const SCHOOL_FIELDS = ["schoolid", "schoolname", "standard"];
+
+/** The learning server's own words for why a roster push cannot be taken, mapped to what the admin is told. */
+export type RosterRefusal = "school-or-class" | "curriculum";
+
+/**
+ * A roster push (learners or teachers) that the learning server refused with a 400 naming the school, a class (`standard`) or a
+ * curriculum it does not hold yet. Only the field names are read. School and class win over the curriculum when both are named.
+ */
+export const rosterRefusalOf = (error: unknown): RosterRefusal | undefined => {
+  const answer = learningServerAnswer(error);
+  if (answer?.status !== 400) return undefined;
+  if (answer.fields.some((f) => SCHOOL_FIELDS.includes(f))) return "school-or-class";
+  if (answer.fields.includes("curriculumids")) return "curriculum";
+  return undefined;
+};
+
 /** The learners' file of one school: `{ schoolid, studentusers }`, every row carrying its `schoolid`. */
 export const studentsFile = (schoolid: string, studentusers: unknown[]) => ({ schoolid, studentusers });
 
