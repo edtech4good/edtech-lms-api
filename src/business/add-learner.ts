@@ -15,8 +15,9 @@ import { UNKNOWN_FIELD_MESSAGE } from "src/services/joi-message.service";
 import { isLoginHandle } from "src/validators/login-handle";
 import { cloudConfigured, learningServerAnswer, learningServerLogFields, pushToCloud, studentsFile, teachersFile } from "./cloud-push";
 import { assertEnrolmentFits } from "./content-owner";
-import { assertPublishedForEnrolment } from "./enrolment-published";
+import { firstUnpublished, refusalOf, unpublishedField } from "./enrolment-published";
 import { sendHealing } from "./heal-push";
+import { GRADE_INVALID_MESSAGE, gradeIdValue, resolveLearnerGrade } from "./learner-grade";
 import { scopeOf } from "./org-scope";
 import { PushOutcome } from "./publish-push";
 import { findOwnedSchool, findOwnedStandard } from "./school-scope";
@@ -50,6 +51,7 @@ const BODY_KEYS = [
   "schoolid",
   "standard",
   "curriculumids",
+  "gradeid",
   "studentfirstname",
   "studentlastname",
   "schoolusername",
@@ -68,6 +70,8 @@ export interface AddLearnerInput {
   schoolid: string;
   standard: string;
   curriculumids: string[];
+  /** A grade of the first curriculum; none asks for the curriculum's only grade. */
+  gradeid?: string;
   studentfirstname: string;
   studentlastname?: string;
   schoolusername: string;
@@ -158,6 +162,9 @@ export const validateAddLearner = (body: unknown, now: Date = new Date()): AddLe
   const curriculumids = curriculumIdsValue(raw.curriculumids);
   if (curriculumids === undefined) bad("curriculumids", "Choose at least one curriculum.");
 
+  const gradeid = gradeIdValue(raw.gradeid);
+  if (gradeid === null) bad("gradeid", GRADE_INVALID_MESSAGE);
+
   const first = plainName(raw.studentfirstname, true);
   if (first.message) bad("studentfirstname", first.message);
   const last = plainName(raw.studentlastname, false);
@@ -183,6 +190,7 @@ export const validateAddLearner = (body: unknown, now: Date = new Date()): AddLe
     schoolid: schoolid as string,
     standard: standard as string,
     curriculumids: curriculumids as string[],
+    ...(typeof gradeid === "string" ? { gradeid } : {}),
     studentfirstname: first.value as string,
     ...(last.value !== undefined ? { studentlastname: last.value } : {}),
     schoolusername: schoolusername as string,
@@ -248,7 +256,13 @@ export const addLearner = async (org: OrgContext, body: unknown): Promise<AddedL
       throw invalid([{ field: "curriculumids", message: "Choose curricula that exist." }]);
     }
     await assertEnrolmentFits(school.organisationid, input.curriculumids, tnx);
-    await assertPublishedForEnrolment(input.curriculumids, tnx);
+    // the published rule and the grade rule are both checked, and a request wrong on both names both fields
+    const unpublished = await firstUnpublished(input.curriculumids, tnx);
+    // the learner's grade is one of the first curriculum's, whichever way it is chosen
+    const grade = await resolveLearnerGrade({ curriculumid: input.curriculumids[0], gradeid: input.gradeid, transaction: tnx });
+    const refusals = [...unpublishedField(unpublished), ...(grade.ok ? [] : [{ field: grade.field, message: grade.message }])];
+    if (refusals.length > 0 || !grade.ok) throw refusalOf(refusals);
+    const gradeid = grade.gradeid;
     if (await usernameTaken(input.schoolusername, tnx)) throw usernameTakenError();
 
     const [login] = await new SchoolUserBusiness().createSchoolUser(
@@ -276,6 +290,7 @@ export const addLearner = async (org: OrgContext, body: unknown): Promise<AddedL
           state: "",
           curriculumid: input.curriculumids[0],
           curriculumids: input.curriculumids,
+          gradeid,
           genderid: input.genderid,
           isactive: 1,
           schooluserid: login.schooluserid,

@@ -1,5 +1,5 @@
 import { Transaction } from "sequelize";
-import { ApiError } from "src/models/ApiError";
+import { ApiError, ApiFieldError } from "src/models/ApiError";
 import { curriculums } from "src/models/data-models/curriculums";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { publicationStates } from "./curriculum-publication";
@@ -66,3 +66,20 @@ export const assertPublishedForAdded = async (
   const held = new Set(heldCurricula(learner));
   await assertPublishedForEnrolment(curriculumids.filter((id) => !held.has(id)), transaction, field);
 };
+
+/** The curricula of `curriculumids` that the learner does not hold yet: only these must be published. */
+export const addedCurricula = (curriculumids: ReadonlyArray<string>, learner: { curriculumids?: unknown; curriculumid?: unknown } | null | undefined): string[] => {
+  const held = new Set(heldCurricula(learner));
+  return curriculumids.filter((id) => !held.has(id));
+};
+
+/**
+ * The 400 for a request wrong on more than one rule (the published rule and the grade rule): one field error each, reported
+ * together. One field error keeps its own message; several answer "Check the highlighted fields.".
+ */
+export const refusalOf = (fields: ApiFieldError[]): ApiError =>
+  new ApiError(ErrorCode.INVALID_INPUT, fields.length === 1 ? fields[0].message : "Check the highlighted fields.", { fields });
+
+/** The field error for an enrolment in an unpublished curriculum, or none when the name is undefined. */
+export const unpublishedField = (name: string | undefined, field = "curriculumids"): ApiFieldError[] =>
+  name === undefined ? [] : [{ field, message: unpublishedMessage(name) }];

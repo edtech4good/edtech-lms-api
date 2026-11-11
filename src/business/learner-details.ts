@@ -22,7 +22,8 @@ import {
   pushOneAccount,
 } from "./add-learner";
 import { assertEnrolmentFits } from "./content-owner";
-import { assertPublishedForAdded } from "./enrolment-published";
+import { addedCurricula, firstUnpublished, refusalOf, unpublishedField } from "./enrolment-published";
+import { GRADE_INVALID_MESSAGE, gradeIdValue, resolveLearnerGrade } from "./learner-grade";
 import { nextCurriculumId } from "./next-curriculum-id";
 import { scopeOf } from "./org-scope";
 import { PushOutcome } from "./publish-push";
@@ -39,7 +40,7 @@ import { andInOwnedSchools, findOwnedSchool, findOwnedStandard, findOwnedStudent
  * answer says which way the push went.
  */
 
-const BODY_KEYS = ["studentfirstname", "studentlastname", "genderid", "dateofbirth", "standard", "curriculumids"] as const;
+const BODY_KEYS = ["studentfirstname", "studentlastname", "genderid", "dateofbirth", "standard", "curriculumids", "gradeid"] as const;
 
 export interface LearnerEdit {
   studentfirstname: string;
@@ -50,9 +51,11 @@ export interface LearnerEdit {
   dateofbirth: Date | null;
   standard: string;
   curriculumids: string[];
+  /** A grade of the learner's primary curriculum; none keeps the current one while it still fits, else asks for the only grade. */
+  gradeid?: string;
 }
 
-/** The request body, or a 400 naming every field that is wrong (field names are the body's keys). All six keys are required. */
+/** The request body, or a 400 naming every field that is wrong (field names are the body's keys). All keys but `gradeid` are required. */
 export const validateLearnerEdit = (body: unknown, now: Date = new Date()): LearnerEdit => {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw invalid([{ field: "body", message: "Send the learner's details as an object." }]);
@@ -94,6 +97,9 @@ export const validateLearnerEdit = (body: unknown, now: Date = new Date()): Lear
   const curriculumids = curriculumIdsValue(raw.curriculumids);
   if (curriculumids === undefined) bad("curriculumids", "Choose at least one curriculum.");
 
+  const gradeid = gradeIdValue(raw.gradeid);
+  if (gradeid === null) bad("gradeid", GRADE_INVALID_MESSAGE);
+
   if (errors.length > 0) throw invalid(errors, "Check the highlighted fields.");
   return {
     studentfirstname: first.value as string,
@@ -102,6 +108,7 @@ export const validateLearnerEdit = (body: unknown, now: Date = new Date()): Lear
     dateofbirth,
     standard: standard as string,
     curriculumids: curriculumids as string[],
+    ...(typeof gradeid === "string" ? { gradeid } : {}),
   };
 };
 
@@ -137,6 +144,9 @@ export interface LearnerDetails {
   dateofbirth: string | null;
   standard: string | null;
   curriculumids: string[];
+  /** The learner's primary curriculum and its grade, as stored (null when none). */
+  curriculumid: string | null;
+  gradeid: string | null;
   isdisabled: boolean;
 }
 
@@ -165,6 +175,8 @@ export const getLearnerDetails = async (org: OrgContext, schooluserid: unknown):
     dateofbirth: dateOnly(learner.dateofbirth),
     standard: learner.standard ?? null,
     curriculumids: ids.length > 0 ? ids : learner.curriculumid ? [learner.curriculumid] : [],
+    curriculumid: learner.curriculumid ?? null,
+    gradeid: learner.gradeid ?? null,
     isdisabled: login.isdisabled === true,
   };
 };
@@ -209,8 +221,14 @@ export const editLearner = async (org: OrgContext, actor: string | undefined, sc
       await assertEnrolmentFits(school.organisationid, input.curriculumids, tnx);
       const learner = await students.findOne({ where: { schooluserid: login.schooluserid, isdeleted: false }, transaction: tnx });
       if (!learner) throw studentNotFound();
-      // only a curriculum being added must be published: one the learner already has stays, even if retired since
-      await assertPublishedForAdded(input.curriculumids, learner, tnx);
+      const curriculumid = nextCurriculumId(learner.curriculumid, input.curriculumids);
+      // only a curriculum being added must be published: one the learner already has stays, even if retired since; the grade
+      // rule is checked with it, and a request wrong on both names both fields
+      const unpublished = await firstUnpublished(addedCurricula(input.curriculumids, learner), tnx);
+      const grade = await resolveLearnerGrade({ curriculumid, gradeid: input.gradeid, currentGradeid: learner.gradeid, transaction: tnx });
+      const refusals = [...unpublishedField(unpublished), ...(grade.ok ? [] : [{ field: grade.field, message: grade.message }])];
+      if (refusals.length > 0 || !grade.ok) throw refusalOf(refusals);
+      const gradeid = grade.gradeid;
       await students.update(
         {
           studentfirstname: input.studentfirstname,
@@ -218,7 +236,8 @@ export const editLearner = async (org: OrgContext, actor: string | undefined, sc
           genderid: input.genderid,
           dateofbirth: input.dateofbirth as Date,
           standard: input.standard,
-          curriculumid: nextCurriculumId(learner.curriculumid, input.curriculumids),
+          curriculumid,
+          gradeid,
           curriculumids: input.curriculumids,
           updated_at: new Date(),
           updated_by: actor,

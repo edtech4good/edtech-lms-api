@@ -57,6 +57,16 @@ const CUR_X = uuid(301);
 const CUR_X2 = uuid(303);
 const CUR_X3 = uuid(305);
 const CUR_Y = uuid(302);
+const CUR_TWO = uuid(306); // two grades
+const CUR_NONE = uuid(307); // no grade
+const CUR_DEL = uuid(308); // its only grade is deleted
+const G_X = uuid(601); // the one grade of CUR_X
+const G_X2 = uuid(602); // the one grade of CUR_X2
+const G_X3 = uuid(603); // the one grade of CUR_X3
+const G_Y = uuid(604); // the one grade of CUR_Y
+const G_TWO_A = uuid(605);
+const G_TWO_B = uuid(606);
+const G_DEL = uuid(607);
 const K_X = uuid(501);
 const K_X_B = uuid(503); // a second class of the same school
 const K_Y = uuid(502);
@@ -111,6 +121,18 @@ const seed = () => {
   db.add("curriculums", { curriculumid: CUR_X2, curriculumname: "ភាសាខ្មែរ គ", organisationid: X, curriculumstatus: true });
   db.add("curriculums", { curriculumid: CUR_X3, curriculumname: "ភាសាខ្មែរ ឃ", organisationid: X, curriculumstatus: true });
   db.add("curriculums", { curriculumid: CUR_Y, curriculumname: "ភាសាខ្មែរ ខ", organisationid: Y, curriculumstatus: true });
+  db.add("curriculums", { curriculumid: CUR_TWO, curriculumname: "ភាសាខ្មែរ ង", organisationid: X, curriculumstatus: true });
+  db.add("curriculums", { curriculumid: CUR_NONE, curriculumname: "ភាសាខ្មែរ ច", organisationid: X, curriculumstatus: true });
+  db.add("curriculums", { curriculumid: CUR_DEL, curriculumname: "ភាសាខ្មែរ ឆ", organisationid: X, curriculumstatus: true });
+  const grade = (gradeid: string, curriculumid: string, gradename: string, gradeorder: number, over: Row = {}) =>
+    db.add("grades", { gradeid, curriculumid, gradename, gradeorder, gradestatus: true, isdeleted: false, ...over });
+  grade(G_X, CUR_X, "ថ្នាក់ទី១", 1);
+  grade(G_X2, CUR_X2, "ថ្នាក់ទី១", 1);
+  grade(G_X3, CUR_X3, "ថ្នាក់ទី១", 1);
+  grade(G_Y, CUR_Y, "ថ្នាក់ទី១", 1);
+  grade(G_TWO_A, CUR_TWO, "ថ្នាក់ទី១", 1);
+  grade(G_TWO_B, CUR_TWO, "ថ្នាក់ទី២", 2);
+  grade(G_DEL, CUR_DEL, "ថ្នាក់ទី១", 1, { isdeleted: true });
   db.publish(CUR_X, X);
   db.publish(CUR_X2, X);
   db.publish(CUR_X3, X);
@@ -125,7 +147,7 @@ const seed = () => {
   const login = (id: string, name: string, school: string, over: Row = {}) =>
     db.add("schoolusers", { schooluserid: id, schoolusername: name, schooluserrole: SchoolRole.STUDENT, schoolid: school, schoolname: "x", schooluserstatus: true, isdisabled: false, isdeleted: false, schooluserpasswordhash: "hash", ...over });
   const learner = (n: number, id: string, school: string, over: Row = {}) =>
-    db.add("students", { studentid: uuid(n), schooluserid: id, schoolid: school, schoolname: "x", studentfirstname: FIRST, studentlastname: LAST, dateofbirth: new Date(2015, 2, 9), standard: K_X, curriculumid: CUR_X, curriculumids: [CUR_X], genderid: 1, isactive: 1, is_teacher_acc: false, type: "online", isdeleted: false, ...over });
+    db.add("students", { studentid: uuid(n), schooluserid: id, schoolid: school, schoolname: "x", studentfirstname: FIRST, studentlastname: LAST, dateofbirth: new Date(2015, 2, 9), standard: K_X, curriculumid: CUR_X, curriculumids: [CUR_X], gradeid: G_X, genderid: 1, isactive: 1, is_teacher_acc: false, type: "online", isdeleted: false, ...over });
   login(L_X, "learnerx", S_X);
   login(L_OTHER, "learnerx2", S_X);
   login(L_DISABLED, "learnerx3", S_X, { isdisabled: true });
@@ -134,7 +156,7 @@ const seed = () => {
   learner(401, L_X, S_X);
   learner(402, L_OTHER, S_X);
   learner(403, L_DISABLED, S_X);
-  learner(404, L_Y, S_Y, { standard: K_Y, curriculumid: CUR_Y, curriculumids: [CUR_Y] });
+  learner(404, L_Y, S_Y, { standard: K_Y, curriculumid: CUR_Y, curriculumids: [CUR_Y], gradeid: G_Y });
   learner(405, L_GONE, S_X, { isdeleted: true });
   login(T_X, "teacherx", S_X, { schooluserrole: SchoolRole.TEACHER });
   login(T_STU, "teacherstu", S_X, { schooluserrole: SchoolRole.TEACHER });
@@ -260,6 +282,65 @@ describe("moving one learner to another school", () => {
       it("is replaced by the first of the new list when it was dropped", async () => {
         await put("X's Admin", L_X, goodBody({ curriculumids: [CUR_X3, CUR_X2] })).expect(200);
         expect(learnerRow(L_X)).toMatchObject({ curriculumid: CUR_X3, curriculumids: [CUR_X3, CUR_X2] });
+      });
+    });
+
+    describe("the grade", () => {
+      const grade = () => learnerRow(L_X).gradeid;
+      const gradeRefusal = (res: request.Response, message: string) => {
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe("INVALID_INPUT");
+        expect(res.body.fields).toEqual([{ field: "gradeid", message }]);
+        expect(transaction.commit).not.toHaveBeenCalled();
+      };
+      const CHOOSE = "Choose a grade for this student.";
+      const INVALID = "Choose a grade of this curriculum.";
+      const NONE = "This curriculum has no grade yet, so a learner can't be put in it.";
+      it("an unchanged curriculum keeps its grade even when the curriculum has several", async () => {
+        const row = learnerRow(L_X);
+        row.curriculumid = CUR_TWO;
+        row.curriculumids = [CUR_TWO];
+        row.gradeid = G_TWO_B;
+        await put("X's Admin", L_X, goodBody({ curriculumids: [CUR_TWO] })).expect(200);
+        expect(grade()).toBe(G_TWO_B);
+      });
+      it("a new primary curriculum with one grade and none named stores that grade", async () => {
+        await put("X's Admin", L_X, goodBody({ curriculumids: [CUR_X2] })).expect(200);
+        expect(learnerRow(L_X)).toMatchObject({ curriculumid: CUR_X2, gradeid: G_X2 });
+      });
+      it("a new curriculum with two grades and none named is a 400 naming gradeid, nothing written", async () => {
+        gradeRefusal(await refuses("X's Admin", L_X, goodBody({ curriculumids: [CUR_TWO] })), CHOOSE);
+      });
+      it.each([G_TWO_A, G_TWO_B])("a new curriculum with two grades and %s named stores it", async (gradeid) => {
+        await put("X's Admin", L_X, goodBody({ curriculumids: [CUR_TWO], gradeid })).expect(200);
+        expect(learnerRow(L_X)).toMatchObject({ curriculumid: CUR_TWO, gradeid });
+      });
+      it("a grade of ANOTHER curriculum of the same organisation is a 400, nothing written", async () => {
+        gradeRefusal(await refuses("X's Admin", L_X, goodBody({ curriculumids: [CUR_X2], gradeid: G_X3 })), INVALID);
+        gradeRefusal(await refuses("X's Admin", L_X, goodBody({ curriculumids: [CUR_X2], gradeid: G_X })), INVALID);
+      });
+      it("a deleted grade is a 400, and a curriculum whose only grade is deleted has none", async () => {
+        gradeRefusal(await refuses("X's Admin", L_X, goodBody({ curriculumids: [CUR_DEL], gradeid: G_DEL })), INVALID);
+        gradeRefusal(await refuses("X's Admin", L_X, goodBody({ curriculumids: [CUR_DEL] })), NONE);
+      });
+      it("a curriculum with no grade is a 400, nothing written", async () => {
+        gradeRefusal(await refuses("X's Admin", L_X, goodBody({ curriculumids: [CUR_NONE] })), NONE);
+      });
+      it("another organisation's grade is the same 400 as a grade that does not exist", async () => {
+        const foreign = await refuses("X's Admin", L_X, goodBody({ gradeid: G_Y }));
+        const missing = await refuses("X's Admin", L_X, goodBody({ gradeid: MISSING }));
+        gradeRefusal(foreign, INVALID);
+        expect(said(foreign)).toEqual(said(missing));
+      });
+      it("a bad grade is named together with a bad school", async () => {
+        const res = await refuses("X's Admin", L_X, goodBody({ schoolid: S_X, curriculumids: [CUR_TWO] }));
+        expect(res.body.fields).toEqual([
+          { field: "schoolid", message: "Choose a different school." },
+          { field: "gradeid", message: CHOOSE },
+        ]);
+      });
+      it.each([[5], [{}], [["x"]], ["x".repeat(37)]])("a gradeid that is not an id (%j) is a 400 naming gradeid", async (gradeid) => {
+        gradeRefusal(await refuses("X's Admin", L_X, goodBody({ gradeid })), INVALID);
       });
     });
 

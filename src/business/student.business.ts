@@ -7,6 +7,7 @@ import {
   curriculums,
   curriculumsAttributes,
 } from "src/models/data-models/curriculums";
+import { grades } from "src/models/data-models/grades";
 import { schools } from "src/models/data-models/school";
 import {
   schoolusers,
@@ -21,7 +22,8 @@ import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
 import { assertEnrolmentFits, ownerOfSchool } from "./content-owner";
-import { assertPublishedForAdded } from './enrolment-published';
+import { addedCurricula, firstUnpublished, refusalOf, unpublishedField } from './enrolment-published';
+import { GRADE_INVALID_MESSAGE, liveGradesOf, resolveLearnerGrade } from "./learner-grade";
 import { nextCurriculumId } from "./next-curriculum-id";
 import { isSameSchoolName, normaliseSchoolName, withSchoolIds } from "./school-identity";
 import { andInOwnedSchools, findOwnedStudent, requireOwnedSchoolByName } from "./school-scope";
@@ -677,6 +679,8 @@ WHERE
         'isactive',
         'is_teacher_acc',
         'curriculumids',
+        'curriculumid',
+        'gradeid',
       ],
       include: [
         {
@@ -699,6 +703,14 @@ WHERE
       ]
     });
     const studentsForEdit: Array<IStudentImportFormat> = [];
+    const gradeIds = [...new Set(stds.map((x) => x.gradeid).filter((g): g is string => !!g))];
+    // only a live grade of the learner's own primary curriculum is written: that is the one the file can name again
+    const liveGrades = new Map(
+      (gradeIds.length > 0
+        ? await grades.findAll({ where: { gradeid: { [Op.in]: gradeIds }, isdeleted: false }, attributes: ['gradeid', 'gradename', 'curriculumid'] })
+        : []
+      ).map((g) => [g.gradeid, g]),
+    );
     for await (const x of stds) {
       const currs = await curriculums.findAll({ 
         where: {
@@ -718,6 +730,7 @@ WHERE
         schoolusername: x.schooluser.schoolusername ?? '',
         schoolname: x.schoolname ?? '',
         curriculums: currnames,
+        grade: (x.gradeid && liveGrades.get(x.gradeid)?.curriculumid === x.curriculumid ? liveGrades.get(x.gradeid)?.gradename : '') || '',
         standard: x.class?.standardname ?? '',
         studentfirstname: x.studentfirstname,
         studentlastname: x.studentlastname ?? '',
@@ -755,6 +768,8 @@ WHERE
   ) => {
     // Before any row is written: every learner a row names, and every school it names, must be the caller's (else 404 and
     // nothing is written), and the curriculums a row names must be curriculums of the owner of the school it names.
+    // the grade each learner row is stored with (teacher rows have none), by row index
+    const gradeByRow = new Map<number, string>();
     for (const [rowindex, x] of studentdata.entries()) {
       const current = await findOwnedStudent(org, { studentid: x.studentid }, transaction);
       const school = await requireOwnedSchoolByName(org, x.schoolname, transaction, `students.${rowindex}.schoolname`);
@@ -772,8 +787,30 @@ WHERE
       // refusal a name nobody holds gets, before any row is written
       if (!named.complete) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
       await assertEnrolmentFits(schoolOwner, named.ids, transaction);
-      // only a curriculum being added must be published: one the learner already has stays, even if retired since
-      await assertPublishedForAdded(named.ids, current, transaction, 'curriculums');
+      // the published rule and the grade rule are both checked for the row, and a row wrong on both names both fields
+      const rowFields: Array<{ field: string; message: string }> = [
+        // only a curriculum being added must be published: one the learner already has stays, even if retired since
+        ...unpublishedField(await firstUnpublished(addedCurricula(named.ids, current), transaction), 'curriculums'),
+      ];
+      // every row, a teacher account's too, gets a grade of its primary curriculum (the one it keeps, else the first named); the
+      // file names it by name, compared as the file's other names are, and blank keeps the current one
+      const primary = nextCurriculumId(current.curriculumid, named.ids);
+      const wanted = typeof x.grade === 'string' ? normaliseSchoolName(x.grade) : '';
+      let gradeid: string | undefined;
+      if (wanted !== '') {
+        const match = (await liveGradesOf(primary, transaction)).filter((g) => normaliseSchoolName(g.gradename) === wanted);
+        // a name that fits several grades is the current grade when that is one of them, else it is refused
+        const kept = match.find((g) => g.gradeid === current.gradeid);
+        if (match.length !== 1 && !kept) rowFields.push({ field: `students.${rowindex}.grade`, message: GRADE_INVALID_MESSAGE });
+        else gradeid = (kept ?? match[0]).gradeid;
+      }
+      // a named grade that fits nothing is already refused above; with none named, the current or the only grade is used
+      if (rowFields.every((f) => f.field !== `students.${rowindex}.grade`)) {
+        const resolved = await resolveLearnerGrade({ curriculumid: primary, gradeid, currentGradeid: current.gradeid, transaction });
+        if (resolved.ok) gradeByRow.set(rowindex, resolved.gradeid);
+        else rowFields.push({ field: `students.${rowindex}.grade`, message: resolved.message });
+      }
+      if (rowFields.length > 0) throw refusalOf(rowFields);
     }
     for (const [rowindex, x] of studentdata.entries()) {
       const student = await students.findOne({
@@ -845,6 +882,7 @@ WHERE
           curriculumids: currs,
           // the single curriculum stays one of the list: the learners list and the reports join on it
           ...(currs.length > 0 ? { curriculumid: nextCurriculumId(student.curriculumid, currs) } : {}),
+          ...(gradeByRow.has(rowindex) ? { gradeid: gradeByRow.get(rowindex) } : {}),
         },
         {
           where: { studentid: student.studentid },
