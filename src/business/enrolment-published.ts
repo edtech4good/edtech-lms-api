@@ -35,12 +35,6 @@ export const firstUnpublished = async (curriculumids: ReadonlyArray<string>, tra
   return names.get(missing[0]) ?? "this curriculum";
 };
 
-/** Throws the 400 above for the first curriculum that is not published; returns when all are. */
-export const assertPublishedForEnrolment = async (curriculumids: ReadonlyArray<string>, transaction?: Transaction, field = "curriculumids"): Promise<void> => {
-  const name = await firstUnpublished(curriculumids, transaction);
-  if (name !== undefined) throw unpublishedError(name, field);
-};
-
 /** The curricula a learner row already holds: its list, and its single curriculum. */
 export const heldCurricula = (row: { curriculumids?: unknown; curriculumid?: unknown } | null | undefined): string[] => {
   let list: unknown = row?.curriculumids;
@@ -56,16 +50,6 @@ export const heldCurricula = (row: { curriculumids?: unknown; curriculumid?: unk
   return held;
 };
 
-/** `assertPublishedForEnrolment` for the curricula being ADDED: those the learner does not hold already. A held one that was retired since stays. */
-export const assertPublishedForAdded = async (
-  curriculumids: ReadonlyArray<string>,
-  learner: { curriculumids?: unknown; curriculumid?: unknown } | null | undefined,
-  transaction?: Transaction,
-  field = "curriculumids",
-): Promise<void> => {
-  const held = new Set(heldCurricula(learner));
-  await assertPublishedForEnrolment(curriculumids.filter((id) => !held.has(id)), transaction, field);
-};
 
 /** The curricula of `curriculumids` that the learner does not hold yet: only these must be published. */
 export const addedCurricula = (curriculumids: ReadonlyArray<string>, learner: { curriculumids?: unknown; curriculumid?: unknown } | null | undefined): string[] => {
@@ -75,10 +59,16 @@ export const addedCurricula = (curriculumids: ReadonlyArray<string>, learner: { 
 
 /**
  * The 400 for a request wrong on more than one rule (the published rule and the grade rule): one field error each, reported
- * together. One field error keeps its own message; several answer "Check the highlighted fields.".
+ * together. One field error keeps its own message; several answer "Check the highlighted fields.", except on the two upload
+ * routes (`inFileRoute`), whose message is every sentence.
  */
-export const refusalOf = (fields: ApiFieldError[]): ApiError =>
-  new ApiError(ErrorCode.INVALID_INPUT, fields.length === 1 ? fields[0].message : "Check the highlighted fields.", { fields });
+export const refusalOf = (fields: ApiFieldError[], inFileRoute = false): ApiError =>
+  new ApiError(
+    ErrorCode.INVALID_INPUT,
+    // an upload highlights nothing, so its message carries each sentence itself
+    inFileRoute ? fields.map((f) => f.message).join(" ") : fields.length === 1 ? fields[0].message : "Check the highlighted fields.",
+    { fields },
+  );
 
 /** The field error for an enrolment in an unpublished curriculum, or none when the name is undefined. */
 export const unpublishedField = (name: string | undefined, field = "curriculumids"): ApiFieldError[] =>

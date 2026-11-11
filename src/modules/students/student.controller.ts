@@ -316,7 +316,7 @@ export class StudentController {
       const unpublished = await firstUnpublished(_body.curriculumid, tnx);
       const gradeResolved = await resolveLearnerGrade({ curriculumid: _body.curriculumid[0], gradeid: gradeNamed, transaction: tnx });
       const fileRefusals = [...unpublishedField(unpublished, "curriculumid"), ...(gradeResolved.ok ? [] : [{ field: gradeResolved.field, message: gradeResolved.message }])];
-      if (fileRefusals.length > 0 || !gradeResolved.ok) throw refusalOf(fileRefusals);
+      if (fileRefusals.length > 0 || !gradeResolved.ok) throw refusalOf(fileRefusals, true);
       const learnerGradeid = gradeResolved.gradeid;
       result = await new SchoolUserBusiness().createSchoolUser(
         _body.students.map(

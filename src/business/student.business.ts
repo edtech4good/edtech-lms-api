@@ -810,7 +810,7 @@ WHERE
         if (resolved.ok) gradeByRow.set(rowindex, resolved.gradeid);
         else rowFields.push({ field: `students.${rowindex}.grade`, message: resolved.message });
       }
-      if (rowFields.length > 0) throw refusalOf(rowFields);
+      if (rowFields.length > 0) throw refusalOf(rowFields, true);
     }
     for (const [rowindex, x] of studentdata.entries()) {
       const student = await students.findOne({

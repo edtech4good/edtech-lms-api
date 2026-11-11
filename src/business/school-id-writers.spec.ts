@@ -49,9 +49,7 @@ beforeEach(() => {
   jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(tnx as never);
   // the name-holder check (school-name.ts, specs of its own) is not under test here
   jest.spyOn(schoolName, "assertNameNeverHeld").mockResolvedValue(undefined);
-  // nor is the published-curriculum rule of an enrolment
-  jest.spyOn(enrolmentPublished, "assertPublishedForEnrolment").mockResolvedValue(undefined);
-  // the routes read the first unpublished curriculum (to report it with the grade rule), not only assert it
+  // nor is the published-curriculum rule of an enrolment (the routes read the first unpublished curriculum)
   jest.spyOn(enrolmentPublished, "firstUnpublished").mockResolvedValue(undefined);
   // the by-name lookup is `WHERE TRIM(schoolname) = ?`: a Sequelize where(fn, value), `logic` is the value
   jest.spyOn(schools, "findAll").mockImplementation((async (opts: { where: { logic: string } }) =>
