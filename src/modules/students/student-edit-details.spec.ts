@@ -242,9 +242,20 @@ describe("reading and editing one learner's details", () => {
         dateofbirth: "2015-03-09",
         standard: K_X,
         curriculumids: [CUR_X],
+        curriculumid: CUR_X,
+        gradeid: G_X,
         isdisabled: false,
       });
       expect(JSON.stringify(res.body)).not.toContain("hash");
+    });
+    it("a learner with no grade answers gradeid null, and the stored single curriculum is its own field", async () => {
+      learnerRow(L_X).gradeid = null;
+      learnerRow(L_X).curriculumids = [CUR_X3, CUR_X];
+      const res = await get("X's Admin", L_X).expect(200);
+      expect(res.body).toMatchObject({ gradeid: null, curriculumid: CUR_X, curriculumids: [CUR_X3, CUR_X] });
+      expect(Object.keys(res.body).sort()).toEqual(
+        ["curriculumid", "curriculumids", "dateofbirth", "genderid", "gradeid", "isdisabled", "schoolid", "schoolname", "schooluserid", "schoolusername", "standard", "studentfirstname", "studentlastname"].sort(),
+      );
     });
     it("a learner with no last name or date of birth answers nulls, and a disabled one says so", async () => {
       learnerRow(L_X).studentlastname = null;

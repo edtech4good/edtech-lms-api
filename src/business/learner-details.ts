@@ -143,6 +143,9 @@ export interface LearnerDetails {
   dateofbirth: string | null;
   standard: string | null;
   curriculumids: string[];
+  /** The learner's primary curriculum and its grade, as stored (null when none). */
+  curriculumid: string | null;
+  gradeid: string | null;
   isdisabled: boolean;
 }
 
@@ -171,6 +174,8 @@ export const getLearnerDetails = async (org: OrgContext, schooluserid: unknown):
     dateofbirth: dateOnly(learner.dateofbirth),
     standard: learner.standard ?? null,
     curriculumids: ids.length > 0 ? ids : learner.curriculumid ? [learner.curriculumid] : [],
+    curriculumid: learner.curriculumid ?? null,
+    gradeid: learner.gradeid ?? null,
     isdisabled: login.isdisabled === true,
   };
 };
