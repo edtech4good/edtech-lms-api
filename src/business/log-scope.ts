@@ -349,15 +349,17 @@ export const assertLogPointsRowsComplete = (logdata: unknown): void => {
 };
 
 /**
- * An award date: an ISO-8601 date-time with a time (`Z` or an offset, fractional seconds allowed), or a Date, in a
- * year from 1000 to 9999 and a real calendar date (2026-02-30 is not one).
+ * An award date: an ISO-8601 date-time with a time (`Z` or an offset, fractional seconds allowed), or a Date, that is
+ * a real calendar date (2026-02-30 is not one) and whose instant, read in UTC (after the offset), falls in a year from
+ * 1000 to 9999.
  */
 const ISO_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/;
+const inYearRange = (instant: Date): boolean => {
+  const year = instant.getUTCFullYear();
+  return !Number.isNaN(instant.getTime()) && year >= 1000 && year <= 9999;
+};
 const isAwardDate = (value: unknown): boolean => {
-  if (value instanceof Date) {
-    const year = value.getUTCFullYear();
-    return !Number.isNaN(value.getTime()) && year >= 1000 && year <= 9999;
-  }
+  if (value instanceof Date) return inYearRange(value);
   if (typeof value !== "string") return false;
   const m = ISO_DATE_TIME.exec(value);
   if (!m) return false;
@@ -365,7 +367,8 @@ const isAwardDate = (value: unknown): boolean => {
   if (year < 1000 || month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
   if (m[9] !== undefined && (Number(m[9]) > 23 || Number(m[10]) > 59)) return false;
   const real = new Date(Date.UTC(year, month - 1, day));
-  return real.getUTCMonth() === month - 1 && real.getUTCDate() === day;
+  if (real.getUTCMonth() !== month - 1 || real.getUTCDate() !== day) return false;
+  return inYearRange(new Date(value));
 };
 
 /**
@@ -402,11 +405,13 @@ export const assertLogAwardRowsComplete = (logdata: unknown): void => {
 };
 
 /**
- * Refuses the upload when a `progress.studentawards` row does not name content that fits together and that the
- * uploading school's organisation may hold: an award must name a level of its grade and a grade of its curriculum,
- * and the curriculum must be one the organisation of the teacher's school holds (the scope the reports read content
- * through). A school with no organisation holds no curriculum. Nothing is written; the message names each row by its
- * position in the file, never an id. Run it after `assertLogAwardRowsComplete` and `assertLogRowsNameKnownContent`.
+ * Refuses the upload when a `progress.studentawards` row names a curriculum, grade or level that the uploading school's
+ * organisation does not hold: each of the three ids is checked on its own, through the scope the reports read content
+ * through (a school with no organisation holds nothing). The three are deliberately not checked against each other: an
+ * award records the content as it was when it was earned, and since then a level may have moved to another grade, a
+ * grade to another curriculum, or the learning server's copy of the content may be older than central's. Nothing is
+ * written; the message names each row by its position in the file, never an id. Run it after
+ * `assertLogAwardRowsComplete` and `assertLogRowsNameKnownContent` (which refuses an id that does not exist at all).
  */
 export const assertLogAwardsNameOwnContent = async (teacher: schoolusers, logdata: unknown, chunkSize = LOOKUP_CHUNK): Promise<void> => {
   const log = (logdata as { log?: unknown } | null | undefined)?.log;
@@ -417,29 +422,21 @@ export const assertLogAwardsNameOwnContent = async (teacher: schoolusers, logdat
   const school = teacher.schoolid ? await schools.findOne({ attributes: ["schoolid", "organisationid"], where: { schoolid: teacher.schoolid } }) : null;
   const organisationid = school?.organisationid ?? null;
   const org = organisationid ? { organisationid, isplatform: false, permissions: [] } : null;
-  const held = new Set<string>();
-  if (org) {
-    const found = await findInChunks(new Set(awards.map((r) => id(r.curid))), async (chunk) =>
-      (await curriculums.findAll({ attributes: ["curriculumid"], where: await andScope(org, "curriculum", { curriculumid: { [Op.in]: chunk } }) })) as unknown as Row[], chunkSize);
-    for (const r of found) held.add(storedId(r.curriculumid));
-  }
-  const gradeOfLevel = new Map<string, string>();
-  for (const r of await findInChunks(new Set(awards.map((a) => id(a.levelid))), async (chunk) =>
-    (await levels.findAll({ attributes: ["levelid", "gradeid"], where: { levelid: { [Op.in]: chunk } } })) as unknown as Row[], chunkSize)) {
-    gradeOfLevel.set(storedId(r.levelid), storedId(r.gradeid));
-  }
-  const curriculumOfGrade = new Map<string, string>();
-  for (const r of await findInChunks(new Set(awards.map((a) => id(a.gradeid))), async (chunk) =>
-    (await grades.findAll({ attributes: ["gradeid", "curriculumid"], where: { gradeid: { [Op.in]: chunk } } })) as unknown as Row[], chunkSize)) {
-    curriculumOfGrade.set(storedId(r.gradeid), storedId(r.curriculumid));
-  }
+  const held = async (kind: "curriculum" | "grade" | "level", model: typeof curriculums | typeof grades | typeof levels, key: string, field: string): Promise<Set<string>> => {
+    const out = new Set<string>();
+    if (!org) return out;
+    const found = await findInChunks(new Set(awards.map((r) => id(r[field]))), async (chunk) =>
+      (await (model as typeof curriculums).findAll({ attributes: [key], where: await andScope(org, kind, { [key]: { [Op.in]: chunk } }) })) as unknown as Row[], chunkSize);
+    for (const r of found) out.add(storedId(r[key]));
+    return out;
+  };
+  const heldCurriculums = await held("curriculum", curriculums, "curriculumid", "curid");
+  const heldGrades = await held("grade", grades, "gradeid", "gradeid");
+  const heldLevels = await held("level", levels, "levelid", "levelid");
   const wrong: string[] = [];
   let count = 0;
   awards.forEach((row, at) => {
-    const fits = gradeOfLevel.get(id(row.levelid)) === id(row.gradeid)
-      && curriculumOfGrade.get(id(row.gradeid)) === id(row.curid)
-      && held.has(id(row.curid));
-    if (fits) return;
+    if (heldCurriculums.has(id(row.curid)) && heldGrades.has(id(row.gradeid)) && heldLevels.has(id(row.levelid))) return;
     count += 1;
     if (wrong.length < LISTED_ROWS) wrong.push(`studentawards row ${at + 1}`);
   });
@@ -447,7 +444,7 @@ export const assertLogAwardsNameOwnContent = async (teacher: schoolusers, logdat
     const more = count > wrong.length ? `, and ${count - wrong.length} more` : "";
     throw new ApiError(
       ErrorCode.FILE_REJECTED,
-      `That file has awards for a level, grade or curriculum that do not belong together or that your organisation does not hold (${wrong.join("; ")}${more}).`,
+      `That file has awards for a curriculum, grade or level that your organisation does not hold (${wrong.join("; ")}${more}).`,
       { hint: "Make the file again on the device that wrote it, then upload it again." },
     );
   }

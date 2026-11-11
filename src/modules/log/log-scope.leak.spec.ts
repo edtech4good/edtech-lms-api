@@ -72,6 +72,8 @@ const ORG_X = uuid(851);
 const ORG_Y = uuid(852);
 const GRADE_2 = uuid(806); // a second grade of CUR, with its own level
 const LEVEL_2 = uuid(807);
+const CUR_2 = uuid(808); // a second curriculum of the same organisation, with its own grade
+const GRADE_3 = uuid(809);
 const CUR_Y = uuid(811); // another organisation's curriculum
 const GRADE_Y = uuid(812);
 const LEVEL_Y = uuid(813);
@@ -181,6 +183,8 @@ const seed = () => {
   db.add("levels", { levelid: LEVEL, gradeid: GRADE, isdeleted: false });
   db.add("grades", { gradeid: GRADE_2, curriculumid: CUR, isdeleted: false });
   db.add("levels", { levelid: LEVEL_2, gradeid: GRADE_2, isdeleted: false });
+  db.add("curriculums", { curriculumid: CUR_2, curriculumname: "Second", organisationid: ORG_X, isdeleted: false });
+  db.add("grades", { gradeid: GRADE_3, curriculumid: CUR_2, isdeleted: false });
   db.add("curriculums", { curriculumid: CUR_Y, curriculumname: "Other", organisationid: ORG_Y, isdeleted: false });
   db.add("grades", { gradeid: GRADE_Y, curriculumid: CUR_Y, isdeleted: false });
   db.add("levels", { levelid: LEVEL_Y, gradeid: GRADE_Y, isdeleted: false });
@@ -408,6 +412,7 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
         ["an earnedat with a year beyond 9999", { earnedat: "+010000-01-01T00:00:00Z" }],
         ["an earnedat that is not a calendar date", { earnedat: "2026-02-30T00:00:00Z" }],
         ["an earnedat with no time", { earnedat: "2026-02-03" }],
+        ["an earnedat whose instant is in a year beyond 9999 once the offset is applied", { earnedat: "9999-12-31T23:00:00-05:00" }],
         ["an earnedat_approximate that is text", { earnedat_approximate: "yes" }],
         ["an earnedat_approximate that is a number", { earnedat_approximate: 1 }],
         ["a missing levelid", { levelid: undefined }],
@@ -431,16 +436,28 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
         expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
         expect(db.createdIn("studentawards").map((a) => (a as Row).earnedat_approximate)).toEqual([false, false]);
       });
-      const MISMATCHED: Array<[string, Row]> = [
-        ["a level of another grade", { levelid: LEVEL_2 }],
-        ["a grade of another curriculum", { gradeid: GRADE_Y }],
-        ["a curriculum, grade and level of another organisation", { curid: CUR_Y, gradeid: GRADE_Y, levelid: LEVEL_Y }],
+      // an award records the content as it was when it was earned, so ids that no longer fit together are still its own
+      it.each([
+        ["a level of another grade (same organisation)", { levelid: LEVEL_2 }],
+        ["a grade of another curriculum (same organisation)", { gradeid: GRADE_3 }],
+      ])("naming %s is stored", async (_what, change) => {
+        const logdata = logOf(["result", "x"], ["studentawards", "x"]);
+        Object.assign(awardsOf(logdata)[0], change);
+        expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
+        expect(db.createdIn("studentawards")).toHaveLength(1);
+        expect(db.createdIn("studentawards")[0]).toMatchObject(change);
+      });
+      const OTHER_ORGANISATION: Array<[string, Row]> = [
+        ["another organisation's curriculum", { curid: CUR_Y }],
+        ["another organisation's grade", { gradeid: GRADE_Y }],
+        ["another organisation's level", { levelid: LEVEL_Y }],
+        ["another organisation's curriculum, grade and level", { curid: CUR_Y, gradeid: GRADE_Y, levelid: LEVEL_Y }],
       ];
-      it.each(MISMATCHED)("naming %s is refused, naming the row, never an id: nothing is stored", async (_what, change) => {
+      it.each(OTHER_ORGANISATION)("naming %s is refused, naming the row, never an id: nothing is stored", async (_what, change) => {
         const logdata = logOf(["result", "x"], ["studentawards", "x"], ["studentawards", "x"]);
         Object.assign(awardsOf(logdata)[1], change);
         const res = await refused(teacher(TCH_X), logdata);
-        expect(res.body.errormessage).toBe("That file has awards for a level, grade or curriculum that do not belong together or that your organisation does not hold (studentawards row 2).");
+        expect(res.body.errormessage).toBe("That file has awards for a curriculum, grade or level that your organisation does not hold (studentawards row 2).");
         expect(JSON.stringify(res.body)).not.toContain(CUR_Y);
         expect(db.createdIn("studentawards")).toEqual([]);
       });

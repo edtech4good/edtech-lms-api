@@ -1581,8 +1581,9 @@ export class ReportBusiness {
      * One learner's lasting level awards, newest first, paged in memory like the learning server's report of the same
      * name (`POST report/student-awards` there: same filters, same rows). The learner is found as the level-progress
      * report finds them (the caller's own learners only); an award of a curriculum the caller may not read is left out,
-     * and the level, grade and curriculum names are read from the content tables whether or not those rows have since
-     * been deleted or switched off, because an award outlives its level.
+     * and the level, grade and curriculum names are read from the content tables, through the caller's organisation scope,
+     * whether or not those rows have since been deleted or switched off, because an award outlives its level; a level or
+     * grade the caller may not read answers as a missing one (null names), as on the learning server.
      */
     getStudentAwards = async (paging: IMultiPaging) => {
         const filter = await this.confine(paging.filter);
@@ -1627,15 +1628,14 @@ export class ReportBusiness {
         const curOf = new Map(readable.map((x) => [x.curriculumid, x]));
         const rows = found.filter((r) => curOf.has(r.curid));
         const [lv, gr] = rows.length === 0 ? [[], []] : await Promise.all([
-            levels.findAll({ where: await andScope(this.org, 'level', { levelid: { [Op.in]: ids((r) => r.levelid) } }), attributes: ['levelid', 'gradeid', 'levelname', 'levelorder'] }),
-            grades.findAll({ where: await andScope(this.org, 'grade', { gradeid: { [Op.in]: ids((r) => r.gradeid) } }), attributes: ['gradeid', 'curriculumid', 'gradename'] }),
+            levels.findAll({ where: await andScope(this.org, 'level', { levelid: { [Op.in]: ids((r) => r.levelid) } }), attributes: ['levelid', 'levelname', 'levelorder'] }),
+            grades.findAll({ where: await andScope(this.org, 'grade', { gradeid: { [Op.in]: ids((r) => r.gradeid) } }), attributes: ['gradeid', 'gradename'] }),
         ]);
         const levelOf = new Map(lv.map((x) => [x.levelid, x]));
         const gradeOf = new Map(gr.map((x) => [x.gradeid, x]));
-        // an award names a level of its grade and a grade of its curriculum; one that does not, or whose level or
-        // grade is not readable, is left out as a missing one is
-        const fitting = rows.filter((r) => levelOf.get(r.levelid)?.gradeid === r.gradeid && gradeOf.get(r.gradeid)?.curriculumid === r.curid);
-        const all = fitting.map((r) => ({
+        // an award records the content as it was when it was earned, so its level and grade need not fit together or
+        // sit under its curriculum now; one whose level or grade is not readable (or is gone) is shown with null names
+        const all = rows.map((r) => ({
             studentawardid: r.studentawardid,
             levelid: r.levelid,
             levelname: levelOf.get(r.levelid)?.levelname ?? null,

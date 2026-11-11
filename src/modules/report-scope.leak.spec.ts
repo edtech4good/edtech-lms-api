@@ -636,11 +636,12 @@ describe("reports are confined to the caller's organisation", () => {
       expect(idsOf(data(res), "levelid")).toEqual([TX.level]);
       expect(learnerOf(res)).toMatchObject({ studentfirstname: TX.learners[0].first });
     });
-    describe("a stored award whose content does not fit together", () => {
+    describe("a stored award names content as it was when it was earned", () => {
       const OTHER_GRADE = uuid(880001);
       const OTHER_LEVEL = uuid(880002);
       const award = (levelid: string, gradeid: string, curid: string) =>
         db.add("studentawards", { studentawardid: uuid(880100 + db.tables.studentawards.length), studentid: TX.learners[0].id, levelid, gradeid, curid, earnedat: new Date("2024-04-01T10:00:00Z"), earnedat_approximate: false });
+      const gradeNameOf = (gradeid: string) => db.tables.grades.find((g) => g.gradeid === gradeid)!.gradename;
       const shown = async (who: (typeof IN_X)[number]) => {
         const res = await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }])).expect(200);
         expect(JSON.stringify(res.body)).not.toContain(TY.schoolname);
@@ -651,21 +652,29 @@ describe("reports are confined to the caller's organisation", () => {
         db.add("grades", { gradeid: OTHER_GRADE, gradename: "ថ្នាក់ទី២", gradeorder: 2, gradestatus: true, curriculumid: TX.curriculum });
         db.add("levels", { levelid: OTHER_LEVEL, levelname: "កម្រិតទី២", levelorder: 2, levelstatus: true, gradeid: OTHER_GRADE });
       });
-      it.each(IN_X)("%s: a level of another grade of the same curriculum is left out", async (who) => {
+      it.each(IN_X)("%s: a level of another grade of the same curriculum is shown, with its names", async (who) => {
         award(OTHER_LEVEL, TX.grade, TX.curriculum);
-        expect(idsOf(data(await shown(who)), "levelid")).toEqual([TX.level]);
+        const res = await shown(who);
+        expect(idsOf(data(res), "levelid").sort()).toEqual([TX.level, OTHER_LEVEL].sort());
+        expect(data(res).find((r) => r.levelid === OTHER_LEVEL)).toMatchObject({ levelname: db.tables.levels.find((l) => l.levelid === OTHER_LEVEL)!.levelname, levelorder: 2, gradeid: TX.grade, gradename: gradeNameOf(TX.grade) });
       });
-      it.each(IN_X)("%s: a grade of another curriculum is left out", async (who) => {
+      it.each(IN_X)("%s: an award of a curriculum that is not X's is left out", async (who) => {
         award(TX.level, TX.grade, TY.curriculum);
         expect(idsOf(data(await shown(who)), "levelid")).toEqual([TX.level]);
       });
-      it.each(IN_X)("%s: a level or grade of another organisation under X's curriculum is left out, no name of theirs shown", async (who) => {
+      it.each(IN_X)("%s: a level and grade of another organisation under X's curriculum are shown with null names, none of theirs", async (who) => {
         award(TY.level, TY.grade, TX.curriculum);
+        const res = await shown(who);
+        expect(data(res)).toHaveLength(2);
+        expect(data(res).find((r) => r.levelid === TY.level)).toMatchObject({ levelname: null, levelorder: null, gradeid: TY.grade, gradename: null, curid: TX.curriculum });
+      });
+      it.each(IN_X)("%s: a level or grade of another organisation, beside the other of X's, shows no name of theirs", async (who) => {
         award(TY.level, TX.grade, TX.curriculum);
         award(TX.level, TY.grade, TX.curriculum);
         const res = await shown(who);
-        expect(data(res)).toHaveLength(1);
-        expect(idsOf(data(res), "levelid")).toEqual([TX.level]);
+        expect(data(res)).toHaveLength(3);
+        expect(data(res).find((r) => r.levelid === TY.level)).toMatchObject({ levelname: null, gradename: gradeNameOf(TX.grade) });
+        expect(data(res).filter((r) => r.levelid === TX.level && r.gradeid === TY.grade)[0]).toMatchObject({ gradename: null });
       });
     });
     it.each(IN_X)("%s: each row has the shape the learning server's report gives", async (who) => {
