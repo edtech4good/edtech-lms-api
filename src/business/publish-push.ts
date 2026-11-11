@@ -260,11 +260,23 @@ const nameableReason = (error: unknown): string | undefined => {
  * Call it only after the write has committed. It never throws and never fails the request: whatever goes wrong is the `failed`
  * outcome. It does not ask for `sync_content`: like a publish, it uses the server key.
  */
-export const pushSetAfterWrite = async (organisationids: ReadonlyArray<string | null | undefined>): Promise<SetPushOutcome> => {
+export const pushSetAfterWrite = async (
+  organisationids: ReadonlyArray<string | null | undefined> | (() => Promise<ReadonlyArray<string | null | undefined>>),
+): Promise<SetPushOutcome> => {
   if (!cloudConfigured()) {
     return { status: "skipped", reason: "nocloud", message: "No learner server is set up here, so nothing was pushed." };
   }
-  const ids = [...new Set(organisationids.filter((id): id is string => typeof id === "string" && id !== ""))];
+  let named: ReadonlyArray<string | null | undefined>;
+  try {
+    // finding the organisation is part of the push: a saved write never fails because of it
+    named = typeof organisationids === "function" ? await organisationids() : organisationids;
+  } catch (error) {
+    Logger.error("finding the organisation to push after a school, class or setting write failed", {
+      originalerrorclass: (error as { constructor?: { name?: string } } | null)?.constructor?.name,
+    });
+    return { status: "failed", message: SET_PUSH_FAILED_MESSAGE };
+  }
+  const ids = [...new Set(named.filter((id): id is string => typeof id === "string" && id !== ""))];
   if (ids.length === 0) {
     return { status: "skipped", message: "There is no organisation to push." };
   }

@@ -20,5 +20,5 @@ export const assertNameNeverHeld = async (schoolname: string, exceptschoolid: st
   });
   if (holder === null) return;
   const message = holder.isdeleted ? NAME_HELD_BEFORE_MESSAGE : "That school already exists.";
-  throw new ApiError(ErrorCode.INVALID_INPUT, message, { fields: [{ field: "schoolname", message }] });
+  throw new ApiError(ErrorCode.ALREADY_EXISTS, message, { fields: [{ field: "schoolname", message }] });
 };

@@ -159,7 +159,7 @@ describe("schools write their organisation", () => {
       });
 
       it("a name another organisation's school holds is refused: names are unique across organisations, as on the learning server", async () => {
-        const res = await create(callers[who], school({ schoolname: OTHER_NAME })).expect(400);
+        const res = await create(callers[who], school({ schoolname: OTHER_NAME })).expect(409);
         expect(res.body.errormessage).toBe("That school already exists.");
         nothingWritten();
       });

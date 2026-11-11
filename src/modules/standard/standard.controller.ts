@@ -142,7 +142,7 @@ export class StandardController {
     return {
       error: false,
       data: data,
-      push: await pushSetAfterWrite(await new StandardBusiness().organisationsOfSchools([data.schoolid])),
+      push: await pushSetAfterWrite(() => new StandardBusiness().organisationsOfSchools([data.schoolid])),
     };
   }
 
@@ -180,7 +180,7 @@ export class StandardController {
     return {
       error: false,
       data: true,
-      push: await pushSetAfterWrite(await business.organisationsOfSchools([deleted.schoolid])),
+      push: await pushSetAfterWrite(() => business.organisationsOfSchools([deleted.schoolid])),
     };
   }
 
@@ -257,7 +257,7 @@ export class StandardController {
       error: false,
       data: data ? data : undefined,
       // a class moved to another school sends the sets of the organisations of both schools
-      push: await pushSetAfterWrite(await business.organisationsOfSchools([before.previousschoolid, data?.schoolid])),
+      push: await pushSetAfterWrite(() => business.organisationsOfSchools([before.previousschoolid, data?.schoolid])),
     };
   }
 

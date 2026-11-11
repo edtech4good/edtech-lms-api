@@ -1,6 +1,9 @@
 import { col, fn, Op, Transaction, WhereOptions } from "sequelize";
 import { assertSameOwner, ownerOfCurriculum } from "./content-owner";
+import { cloudConfigured } from "./cloud-push";
 import { assertNameNeverHeld } from "./school-name";
+
+export const SCHOOL_MOVE_MESSAGE = "A school can't be moved to another organisation yet. Create the school in the other organisation instead.";
 import { OrgContext } from "src/decorators/org.decorator";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
@@ -287,7 +290,7 @@ export class SchoolBusiness {
    * (UPDATE) and then only COUNTS schools without a lock, so it never waits for a
    * school row; the other order (organisation then school) exists nowhere.
    */
-  updateschoolName = async (school: SchoolWrite, user: LmsUserToken, org: OrgContext, outcome?: { previousorganisationid?: string | null }) => {
+  updateschoolName = async (school: SchoolWrite, user: LmsUserToken, org: OrgContext) => {
     const requested = school.organisationid;
     scopeOf(org);
     const transaction = await dbinstance.getdbinstance().transaction();
@@ -310,6 +313,10 @@ export class SchoolBusiness {
         countryid: school.countryid,
         transaction,
       });
+      // While a learning server is set up, a school's organisation cannot change: that server cannot re-own a school.
+      if (resulting !== (tempdt.organisationid ?? null) && cloudConfigured()) {
+        throw new ApiError(ErrorCode.ALREADY_EXISTS, SCHOOL_MOVE_MESSAGE, { fields: [{ field: "organisationid", message: SCHOOL_MOVE_MESSAGE }] });
+      }
       // Curriculums newly attached (or all of them, when the school's organisation changed) must
       // belong to the school's organisation; links that were already there are not re-checked.
       const before = Array.isArray(tempdt.curriculums) ? (tempdt.curriculums as string[]) : [];
@@ -317,7 +324,6 @@ export class SchoolBusiness {
         (id) => (tempdt.organisationid ?? null) !== (resulting ?? null) || !before.includes(id),
       );
       await assertCurriculumsFitOwner(resulting, attaching, transaction);
-      if (outcome) outcome.previousorganisationid = tempdt.organisationid ?? null;
       const previousname = tempdt.schoolname;
       const wantedname = school.schoolname.trim();
       // only a name that is changing is checked: a school keeps the name it has

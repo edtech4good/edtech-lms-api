@@ -341,7 +341,7 @@ export class SchoolController {
     return {
       error: false,
       data: true,
-      push: await pushSetAfterWrite([await business.organisationidOf(schoolid)]),
+      push: await pushSetAfterWrite(async () => [await business.organisationidOf(schoolid)]),
     };
   }
 
@@ -401,7 +401,6 @@ export class SchoolController {
     @User() user: LmsUserToken,
     @Org() org: OrgContext
   ): Promise<SchoolCreateResponse & WithSetPush> {
-    const before: { previousorganisationid?: string | null } = {};
     const data = await new SchoolBusiness().updateschoolName(<SchoolWrite>{
       schoolid: schoolid,
       schoolname: body.schoolname,
@@ -409,12 +408,11 @@ export class SchoolController {
       curriculums: body.curriculums,
       uitheme: body.uitheme,
       organisationid: body.organisationid
-    }, user, org, before);
+    }, user, org);
     return {
       error: false,
       data: data ? data : undefined,
-      // a platform move of the school sends both organisations' sets: the one that lost it and the one that has it now
-      push: await pushSetAfterWrite([before.previousorganisationid, data?.organisationid]),
+      push: await pushSetAfterWrite([data?.organisationid]),
     };
   }
 

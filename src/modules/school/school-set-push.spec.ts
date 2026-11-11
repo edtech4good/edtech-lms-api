@@ -9,6 +9,7 @@ import * as publishedContent from "src/business/published-content";
 import { Config, Logger } from "src/config";
 import { ORGANISATION_ADMIN_PERMISSIONS_20261002 } from "src/db/frozen/organisation-admin-20261002";
 import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
+import { schools } from "src/models/data-models/school";
 import { organisationcountry } from "src/models/data-models/organisationcountry";
 import { Role } from "src/models/enums";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
@@ -182,11 +183,47 @@ describe("a school or class write sends the organisation's set", () => {
       await send("X's Admin", "put", `/standard/${K_X}`, { standardname: "ថ្នាក់ទី១", schoolid: S_X2 }).expect(200);
       expect(organisationsPushed()).toEqual([X]);
     });
-    it("a platform user moving a school to another organisation sends both organisations' sets", async () => {
+    it("with a learning server a school's organisation cannot change: 409 on organisationid, nothing written, nothing sent", async () => {
+      const before = db.snapshot();
+      const res = await send("a platform user not acting", "put", `/school/update/${S_X}`, school({ schoolname: "សាលា ក", organisationid: Y }));
+      expect(res.status).toBe(409);
+      expect(res.body.errormessage).toBe("A school can't be moved to another organisation yet. Create the school in the other organisation instead.");
+      expect(res.body.fields).toEqual([{ field: "organisationid", message: res.body.errormessage }]);
+      expect(db.snapshot()).toEqual(before);
+      expect(put).not.toHaveBeenCalled();
+    });
+    it("with no learning server the move works as before and pushes nothing", async () => {
+      rpi.cloud = undefined;
       const res = await send("a platform user not acting", "put", `/school/update/${S_X}`, school({ schoolname: "សាលា ក", organisationid: Y })).expect(200);
       expect(db.tables.schools.find((s) => s.schoolid === S_X)!.organisationid).toBe(Y);
-      expect(organisationsPushed()).toEqual([X, Y].sort());
-      expect(res.body.push.status).toBe("pushed");
+      expect(res.body.push.status).toBe("skipped");
+      expect(put).not.toHaveBeenCalled();
+    });
+    it("a school edit that keeps its organisation (naming it too) is not a move", async () => {
+      await send("a platform user not acting", "put", `/school/update/${S_X}`, school({ schoolname: "សាលា ក", organisationid: X })).expect(200);
+      expect(organisationsPushed()).toEqual([X]);
+    });
+    it("a saved write never answers 500 because the organisation to push could not be found: 200 with a failed push", async () => {
+      const original = (schools.findOne as jest.Mock).getMockImplementation() as (...a: unknown[]) => Promise<unknown>;
+      jest.spyOn(schools, "findOne").mockImplementation((async (o: { attributes?: string[] }) => {
+        if (o?.attributes?.join() === "organisationid") throw new Error("read failed");
+        return original(o);
+      }) as never);
+      const deleted = await send("X's Admin", "delete", `/school/${S_X}`);
+      expect(deleted.status).toBe(200);
+      expect(deleted.body.push).toEqual({ status: "failed", message: FAILED_WORDS });
+      expect(put).not.toHaveBeenCalled();
+    });
+    it("the same for a class: its school's organisation cannot be read after the write", async () => {
+      const original = (schools.findAll as jest.Mock).getMockImplementation() as (...a: unknown[]) => Promise<unknown>;
+      jest.spyOn(schools, "findAll").mockImplementation((async (o: { attributes?: string[] }) => {
+        if (o?.attributes?.join() === "organisationid") throw new Error("read failed");
+        return original(o);
+      }) as never);
+      const res = await send("X's Admin", "post", "/standard/create", { standardname: "ថ្នាក់ថ្មី", schoolid: S_X });
+      expect(res.status).toBe(200);
+      expect(res.body.push).toEqual({ status: "failed", message: FAILED_WORDS });
+      expect(put).not.toHaveBeenCalled();
     });
     it("someone without sync_content still triggers the push (it uses the server key)", async () => {
       expect(PERMS).not.toContain("sync_content");
@@ -240,21 +277,12 @@ describe("a school or class write sends the organisation's set", () => {
       expect(res.body.push.status).toBe("skipped");
       expect(put).not.toHaveBeenCalled();
     });
-    it("a failure on one of two organisations' sets is the failed outcome", async () => {
-      put.mockImplementation(async (_url: string, form: FormData) => {
-        if (form.getBuffer().includes(Y)) return { status: 200, data: {} };
-        throw Object.assign(new Error("connect ECONNREFUSED"), { isAxiosError: true });
-      });
-      const res = await send("a platform user not acting", "put", `/school/update/${S_X}`, school({ schoolname: "សាលា ក", organisationid: Y })).expect(200);
-      expect(put).toHaveBeenCalledTimes(2);
-      expect(res.body.push.status).toBe("failed");
-    });
   });
 
   describe("school names are unique where the learning server needs them", () => {
     it("a create is refused for a name a deleted school holds", async () => {
       const res = await send("X's Admin", "post", "/school/create", school({ schoolname: GONE_NAME }));
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(409);
       expect(res.body.errormessage).toBe("A school with this name existed before. Choose another name.");
       expect(res.body.fields).toEqual([{ field: "schoolname", message: "A school with this name existed before. Choose another name." }]);
       expect(db.createdIn("schools")).toEqual([]);
@@ -264,7 +292,7 @@ describe("a school or class write sends the organisation's set", () => {
     it("a rename is refused for a name a deleted school holds, and writes nothing", async () => {
       const before = db.snapshot();
       const res = await send("X's Admin", "put", `/school/update/${S_X}`, school({ schoolname: GONE_NAME }));
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(409);
       expect(res.body.errormessage).toBe("A school with this name existed before. Choose another name.");
       expect(db.snapshot()).toEqual(before);
       expect(put).not.toHaveBeenCalled();
@@ -272,16 +300,16 @@ describe("a school or class write sends the organisation's set", () => {
     it("the name is held across organisations too: a deleted school of another organisation blocks it", async () => {
       db.tables.schools.find((s) => s.schoolid === S_GONE)!.organisationid = Y;
       const res = await send("X's Admin", "post", "/school/create", school({ schoolname: GONE_NAME }));
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(409);
       expect(res.body.errormessage).toBe("A school with this name existed before. Choose another name.");
     });
     it("a school keeps its own name on an edit, and a name nobody ever held is fine", async () => {
       await send("X's Admin", "put", `/school/update/${S_X}`, school({ schoolname: "សាលា ក" })).expect(200);
       await send("X's Admin", "put", `/school/update/${S_X}`, school({ schoolname: "សាលា ក ដែលមិនធ្លាប់មាន" })).expect(200);
     });
-    it("a rename to the name of a live school is refused as it always was, with a message", async () => {
+    it("a rename to the name of a live school is refused with 409 like a create", async () => {
       const res = await send("X's Admin", "put", `/school/update/${S_X}`, school({ schoolname: "សាលា គ" }));
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(409);
       expect(res.body.errormessage).toBe("That school already exists.");
     });
   });
