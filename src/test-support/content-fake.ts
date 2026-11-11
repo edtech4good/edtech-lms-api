@@ -37,6 +37,7 @@ import { studentprogressquestions } from "src/models/data-models/studentprogress
 import { logfiles } from "src/models/data-models/logfiles";
 import { studentgradesprogress } from "src/models/data-models/studentgradesprogress";
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
+import { studentawards } from "src/models/data-models/studentawards";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
 import { studentprogress } from "src/models/data-models/studentprogress";
 import { students } from "src/models/data-models/students";
@@ -59,6 +60,7 @@ import { rowMatches, withPrimaryKey } from "./fakewhere";
  * The static `update(values, { where })` writes into the rows it matches (a field named in `fields` that `values` does not hold is
  * skipped, as Sequelize skips it). `bulkCreate` with `updateOnDuplicate` updates the stored row that has the same primary key
  * (the listed fields only) instead of adding one.
+ * `bulkCreate` with `ignoreDuplicates` skips a row that holds a stored row's primary or unique key and leaves the stored row as it is.
  * `snapshot()` is every table as it stands, to compare before and after a refusal
  * that must have written nothing (an update writes no `created` entry).
  * The columns in `IGNORE_CASE` are compared without regard to case, as MySQL's
@@ -106,6 +108,7 @@ const MODELS = {
   studentprogress: [studentprogress, "studentprogressid"],
   studentlessonsprogress: [studentlessonsprogress, "studentlessonprogressid"],
   studentlevelsprogress: [studentlevelsprogress, "studentlevelprogressid"],
+  studentawards: [studentawards, "studentawardid"],
   studentgradesprogress: [studentgradesprogress, "studentgradeprogressid"],
   rpiuseraccess: [rpiuseraccess, "rpiuseraccessid"],
   studentappusages: [studentappusages, "studentappusageid"],
@@ -244,6 +247,7 @@ const IGNORE_CASE = ["questiontagname", "documenttagname"];
 // unique keys other than the primary key (compared case-insensitively, as the tables' collations do)
 const UNIQUE_KEYS: Partial<Record<ContentTable, readonly string[]>> = {
   contenttranslations: ["tablename", "rowid", "field", "subkey", "language"],
+  studentawards: ["studentid", "levelid"],
 };
 const lower = (v: unknown) => String(v ?? "").toLowerCase();
 // what the wrapper adds to a row: never copied back into it
@@ -480,9 +484,11 @@ export class ContentFake {
         for (const row of found) for (const key of o?.fields ?? Object.keys(values)) if (key in values) row[key] = values[key];
         return [found.length];
       }) as never);
-      jest.spyOn(m, "bulkCreate" as never).mockImplementation((async (list: Row[], o?: { updateOnDuplicate?: ReadonlyArray<string> }) => {
+      jest.spyOn(m, "bulkCreate" as never).mockImplementation((async (list: Row[], o?: { updateOnDuplicate?: ReadonlyArray<string>; ignoreDuplicates?: boolean }) => {
         for (const attrs of list) {
           const row = { ...attrs };
+          // INSERT IGNORE: a row that holds a stored row's primary key or unique key is skipped, the stored row untouched
+          if (o?.ignoreDuplicates && rows().some((r) => sameKey(r, row))) continue;
           // with `updateOnDuplicate`, a row that has the key of a stored row sets the listed fields of that row and nothing else, as MySQL does
           const stored = o?.updateOnDuplicate ? rows().find((r) => (unique !== undefined ? sameKey(r, row) : lower(r[key]) === lower(row[key]))) : undefined;
           if (stored) {

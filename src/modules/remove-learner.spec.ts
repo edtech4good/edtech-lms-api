@@ -90,6 +90,7 @@ const ACTIVITY_ROWS: Array<{ table: string; fake: ContentTable; row: Row }> = [
   { table: "studentlearningsprogress", fake: "studentlearningprogress", row: { studentlearningprogressid: "a6", studentid: STU_X } },
   { table: "studentgradesprogress", fake: "studentgradesprogress", row: { studentgradeprogressid: "a9", studentid: STU_X } },
   { table: "studentlevelsprogress", fake: "studentlevelsprogress", row: { studentlevelprogressid: "b1", studentid: STU_X } },
+  { table: "studentawards", fake: "studentawards", row: { studentawardid: "b5", studentid: STU_X } },
   { table: "studentlessonsprogress", fake: "studentlessonsprogress", row: { studentlessonprogressid: "b2", studentid: STU_X } },
   { table: "studentpoints", fake: "studentpoints", row: { studentpointid: "b3", studentid: STU_X } },
   { table: "studentactives", fake: "studentactives", row: { studentactiveid: "b4", studentid: STU_X } },

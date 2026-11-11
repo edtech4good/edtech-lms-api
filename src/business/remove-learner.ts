@@ -11,6 +11,7 @@ import { studentappusages } from "src/models/data-models/studentappusage";
 import { studentgradesprogress } from "src/models/data-models/studentgradesprogress";
 import { studentlearningprogress } from "src/models/data-models/studentlearningprogress";
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
+import { studentawards } from "src/models/data-models/studentawards";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
 import { studentpoints } from "src/models/data-models/studentpoints";
 import { studentprogress } from "src/models/data-models/studentprogress";
@@ -99,6 +100,7 @@ export const CENTRAL_ACTIVITY: ActivityCheck[] = [
   byLearnerOrLogin("studentlearningsprogress", studentlearningprogress),
   byLearner("studentgradesprogress", studentgradesprogress),
   byLearner("studentlevelsprogress", studentlevelsprogress),
+  byLearner("studentawards", studentawards),
   byLearner("studentlessonsprogress", studentlessonsprogress),
   byLearner("studentpoints", studentpoints),
   byLearner("studentactives", studentactives),

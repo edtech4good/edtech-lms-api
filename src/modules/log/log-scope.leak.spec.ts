@@ -88,16 +88,17 @@ const rows = {
   studentlearningprogress: (s: string, l: string) => ({ studentlearningprogressid: next(), studentid: s, userid: l, lessonlearningid: next(), progress: 1 }),
   studentgradesprogress: (s: string) => ({ studentgradeprogressid: next(), studentid: s, gradeid: GRADE, curriculumid: CUR, completed: 1 }),
   studentlevelsprogress: (s: string) => ({ studentlevelprogressid: next(), studentid: s, levelid: LEVEL, gradeid: GRADE, curid: CUR, completed: 1 }),
+  studentawards: (s: string) => ({ studentawardid: next(), studentid: s, levelid: LEVEL, gradeid: GRADE, curid: CUR, earnedat: "2026-09-02T03:00:00.000Z", earnedat_approximate: false }),
   studentlessonsprogress: (s: string) => ({ studentlessonprogressid: next(), studentid: s, lessonid: LESSON, levelid: LEVEL, gradeid: GRADE, curid: CUR, completed: 1 }),
   studentpoints: (s: string) => ({ studentpointid: next(), studentid: s, levelid: next(), lessonid: next(), totalgradepoints: 1, gradepoints: 1, levelpoints: 1, levelquizscores: 1, lessonpoints: 1, learningpoints: 1, practicepoints: 1, quizpoints: 1 }),
   studentappusages: (_s: string, login: string) => ({ studentappusageid: next(), schooluserid: login, time_spent: 30 }),
 } as const;
 type Kind = keyof typeof rows;
-const PROGRESS_KINDS: Kind[] = ["studentactives", "studentlearningprogress", "studentgradesprogress", "studentlevelsprogress", "studentlessonsprogress", "studentpoints", "studentappusages"];
+const PROGRESS_KINDS: Kind[] = ["studentactives", "studentlearningprogress", "studentgradesprogress", "studentlevelsprogress", "studentawards", "studentlessonsprogress", "studentpoints", "studentappusages"];
 const KINDS: Kind[] = ["access", "result", ...PROGRESS_KINDS];
 const TABLE_OF: Record<Kind, string> = {
   access: "rpiuseraccess", result: "studentprogress", studentactives: "studentactives", studentlearningprogress: "studentlearningprogress",
-  studentgradesprogress: "studentgradesprogress", studentlevelsprogress: "studentlevelsprogress", studentlessonsprogress: "studentlessonsprogress",
+  studentgradesprogress: "studentgradesprogress", studentlevelsprogress: "studentlevelsprogress", studentawards: "studentawards", studentlessonsprogress: "studentlessonsprogress",
   studentpoints: "studentpoints", studentappusages: "studentappusages",
 };
 
@@ -111,7 +112,7 @@ type Learner = keyof typeof who;
 const logOf = (...parts: Array<[Kind, Learner]>) => {
   const log: { access: Row[]; result: Row[]; progress: Record<string, Row[]> } = {
     access: [], result: [],
-    progress: { studentactives: [], studentlearningprogress: [], studentgradesprogress: [], studentlevelsprogress: [], studentlessonsprogress: [], studentpoints: [], studentappusages: [] },
+    progress: { studentactives: [], studentlearningprogress: [], studentgradesprogress: [], studentlevelsprogress: [], studentawards: [], studentlessonsprogress: [], studentpoints: [], studentappusages: [] },
   };
   for (const [kind, learner] of parts) {
     const row = rows[kind](who[learner][0], who[learner][1]);
@@ -251,6 +252,9 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
         ["studentlevelsprogress", "curid", "curriculum", "studentlevelsprogress"],
         ["studentlevelsprogress", "gradeid", "grade", "studentlevelsprogress"],
         ["studentlevelsprogress", "levelid", "level", "studentlevelsprogress"],
+        ["studentawards", "curid", "curriculum", "studentawards"],
+        ["studentawards", "gradeid", "grade", "studentawards"],
+        ["studentawards", "levelid", "level", "studentawards"],
         ["studentlessonsprogress", "curid", "curriculum", "studentlessonsprogress"],
         ["studentlessonsprogress", "gradeid", "grade", "studentlessonsprogress"],
         ["studentlessonsprogress", "levelid", "level", "studentlessonsprogress"],
@@ -337,6 +341,69 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
         Object.assign(logdata.log.progress.studentpoints[0], { scores: 9, totalgradepoints: 8, totallearningpoints: 7, totallevelpoints: 6, totalpracticepoints: 5, totalquizpoints: 4 });
         expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
         expect(db.createdIn("studentpoints")[0]).toMatchObject({ scores: 9, totalgradepoints: 8, totallearningpoints: 7, totallevelpoints: 6, totalpracticepoints: 5, totalquizpoints: 4 });
+      });
+    });
+
+    describe("an award", () => {
+      const awardsOf = (logdata: ReturnType<typeof logOf>) => logdata.log.progress.studentawards as Row[];
+      it("is stored, with its earnedat and earnedat_approximate", async () => {
+        const logdata = logOf(["result", "x"], ["studentawards", "x"]);
+        awardsOf(logdata)[0].earnedat_approximate = true;
+        expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
+        expect(db.createdIn("studentawards")).toHaveLength(1);
+        expect(db.createdIn("studentawards")[0]).toMatchObject({ studentid: STU_X, levelid: LEVEL, earnedat: "2026-09-02T03:00:00.000Z", earnedat_approximate: true });
+      });
+      it("that the server already holds (same key) is left as it is: earnedat is never rewritten", async () => {
+        const stored = { ...rows.studentawards(STU_X), earnedat: "2025-01-01T00:00:00.000Z", earnedat_approximate: true };
+        db.add("studentawards", stored);
+        const again = logOf(["studentawards", "x"]);
+        awardsOf(again)[0].studentawardid = stored.studentawardid;
+        expect((await upload(teacher(TCH_X), again)).status).toBe(200);
+        expect(db.tables.studentawards).toHaveLength(1);
+        expect(db.tables.studentawards[0]).toMatchObject({ earnedat: "2025-01-01T00:00:00.000Z", earnedat_approximate: true });
+      });
+      it("for a learner and level that already have an award under another id is not added, and the stored one is untouched", async () => {
+        const stored = { ...rows.studentawards(STU_X), earnedat: "2025-01-01T00:00:00.000Z" };
+        db.add("studentawards", stored);
+        expect((await upload(teacher(TCH_X), logOf(["studentawards", "x"]))).status).toBe(200);
+        expect(db.tables.studentawards).toHaveLength(1);
+        expect(db.tables.studentawards[0]).toMatchObject({ studentawardid: stored.studentawardid, earnedat: "2025-01-01T00:00:00.000Z" });
+        expect(db.createdIn("studentawards")).toEqual([]);
+      });
+      it("of a learner of another school is refused, with nothing stored", async () => {
+        await refused(teacher(TCH_X), logOf(["result", "x"], ["studentawards", "y"]));
+        expect(db.createdIn("studentawards")).toEqual([]);
+      });
+      it("without a studentawards section, the upload is imported as before", async () => {
+        const logdata = logOf(["result", "x"], ["studentlevelsprogress", "x"]);
+        delete (logdata.log.progress as Record<string, unknown>).studentawards;
+        expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
+        expect(db.createdIn("studentlevelsprogress")).toHaveLength(1);
+        expect(db.createdIn("studentawards")).toEqual([]);
+      });
+      const BAD: Array<[string, Row]> = [
+        ["a missing earnedat", { earnedat: undefined }],
+        ["a null earnedat", { earnedat: null }],
+        ["an empty earnedat", { earnedat: "" }],
+        ["an earnedat that is not a date", { earnedat: "last Tuesday" }],
+        ["an earnedat that is a number", { earnedat: 1788000000 }],
+        ["an earnedat_approximate that is text", { earnedat_approximate: "yes" }],
+        ["a missing levelid", { levelid: undefined }],
+        ["an empty gradeid", { gradeid: "" }],
+      ];
+      it.each(BAD)("with %s is refused, naming the row and the field: nothing is stored", async (_what, change) => {
+        const logdata = logOf(["result", "x"], ["studentawards", "x"], ["studentawards", "x"]);
+        Object.assign(awardsOf(logdata)[1], change);
+        const field = Object.keys(change)[0];
+        if (field === "levelid" || field === "gradeid") {
+          // a missing or empty content id is also a reference to nothing: either refusal is a whole-file 400
+          await refused(teacher(TCH_X), logdata);
+          return;
+        }
+        const res = await refused(teacher(TCH_X), logdata);
+        expect(res.body.errormessage).toBe(`That file has awards with a missing or invalid value (studentawards row 2: ${field}).`);
+        expect(db.createdIn("studentawards")).toEqual([]);
+        expect(db.createdIn("studentprogress")).toEqual([]);
       });
     });
 
@@ -464,7 +531,7 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
     // Every table is written by the primary key the upload gives, so a row that carries the key of a STORED row also names that row's learner.
     const PK: Record<Kind, string> = {
       access: "rpiuseraccessid", result: "studentprogressid", studentactives: "studentactiveid", studentlearningprogress: "studentlearningprogressid",
-      studentgradesprogress: "studentgradeprogressid", studentlevelsprogress: "studentlevelprogressid", studentlessonsprogress: "studentlessonprogressid",
+      studentgradesprogress: "studentgradeprogressid", studentlevelsprogress: "studentlevelprogressid", studentawards: "studentawardid", studentlessonsprogress: "studentlessonprogressid",
       studentpoints: "studentpointid", studentappusages: "studentappusageid",
     };
     const sectionOf = (logdata: ReturnType<typeof logOf>, kind: Kind): Row[] =>
@@ -483,10 +550,14 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
         await refused(teacher(TCH_X), upload_(logOf([kind, "x"])));
         expect(JSON.stringify(storedRow(kind))).toBe(before);
       });
-      it("that belongs to a learner of X's school is updated in place, not added", async () => {
+      it("that belongs to a learner of X's school is updated in place, not added (an award is never updated: the stored one stays as it is)", async () => {
         db.add(TABLE_OF[kind] as never, { ...rows[kind](STU_X2, USR_X2), [PK[kind]]: STORED_KEY });
         expect((await upload(teacher(TCH_X), upload_(logOf([kind, "x"])))).status).toBe(200);
         expect(storedRow(kind)).toHaveLength(1);
+        if (kind === "studentawards") {
+          expect(storedRow(kind)[0]).toMatchObject({ studentid: STU_X2 });
+          return;
+        }
         expect(storedRow(kind)[0]).toMatchObject(kind === "access" ? { userid: USR_X } : kind === "studentappusages" ? { schooluserid: USR_X } : { studentid: STU_X });
       });
       it("that belongs to nobody is a new row", async () => {

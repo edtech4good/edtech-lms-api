@@ -13,6 +13,7 @@ import { studentappusages } from "src/models/data-models/studentappusage";
 import { studentgradesprogress } from "src/models/data-models/studentgradesprogress";
 import { studentlearningprogress } from "src/models/data-models/studentlearningprogress";
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
+import { studentawards } from "src/models/data-models/studentawards";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
 import { studentpoints } from "src/models/data-models/studentpoints";
 import { studentprogress } from "src/models/data-models/studentprogress";
@@ -91,6 +92,7 @@ const SPECS: Spec[] = [
   { rows: progressRows("studentlearningprogress"), model: studentlearningprogress, pk: "studentlearningprogressid", student: "studentid", either: "userid" },
   { rows: progressRows("studentgradesprogress"), model: studentgradesprogress, pk: "studentgradeprogressid", student: "studentid" },
   { rows: progressRows("studentlevelsprogress"), model: studentlevelsprogress, pk: "studentlevelprogressid", student: "studentid" },
+  { rows: progressRows("studentawards"), model: studentawards, pk: "studentawardid", student: "studentid" },
   { rows: progressRows("studentlessonsprogress"), model: studentlessonsprogress, pk: "studentlessonprogressid", student: "studentid" },
   { rows: progressRows("studentpoints"), model: studentpoints, pk: "studentpointid", student: "studentid" },
   { rows: progressRows("studentappusages"), model: studentappusages, pk: "studentappusageid", login: "schooluserid" },
@@ -124,7 +126,7 @@ const storedId = (value: unknown): string => String(value ?? "").toLowerCase();
  *    (`studentprogressquestionid`) belongs to a result row of the upload (checked through that row) or to a stored
  *    result whose learner is in the school.
  *  - `progress.studentactives`, `studentlearningprogress`, `studentgradesprogress`, `studentlevelsprogress`,
- *    `studentlessonsprogress`, `studentpoints`: `studentid` (and `userid` on a learning-progress row when it has one).
+ *    `studentawards`, `studentlessonsprogress`, `studentpoints`: `studentid` (and `userid` on a learning-progress row when it has one).
  *  - `progress.studentappusages`: `schooluserid`, a login id.
  * A login passes only when its own `schoolusers` row is in the school and so is every learner row that owns it
  * (`students.schooluserid` is not unique).
@@ -240,6 +242,7 @@ const LESSON: ContentRef = { column: "lessonid", word: "lesson", model: lessons,
 const CONTENT_TABLES: Array<{ table: string; rows: (log: unknown) => Row[]; refs: ContentRef[] }> = [
   { table: "studentgradesprogress", rows: progressRows("studentgradesprogress"), refs: [CURRICULUM("curriculumid"), GRADE] },
   { table: "studentlevelsprogress", rows: progressRows("studentlevelsprogress"), refs: [CURRICULUM("curid"), GRADE, LEVEL] },
+  { table: "studentawards", rows: progressRows("studentawards"), refs: [CURRICULUM("curid"), GRADE, LEVEL] },
   { table: "studentlessonsprogress", rows: progressRows("studentlessonsprogress"), refs: [CURRICULUM("curid"), GRADE, LEVEL, LESSON] },
 ];
 
@@ -338,6 +341,39 @@ export const assertLogPointsRowsComplete = (logdata: unknown): void => {
     throw new ApiError(
       ErrorCode.FILE_REJECTED,
       `That file has points with a missing or invalid value (${lacking.join("; ")}${more}).`,
+      { hint: "Make the file again on the device that wrote it, then upload it again." },
+    );
+  }
+};
+
+/**
+ * Refuses the upload when a `progress.studentawards` row is not a whole award, before any row is written: its five ids
+ * must be text that is not empty and `earnedat` a date, and `earnedat_approximate`, when present, true or false. (The
+ * award is stored with INSERT IGNORE, which would turn a missing or bad value into a stored one instead of refusing
+ * it.) The message names each offending row by its position in the file (1 is the first) and the fields, never a
+ * learner or an id; it lists the first 10 rows and counts the rest. A file without awards passes.
+ */
+export const assertLogAwardRowsComplete = (logdata: unknown): void => {
+  const log = (logdata as { log?: unknown } | null | undefined)?.log;
+  if (log === undefined || log === null) return;
+  const text = (v: unknown) => typeof v === "string" && v.trim().length > 0 && v.length <= 36;
+  const lacking: string[] = [];
+  let count = 0;
+  progressRows("studentawards")(log).forEach((row, at) => {
+    const fields: string[] = ["studentawardid", "studentid", "levelid", "gradeid", "curid"].filter((f) => !text(row[f]));
+    const when = row.earnedat;
+    if (typeof when !== "string" || when.length === 0 || Number.isNaN(new Date(when).getTime())) fields.push("earnedat");
+    const approx = row.earnedat_approximate;
+    if (approx !== undefined && approx !== null && typeof approx !== "boolean" && approx !== 0 && approx !== 1) fields.push("earnedat_approximate");
+    if (fields.length === 0) return;
+    count += 1;
+    if (lacking.length < LISTED_ROWS) lacking.push(`studentawards row ${at + 1}: ${fields.join(", ")}`);
+  });
+  if (count > 0) {
+    const more = count > lacking.length ? `, and ${count - lacking.length} more` : "";
+    throw new ApiError(
+      ErrorCode.FILE_REJECTED,
+      `That file has awards with a missing or invalid value (${lacking.join("; ")}${more}).`,
       { hint: "Make the file again on the device that wrote it, then upload it again." },
     );
   }

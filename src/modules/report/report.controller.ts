@@ -582,6 +582,42 @@ export class ReportController {
   }
 
   @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
+  @Post('student-awards')
+  @ApiResponse({
+    status: 200,
+    description: "Fetched student awards successfully",
+  })
+  @ApiResponse({
+    status: 400,
+    description: "Error fetching student awards",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @ApiBody({ required: false, type: IMultiPaging })
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(Permission.VIEW_OFFLINE_REPORT)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  async getStudentAwards(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const data = await new ReportBusiness(org).getStudentAwards({
+      pageindex: body?.pageindex || 0,
+      pagesize: body?.pagesize || 0,
+      filter: body?.filter || [],
+    });
+    return {
+      error: false,
+      data: {
+        data: data.rows,
+        total: data.count,
+        student: data.student,
+        pageindex: body?.pageindex || 0,
+        pagesize: body?.pagesize || 0,
+      },
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
   @Post('student-lesson-progress')
   @ApiResponse({
     status: 200,
@@ -865,6 +901,38 @@ export class ReportController {
   @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
   async getOnlineStudentLevelProgress(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
     const response = await new ReportProxy(org).post("levelprogress", body);
+    return {
+      error: false,
+      data: {
+        data: response.data.data.data,
+        student: response.data.data.student,
+        total: response.data.data.total,
+        pageindex: response.data.data?.pageindex || 0,
+        pagesize: response.data.data?.pagesize || 0,
+      },
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
+  @Post('online/student-awards')
+  @ApiResponse({
+    status: 200,
+    description: "Fetched student awards successfully",
+  })
+  @ApiResponse({
+    status: 400,
+    description: "Error fetching student awards",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @ApiBody({ required: false, type: IMultiPaging })
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(Permission.VIEW_ONLINE_REPORT)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  async getOnlineStudentAwards(@Org() org: OrgContext, @Body() body: IMultiPaging): Promise<any> {
+    const response = await new ReportProxy(org).post("awards", body);
     return {
       error: false,
       data: {

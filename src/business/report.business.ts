@@ -18,6 +18,7 @@ import { schools, schoolsAttributes } from "src/models/data-models/school"
 import { schoolusers } from "src/models/data-models/schoolusers";
 import { standards } from "src/models/data-models/standard";
 import { studentappusages } from "src/models/data-models/studentappusage";
+import { studentawards } from "src/models/data-models/studentawards";
 import { studentgradesprogress } from "src/models/data-models/studentgradesprogress";
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
@@ -1574,6 +1575,76 @@ export class ReportBusiness {
             return levelscount;
         });
         return {...studentlevelprogresses, student};
+    }
+
+    /**
+     * One learner's lasting level awards, newest first, paged in memory like the learning server's report of the same
+     * name (`POST report/student-awards` there: same filters, same rows). The learner is found as the level-progress
+     * report finds them (the caller's own learners only); an award of a curriculum the caller may not read is left out,
+     * and the level, grade and curriculum names are read from the content tables whether or not those rows have since
+     * been deleted or switched off, because an award outlives its level.
+     */
+    getStudentAwards = async (paging: IMultiPaging) => {
+        const filter = await this.confine(paging.filter);
+        const limit = paging.pagesize || 20;
+        let offset = 0;
+        if ((paging.pageindex || 1) > 1) {
+            offset = limit * ((paging.pageindex || 1) - 1);
+        }
+        const where:any = {};
+        const awardwhere:any = {};
+        buildCustomWhere(filter ?? [], {fields: 'studentid', where: where});
+        buildCustomWhere(filter ?? [], {fields: 'gradeid', where: awardwhere});
+        if(!where.studentid) {
+            where.studentid = Default_Test_Student_ID;
+        }
+        const student = await students.findOne({
+            where: await this.learners({
+                studentid: where.studentid
+            }),
+            attributes: ['studentid', 'studentfirstname'],
+            include: [
+                {
+                    model: curriculums,
+                    required: true,
+                    as: 'curriculum',
+                    attributes: ['curriculumid']
+                }
+            ]
+        });
+        if(!student) return { rows: [], count: 0, student: null };
+        const studentid = student.studentid;
+        // the answer's `student` has no id, as the level-progress report's has none
+        const raw = (student as any).dataValues;
+        if (raw) delete raw.studentid;
+        const found = (await studentawards.findAll({ where: { ...awardwhere, studentid } }))
+            .sort((a, b) => new Date(b.earnedat).getTime() - new Date(a.earnedat).getTime() || (a.studentawardid < b.studentawardid ? -1 : 1));
+        const ids = (pick: (r: studentawards) => string) => [...new Set(found.map(pick))];
+        const readable = found.length === 0 ? [] : await curriculums.findAll({
+            where: await this.curriculumsIn({ curriculumid: { [Op.in]: ids((r) => r.curid) } }),
+            attributes: ['curriculumid', 'curriculumname'],
+        });
+        const curOf = new Map(readable.map((x) => [x.curriculumid, x]));
+        const rows = found.filter((r) => curOf.has(r.curid));
+        const [lv, gr] = rows.length === 0 ? [[], []] : await Promise.all([
+            levels.findAll({ where: { levelid: { [Op.in]: ids((r) => r.levelid) } }, attributes: ['levelid', 'levelname', 'levelorder'] }),
+            grades.findAll({ where: { gradeid: { [Op.in]: ids((r) => r.gradeid) } }, attributes: ['gradeid', 'gradename'] }),
+        ]);
+        const levelOf = new Map(lv.map((x) => [x.levelid, x]));
+        const gradeOf = new Map(gr.map((x) => [x.gradeid, x]));
+        const all = rows.map((r) => ({
+            studentawardid: r.studentawardid,
+            levelid: r.levelid,
+            levelname: levelOf.get(r.levelid)?.levelname ?? null,
+            levelorder: levelOf.get(r.levelid)?.levelorder ?? null,
+            gradeid: r.gradeid,
+            gradename: gradeOf.get(r.gradeid)?.gradename ?? null,
+            curid: r.curid,
+            curriculumname: curOf.get(r.curid)?.curriculumname ?? null,
+            earnedat: r.earnedat,
+            earnedat_approximate: Boolean(r.earnedat_approximate),
+        }));
+        return { rows: all.slice(offset, offset + limit), count: all.length, student };
     }
 
     getStudentLessonProgress = async (paging: IMultiPaging) => {
