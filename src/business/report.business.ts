@@ -1627,12 +1627,15 @@ export class ReportBusiness {
         const curOf = new Map(readable.map((x) => [x.curriculumid, x]));
         const rows = found.filter((r) => curOf.has(r.curid));
         const [lv, gr] = rows.length === 0 ? [[], []] : await Promise.all([
-            levels.findAll({ where: { levelid: { [Op.in]: ids((r) => r.levelid) } }, attributes: ['levelid', 'levelname', 'levelorder'] }),
-            grades.findAll({ where: { gradeid: { [Op.in]: ids((r) => r.gradeid) } }, attributes: ['gradeid', 'gradename'] }),
+            levels.findAll({ where: await andScope(this.org, 'level', { levelid: { [Op.in]: ids((r) => r.levelid) } }), attributes: ['levelid', 'gradeid', 'levelname', 'levelorder'] }),
+            grades.findAll({ where: await andScope(this.org, 'grade', { gradeid: { [Op.in]: ids((r) => r.gradeid) } }), attributes: ['gradeid', 'curriculumid', 'gradename'] }),
         ]);
         const levelOf = new Map(lv.map((x) => [x.levelid, x]));
         const gradeOf = new Map(gr.map((x) => [x.gradeid, x]));
-        const all = rows.map((r) => ({
+        // an award names a level of its grade and a grade of its curriculum; one that does not, or whose level or
+        // grade is not readable, is left out as a missing one is
+        const fitting = rows.filter((r) => levelOf.get(r.levelid)?.gradeid === r.gradeid && gradeOf.get(r.gradeid)?.curriculumid === r.curid);
+        const all = fitting.map((r) => ({
             studentawardid: r.studentawardid,
             levelid: r.levelid,
             levelname: levelOf.get(r.levelid)?.levelname ?? null,

@@ -14,6 +14,8 @@ import { studentgradesprogress } from "src/models/data-models/studentgradesprogr
 import { studentlearningprogress } from "src/models/data-models/studentlearningprogress";
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
 import { studentawards } from "src/models/data-models/studentawards";
+import { schools } from "src/models/data-models/school";
+import { andScope } from "src/business/content-scope";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
 import { studentpoints } from "src/models/data-models/studentpoints";
 import { studentprogress } from "src/models/data-models/studentprogress";
@@ -347,11 +349,32 @@ export const assertLogPointsRowsComplete = (logdata: unknown): void => {
 };
 
 /**
+ * An award date: an ISO-8601 date-time with a time (`Z` or an offset, fractional seconds allowed), or a Date, in a
+ * year from 1000 to 9999 and a real calendar date (2026-02-30 is not one).
+ */
+const ISO_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/;
+const isAwardDate = (value: unknown): boolean => {
+  if (value instanceof Date) {
+    const year = value.getUTCFullYear();
+    return !Number.isNaN(value.getTime()) && year >= 1000 && year <= 9999;
+  }
+  if (typeof value !== "string") return false;
+  const m = ISO_DATE_TIME.exec(value);
+  if (!m) return false;
+  const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number);
+  if (year < 1000 || month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
+  if (m[9] !== undefined && (Number(m[9]) > 23 || Number(m[10]) > 59)) return false;
+  const real = new Date(Date.UTC(year, month - 1, day));
+  return real.getUTCMonth() === month - 1 && real.getUTCDate() === day;
+};
+
+/**
  * Refuses the upload when a `progress.studentawards` row is not a whole award, before any row is written: its five ids
- * must be text that is not empty and `earnedat` a date, and `earnedat_approximate`, when present, true or false. (The
- * award is stored with INSERT IGNORE, which would turn a missing or bad value into a stored one instead of refusing
- * it.) The message names each offending row by its position in the file (1 is the first) and the fields, never a
- * learner or an id; it lists the first 10 rows and counts the rest. A file without awards passes.
+ * must be text that is not empty, `earnedat` an ISO-8601 date-time (see `isAwardDate`), and `earnedat_approximate`
+ * true or false (a missing or null one is read as false, the stored default). (The award is stored with INSERT
+ * IGNORE, which would turn a missing or bad value into a stored one instead of refusing it.) The message names each
+ * offending row by its position in the file (1 is the first) and the fields, never a learner or an id; it lists the
+ * first 10 rows and counts the rest. A file without awards passes.
  */
 export const assertLogAwardRowsComplete = (logdata: unknown): void => {
   const log = (logdata as { log?: unknown } | null | undefined)?.log;
@@ -361,10 +384,9 @@ export const assertLogAwardRowsComplete = (logdata: unknown): void => {
   let count = 0;
   progressRows("studentawards")(log).forEach((row, at) => {
     const fields: string[] = ["studentawardid", "studentid", "levelid", "gradeid", "curid"].filter((f) => !text(row[f]));
-    const when = row.earnedat;
-    if (typeof when !== "string" || when.length === 0 || Number.isNaN(new Date(when).getTime())) fields.push("earnedat");
+    if (!isAwardDate(row.earnedat)) fields.push("earnedat");
     const approx = row.earnedat_approximate;
-    if (approx !== undefined && approx !== null && typeof approx !== "boolean" && approx !== 0 && approx !== 1) fields.push("earnedat_approximate");
+    if (approx !== undefined && approx !== null && typeof approx !== "boolean") fields.push("earnedat_approximate");
     if (fields.length === 0) return;
     count += 1;
     if (lacking.length < LISTED_ROWS) lacking.push(`studentawards row ${at + 1}: ${fields.join(", ")}`);
@@ -374,6 +396,58 @@ export const assertLogAwardRowsComplete = (logdata: unknown): void => {
     throw new ApiError(
       ErrorCode.FILE_REJECTED,
       `That file has awards with a missing or invalid value (${lacking.join("; ")}${more}).`,
+      { hint: "Make the file again on the device that wrote it, then upload it again." },
+    );
+  }
+};
+
+/**
+ * Refuses the upload when a `progress.studentawards` row does not name content that fits together and that the
+ * uploading school's organisation may hold: an award must name a level of its grade and a grade of its curriculum,
+ * and the curriculum must be one the organisation of the teacher's school holds (the scope the reports read content
+ * through). A school with no organisation holds no curriculum. Nothing is written; the message names each row by its
+ * position in the file, never an id. Run it after `assertLogAwardRowsComplete` and `assertLogRowsNameKnownContent`.
+ */
+export const assertLogAwardsNameOwnContent = async (teacher: schoolusers, logdata: unknown, chunkSize = LOOKUP_CHUNK): Promise<void> => {
+  const log = (logdata as { log?: unknown } | null | undefined)?.log;
+  if (log === undefined || log === null) return;
+  const awards = progressRows("studentawards")(log);
+  if (awards.length === 0) return;
+  const id = (v: unknown) => storedId(v);
+  const school = teacher.schoolid ? await schools.findOne({ attributes: ["schoolid", "organisationid"], where: { schoolid: teacher.schoolid } }) : null;
+  const organisationid = school?.organisationid ?? null;
+  const org = organisationid ? { organisationid, isplatform: false, permissions: [] } : null;
+  const held = new Set<string>();
+  if (org) {
+    const found = await findInChunks(new Set(awards.map((r) => id(r.curid))), async (chunk) =>
+      (await curriculums.findAll({ attributes: ["curriculumid"], where: await andScope(org, "curriculum", { curriculumid: { [Op.in]: chunk } }) })) as unknown as Row[], chunkSize);
+    for (const r of found) held.add(storedId(r.curriculumid));
+  }
+  const gradeOfLevel = new Map<string, string>();
+  for (const r of await findInChunks(new Set(awards.map((a) => id(a.levelid))), async (chunk) =>
+    (await levels.findAll({ attributes: ["levelid", "gradeid"], where: { levelid: { [Op.in]: chunk } } })) as unknown as Row[], chunkSize)) {
+    gradeOfLevel.set(storedId(r.levelid), storedId(r.gradeid));
+  }
+  const curriculumOfGrade = new Map<string, string>();
+  for (const r of await findInChunks(new Set(awards.map((a) => id(a.gradeid))), async (chunk) =>
+    (await grades.findAll({ attributes: ["gradeid", "curriculumid"], where: { gradeid: { [Op.in]: chunk } } })) as unknown as Row[], chunkSize)) {
+    curriculumOfGrade.set(storedId(r.gradeid), storedId(r.curriculumid));
+  }
+  const wrong: string[] = [];
+  let count = 0;
+  awards.forEach((row, at) => {
+    const fits = gradeOfLevel.get(id(row.levelid)) === id(row.gradeid)
+      && curriculumOfGrade.get(id(row.gradeid)) === id(row.curid)
+      && held.has(id(row.curid));
+    if (fits) return;
+    count += 1;
+    if (wrong.length < LISTED_ROWS) wrong.push(`studentawards row ${at + 1}`);
+  });
+  if (count > 0) {
+    const more = count > wrong.length ? `, and ${count - wrong.length} more` : "";
+    throw new ApiError(
+      ErrorCode.FILE_REJECTED,
+      `That file has awards for a level, grade or curriculum that do not belong together or that your organisation does not hold (${wrong.join("; ")}${more}).`,
       { hint: "Make the file again on the device that wrote it, then upload it again." },
     );
   }

@@ -58,6 +58,7 @@ const USR_YX = uuid(418);
 const TCH_X = uuid(421);
 const TCH_Y = uuid(422);
 const TCH_NO_SCHOOL = uuid(423);
+const TCH_U = uuid(424); // a teacher of the school with no organisation
 const SP_X = uuid(601); // a stored result of an X learner
 const SP_Y = uuid(602); // a stored result of a Y learner
 const MISSING = uuid(999);
@@ -67,6 +68,13 @@ const GRADE = uuid(802);
 const LEVEL = uuid(803);
 const LESSON = uuid(804);
 const LESSON_GONE = uuid(805); // deleted here, still held: a learner's history of it is kept
+const ORG_X = uuid(851);
+const ORG_Y = uuid(852);
+const GRADE_2 = uuid(806); // a second grade of CUR, with its own level
+const LEVEL_2 = uuid(807);
+const CUR_Y = uuid(811); // another organisation's curriculum
+const GRADE_Y = uuid(812);
+const LEVEL_Y = uuid(813);
 
 const db = new ContentFake();
 const transaction = { commit: jest.fn(), rollback: jest.fn(), LOCK: { SHARE: "SHARE", UPDATE: "UPDATE" } };
@@ -151,6 +159,7 @@ const seed = () => {
   login(USR_U, S_U, SchoolRole.STUDENT, "learneru");
   login(TCH_X, S_X, SchoolRole.TEACHER, "teacherx");
   login(TCH_Y, S_Y, SchoolRole.TEACHER, "teachery");
+  login(TCH_U, S_U, SchoolRole.TEACHER, "teacheru");
   db.add("schoolusers", { schooluserid: TCH_NO_SCHOOL, schoolusername: "teachernone", schooluserrole: SchoolRole.TEACHER, schoolid: null, schooluserstatus: true, isdisabled: false, schooluserpasswordhash: "hash" });
   login(USR_XY, S_Y, SchoolRole.STUDENT, "learnerxy");
   login(USR_YX, S_X, SchoolRole.STUDENT, "learneryx");
@@ -164,9 +173,17 @@ const seed = () => {
   for (const id of [USR_X_GONE, USR_Y_GONE]) db.tables.schoolusers.find((u) => u.schooluserid === id)!.isdeleted = true;
   learner(STU_Y, USR_Y, S_Y);
   learner(STU_U, USR_U, S_U);
-  db.add("curriculums", { curriculumid: CUR, curriculumname: "Content", isdeleted: false });
+  db.add("schools", { schoolid: S_X, organisationid: ORG_X });
+  db.add("schools", { schoolid: S_Y, organisationid: ORG_Y });
+  db.add("schools", { schoolid: S_U, organisationid: null });
+  db.add("curriculums", { curriculumid: CUR, curriculumname: "Content", organisationid: ORG_X, isdeleted: false });
   db.add("grades", { gradeid: GRADE, curriculumid: CUR, isdeleted: false });
   db.add("levels", { levelid: LEVEL, gradeid: GRADE, isdeleted: false });
+  db.add("grades", { gradeid: GRADE_2, curriculumid: CUR, isdeleted: false });
+  db.add("levels", { levelid: LEVEL_2, gradeid: GRADE_2, isdeleted: false });
+  db.add("curriculums", { curriculumid: CUR_Y, curriculumname: "Other", organisationid: ORG_Y, isdeleted: false });
+  db.add("grades", { gradeid: GRADE_Y, curriculumid: CUR_Y, isdeleted: false });
+  db.add("levels", { levelid: LEVEL_Y, gradeid: GRADE_Y, isdeleted: false });
   db.add("lessons", { lessonid: LESSON, levelid: LEVEL, isdeleted: false });
   db.add("lessons", { lessonid: LESSON_GONE, levelid: LEVEL, isdeleted: true });
   db.add("studentprogress", { studentprogressid: SP_X, studentid: STU_X, ispass: 1 });
@@ -387,10 +404,49 @@ describe("a teacher's log upload is confined to the teacher's school", () => {
         ["an empty earnedat", { earnedat: "" }],
         ["an earnedat that is not a date", { earnedat: "last Tuesday" }],
         ["an earnedat that is a number", { earnedat: 1788000000 }],
+        ["an earnedat of 1", { earnedat: "1" }],
+        ["an earnedat with a year beyond 9999", { earnedat: "+010000-01-01T00:00:00Z" }],
+        ["an earnedat that is not a calendar date", { earnedat: "2026-02-30T00:00:00Z" }],
+        ["an earnedat with no time", { earnedat: "2026-02-03" }],
         ["an earnedat_approximate that is text", { earnedat_approximate: "yes" }],
+        ["an earnedat_approximate that is a number", { earnedat_approximate: 1 }],
         ["a missing levelid", { levelid: undefined }],
         ["an empty gradeid", { gradeid: "" }],
       ];
+      it.each([
+        ["with a Z", "2026-09-02T03:00:00Z"],
+        ["with an offset", "2026-09-02T10:00:00+07:00"],
+        ["with fractional seconds", "2026-09-02T03:00:00.123456Z"],
+        ["as central's own export writes it (a serialised Date)", JSON.stringify({ d: new Date("2026-09-02T03:00:00Z") }).slice(6, -2)],
+      ])("an earnedat %s is stored", async (_what, earnedat) => {
+        const logdata = logOf(["result", "x"], ["studentawards", "x"]);
+        awardsOf(logdata)[0].earnedat = earnedat;
+        expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
+        expect(db.createdIn("studentawards")).toHaveLength(1);
+      });
+      it("an earnedat_approximate that is missing or null is stored as false", async () => {
+        const logdata = logOf(["result", "x"], ["studentawards", "x"], ["studentawards", "x"]);
+        delete awardsOf(logdata)[0].earnedat_approximate;
+        Object.assign(awardsOf(logdata)[1], { earnedat_approximate: null, levelid: LEVEL_2, gradeid: GRADE_2 });
+        expect((await upload(teacher(TCH_X), logdata)).status).toBe(200);
+        expect(db.createdIn("studentawards").map((a) => (a as Row).earnedat_approximate)).toEqual([false, false]);
+      });
+      const MISMATCHED: Array<[string, Row]> = [
+        ["a level of another grade", { levelid: LEVEL_2 }],
+        ["a grade of another curriculum", { gradeid: GRADE_Y }],
+        ["a curriculum, grade and level of another organisation", { curid: CUR_Y, gradeid: GRADE_Y, levelid: LEVEL_Y }],
+      ];
+      it.each(MISMATCHED)("naming %s is refused, naming the row, never an id: nothing is stored", async (_what, change) => {
+        const logdata = logOf(["result", "x"], ["studentawards", "x"], ["studentawards", "x"]);
+        Object.assign(awardsOf(logdata)[1], change);
+        const res = await refused(teacher(TCH_X), logdata);
+        expect(res.body.errormessage).toBe("That file has awards for a level, grade or curriculum that do not belong together or that your organisation does not hold (studentawards row 2).");
+        expect(JSON.stringify(res.body)).not.toContain(CUR_Y);
+        expect(db.createdIn("studentawards")).toEqual([]);
+      });
+      it("of a school with no organisation is refused: it holds no curriculum", async () => {
+        await refused(teacher(TCH_U), logOf(["studentawards", "u"]));
+      });
       it.each(BAD)("with %s is refused, naming the row and the field: nothing is stored", async (_what, change) => {
         const logdata = logOf(["result", "x"], ["studentawards", "x"], ["studentawards", "x"]);
         Object.assign(awardsOf(logdata)[1], change);

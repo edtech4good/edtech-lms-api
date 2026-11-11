@@ -145,7 +145,9 @@ export class LogBusiness {
     // wins and its `earnedat` is never rewritten. The rows were checked complete before anything was written
     // (`assertLogAwardRowsComplete`), which matters because IGNORE would also coerce a bad value into a stored one.
     if (progress.studentawards && progress.studentawards.length > 0) {
-      await studentawards.bulkCreate(progress.studentawards, {
+      // a missing or null `earnedat_approximate` is stored as false
+      const awards = progress.studentawards.map((a) => ({ ...a, earnedat_approximate: a.earnedat_approximate === true }));
+      await studentawards.bulkCreate(awards, {
         transaction: this._transaction,
         ignoreDuplicates: true,
         fields: ["studentawardid", "studentid", "levelid", "gradeid", "curid", "earnedat", "earnedat_approximate", "lastupdated"],

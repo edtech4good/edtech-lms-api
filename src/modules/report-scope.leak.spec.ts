@@ -636,6 +636,38 @@ describe("reports are confined to the caller's organisation", () => {
       expect(idsOf(data(res), "levelid")).toEqual([TX.level]);
       expect(learnerOf(res)).toMatchObject({ studentfirstname: TX.learners[0].first });
     });
+    describe("a stored award whose content does not fit together", () => {
+      const OTHER_GRADE = uuid(880001);
+      const OTHER_LEVEL = uuid(880002);
+      const award = (levelid: string, gradeid: string, curid: string) =>
+        db.add("studentawards", { studentawardid: uuid(880100 + db.tables.studentawards.length), studentid: TX.learners[0].id, levelid, gradeid, curid, earnedat: new Date("2024-04-01T10:00:00Z"), earnedat_approximate: false });
+      const shown = async (who: (typeof IN_X)[number]) => {
+        const res = await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }])).expect(200);
+        expect(JSON.stringify(res.body)).not.toContain(TY.schoolname);
+        expect(JSON.stringify(res.body)).not.toContain(TU.schoolname);
+        return res;
+      };
+      beforeEach(() => {
+        db.add("grades", { gradeid: OTHER_GRADE, gradename: "ថ្នាក់ទី២", gradeorder: 2, gradestatus: true, curriculumid: TX.curriculum });
+        db.add("levels", { levelid: OTHER_LEVEL, levelname: "កម្រិតទី២", levelorder: 2, levelstatus: true, gradeid: OTHER_GRADE });
+      });
+      it.each(IN_X)("%s: a level of another grade of the same curriculum is left out", async (who) => {
+        award(OTHER_LEVEL, TX.grade, TX.curriculum);
+        expect(idsOf(data(await shown(who)), "levelid")).toEqual([TX.level]);
+      });
+      it.each(IN_X)("%s: a grade of another curriculum is left out", async (who) => {
+        award(TX.level, TX.grade, TY.curriculum);
+        expect(idsOf(data(await shown(who)), "levelid")).toEqual([TX.level]);
+      });
+      it.each(IN_X)("%s: a level or grade of another organisation under X's curriculum is left out, no name of theirs shown", async (who) => {
+        award(TY.level, TY.grade, TX.curriculum);
+        award(TY.level, TX.grade, TX.curriculum);
+        award(TX.level, TY.grade, TX.curriculum);
+        const res = await shown(who);
+        expect(data(res)).toHaveLength(1);
+        expect(idsOf(data(res), "levelid")).toEqual([TX.level]);
+      });
+    });
     it.each(IN_X)("%s: each row has the shape the learning server's report gives", async (who) => {
       db.tables.studentawards.find((a) => a.studentid === TX.learners[0].id)!.earnedat_approximate = true;
       const res = await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }])).expect(200);
