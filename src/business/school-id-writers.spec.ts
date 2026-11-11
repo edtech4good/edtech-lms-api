@@ -1,4 +1,5 @@
 import { curriculums } from "src/models/data-models/curriculums";
+import { grades } from "src/models/data-models/grades";
 import { organisationcountry } from "src/models/data-models/organisationcountry";
 import { organisations } from "src/models/data-models/organisations";
 import { schools } from "src/models/data-models/school";
@@ -162,6 +163,9 @@ describe("StudentController.createall (POST /student/create)", () => {
   // the class named in the body is checked for the platform too (`students.standard` is a foreign key)
   beforeEach(() => {
     jest.spyOn(standards, "findOne").mockResolvedValue({ standardid: "std1" } as never);
+    // the curriculum of the file exists and has one grade, which is the learners' grade
+    jest.spyOn(curriculums, "findAll").mockResolvedValue([{ curriculumid: "c1" }] as never);
+    jest.spyOn(grades, "findAll").mockResolvedValue([{ gradeid: "g1", gradename: "Grade 1" }] as never);
   });
   const echoUsers = () =>
     jest
@@ -188,7 +192,7 @@ describe("StudentController.createall (POST /student/create)", () => {
     await new StudentController().createall(body as never, false, "true", PLATFORM);
 
     expect(rowsOf(users)[0]).toMatchObject(KHMER);
-    expect(rowsOf(learners)[0]).toMatchObject({ ...KHMER, studentfirstname: "សុខា" });
+    expect(rowsOf(learners)[0]).toMatchObject({ ...KHMER, studentfirstname: "សុខា", gradeid: "g1" });
     expect(tnx.commit).toHaveBeenCalled();
     // The school was already known by id, so nothing is looked up by name; it is re-read by id in the transaction.
     expect(schools.findAll).not.toHaveBeenCalled();
@@ -333,6 +337,7 @@ describe("StudentBusiness.updateStudents (PUT /student/update: a learner move be
     } as never);
     standard = jest.spyOn(standards, "findOne").mockResolvedValue({ standardid: "std-1" } as never);
     jest.spyOn(curriculums, "findAll").mockResolvedValue([{ curriculumid: "c1", curriculumname: "Sample Curriculum", organisationid: null }] as never);
+    jest.spyOn(grades, "findAll").mockResolvedValue([{ gradeid: "g1", gradename: "Grade 1" }] as never);
     jest.spyOn(schoolusers, "findOne").mockResolvedValue(user as never);
     update = jest.spyOn(students, "update").mockResolvedValue([1] as never);
   });
@@ -343,7 +348,7 @@ describe("StudentBusiness.updateStudents (PUT /student/update: a learner move be
   it("writes the new school's id with its name on the learner AND on the login", async () => {
     await run(KHMER.schoolname);
 
-    expect(update.mock.calls[0][0]).toMatchObject(KHMER);
+    expect(update.mock.calls[0][0]).toMatchObject({ ...KHMER, gradeid: "g1" });
     expect(update.mock.calls[0][1]).toMatchObject({ transaction: tnx });
     expect(user.schoolname).toBe(KHMER.schoolname);
     expect(user.schoolid).toBe(KHMER.schoolid);
