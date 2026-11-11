@@ -22,6 +22,7 @@ import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
 import { assertEnrolmentFits, ownerOfSchool } from "./content-owner";
+import { addedCurricula, firstUnpublished, refusalOf, unpublishedField } from './enrolment-published';
 import { GRADE_INVALID_MESSAGE, liveGradesOf, resolveLearnerGrade } from "./learner-grade";
 import { nextCurriculumId } from "./next-curriculum-id";
 import { isSameSchoolName, normaliseSchoolName, withSchoolIds } from "./school-identity";
@@ -786,6 +787,11 @@ WHERE
       // refusal a name nobody holds gets, before any row is written
       if (!named.complete) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
       await assertEnrolmentFits(schoolOwner, named.ids, transaction);
+      // the published rule and the grade rule are both checked for the row, and a row wrong on both names both fields
+      const rowFields: Array<{ field: string; message: string }> = [
+        // only a curriculum being added must be published: one the learner already has stays, even if retired since
+        ...unpublishedField(await firstUnpublished(addedCurricula(named.ids, current), transaction), 'curriculums'),
+      ];
       // every row, a teacher account's too, gets a grade of its primary curriculum (the one it keeps, else the first named); the
       // file names it by name, compared as the file's other names are, and blank keeps the current one
       const primary = nextCurriculumId(current.curriculumid, named.ids);
@@ -795,12 +801,16 @@ WHERE
         const match = (await liveGradesOf(primary, transaction)).filter((g) => normaliseSchoolName(g.gradename) === wanted);
         // a name that fits several grades is the current grade when that is one of them, else it is refused
         const kept = match.find((g) => g.gradeid === current.gradeid);
-        if (match.length !== 1 && !kept) throw new ApiError(ErrorCode.INVALID_INPUT, GRADE_INVALID_MESSAGE, { fields: [{ field: `students.${rowindex}.grade`, message: GRADE_INVALID_MESSAGE }] });
-        gradeid = (kept ?? match[0]).gradeid;
+        if (match.length !== 1 && !kept) rowFields.push({ field: `students.${rowindex}.grade`, message: GRADE_INVALID_MESSAGE });
+        else gradeid = (kept ?? match[0]).gradeid;
       }
-      const resolved = await resolveLearnerGrade({ curriculumid: primary, gradeid, currentGradeid: current.gradeid, transaction });
-      if (!resolved.ok) throw new ApiError(ErrorCode.INVALID_INPUT, resolved.message, { fields: [{ field: `students.${rowindex}.grade`, message: resolved.message }] });
-      gradeByRow.set(rowindex, resolved.gradeid);
+      // a named grade that fits nothing is already refused above; with none named, the current or the only grade is used
+      if (rowFields.every((f) => f.field !== `students.${rowindex}.grade`)) {
+        const resolved = await resolveLearnerGrade({ curriculumid: primary, gradeid, currentGradeid: current.gradeid, transaction });
+        if (resolved.ok) gradeByRow.set(rowindex, resolved.gradeid);
+        else rowFields.push({ field: `students.${rowindex}.grade`, message: resolved.message });
+      }
+      if (rowFields.length > 0) throw refusalOf(rowFields, true);
     }
     for (const [rowindex, x] of studentdata.entries()) {
       const student = await students.findOne({

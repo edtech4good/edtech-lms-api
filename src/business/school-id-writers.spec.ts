@@ -19,6 +19,8 @@ import { createschool as createSchoolRequest, updateschool as updateSchoolReques
 import { StudentController } from "src/modules/students/student.controller";
 import { TeacherController } from "src/modules/teachers/teacher.controller";
 import { dbinstance } from "src/services/dbservice";
+import * as enrolmentPublished from "src/business/enrolment-published";
+import * as schoolName from "src/business/school-name";
 import { rowMatches } from "src/test-support/fakewhere";
 
 /**
@@ -45,6 +47,10 @@ beforeEach(() => {
   known = [SAMPLE, KHMER];
   tnx = { commit: jest.fn().mockResolvedValue(undefined), rollback: jest.fn().mockResolvedValue(undefined), LOCK: { SHARE: "SHARE", UPDATE: "UPDATE" } };
   jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(tnx as never);
+  // the name-holder check (school-name.ts, specs of its own) is not under test here
+  jest.spyOn(schoolName, "assertNameNeverHeld").mockResolvedValue(undefined);
+  // nor is the published-curriculum rule of an enrolment (the routes read the first unpublished curriculum)
+  jest.spyOn(enrolmentPublished, "firstUnpublished").mockResolvedValue(undefined);
   // the by-name lookup is `WHERE TRIM(schoolname) = ?`: a Sequelize where(fn, value), `logic` is the value
   jest.spyOn(schools, "findAll").mockImplementation((async (opts: { where: { logic: string } }) =>
     known.filter((s) => collate(s.schoolname.replace(/^ +| +$/g, "")) === collate(opts.where.logic))) as never);

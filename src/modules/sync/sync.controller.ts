@@ -16,6 +16,7 @@ import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { ApiBearerAuth, ApiResponse, ApiTags } from "@nestjs/swagger";
 import AdmZip from "adm-zip";
 import { pushToCloud, rosterApiError, studentsFile, teachersFile } from "src/business/cloud-push";
+import { sendHealing } from "src/business/heal-push";
 import { pushOrganisationSet } from "src/business/publish-push";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { findOwnedSchool, resolveOwnedSchoolSegment } from "src/business/school-scope";
@@ -146,12 +147,9 @@ export class SyncController {
       throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to sync.");
     }
     try {
-      return await pushToCloud(
-        "students",
-        "students.ini",
-        JSON.stringify(studentsFile(school.schoolid, studentusers.map((x) => x.get({ plain: true })))),
-        school.organisationid,
-      );
+      const file = JSON.stringify(studentsFile(school.schoolid, studentusers.map((x) => x.get({ plain: true }))));
+      // a school or class the learning server lacks is sent once (the organisation's set) before the 409 answers
+      return await sendHealing(school.organisationid, () => pushToCloud("students", "students.ini", file, school.organisationid));
     } catch (error) {
       throw rosterApiError("students", error) ?? error;
     }
@@ -183,12 +181,8 @@ export class SyncController {
       throw new ApiError(ErrorCode.NOT_FOUND, "There are no teachers to sync.");
     }
     try {
-      return await pushToCloud(
-        "teachers",
-        "teachers.ini",
-        JSON.stringify(teachersFile(school.schoolid, teachers.map((x) => x.get({ plain: true })))),
-        school.organisationid,
-      );
+      const file = JSON.stringify(teachersFile(school.schoolid, teachers.map((x) => x.get({ plain: true }))));
+      return await sendHealing(school.organisationid, () => pushToCloud("teachers", "teachers.ini", file, school.organisationid));
     } catch (error) {
       throw rosterApiError("teachers", error) ?? error;
     }

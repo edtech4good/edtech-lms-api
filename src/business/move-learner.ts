@@ -12,6 +12,7 @@ import { UNKNOWN_FIELD_MESSAGE } from "src/services/joi-message.service";
 import { changeAccount } from "./account-disable";
 import { CLASS_MESSAGE, classIdValue, curriculumIdsValue, invalid, pushOneAccount } from "./add-learner";
 import { assertEnrolmentFits } from "./content-owner";
+import { addedCurricula, firstUnpublished, unpublishedField } from "./enrolment-published";
 import { GRADE_INVALID_MESSAGE, gradeIdValue, resolveLearnerGrade } from "./learner-grade";
 import { nextCurriculumId } from "./next-curriculum-id";
 import { PushOutcome } from "./publish-push";
@@ -149,13 +150,21 @@ export const moveLearner = async (org: OrgContext, actor: string | undefined, sc
       // the learner's grade is one of its primary curriculum's: named, kept while it fits, or the curriculum's only one
       const curriculumid = nextCurriculumId(learner.curriculumid, input.curriculumids);
       let gradeid: string | undefined;
+      // the published rule alone keeps its own message (as on add and edit); with any other refusal it is one field of several
+      let onlyUnpublished = false;
       if (curriculaExist) {
+        // only a curriculum being added must be published: one the learner already has stays, even if retired since
+        const unpublishedName = await firstUnpublished(addedCurricula(input.curriculumids, learner), tnx);
+        errors.push(...unpublishedField(unpublishedName));
+        onlyUnpublished = unpublishedName !== undefined && errors.length === 1;
         const grade = await resolveLearnerGrade({ curriculumid, gradeid: input.gradeid, currentGradeid: learner.gradeid, transaction: tnx });
         if (grade.ok) gradeid = grade.gradeid;
         else errors.push({ field: grade.field, message: grade.message });
       }
 
-      if (errors.length > 0 || !target || gradeid === undefined) throw invalid(errors, "Check the highlighted fields.");
+      if (errors.length > 0 || !target || gradeid === undefined) {
+        throw invalid(errors, onlyUnpublished && errors.length === 1 ? undefined : "Check the highlighted fields.");
+      }
       await assertEnrolmentFits(target.organisationid, input.curriculumids, tnx);
 
       const now = new Date();

@@ -81,9 +81,10 @@ export class StandardBusiness {
   };
   getstandardname = (standardname: string) =>
     standards.findOne({ where: { standardname, isdeleted: false } });
-  updatestandardName = async (standard: standardsAttributes, user: LmsUserToken, org: OrgContext) => {
+  updatestandardName = async (standard: standardsAttributes, user: LmsUserToken, org: OrgContext, outcome?: { previousschoolid?: string }) => {
     // The class must be one of the caller's, and so must the school it is moved to (404 otherwise).
     const tempdt = await findOwnedStandard(org, standard.standardid);
+    if (outcome) outcome.previousschoolid = tempdt.schoolid;
     tempdt.standardname = standard.standardname;
     tempdt.schoolid = standard.schoolid;
     tempdt.updated_at = new Date();
@@ -100,13 +101,21 @@ export class StandardBusiness {
     }
     return tempdt;
   };
-  deletestandard = async (standardid: string, user: LmsUserToken, org: OrgContext) => {
+  deletestandard = async (standardid: string, user: LmsUserToken, org: OrgContext, outcome?: { schoolid?: string }) => {
     const tempdt = await findOwnedStandard(org, standardid);
+    if (outcome) outcome.schoolid = tempdt.schoolid;
     tempdt.isdeleted = true;
     tempdt.deleted_at = new Date();
     tempdt.deleted_by = user.lmsuserid;
     await tempdt.save({ fields: ["isdeleted", "deleted_at", "deleted_by"] });
     return true;
+  };
+  /** The organisations of the schools named (a school with none, or one that is not there, adds nothing), without repeats. */
+  organisationsOfSchools = async (schoolids: ReadonlyArray<string | null | undefined>): Promise<string[]> => {
+    const ids = [...new Set(schoolids.filter((id): id is string => typeof id === "string" && id !== ""))];
+    if (ids.length === 0) return [];
+    const rows = await schools.findAll({ where: { schoolid: { [Op.in]: ids } }, attributes: ["organisationid"] });
+    return [...new Set(rows.map((r) => r.organisationid).filter((o): o is string => typeof o === "string" && o !== ""))];
   };
   isexistsstandardName = async (standard: standardsAttributes) => {
     const where: WhereOptions<standardsAttributes> = {

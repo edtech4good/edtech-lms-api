@@ -1,5 +1,10 @@
 import { col, fn, Op, Transaction, WhereOptions } from "sequelize";
 import { assertSameOwner, ownerOfCurriculum } from "./content-owner";
+import { cloudConfigured } from "./cloud-push";
+import { publicationStates } from "./curriculum-publication";
+import { assertNameNeverHeld } from "./school-name";
+
+export const SCHOOL_MOVE_MESSAGE = "A school can't be moved to another organisation yet. Create the school in the other organisation instead.";
 import { OrgContext } from "src/decorators/org.decorator";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
@@ -191,6 +196,7 @@ export class SchoolBusiness {
       // Surrounding whitespace is never part of a school's name: a name stored
       // with it cannot be matched by the writers that look schools up by name.
       school.schoolname = school.schoolname.trim();
+      await assertNameNeverHeld(school.schoolname, null, transaction);
       school.isdeleted = false;
       school.created_by = user.lmsuserid;
       const created = await schools.create({ ...school, organisationid }, { transaction });
@@ -201,6 +207,9 @@ export class SchoolBusiness {
       throw e;
     }
   };
+  /** The organisation a school belongs to, deleted or not (null when the school is not there). */
+  organisationidOf = async (schoolid: string): Promise<string | null> =>
+    (await schools.findOne({ where: { schoolid }, attributes: ["organisationid"] }))?.organisationid ?? null;
   getschoolbyid = (schoolid: string) =>
     schools.findOne({ where: { schoolid, isdeleted: false }});
   getschoolall = async (paging: IMultiPaging, org: OrgContext) => {
@@ -305,6 +314,10 @@ export class SchoolBusiness {
         countryid: school.countryid,
         transaction,
       });
+      // While a learning server is set up, a school's organisation cannot change: that server cannot re-own a school.
+      if (resulting !== (tempdt.organisationid ?? null) && cloudConfigured()) {
+        throw new ApiError(ErrorCode.ALREADY_EXISTS, SCHOOL_MOVE_MESSAGE, { fields: [{ field: "organisationid", message: SCHOOL_MOVE_MESSAGE }] });
+      }
       // Curriculums newly attached (or all of them, when the school's organisation changed) must
       // belong to the school's organisation; links that were already there are not re-checked.
       const before = Array.isArray(tempdt.curriculums) ? (tempdt.curriculums as string[]) : [];
@@ -313,7 +326,10 @@ export class SchoolBusiness {
       );
       await assertCurriculumsFitOwner(resulting, attaching, transaction);
       const previousname = tempdt.schoolname;
-      tempdt.schoolname = school.schoolname.trim();
+      const wantedname = school.schoolname.trim();
+      // only a name that is changing is checked: a school keeps the name it has
+      if (wantedname !== previousname) await assertNameNeverHeld(wantedname, tempdt.schoolid, transaction);
+      tempdt.schoolname = wantedname;
       tempdt.countryid = school.countryid;
       tempdt.curriculums = school.curriculums;
       tempdt.updated_at = new Date();
@@ -466,13 +482,16 @@ export class SchoolBusiness {
   };
 
   getschoolcurriculums = async (schoolid: string, curriculumids: Array<string>) => {
+    // every curriculum's publication state in one query, however many there are
+    const states = await publicationStates(curriculumids);
     const data: Array<SchoolCurriculumBase> = [];
     for (const curriculumid of curriculumids) {
       const curriculum = await new CurriculumBusiness().getCurriculumbyid(curriculumid);
       data.push({
         schoolid: schoolid,
         curriculumid: curriculumid,
-        curriculumname: curriculum?.curriculumname as string
+        curriculumname: curriculum?.curriculumname as string,
+        publicationstatus: states.get(curriculumid)?.publicationstatus ?? "never",
       })
     }
     return data;

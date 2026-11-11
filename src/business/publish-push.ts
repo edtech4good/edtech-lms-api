@@ -234,3 +234,75 @@ export const retireAndPush = async (org: OrgContext, curriculumid: string): Prom
  */
 export const pushAfterDelete = async (deleted: { organisationid: string | null; withdrew: boolean }): Promise<PushOutcome> =>
   deleted.withdrew ? pushPublishedSet(deleted.organisationid, "Deleted") : skippedNothingPublished("Deleted");
+
+/** What a school, class or organisation-setting write says when the push that follows it did not go through. */
+export const SET_PUSH_FAILED_MESSAGE = "Saved, but the learning server did not answer. Run Sync Content on the Curricula screen to send it again.";
+
+const setPushRefused = (reason: string): string =>
+  `Saved, but the learning server did not accept it: ${/[.!?]$/.test(reason) ? reason : `${reason}.`} Run Sync Content on the Curricula screen once that is fixed.`;
+
+/**
+ * The answer a school, class or organisation-setting write gives about the push that followed it: `{ status, message }`.
+ * `pushed` and `skipped` need no extra words from the admin's side; `failed` carries the words to show.
+ */
+export type SetPushOutcome = Pick<PushOutcome, "status" | "message" | "cause" | "code" | "reason">;
+
+/** An error central itself can put into words (the content could not be built, or the learning server refused the file and said why). */
+const nameableReason = (error: unknown): string | undefined => {
+  if (!(error instanceof ApiError)) return undefined;
+  const mapped = new GlobalExceptionFilter().map(error);
+  return mapped.code === ErrorCode.INVALID_INPUT && mapped.errormessage.trim() !== "" ? mapped.errormessage.trim() : undefined;
+};
+
+/**
+ * Sends the organisation's whole published set (`pushOrganisationSet`: its schools, classes and published curricula) after a
+ * write that changed what the learning server shows, for every organisation named (a platform move of a school names two).
+ * Call it only after the write has committed. It never throws and never fails the request: whatever goes wrong is the `failed`
+ * outcome. It does not ask for `sync_content`: like a publish, it uses the server key.
+ */
+export const pushSetAfterWrite = async (
+  organisationids: ReadonlyArray<string | null | undefined> | (() => Promise<ReadonlyArray<string | null | undefined>>),
+): Promise<SetPushOutcome> => {
+  if (!cloudConfigured()) {
+    return { status: "skipped", reason: "nocloud", message: "No learner server is set up here, so nothing was pushed." };
+  }
+  let named: ReadonlyArray<string | null | undefined>;
+  try {
+    // finding the organisation is part of the push: a saved write never fails because of it
+    named = typeof organisationids === "function" ? await organisationids() : organisationids;
+  } catch (error) {
+    Logger.error("finding the organisation to push after a school, class or setting write failed", {
+      originalerrorclass: (error as { constructor?: { name?: string } } | null)?.constructor?.name,
+    });
+    return { status: "failed", message: SET_PUSH_FAILED_MESSAGE };
+  }
+  const ids = [...new Set(named.filter((id): id is string => typeof id === "string" && id !== ""))];
+  if (ids.length === 0) {
+    return { status: "skipped", message: "There is no organisation to push." };
+  }
+  const settled = await Promise.all(ids.map((id) => takeTurn(id)));
+  const failure = settled.find((s): s is Extract<PushSettled, { ok: false }> => !s.ok);
+  if (failure === undefined) {
+    return { status: "pushed", message: "The learning server has the organisation's schools and classes." };
+  }
+  const reason = nameableReason(failure.error);
+  const mapped = new GlobalExceptionFilter().map(failure.error);
+  // class and mapped code only: an axios error carries the request's config, which holds the server key
+  Logger.error("push of the organisation's set after a school, class or setting write failed", {
+    originalerrorclass: (failure.error as { constructor?: { name?: string } } | null)?.constructor?.name,
+    code: mapped.code,
+    status: learningServerAnswer(failure.error)?.status ?? mapped.status,
+    ...learningServerLogFields(failure.error),
+  });
+  return {
+    status: "failed",
+    message: reason !== undefined ? setPushRefused(reason) : SET_PUSH_FAILED_MESSAGE,
+    cause: mapped.errormessage,
+    code: mapped.code,
+  };
+};
+
+/** The extra field a school, class or organisation write answers with. */
+export interface WithSetPush {
+  push: SetPushOutcome;
+}

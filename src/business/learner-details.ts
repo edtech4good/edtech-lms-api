@@ -22,7 +22,8 @@ import {
   pushOneAccount,
 } from "./add-learner";
 import { assertEnrolmentFits } from "./content-owner";
-import { GRADE_INVALID_MESSAGE, gradeIdValue, gradeOrRefuse } from "./learner-grade";
+import { addedCurricula, firstUnpublished, refusalOf, unpublishedField } from "./enrolment-published";
+import { GRADE_INVALID_MESSAGE, gradeIdValue, resolveLearnerGrade } from "./learner-grade";
 import { nextCurriculumId } from "./next-curriculum-id";
 import { scopeOf } from "./org-scope";
 import { PushOutcome } from "./publish-push";
@@ -221,7 +222,13 @@ export const editLearner = async (org: OrgContext, actor: string | undefined, sc
       const learner = await students.findOne({ where: { schooluserid: login.schooluserid, isdeleted: false }, transaction: tnx });
       if (!learner) throw studentNotFound();
       const curriculumid = nextCurriculumId(learner.curriculumid, input.curriculumids);
-      const gradeid = await gradeOrRefuse({ curriculumid, gradeid: input.gradeid, currentGradeid: learner.gradeid, transaction: tnx });
+      // only a curriculum being added must be published: one the learner already has stays, even if retired since; the grade
+      // rule is checked with it, and a request wrong on both names both fields
+      const unpublished = await firstUnpublished(addedCurricula(input.curriculumids, learner), tnx);
+      const grade = await resolveLearnerGrade({ curriculumid, gradeid: input.gradeid, currentGradeid: learner.gradeid, transaction: tnx });
+      const refusals = [...unpublishedField(unpublished), ...(grade.ok ? [] : [{ field: grade.field, message: grade.message }])];
+      if (refusals.length > 0 || !grade.ok) throw refusalOf(refusals);
+      const gradeid = grade.gradeid;
       await students.update(
         {
           studentfirstname: input.studentfirstname,

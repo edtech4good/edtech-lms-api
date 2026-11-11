@@ -15,7 +15,9 @@ import { UNKNOWN_FIELD_MESSAGE } from "src/services/joi-message.service";
 import { isLoginHandle } from "src/validators/login-handle";
 import { cloudConfigured, learningServerAnswer, learningServerLogFields, pushToCloud, studentsFile, teachersFile } from "./cloud-push";
 import { assertEnrolmentFits } from "./content-owner";
-import { GRADE_INVALID_MESSAGE, gradeIdValue, gradeOrRefuse } from "./learner-grade";
+import { firstUnpublished, refusalOf, unpublishedField } from "./enrolment-published";
+import { sendHealing } from "./heal-push";
+import { GRADE_INVALID_MESSAGE, gradeIdValue, resolveLearnerGrade } from "./learner-grade";
 import { scopeOf } from "./org-scope";
 import { PushOutcome } from "./publish-push";
 import { findOwnedSchool, findOwnedStandard } from "./school-scope";
@@ -254,8 +256,13 @@ export const addLearner = async (org: OrgContext, body: unknown): Promise<AddedL
       throw invalid([{ field: "curriculumids", message: "Choose curricula that exist." }]);
     }
     await assertEnrolmentFits(school.organisationid, input.curriculumids, tnx);
+    // the published rule and the grade rule are both checked, and a request wrong on both names both fields
+    const unpublished = await firstUnpublished(input.curriculumids, tnx);
     // the learner's grade is one of the first curriculum's, whichever way it is chosen
-    const gradeid = await gradeOrRefuse({ curriculumid: input.curriculumids[0], gradeid: input.gradeid, transaction: tnx });
+    const grade = await resolveLearnerGrade({ curriculumid: input.curriculumids[0], gradeid: input.gradeid, transaction: tnx });
+    const refusals = [...unpublishedField(unpublished), ...(grade.ok ? [] : [{ field: grade.field, message: grade.message }])];
+    if (refusals.length > 0 || !grade.ok) throw refusalOf(refusals);
+    const gradeid = grade.gradeid;
     if (await usernameTaken(input.schoolusername, tnx)) throw usernameTakenError();
 
     const [login] = await new SchoolUserBusiness().createSchoolUser(
@@ -353,24 +360,18 @@ export const pushOneAccount = async (kind: "learner" | "teacher", account: Pushe
       if (rows.length === 0) {
         throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to sync.");
       }
-      await pushToCloud(
-        "students",
-        "students.ini",
-        JSON.stringify(studentsFile(account.schoolid, rows.map((x) => x.get({ plain: true })))),
-        account.organisationid,
-        { timeoutMs: LEARNER_PUSH_TIMEOUT_MS },
+      const file = JSON.stringify(studentsFile(account.schoolid, rows.map((x) => x.get({ plain: true }))));
+      await sendHealing(account.organisationid, () =>
+        pushToCloud("students", "students.ini", file, account.organisationid, { timeoutMs: LEARNER_PUSH_TIMEOUT_MS }),
       );
     } else {
       const rows = await new SchoolUserBusiness().getschoolteachersbyid([account.schooluserid], { withSchoolId: true });
       if (rows.length === 0) {
         throw new ApiError(ErrorCode.NOT_FOUND, "There are no teachers to sync.");
       }
-      await pushToCloud(
-        "teachers",
-        "teachers.ini",
-        JSON.stringify(teachersFile(account.schoolid, rows.map((x) => x.get({ plain: true })))),
-        account.organisationid,
-        { timeoutMs: LEARNER_PUSH_TIMEOUT_MS },
+      const file = JSON.stringify(teachersFile(account.schoolid, rows.map((x) => x.get({ plain: true }))));
+      await sendHealing(account.organisationid, () =>
+        pushToCloud("teachers", "teachers.ini", file, account.organisationid, { timeoutMs: LEARNER_PUSH_TIMEOUT_MS }),
       );
     }
     return { status: "pushed", message: words.pushed };

@@ -133,6 +133,14 @@ const seed = () => {
   grade(G_TWO_A, CUR_TWO, "ថ្នាក់ទី១", 1);
   grade(G_TWO_B, CUR_TWO, "ថ្នាក់ទី២", 2);
   grade(G_DEL, CUR_DEL, "ថ្នាក់ទី១", 1, { isdeleted: true });
+  db.publish(CUR_X, X);
+  db.publish(CUR_X2, X);
+  db.publish(CUR_X3, X);
+  db.publish(CUR_Y, Y);
+  // the grade specs enrol into these, so they are published too
+  db.publish(CUR_TWO, X);
+  db.publish(CUR_NONE, X);
+  db.publish(CUR_DEL, X);
   db.add("schools", { schoolid: S_X, schoolname: "សាលា ក", organisationid: X, countryid: C1, curriculums: [CUR_X] });
   db.add("schools", { schoolid: S_X2, schoolname: "សាលា គ", organisationid: X, countryid: C1, curriculums: [CUR_X] });
   db.add("schools", { schoolid: S_Y, schoolname: "សាលា ខ", organisationid: Y, countryid: C1, curriculums: [CUR_Y] });
@@ -489,6 +497,67 @@ describe("moving one learner to another school", () => {
       expect(transaction.rollback).toHaveBeenCalledTimes(1);
       expect(transaction.commit).not.toHaveBeenCalled();
       expect(axios.put).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("only a published curriculum can be enrolled", () => {
+    const NEVER = uuid(901);
+    const RETIRED = uuid(902);
+    const AGAIN = uuid(903);
+    const ruleFor = (name: string) => [{ field: "curriculumids", message: `Publish ${name} first, or choose another curriculum.` }];
+    beforeEach(() => {
+      db.add("curriculums", { curriculumid: NEVER, curriculumname: "មេរៀនមិនទាន់ផ្សព្វផ្សាយ", organisationid: X, curriculumstatus: true });
+      db.add("curriculums", { curriculumid: RETIRED, curriculumname: "មេរៀនដកចេញ", organisationid: X, curriculumstatus: true });
+      db.publish(RETIRED, X, "published", new Date(1000));
+      db.publish(RETIRED, X, "withdrawn", new Date(2000));
+      db.add("curriculums", { curriculumid: AGAIN, curriculumname: "មេរៀនផ្សព្វផ្សាយម្ដងទៀត", organisationid: X, curriculumstatus: true });
+      db.publish(AGAIN, X, "published", new Date(1000));
+      db.publish(AGAIN, X, "withdrawn", new Date(2000));
+      db.publish(AGAIN, X, "published", new Date(3000));
+      // each has one grade, so that only the published rule can refuse it
+      db.add("grades", { gradeid: uuid(910), curriculumid: NEVER, gradename: "ថ្នាក់ទី១", gradeorder: 1, gradestatus: true, isdeleted: false });
+      db.add("grades", { gradeid: uuid(911), curriculumid: RETIRED, gradename: "ថ្នាក់ទី១", gradeorder: 1, gradestatus: true, isdeleted: false });
+      db.add("grades", { gradeid: uuid(912), curriculumid: AGAIN, gradename: "ថ្នាក់ទី១", gradeorder: 1, gradestatus: true, isdeleted: false });
+    });
+    it.each(IN_X)("%s: a curriculum never published is a 400 on curriculumids naming it, and nothing is written or sent", async (who) => {
+      const res = await refuses(who, L_X, goodBody({ curriculumids: [NEVER] }));
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("INVALID_INPUT");
+      expect(res.body.errormessage).toBe("Publish មេរៀនមិនទាន់ផ្សព្វផ្សាយ first, or choose another curriculum.");
+      expect(res.body.fields).toEqual(ruleFor("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"));
+    });
+    it("a curriculum whose latest publication is a retirement is refused the same way, beside a published one too", async () => {
+      for (const curriculumids of [[RETIRED], [CUR_X, RETIRED]]) {
+        const res = await refuses("X's Admin", L_X, goodBody({ curriculumids: curriculumids }));
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual(ruleFor("មេរៀនដកចេញ"));
+      }
+    });
+    it("a retired curriculum the learner already has is kept by a move, and adding a retired one is still refused", async () => {
+      learnerRow(L_X).curriculumids = [RETIRED];
+      learnerRow(L_X).curriculumid = RETIRED;
+      const kept = await put("X's Admin", L_X, goodBody({ curriculumids: [RETIRED] }));
+      expect(kept.status).toBe(200);
+      learnerRow(L_X).schoolid = S_X;
+      const added = await put("X's Admin", L_X, goodBody({ curriculumids: [RETIRED, NEVER] }));
+      expect(added.status).toBe(400);
+      expect(added.body.fields).toEqual(ruleFor("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"));
+    });
+    it("a request wrong on both rules (an unpublished curriculum and a grade that is not its own) names both fields, nothing written or sent", async () => {
+      const res = await refuses("X's Admin", L_X, goodBody({ curriculumids: [NEVER], gradeid: G_X }));
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("INVALID_INPUT");
+      expect(res.body.errormessage).toBe("Check the highlighted fields.");
+      expect(res.body.fields).toEqual([...ruleFor("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"), { field: "gradeid", message: "Choose a grade of this curriculum." }]);
+    });
+    it("a curriculum published again after a retirement is accepted, and so is a published one", async () => {
+      for (const curriculumids of [[AGAIN], [CUR_X]]) {
+        const res = await put("X's Admin", L_X, goodBody({ curriculumids }));
+        expect(res.status).toBe(200);
+        expect(res.body.push.status).toBe("pushed");
+        // back to the first school, so that the next one is a move too
+        learnerRow(L_X).schoolid = S_X;
+      }
     });
   });
 

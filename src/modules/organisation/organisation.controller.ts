@@ -22,6 +22,7 @@ import {
   ApiTags,
   getSchemaPath,
 } from "@nestjs/swagger";
+import { pushSetAfterWrite, WithSetPush } from "src/business/publish-push";
 import { OrganisationBusiness } from "src/business/organisation.business";
 import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { Org, OrgContext } from "src/decorators/org.decorator";
@@ -227,7 +228,7 @@ export class OrganisationController {
     @Param("organisationid") organisationid: string,
     @Body() body: OrganisationUpdateRequest,
     @User() user: LmsUserToken,
-  ): Promise<OrganisationCreateResponse> {
+  ): Promise<OrganisationCreateResponse & Partial<WithSetPush>> {
     const data = await new OrganisationBusiness().updateorganisation(
       organisationid,
       {
@@ -242,7 +243,10 @@ export class OrganisationController {
       body.countryids,
       user,
     );
-    return { error: false, data };
+    // the quiz-pass switch rides the organisation's set: it reaches the learning server when it is saved
+    return body.requireLessonQuizPass === undefined
+      ? { error: false, data }
+      : { error: false, data, push: await pushSetAfterWrite([organisationid]) };
   }
 
   @OrgPolicy("platform")

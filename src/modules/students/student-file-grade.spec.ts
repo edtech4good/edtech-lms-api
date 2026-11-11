@@ -89,6 +89,9 @@ const seed = () => {
   db.add("organisationcountry", { organisationcountryid: uuid(701), organisationid: X, countryid: C1 });
   for (const id of [CUR_ONE, CUR_ONE_B, CUR_TWO, CUR_NONE, CUR_DEL]) addCurriculum(id, X);
   addCurriculum(CUR_Y, Y);
+  // an enrolment needs a published curriculum: every curriculum these specs enrol into is one
+  for (const id of [CUR_ONE, CUR_ONE_B, CUR_TWO, CUR_NONE, CUR_DEL]) db.publish(id, X);
+  db.publish(CUR_Y, Y);
   addGrade(G_ONE, CUR_ONE, GRADE_NAME.A, 1);
   addGrade(G_ONE_B, CUR_ONE_B, GRADE_NAME.A, 1);
   addGrade(G_TWO_A, CUR_TWO, GRADE_NAME.A, 1);

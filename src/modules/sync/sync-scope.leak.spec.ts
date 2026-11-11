@@ -1051,6 +1051,36 @@ describe("the content sync is one organisation's", () => {
       expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
     });
 
+    describe.each(["students", "teachers"] as const)("Sync %s heals a missing school or class once before it answers 409", (kind) => {
+      const kinds = () => (axios.put as jest.Mock).mock.calls.map((c) => String(c[0]).split("/import/")[1]);
+      const answers = (...steps: Array<"ok" | Error>) => {
+        const queue = [...steps];
+        (axios.put as jest.Mock).mockReset().mockImplementation(async () => {
+          const next = queue.shift() ?? "ok";
+          if (next instanceof Error) throw next;
+          return { status: 200, data: {} };
+        });
+      };
+      it.each(["schoolid", "schoolname", "standard"])("a refusal naming %s: the organisation's set, then the roster again, and the answer is 200", async (field) => {
+        answers(refusal([{ field, message: "SERVER-TEXT" }]));
+        await send("X's Admin", "post", `/sync/cloud/${TX.school}/${kind}`).expect(200);
+        expect(kinds()).toEqual([kind, "master", kind]);
+        expect((axios.put as jest.Mock).mock.calls[1][2].headers["X-Organisation-Id"]).toBe(X);
+      });
+      it("a second refusal is the 409, and the set is not sent twice", async () => {
+        answers(refusal([{ field: "schoolid", message: "SERVER-TEXT" }]), "ok", refusal([{ field: "standard", message: "SERVER-TEXT" }]));
+        const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/${kind}`);
+        expect(res.status).toBe(409);
+        expect(res.body.errormessage).toBe(SCHOOL_WORDS(kind === "students" ? "Sync Students" : "Sync Teachers"));
+        expect(kinds()).toEqual([kind, "master", kind]);
+      });
+      it("a refusal naming the curriculum is not healed", async () => {
+        answers(refusal([{ field: "curriculumids", message: "SERVER-TEXT" }]));
+        await send("X's Admin", "post", `/sync/cloud/${TX.school}/${kind}`);
+        expect(kinds()).toEqual([kind]);
+      });
+    });
+
     it("a 400 naming curriculumids is a 409 about the curriculum", async () => {
       (axios.put as jest.Mock).mockRejectedValue(refusal([{ field: "curriculumids", message: "SERVER-TEXT" }]));
       const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`);

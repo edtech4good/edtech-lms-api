@@ -39,7 +39,8 @@ import { removeLearner } from "src/business/remove-learner";
 import { moveAnswer, moveLearner, pushMovedLearner } from "src/business/move-learner";
 import { editAnswer, editLearner, getLearnerDetails, pushEditedLearner } from "src/business/learner-details";
 import { assertEnrolmentFits } from "src/business/content-owner";
-import { GRADE_INVALID_MESSAGE, gradeOrRefuse } from "src/business/learner-grade";
+import { firstUnpublished, refusalOf, unpublishedField } from "src/business/enrolment-published";
+import { GRADE_INVALID_MESSAGE, resolveLearnerGrade } from "src/business/learner-grade";
 import { curriculums } from "src/models/data-models/curriculums";
 import { findOwnedSchool, findOwnedStandard, findOwnedStudent, resolveOwnedSchoolRef } from "src/business/school-scope";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
@@ -311,7 +312,12 @@ export class StudentController {
       if (gradeNamed !== undefined && gradeNamed.length > 36) {
         throw new ApiError(ErrorCode.INVALID_INPUT, GRADE_INVALID_MESSAGE, { fields: [{ field: "gradeid", message: GRADE_INVALID_MESSAGE }] });
       }
-      const learnerGradeid = await gradeOrRefuse({ curriculumid: _body.curriculumid[0], gradeid: gradeNamed, transaction: tnx });
+      // the published rule and the grade rule are both checked, and a file wrong on both names both fields
+      const unpublished = await firstUnpublished(_body.curriculumid, tnx);
+      const gradeResolved = await resolveLearnerGrade({ curriculumid: _body.curriculumid[0], gradeid: gradeNamed, transaction: tnx });
+      const fileRefusals = [...unpublishedField(unpublished, "curriculumid"), ...(gradeResolved.ok ? [] : [{ field: gradeResolved.field, message: gradeResolved.message }])];
+      if (fileRefusals.length > 0 || !gradeResolved.ok) throw refusalOf(fileRefusals, true);
+      const learnerGradeid = gradeResolved.gradeid;
       result = await new SchoolUserBusiness().createSchoolUser(
         _body.students.map(
           (x) =>

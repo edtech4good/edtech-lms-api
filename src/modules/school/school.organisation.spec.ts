@@ -46,8 +46,9 @@ const C2 = "c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2";
 const C3 = "c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3";
 const SCHOOL_IN_X = "5a5a5a5a-0000-4000-8000-00000000000a";
 const SCHOOL_IN_Y = "5b5b5b5b-0000-4000-8000-00000000000b";
-// The same Khmer school name in two organisations.
+// A Khmer school name, and a second one: a name is unique across every organisation (the learning server holds one table of schools).
 const SAME_NAME = "សាលាបឋមសិក្សាគំរូ";
+const OTHER_NAME = "សាលាបឋមសិក្សាគំរូ ២";
 
 type School = { schoolid: string; schoolname: string; countryid: string; organisationid: string | null; isdeleted: boolean; curriculums: string[] };
 let table: School[] = [];
@@ -108,7 +109,7 @@ describe("schools write their organisation", () => {
     lockCalls = [];
     table = [
       { schoolid: SCHOOL_IN_X, schoolname: SAME_NAME, countryid: C1, organisationid: X, isdeleted: false, curriculums: [] },
-      { schoolid: SCHOOL_IN_Y, schoolname: SAME_NAME, countryid: C1, organisationid: Y, isdeleted: false, curriculums: [] },
+      { schoolid: SCHOOL_IN_Y, schoolname: OTHER_NAME, countryid: C1, organisationid: Y, isdeleted: false, curriculums: [] },
     ];
     jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(transaction as never);
     // A rename also carries the new name to the four tables that hold a copy of it
@@ -116,8 +117,8 @@ describe("schools write their organisation", () => {
     for (const copy of [students, schoolusers, standards, schoolcontributedata]) {
       jest.spyOn(copy, "update").mockResolvedValue([0] as never);
     }
-    // The name-already-used rule is the database's unique index today; the
-    // fake table allows the same name in two organisations, as it will.
+    // The name-already-used rule is the database's unique index (every organisation, deleted rows too); the writes also
+    // ask for the name's holder, which the fake table answers.
     jest.spyOn(schools, "count").mockImplementation((async (o: { where: Record<string, unknown> }) =>
       "schoolname" in o.where ? 0 : table.filter((s) => rowMatches(s, o.where)).length) as never);
     jest.spyOn(schools, "findOne").mockImplementation((async (o: { where: unknown }) => {
@@ -157,10 +158,10 @@ describe("schools write their organisation", () => {
         expect(transaction.commit).toHaveBeenCalledTimes(1);
       });
 
-      it("two organisations may each have a school of the same name", async () => {
-        await create(callers[who], school({ schoolname: SAME_NAME })).expect(200);
-        expect(created[0]).toMatchObject({ schoolname: SAME_NAME, organisationid: X });
-        expect(table.filter((s) => s.schoolname === SAME_NAME).map((s) => s.organisationid).sort()).toEqual([X, Y].sort());
+      it("a name another organisation's school holds is refused: names are unique across organisations, as on the learning server", async () => {
+        const res = await create(callers[who], school({ schoolname: OTHER_NAME })).expect(409);
+        expect(res.body.errormessage).toBe("That school already exists.");
+        nothingWritten();
       });
 
       it("a body organisationid equal to X is accepted; any other is refused (403) and nothing is written", async () => {
