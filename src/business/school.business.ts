@@ -1,6 +1,7 @@
 import { col, fn, Op, Transaction, WhereOptions } from "sequelize";
 import { assertSameOwner, ownerOfCurriculum } from "./content-owner";
 import { cloudConfigured } from "./cloud-push";
+import { publicationStates } from "./curriculum-publication";
 import { assertNameNeverHeld } from "./school-name";
 
 export const SCHOOL_MOVE_MESSAGE = "A school can't be moved to another organisation yet. Create the school in the other organisation instead.";
@@ -481,13 +482,16 @@ export class SchoolBusiness {
   };
 
   getschoolcurriculums = async (schoolid: string, curriculumids: Array<string>) => {
+    // every curriculum's publication state in one query, however many there are
+    const states = await publicationStates(curriculumids);
     const data: Array<SchoolCurriculumBase> = [];
     for (const curriculumid of curriculumids) {
       const curriculum = await new CurriculumBusiness().getCurriculumbyid(curriculumid);
       data.push({
         schoolid: schoolid,
         curriculumid: curriculumid,
-        curriculumname: curriculum?.curriculumname as string
+        curriculumname: curriculum?.curriculumname as string,
+        publicationstatus: states.get(curriculumid)?.publicationstatus ?? "never",
       })
     }
     return data;

@@ -34,6 +34,9 @@ export class SchoolCurriculumBase {
   curriculumid: string = ""
   @ApiProperty()
   curriculumname: string = ""
+  /** The curriculum's latest publication, as GET curriculum/publication/:id names it. */
+  @ApiProperty({ enum: ["never", "published", "withdrawn"] })
+  publicationstatus: "never" | "published" | "withdrawn" = "never"
 }
 export class SchoolCurriculumResponse extends IResponse<Array<SchoolCurriculumBase>> {
   @ApiProperty({ type: [SchoolCurriculumBase] })

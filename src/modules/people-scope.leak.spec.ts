@@ -5,6 +5,7 @@ import { ThrottlerModule } from "@nestjs/throttler";
 import axios from "axios";
 import { sign } from "jsonwebtoken";
 import request from "supertest";
+import { curriculumpublications } from "src/models/data-models/curriculumpublications";
 import { Config, Logger } from "src/config";
 import { ORGANISATION_ADMIN_PERMISSIONS_20261002 } from "src/db/frozen/organisation-admin-20261002";
 import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
@@ -375,6 +376,23 @@ describe("people and schools are confined to the caller's organisation", () => {
     it.each(IN_X)("%s: X's school's curriculums", async (who) => {
       const res = await send(who, "get", `/school/${S_X}/curriculums`).expect(200);
       expect(res.body.data.map((c: Row) => c.curriculumid)).toEqual([CUR_X]);
+    });
+    it.each(IN_X)("%s: each curriculum carries its publication state (never, published, withdrawn), read in one query", async (who) => {
+      const NEVER = uuid(971);
+      const RETIRED = uuid(972);
+      db.add("curriculums", { curriculumid: NEVER, curriculumname: "មេរៀនមិនទាន់ផ្សព្វផ្សាយ", organisationid: X, curriculumstatus: true });
+      db.add("curriculums", { curriculumid: RETIRED, curriculumname: "មេរៀនដកចេញ", organisationid: X, curriculumstatus: true });
+      db.publish(RETIRED, X, "published", new Date(1000));
+      db.publish(RETIRED, X, "withdrawn", new Date(2000));
+      db.tables.schools.find((sc) => sc.schoolid === S_X)!.curriculums = [CUR_X, NEVER, RETIRED];
+      const queries = jest.spyOn(curriculumpublications, "findAll");
+      const res = await send(who, "get", `/school/${S_X}/curriculums`).expect(200);
+      expect(res.body.data).toEqual([
+        { schoolid: S_X, curriculumid: CUR_X, curriculumname: "ភាសាខ្មែរ ក", publicationstatus: "published" },
+        { schoolid: S_X, curriculumid: NEVER, curriculumname: "មេរៀនមិនទាន់ផ្សព្វផ្សាយ", publicationstatus: "never" },
+        { schoolid: S_X, curriculumid: RETIRED, curriculumname: "មេរៀនដកចេញ", publicationstatus: "withdrawn" },
+      ]);
+      expect(queries).toHaveBeenCalledTimes(1);
     });
     it.each(IN_X)("%s: Y's school, and the school with no organisation, are the 404 an id that is not there gets", async (who) => {
       await expectNotFoundLikeMissing(who, "get", `/school/${S_Y}/curriculums`, `/school/${MISSING}/curriculums`);
