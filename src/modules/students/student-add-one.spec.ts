@@ -57,6 +57,15 @@ const S_X2 = uuid(204); // a second school of X
 const CUR_X = uuid(301);
 const CUR_X2 = uuid(303);
 const CUR_Y = uuid(302);
+const CUR_TWO = uuid(304); // two grades
+const CUR_NONE = uuid(305); // no grade
+const CUR_DEL = uuid(306); // its only grade is deleted
+const G_X = uuid(601); // the one grade of CUR_X
+const G_X2 = uuid(602); // the one grade of CUR_X2
+const G_Y = uuid(603); // the one grade of CUR_Y
+const G_TWO_A = uuid(604);
+const G_TWO_B = uuid(605);
+const G_DEL = uuid(606);
 const K_X = uuid(501);
 const K_Y = uuid(502);
 const K_X2 = uuid(504); // a class of X's second school
@@ -110,6 +119,17 @@ const seed = () => {
   db.add("curriculums", { curriculumid: CUR_X, curriculumname: "ភាសាខ្មែរ ក", organisationid: X, curriculumstatus: true });
   db.add("curriculums", { curriculumid: CUR_X2, curriculumname: "ភាសាខ្មែរ គ", organisationid: X, curriculumstatus: true });
   db.add("curriculums", { curriculumid: CUR_Y, curriculumname: "ភាសាខ្មែរ ខ", organisationid: Y, curriculumstatus: true });
+  db.add("curriculums", { curriculumid: CUR_TWO, curriculumname: "ភាសាខ្មែរ ឃ", organisationid: X, curriculumstatus: true });
+  db.add("curriculums", { curriculumid: CUR_NONE, curriculumname: "ភាសាខ្មែរ ង", organisationid: X, curriculumstatus: true });
+  db.add("curriculums", { curriculumid: CUR_DEL, curriculumname: "ភាសាខ្មែរ ច", organisationid: X, curriculumstatus: true });
+  const grade = (gradeid: string, curriculumid: string, gradename: string, gradeorder: number, over: Row = {}) =>
+    db.add("grades", { gradeid, curriculumid, gradename, gradeorder, gradestatus: true, isdeleted: false, ...over });
+  grade(G_X, CUR_X, "ថ្នាក់ទី១", 1);
+  grade(G_X2, CUR_X2, "ថ្នាក់ទី១", 1);
+  grade(G_Y, CUR_Y, "ថ្នាក់ទី១", 1);
+  grade(G_TWO_A, CUR_TWO, "ថ្នាក់ទី១", 1);
+  grade(G_TWO_B, CUR_TWO, "ថ្នាក់ទី២", 2);
+  grade(G_DEL, CUR_DEL, "ថ្នាក់ទី១", 1, { isdeleted: true });
   db.add("schools", { schoolid: S_X, schoolname: "សាលា ក", organisationid: X, countryid: C1, curriculums: [CUR_X] });
   db.add("schools", { schoolid: S_X2, schoolname: "សាលា គ", organisationid: X, countryid: C1, curriculums: [CUR_X] });
   db.add("schools", { schoolid: S_Y, schoolname: "សាលា ខ", organisationid: Y, countryid: C2, curriculums: [CUR_Y] });
@@ -226,6 +246,7 @@ describe("adding one learner", () => {
         schoolid: S_X,
         curriculumid: CUR_X,
         curriculumids: [CUR_X],
+        gradeid: G_X,
         country: COUNTRY_X,
         city: "",
         state: "",
@@ -250,7 +271,62 @@ describe("adding one learner", () => {
       delete body.dateofbirth;
       const res = await send("X's Admin", "post", "/student/one", body).expect(201);
       expect(res.body.studentname).toBe(KHMER_FIRST);
-      expect(db.createdIn("students")[0]).toMatchObject({ curriculumid: CUR_X2, curriculumids: [CUR_X2, CUR_X] });
+      expect(db.createdIn("students")[0]).toMatchObject({ curriculumid: CUR_X2, curriculumids: [CUR_X2, CUR_X], gradeid: G_X2 });
+    });
+
+    describe("the grade", () => {
+      const add = (body: Row) => send("X's Admin", "post", "/student/one", body);
+      const gradeRefusal = (res: request.Response, message: string) => {
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe("INVALID_INPUT");
+        expect(res.body.fields).toEqual([{ field: "gradeid", message }]);
+        expect(transaction.commit).not.toHaveBeenCalled();
+      };
+      it("a curriculum with one grade and none named stores that grade", async () => {
+        await add(goodBody()).expect(201);
+        expect(db.createdIn("students")[0].gradeid).toBe(G_X);
+      });
+      it("a curriculum with two grades and none named is a 400 naming gradeid, nothing written", async () => {
+        gradeRefusal(await refuses("X's Admin", "/student/one", goodBody({ curriculumids: [CUR_TWO] })), "Choose a grade for this student.");
+      });
+      it.each([G_TWO_A, G_TWO_B])("a curriculum with two grades and %s named stores it", async (gradeid) => {
+        await add(goodBody({ curriculumids: [CUR_TWO], gradeid })).expect(201);
+        expect(db.createdIn("students")[0]).toMatchObject({ curriculumid: CUR_TWO, gradeid });
+      });
+      it("a grade of ANOTHER curriculum of the same organisation is a 400, nothing written", async () => {
+        gradeRefusal(await refuses("X's Admin", "/student/one", goodBody({ curriculumids: [CUR_X], gradeid: G_X2 })), "Choose a grade of this curriculum.");
+        gradeRefusal(await refuses("X's Admin", "/student/one", goodBody({ curriculumids: [CUR_TWO], gradeid: G_X })), "Choose a grade of this curriculum.");
+      });
+      it("the grade is one of the FIRST curriculum, not of a later one", async () => {
+        gradeRefusal(await refuses("X's Admin", "/student/one", goodBody({ curriculumids: [CUR_X, CUR_X2], gradeid: G_X2 })), "Choose a grade of this curriculum.");
+      });
+      it("another organisation's grade, and a grade that does not exist, are the same 400", async () => {
+        const foreign = await refuses("X's Admin", "/student/one", goodBody({ gradeid: G_Y }));
+        const missing = await refuses("X's Admin", "/student/one", goodBody({ gradeid: MISSING }));
+        gradeRefusal(foreign, "Choose a grade of this curriculum.");
+        expect(said(foreign)).toEqual(said(missing));
+      });
+      it("a deleted grade is a 400, named or not", async () => {
+        gradeRefusal(await refuses("X's Admin", "/student/one", goodBody({ curriculumids: [CUR_DEL], gradeid: G_DEL })), "Choose a grade of this curriculum.");
+        gradeRefusal(await refuses("X's Admin", "/student/one", goodBody({ curriculumids: [CUR_DEL] })), "This curriculum has no grade yet, so a learner can't be put in it.");
+      });
+      it("a curriculum with no grade is a 400, nothing written", async () => {
+        gradeRefusal(await refuses("X's Admin", "/student/one", goodBody({ curriculumids: [CUR_NONE] })), "This curriculum has no grade yet, so a learner can't be put in it.");
+      });
+      it.each([[5], [{}], [[G_X]], ["x".repeat(37)]])("a gradeid that is not an id (%j) is a 400 naming gradeid", async (gradeid) => {
+        gradeRefusal(await refuses("X's Admin", "/student/one", goodBody({ gradeid })), "Choose a grade of this curriculum.");
+      });
+      it.each([[""], [null]])("a blank gradeid (%j) counts as none", async (gradeid) => {
+        await add(goodBody({ gradeid })).expect(201);
+        expect(db.createdIn("students")[0].gradeid).toBe(G_X);
+      });
+      it("the push carries the stored grade", async () => {
+        mockZipEntries.length = 0;
+        await add(goodBody({ curriculumids: [CUR_TWO], gradeid: G_TWO_B })).expect(201);
+        expect(axios.put).toHaveBeenCalledTimes(1);
+        const sent = mockZipEntries[0].json.studentusers as Array<{ student?: Row }>;
+        expect(sent.map((r) => r.student?.gradeid)).toEqual([G_TWO_B]);
+      });
     });
 
     describe("validation", () => {
