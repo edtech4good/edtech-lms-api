@@ -1,5 +1,6 @@
 import { col, fn, Op, Transaction, WhereOptions } from "sequelize";
 import { assertSameOwner, ownerOfCurriculum } from "./content-owner";
+import { assertNameNeverHeld } from "./school-name";
 import { OrgContext } from "src/decorators/org.decorator";
 import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
@@ -191,6 +192,7 @@ export class SchoolBusiness {
       // Surrounding whitespace is never part of a school's name: a name stored
       // with it cannot be matched by the writers that look schools up by name.
       school.schoolname = school.schoolname.trim();
+      await assertNameNeverHeld(school.schoolname, null, transaction);
       school.isdeleted = false;
       school.created_by = user.lmsuserid;
       const created = await schools.create({ ...school, organisationid }, { transaction });
@@ -201,6 +203,9 @@ export class SchoolBusiness {
       throw e;
     }
   };
+  /** The organisation a school belongs to, deleted or not (null when the school is not there). */
+  organisationidOf = async (schoolid: string): Promise<string | null> =>
+    (await schools.findOne({ where: { schoolid }, attributes: ["organisationid"] }))?.organisationid ?? null;
   getschoolbyid = (schoolid: string) =>
     schools.findOne({ where: { schoolid, isdeleted: false }});
   getschoolall = async (paging: IMultiPaging, org: OrgContext) => {
@@ -282,7 +287,7 @@ export class SchoolBusiness {
    * (UPDATE) and then only COUNTS schools without a lock, so it never waits for a
    * school row; the other order (organisation then school) exists nowhere.
    */
-  updateschoolName = async (school: SchoolWrite, user: LmsUserToken, org: OrgContext) => {
+  updateschoolName = async (school: SchoolWrite, user: LmsUserToken, org: OrgContext, outcome?: { previousorganisationid?: string | null }) => {
     const requested = school.organisationid;
     scopeOf(org);
     const transaction = await dbinstance.getdbinstance().transaction();
@@ -312,8 +317,12 @@ export class SchoolBusiness {
         (id) => (tempdt.organisationid ?? null) !== (resulting ?? null) || !before.includes(id),
       );
       await assertCurriculumsFitOwner(resulting, attaching, transaction);
+      if (outcome) outcome.previousorganisationid = tempdt.organisationid ?? null;
       const previousname = tempdt.schoolname;
-      tempdt.schoolname = school.schoolname.trim();
+      const wantedname = school.schoolname.trim();
+      // only a name that is changing is checked: a school keeps the name it has
+      if (wantedname !== previousname) await assertNameNeverHeld(wantedname, tempdt.schoolid, transaction);
+      tempdt.schoolname = wantedname;
       tempdt.countryid = school.countryid;
       tempdt.curriculums = school.curriculums;
       tempdt.updated_at = new Date();

@@ -12,6 +12,7 @@ import { UNKNOWN_FIELD_MESSAGE } from "src/services/joi-message.service";
 import { changeAccount } from "./account-disable";
 import { CLASS_MESSAGE, classIdValue, curriculumIdsValue, invalid, pushOneAccount } from "./add-learner";
 import { assertEnrolmentFits } from "./content-owner";
+import { assertPublishedForEnrolment } from "./enrolment-published";
 import { nextCurriculumId } from "./next-curriculum-id";
 import { PushOutcome } from "./publish-push";
 import { findOwnedSchool, ownedSchoolIds, studentNotFound } from "./school-scope";
@@ -138,6 +139,7 @@ export const moveLearner = async (org: OrgContext, actor: string | undefined, sc
 
       if (errors.length > 0 || !target) throw invalid(errors, "Check the highlighted fields.");
       await assertEnrolmentFits(target.organisationid, input.curriculumids, tnx);
+      await assertPublishedForEnrolment(input.curriculumids, tnx);
 
       const now = new Date();
       await schoolusers.update(

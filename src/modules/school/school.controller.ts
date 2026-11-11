@@ -38,6 +38,7 @@ import { Permission } from "src/models/enums/permissions.enum";
 import { IMultiPaging } from "src/models/IPaging";
 import { ResponseBoolean } from "src/models/ResponseBoolean";
 import { LmsUserToken } from "src/models/token.model";
+import { pushSetAfterWrite, WithSetPush } from "src/business/publish-push";
 import { SchoolBusiness } from "../../business/school.business";
 import { resolveSchoolByNameForRead } from "../../business/school-identity";
 import { SchoolCreateResponse } from "./models/SchoolBase";
@@ -292,7 +293,7 @@ export class SchoolController {
     @Body() body: SchoolRequest,
     @User() user: LmsUserToken,
     @Org() org: OrgContext
-  ): Promise<SchoolCreateResponse> {
+  ): Promise<SchoolCreateResponse & WithSetPush> {
     const temp: SchoolWrite = {
       schoolname: body.schoolname,
       countryid: body.countryid,
@@ -307,6 +308,7 @@ export class SchoolController {
     return {
       error: false,
       data: data,
+      push: await pushSetAfterWrite([data.organisationid]),
     };
   }
 
@@ -333,11 +335,13 @@ export class SchoolController {
     @Param("schoolid") schoolid: string,
     @User() user: LmsUserToken,
     @Org() org: OrgContext,
-  ): Promise<ResponseBoolean> {
-    await new SchoolBusiness().deleteschool(schoolid, user, org);
+  ): Promise<ResponseBoolean & WithSetPush> {
+    const business = new SchoolBusiness();
+    await business.deleteschool(schoolid, user, org);
     return {
       error: false,
       data: true,
+      push: await pushSetAfterWrite([await business.organisationidOf(schoolid)]),
     };
   }
 
@@ -396,7 +400,8 @@ export class SchoolController {
     @Body() body: SchoolRequest,
     @User() user: LmsUserToken,
     @Org() org: OrgContext
-  ): Promise<SchoolCreateResponse> {
+  ): Promise<SchoolCreateResponse & WithSetPush> {
+    const before: { previousorganisationid?: string | null } = {};
     const data = await new SchoolBusiness().updateschoolName(<SchoolWrite>{
       schoolid: schoolid,
       schoolname: body.schoolname,
@@ -404,10 +409,12 @@ export class SchoolController {
       curriculums: body.curriculums,
       uitheme: body.uitheme,
       organisationid: body.organisationid
-    }, user, org);
+    }, user, org, before);
     return {
       error: false,
       data: data ? data : undefined,
+      // a platform move of the school sends both organisations' sets: the one that lost it and the one that has it now
+      push: await pushSetAfterWrite([before.previousorganisationid, data?.organisationid]),
     };
   }
 
@@ -436,7 +443,7 @@ export class SchoolController {
     @Body() body: SchoolLabelChanges,
     @User() user: LmsUserToken,
     @Org() org: OrgContext
-  ): Promise<SchoolCreateResponse> {
+  ): Promise<SchoolCreateResponse & WithSetPush> {
     // the keys are named one by one: what is passed on is never the request object itself
     const row = await new SchoolBusiness().updateLabels(
       schoolid,
@@ -447,6 +454,7 @@ export class SchoolController {
     return {
       error: false,
       data: withResolvedLabels(row.toJSON()),
+      push: await pushSetAfterWrite([row.organisationid]),
     };
   }
 

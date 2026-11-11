@@ -262,6 +262,22 @@ export class ContentFake {
     this.tables[table].push({ isdeleted: false, ...row });
   }
 
+  /**
+   * A publication of a curriculum: `published` (the default) or `withdrawn` (retired). A curriculum with no row of its own is
+   * `never published`; the latest by `publishedat` is the one that counts.
+   */
+  publish(curriculumid: string, organisationid: string | null, status: "published" | "withdrawn" = "published", publishedat: Date = new Date()) {
+    this.add("curriculumpublications", {
+      publicationid: `publication-${this.tables.curriculumpublications.length + 1}`,
+      curriculumid,
+      organisationid,
+      publishedat,
+      publishedby: "publisher",
+      status,
+      payloadhash: "hash",
+    });
+  }
+
   snapshot(): Record<string, Row[]> {
     return JSON.parse(JSON.stringify(this.tables));
   }

@@ -22,6 +22,7 @@ import {
   ApiTags,
   getSchemaPath,
 } from "@nestjs/swagger";
+import { pushSetAfterWrite, WithSetPush } from "src/business/publish-push";
 import { StandardBusiness } from "src/business/standard.business";
 import { findOwnedStandard, resolveOwnedSchoolRef } from "src/business/school-scope";
 import { Org, OrgContext, OrgOrServer } from "src/decorators/org.decorator";
@@ -128,7 +129,7 @@ export class StandardController {
     @Body() body: StandardRequest,
     @User() user: LmsUserToken,
     @Org() org: OrgContext,
-  ): Promise<StandardCreateResponse> {
+  ): Promise<StandardCreateResponse & WithSetPush> {
     const temp: standardsAttributes = {
       standardname: body.standardname,
       schoolid: body.schoolid,
@@ -141,6 +142,7 @@ export class StandardController {
     return {
       error: false,
       data: data,
+      push: await pushSetAfterWrite(await new StandardBusiness().organisationsOfSchools([data.schoolid])),
     };
   }
 
@@ -171,11 +173,14 @@ export class StandardController {
     @Param("standardid") standardid: string,
     @User() user: LmsUserToken,
     @Org() org: OrgContext,
-  ): Promise<ResponseBoolean> {
-    await new StandardBusiness().deletestandard(standardid, user, org);
+  ): Promise<ResponseBoolean & WithSetPush> {
+    const business = new StandardBusiness();
+    const deleted: { schoolid?: string } = {};
+    await business.deletestandard(standardid, user, org, deleted);
     return {
       error: false,
       data: true,
+      push: await pushSetAfterWrite(await business.organisationsOfSchools([deleted.schoolid])),
     };
   }
 
@@ -239,16 +244,20 @@ export class StandardController {
     @Body() body: StandardRequest,
     @User() user: LmsUserToken,
     @Org() org: OrgContext,
-  ): Promise<StandardCreateResponse> {
-    const data = await new StandardBusiness().updatestandardName(<standardsAttributes>{
+  ): Promise<StandardCreateResponse & WithSetPush> {
+    const business = new StandardBusiness();
+    const before: { previousschoolid?: string } = {};
+    const data = await business.updatestandardName(<standardsAttributes>{
       standardid: standardid,
       standardname: body.standardname,
       schoolid: body.schoolid,
       schoolname: '',
-    }, user, org);
+    }, user, org, before);
     return {
       error: false,
       data: data ? data : undefined,
+      // a class moved to another school sends the sets of the organisations of both schools
+      push: await pushSetAfterWrite(await business.organisationsOfSchools([before.previousschoolid, data?.schoolid])),
     };
   }
 

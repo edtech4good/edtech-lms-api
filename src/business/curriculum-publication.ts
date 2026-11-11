@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { Op } from "sequelize";
+import { Op, Transaction } from "sequelize";
 import { v4 as uuidv4 } from "uuid";
 import { OrgContext } from "src/decorators/org.decorator";
 import { ApiError } from "src/models/ApiError";
@@ -698,13 +698,14 @@ interface LightRow {
 }
 
 /** The latest publication of each of the curricula, without its payload or its summary. */
-const latestOf = async (curriculumids: string[]): Promise<Map<string, LightRow>> => {
+const latestOf = async (curriculumids: string[], transaction?: Transaction): Promise<Map<string, LightRow>> => {
   const latest = new Map<string, LightRow>();
   if (curriculumids.length === 0) return latest;
   const rows = await curriculumpublications.findAll({
     where: { curriculumid: { [Op.in]: curriculumids } },
     attributes: [...LIGHT],
     order: [["publishedat", "DESC"]],
+    transaction,
   });
   for (const row of rows) {
     if (!latest.has(row.curriculumid)) latest.set(row.curriculumid, row as unknown as LightRow);
@@ -730,9 +731,12 @@ const stateOf = (latest: LightRow | undefined): PublicationState =>
         publicationstatus: latest.status,
       };
 
-/** The publication state of each curriculum, in one query (no payloads). A curriculum with no publication is `never`. */
-export const publicationStates = async (curriculumids: string[]): Promise<Map<string, PublicationState>> => {
-  const latest = await latestOf(curriculumids);
+/**
+ * The publication state of each curriculum, in one query (no payloads). A curriculum with no publication is `never`. Given a
+ * `transaction` the read runs on it, so a caller inside a transaction never asks the pool for a second connection.
+ */
+export const publicationStates = async (curriculumids: string[], transaction?: Transaction): Promise<Map<string, PublicationState>> => {
+  const latest = await latestOf(curriculumids, transaction);
   return new Map(curriculumids.map((id) => [id, stateOf(latest.get(id))]));
 };
 

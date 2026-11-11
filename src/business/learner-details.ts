@@ -22,6 +22,7 @@ import {
   pushOneAccount,
 } from "./add-learner";
 import { assertEnrolmentFits } from "./content-owner";
+import { assertPublishedForEnrolment } from "./enrolment-published";
 import { nextCurriculumId } from "./next-curriculum-id";
 import { scopeOf } from "./org-scope";
 import { PushOutcome } from "./publish-push";
@@ -206,6 +207,7 @@ export const editLearner = async (org: OrgContext, actor: string | undefined, sc
         throw invalid([{ field: "curriculumids", message: "Choose curricula that exist." }]);
       }
       await assertEnrolmentFits(school.organisationid, input.curriculumids, tnx);
+      await assertPublishedForEnrolment(input.curriculumids, tnx);
       const learner = await students.findOne({ where: { schooluserid: login.schooluserid, isdeleted: false }, transaction: tnx });
       if (!learner) throw studentNotFound();
       await students.update(

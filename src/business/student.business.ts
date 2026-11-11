@@ -21,6 +21,7 @@ import { dbinstance } from "src/services/dbservice";
 import {  IPaging } from '../models/IPaging';
 import { buildWhere } from '../services/util.service';
 import { assertEnrolmentFits, ownerOfSchool } from "./content-owner";
+import { assertPublishedForEnrolment } from './enrolment-published';
 import { nextCurriculumId } from "./next-curriculum-id";
 import { isSameSchoolName, normaliseSchoolName, withSchoolIds } from "./school-identity";
 import { andInOwnedSchools, findOwnedStudent, requireOwnedSchoolByName } from "./school-scope";
@@ -771,6 +772,7 @@ WHERE
       // refusal a name nobody holds gets, before any row is written
       if (!named.complete) throw new ApiError(ErrorCode.INVALID_INPUT, "One or more of those curriculums doesn't exist.", { fields: [{ field: 'curriculums', message: "One or more of those curriculums doesn't exist." }] });
       await assertEnrolmentFits(schoolOwner, named.ids, transaction);
+      await assertPublishedForEnrolment(named.ids, transaction, 'curriculums');
     }
     for (const [rowindex, x] of studentdata.entries()) {
       const student = await students.findOne({

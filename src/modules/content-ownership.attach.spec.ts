@@ -80,6 +80,7 @@ const makeFixture = (owner: string | null) => {
     qtag: `q${tag}`, dtag: `d${tag}`,
   };
   db.add("curriculums", { curriculumid: f.curriculum, curriculumname: `c-${tag}`, curriculumstatus: true, organisationid: owner, subjectid: f.subject });
+  db.publish(f.curriculum, owner);
   db.add("subjects", { subjectid: f.subject, subjectname: `s-${tag}`, subjectstatus: true, organisationid: owner });
   db.add("grades", { gradeid: f.grade, curriculumid: f.curriculum });
   db.add("levels", { levelid: f.level, gradeid: f.grade });

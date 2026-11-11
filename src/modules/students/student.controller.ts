@@ -38,6 +38,7 @@ import { removeLearner } from "src/business/remove-learner";
 import { moveAnswer, moveLearner, pushMovedLearner } from "src/business/move-learner";
 import { editAnswer, editLearner, getLearnerDetails, pushEditedLearner } from "src/business/learner-details";
 import { assertEnrolmentFits } from "src/business/content-owner";
+import { assertPublishedForEnrolment } from "src/business/enrolment-published";
 import { findOwnedSchool, findOwnedStandard, findOwnedStudent, resolveOwnedSchoolRef } from "src/business/school-scope";
 import { SchoolUserBusiness } from "src/business/schooluser.business";
 import { StudentBusiness } from "src/business/student.business";
@@ -287,6 +288,7 @@ export class StudentController {
       // Enrolling is a link between the school and each curriculum: refused, before anything is written, when they have different owners
       // (the school is the row read just above).
       await assertEnrolmentFits(school.organisationid, _body.curriculumid, tnx);
+      await assertPublishedForEnrolment(_body.curriculumid, tnx, "curriculumid");
       result = await new SchoolUserBusiness().createSchoolUser(
         _body.students.map(
           (x) =>

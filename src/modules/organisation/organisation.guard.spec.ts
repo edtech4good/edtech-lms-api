@@ -6,6 +6,7 @@ import { Config, Logger } from "src/config";
 import { GlobalExceptionFilter } from "src/filters/global-exception.filter";
 import { Role } from "src/models/enums";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
+import * as publishPush from "src/business/publish-push";
 import { OrganisationController } from "./organisation.controller";
 
 /**
@@ -264,6 +265,18 @@ describe("Organisation routes: staff token + Super Admin role + permission", () 
     it("passes the platform with update_organisation, and the value reaches the business call as a boolean", async () => {
       await request(app.getHttpServer()).put(path).set("Authorization", platformWithAll).send(body).expect(200);
       expect(business.updateorganisation.mock.calls[0][1]).toMatchObject({ requireLessonQuizPass: true });
+    });
+
+    it("sends the organisation's set after the save and says so; an update that leaves the switch out sends nothing and says nothing", async () => {
+      const push = jest.spyOn(publishPush, "pushSetAfterWrite").mockResolvedValue({ status: "failed", message: "Saved, but the learning server did not answer. Run Sync Content on the Curricula screen to send it again." });
+      const sent = await request(app.getHttpServer()).put(path).set("Authorization", platformWithAll).send(body).expect(200);
+      expect(push).toHaveBeenCalledTimes(1);
+      expect(push).toHaveBeenCalledWith([ORG_ID]);
+      expect(sent.body.push).toEqual({ status: "failed", message: "Saved, but the learning server did not answer. Run Sync Content on the Curricula screen to send it again." });
+      const quiet = await request(app.getHttpServer()).put(path).set("Authorization", platformWithAll).send(validUpdate).expect(200);
+      expect(push).toHaveBeenCalledTimes(1);
+      expect(quiet.body).not.toHaveProperty("push");
+      push.mockRestore();
     });
 
     it("passes false through as false, and leaves it undefined when omitted", async () => {

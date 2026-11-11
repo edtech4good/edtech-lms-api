@@ -142,6 +142,8 @@ const seed = () => {
   db.add("organisationcountry", { organisationcountryid: uuid(702), organisationid: Y, countryid: C2 });
   db.add("curriculums", { curriculumid: CUR_X, curriculumname: "ភាសាខ្មែរ ក", organisationid: X, curriculumstatus: true });
   db.add("curriculums", { curriculumid: CUR_Y, curriculumname: "ភាសាខ្មែរ ខ", organisationid: Y, curriculumstatus: true });
+  db.publish(CUR_X, X);
+  db.publish(CUR_Y, Y);
   db.add("schools", { schoolid: S_X, schoolname: NAME_X, organisationid: X, countryid: C1, curriculums: [CUR_X] });
   db.add("schools", { schoolid: S_Y, schoolname: NAME_Y, organisationid: Y, countryid: C2, curriculums: [CUR_Y] });
   db.add("schools", { schoolid: S_U, schoolname: NAME_U, organisationid: null, countryid: C3, curriculums: [] });
@@ -911,6 +913,31 @@ describe("people and schools are confined to the caller's organisation", () => {
       expect(said(unowned)).toEqual(said(missing));
       db.nothingCreated();
     });
+    describe("only a published curriculum can be enrolled", () => {
+      const NEVER = uuid(951);
+      const RETIRED = uuid(952);
+      const unpublishedRule = (name: string) => [{ field: "curriculumid", message: `Publish ${name} first, or choose another curriculum.` }];
+      beforeEach(() => {
+        db.add("curriculums", { curriculumid: NEVER, curriculumname: "មេរៀនមិនទាន់ផ្សព្វផ្សាយ", organisationid: X, curriculumstatus: true });
+        db.add("curriculums", { curriculumid: RETIRED, curriculumname: "មេរៀនដកចេញ", organisationid: X, curriculumstatus: true });
+        db.publish(RETIRED, X, "published", new Date(1000));
+        db.publish(RETIRED, X, "withdrawn", new Date(2000));
+      });
+      it.each(IN_X)("%s: a curriculum never published refuses the whole file, naming it, and nothing is written or sent", async (who) => {
+        const res = await refuses(who, "post", "/student/create?cloud=true", body(S_X, NEVER, K_X));
+        expect(res.status).toBe(400);
+        expect(res.body.errormessage).toBe("Publish មេរៀនមិនទាន់ផ្សព្វផ្សាយ first, or choose another curriculum.");
+        expect(res.body.fields).toEqual(unpublishedRule("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"));
+        expect(axios.put).not.toHaveBeenCalled();
+        db.nothingCreated();
+      });
+      it("a retired curriculum is refused the same way, beside a published one too", async () => {
+        const res = await refuses("X's Admin", "post", "/student/create", { ...body(S_X, RETIRED, K_X), curriculumid: [CUR_X, RETIRED] });
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual(unpublishedRule("មេរៀនដកចេញ"));
+        db.nothingCreated();
+      });
+    });
     it.each(IN_X)("%s: with ?cloud=true the school is checked before anything is pushed: Y's school is a 404 and nothing is sent", async (who) => {
       const res = await refuses(who, "post", "/student/create?cloud=true", body(S_Y, CUR_Y, K_Y));
       expect(res.status).toBe(404);
@@ -1285,6 +1312,25 @@ describe("people and schools are confined to the caller's organisation", () => {
     const yRow = () => rowFor(STU_Y, USR_Y, "learnery", NAME_Y, "ភាសាខ្មែរ ខ", "ថ្នាក់ទី២");
     const firstName = (id: string) => db.tables.students.find((s) => s.studentid === id)!.studentfirstname;
     const classOf = (id: string) => db.tables.students.find((s) => s.studentid === id)!.standard;
+    describe("only a published curriculum can be enrolled", () => {
+      const rule = (name: string) => [{ field: "curriculums", message: `Publish ${name} first, or choose another curriculum.` }];
+      beforeEach(() => {
+        db.add("curriculums", { curriculumid: uuid(961), curriculumname: "មេរៀនមិនទាន់ផ្សព្វផ្សាយ", organisationid: X, curriculumstatus: true });
+        db.add("curriculums", { curriculumid: uuid(962), curriculumname: "មេរៀនដកចេញ", organisationid: X, curriculumstatus: true });
+        db.publish(uuid(962), X, "published", new Date(1000));
+        db.publish(uuid(962), X, "withdrawn", new Date(2000));
+      });
+      it.each(IN_X)("%s: a curriculum never published refuses the whole file, naming it, and nothing is written", async (who) => {
+        const res = await refuses(who, "put", "/student/update", { students: [ownRow(), { ...ownRow(), curriculums: "មេរៀនមិនទាន់ផ្សព្វផ្សាយ" }] });
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual(rule("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"));
+      });
+      it("a retired curriculum is refused the same way, beside a published one too", async () => {
+        const res = await refuses("X's Admin", "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាខ្មែរ ក/មេរៀនដកចេញ" }] });
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual(rule("មេរៀនដកចេញ"));
+      });
+    });
     it.each(IN_X)("%s: a class that is deleted is not one a learner can be put on: the answer is the one a class nobody has gets, and nothing is written", async (who) => {
       const unknown = await refuses(who, "put", "/student/update", { students: [{ ...ownRow(), standard: "ថ្នាក់ដែលមិនមាន" }] });
       expect(unknown.status).toBe(400);
@@ -1303,6 +1349,7 @@ describe("people and schools are confined to the caller's organisation", () => {
         const curriculumsOf = (id: string) => db.tables.students.find((s) => s.studentid === id)!.curriculumids;
     it.each(IN_X)("%s: a curriculum of Y's with the same name as X's is not X's: the file enrols X's learner on X's, and writes nothing about Y", async (who) => {
       db.add("curriculums", { curriculumid: uuid(303), curriculumname: "ភាសាខ្មែរ ក", organisationid: Y, curriculumstatus: true });
+      db.publish(uuid(303), Y);
       // (and a curriculum of X's that is deleted, of the same name, is not one either)
       db.add("curriculums", { curriculumid: uuid(304), curriculumname: "ភាសាខ្មែរ ក", organisationid: X, curriculumstatus: true, isdeleted: true });
       const before = db.snapshot();
@@ -1315,8 +1362,10 @@ describe("people and schools are confined to the caller's organisation", () => {
     });
     describe("a platform user not acting names curriculums by name", () => {
       const NOT_ACTING = "a platform user not acting" as Who;
-      const unowned = (n: number, name: string) =>
+      const unowned = (n: number, name: string) => {
         db.add("curriculums", { curriculumid: uuid(n), curriculumname: name, organisationid: null, curriculumstatus: true });
+        db.publish(uuid(n), null);
+      };
       const refusedAs = async (rows: object[]) => {
         const res = await refuses(NOT_ACTING, "put", "/student/update", { students: rows });
         const nobody = await refuses(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "ភាសាដែលមិនមាន" }] });
@@ -1327,6 +1376,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       it("an owned curriculum and an unowned namesake: the owner's is the one meant (200), and the learner is enrolled on it alone", async () => {
         // (listed before the owner's, so that taking the first row found would be the wrong one)
         db.tables.curriculums.unshift({ curriculumid: uuid(305), curriculumname: "ភាសាខ្មែរ ក", organisationid: null, curriculumstatus: true, isdeleted: false });
+        db.publish(uuid(305), null);
         await send(NOT_ACTING, "put", "/student/update", { students: [ownRow()] }).expect(200);
         expect(curriculumsOf(STU_X)).toEqual([CUR_X]);
       });
@@ -1346,6 +1396,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       });
             it("a name written twice with a different case or spacing is still one curriculum (200, one id)", async () => {
         db.add("curriculums", { curriculumid: uuid(308), curriculumname: "math", organisationid: X, curriculumstatus: true });
+        db.publish(uuid(308), X);
         await send(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: "Math/ MATH " }] }).expect(200);
         expect(curriculumsOf(STU_X)).toEqual([uuid(308)]);
       });
@@ -1362,13 +1413,16 @@ describe("people and schools are confined to the caller's organisation", () => {
       });
       it("names are compared as text is everywhere (trim, NFC, lower-case): the owner's 'math' is the one a file's ' Math ' means, not an unowned 'Math'", async () => {
         db.add("curriculums", { curriculumid: uuid(308), curriculumname: "math", organisationid: X, curriculumstatus: true });
+        db.publish(uuid(308), X);
         unowned(309, "Math");
         await send(NOT_ACTING, "put", "/student/update", { students: [{ ...ownRow(), curriculums: " Math " }] }).expect(200);
         expect(curriculumsOf(STU_X)).toEqual([uuid(308)]);
       });
       it("two of the owner's curriculums differ only in case: ambiguous, the same 400", async () => {
         db.add("curriculums", { curriculumid: uuid(308), curriculumname: "math", organisationid: X, curriculumstatus: true });
+        db.publish(uuid(308), X);
         db.add("curriculums", { curriculumid: uuid(310), curriculumname: "MATH", organisationid: X, curriculumstatus: true });
+        db.publish(uuid(310), X);
         await refusedAs([{ ...ownRow(), curriculums: "Math" }]);
       });
       it("one name that resolves and one that does not: the same 400, and nothing is written", async () => {
@@ -1397,6 +1451,7 @@ describe("people and schools are confined to the caller's organisation", () => {
       const crossRow = () => rowFor(STU_X, USR_X, "learnerx", NAME_Y, "ភាសាខ្មែរ ខ", "ថ្នាក់ទី២");
       beforeEach(() => {
         db.add("curriculums", { curriculumid: CUR_X2, curriculumname: "ភាសាខ្មែរ គ", organisationid: X, curriculumstatus: true });
+        db.publish(CUR_X2, X);
         db.add("schools", { schoolid: S_X2, schoolname: NAME_X2, organisationid: X, countryid: C1, curriculums: [CUR_X] });
         db.add("standards", { standardid: K_X2, standardname: "ថ្នាក់ទី៥", schoolid: S_X2, schoolname: NAME_X2 });
       });

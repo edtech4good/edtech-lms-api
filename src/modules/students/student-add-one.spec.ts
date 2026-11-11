@@ -14,6 +14,7 @@ import { SchoolRole } from "src/models/enums/school.role.enum";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
 import { dbinstance } from "src/services/dbservice";
 import { ContentFake } from "src/test-support/content-fake";
+import * as publishedContent from "src/business/published-content";
 import { StudentController } from "./student.controller";
 
 /**
@@ -110,6 +111,9 @@ const seed = () => {
   db.add("curriculums", { curriculumid: CUR_X, curriculumname: "ភាសាខ្មែរ ក", organisationid: X, curriculumstatus: true });
   db.add("curriculums", { curriculumid: CUR_X2, curriculumname: "ភាសាខ្មែរ គ", organisationid: X, curriculumstatus: true });
   db.add("curriculums", { curriculumid: CUR_Y, curriculumname: "ភាសាខ្មែរ ខ", organisationid: Y, curriculumstatus: true });
+  db.publish(CUR_X, X);
+  db.publish(CUR_X2, X);
+  db.publish(CUR_Y, Y);
   db.add("schools", { schoolid: S_X, schoolname: "សាលា ក", organisationid: X, countryid: C1, curriculums: [CUR_X] });
   db.add("schools", { schoolid: S_X2, schoolname: "សាលា គ", organisationid: X, countryid: C1, curriculums: [CUR_X] });
   db.add("schools", { schoolid: S_Y, schoolname: "សាលា ខ", organisationid: Y, countryid: C2, curriculums: [CUR_Y] });
@@ -384,6 +388,44 @@ describe("adding one learner", () => {
       });
     });
 
+    describe("only a published curriculum can be enrolled", () => {
+      const NEVER = uuid(901);
+      const RETIRED = uuid(902);
+      const AGAIN = uuid(903);
+      const ruleFor = (name: string) => [{ field: "curriculumids", message: `Publish ${name} first, or choose another curriculum.` }];
+      beforeEach(() => {
+        db.add("curriculums", { curriculumid: NEVER, curriculumname: "មេរៀនមិនទាន់ផ្សព្វផ្សាយ", organisationid: X, curriculumstatus: true });
+        db.add("curriculums", { curriculumid: RETIRED, curriculumname: "មេរៀនដកចេញ", organisationid: X, curriculumstatus: true });
+        db.publish(RETIRED, X, "published", new Date(1000));
+        db.publish(RETIRED, X, "withdrawn", new Date(2000));
+        db.add("curriculums", { curriculumid: AGAIN, curriculumname: "មេរៀនផ្សព្វផ្សាយម្ដងទៀត", organisationid: X, curriculumstatus: true });
+        db.publish(AGAIN, X, "published", new Date(1000));
+        db.publish(AGAIN, X, "withdrawn", new Date(2000));
+        db.publish(AGAIN, X, "published", new Date(3000));
+      });
+      it.each(IN_X)("%s: a curriculum never published is a 400 on curriculumids naming it, and nothing is written or sent", async (who) => {
+        const res = await refuses(who, "/student/one", goodBody({ curriculumids: [NEVER] }));
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe("INVALID_INPUT");
+        expect(res.body.errormessage).toBe("Publish មេរៀនមិនទាន់ផ្សព្វផ្សាយ first, or choose another curriculum.");
+        expect(res.body.fields).toEqual(ruleFor("មេរៀនមិនទាន់ផ្សព្វផ្សាយ"));
+      });
+      it("a curriculum whose latest publication is a retirement is refused the same way, beside a published one too", async () => {
+        for (const curriculumids of [[RETIRED], [CUR_X, RETIRED]]) {
+          const res = await refuses("X's Admin", "/student/one", goodBody({ curriculumids: curriculumids }));
+          expect(res.status).toBe(400);
+          expect(res.body.fields).toEqual(ruleFor("មេរៀនដកចេញ"));
+        }
+      });
+      it("a curriculum published again after a retirement is accepted, and so is a published one", async () => {
+        for (const curriculumids of [[AGAIN], [CUR_X]]) {
+          const res = await send("X's Admin", "post", "/student/one", goodBody({ curriculumids, schoolusername: `pub${(curriculumids as string[]).join("").length}${curriculumids[0] === AGAIN ? "a" : "b"}` }));
+          expect(res.status).toBe(201);
+          expect(res.body.push.status).toBe("pushed");
+        }
+      });
+    });
+
     describe("the push to the student server", () => {
       it("sends only this learner's school roster, with the organisation and a timeout", async () => {
         mockZipEntries.length = 0;
@@ -449,6 +491,73 @@ describe("adding one learner", () => {
         const res = await send("X's Admin", "post", "/student/one", goodBody()).expect(201);
         expect(res.body.push.status).toBe("failed");
         expect(res.body.schoolusername).toBe("sokha1");
+      });
+      describe("a school or class the learning server lacks is sent once, then the learner again", () => {
+        const refusal = (field: string) =>
+          Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { errormessage: "SERVER-TEXT", fields: [{ field, message: "SERVER-TEXT" }] } } });
+        // what each PUT went to, in order: students, master (the organisation's set), students again
+        const kinds = () => (axios.put as jest.Mock).mock.calls.map((c) => String(c[0]).split("/import/")[1]);
+        const answers = (...steps: Array<"ok" | Error>) => {
+          const queue = [...steps];
+          (axios.put as jest.Mock).mockReset().mockImplementation(async () => {
+            const next = queue.shift() ?? "ok";
+            if (next instanceof Error) throw next;
+            return { status: 200, data: {} };
+          });
+        };
+        beforeEach(() => {
+          jest.spyOn(publishedContent, "buildPublishedOrganisationContent").mockResolvedValue({ organisationid: X } as never);
+        });
+        it.each(["schoolid", "schoolname", "standard"])("a refusal naming %s: the organisation's set goes first, then the learner, and the answer is the usual success", async (field) => {
+          answers(refusal(field), "ok", "ok");
+          const res = await send("X's Admin", "post", "/student/one", goodBody()).expect(201);
+          expect(kinds()).toEqual(["students", "master", "students"]);
+          expect((axios.put as jest.Mock).mock.calls[1][2].headers["X-Organisation-Id"]).toBe(X);
+          expect(res.body.push).toEqual({ status: "pushed", message: "Added. The learner can sign in now." });
+          expect(db.createdIn("schoolusers")).toHaveLength(1);
+        });
+        it("a second refusal says the learning server lacks the school, class or curriculum; the set is not sent a second time", async () => {
+          answers(refusal("schoolid"), "ok", refusal("standard"));
+          const res = await send("X's Admin", "post", "/student/one", goodBody()).expect(201);
+          expect(kinds()).toEqual(["students", "master", "students"]);
+          expect(res.body.push.status).toBe("failed");
+          expect(res.body.push.message).toBe("Saved, but the learning server doesn't have this school, class or curriculum yet. Run Sync Content, then Sync Students for this school.");
+          expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
+        });
+        it("a refusal naming the curriculum is not healed: nothing is sent but the learner", async () => {
+          for (const field of ["curriculumids", "curriculumid"]) {
+            answers(refusal(field));
+            const res = await send("X's Admin", "post", "/student/one", goodBody({ schoolusername: `cur${field.length}` })).expect(201);
+            expect(kinds()).toEqual(["students"]);
+            expect(res.body.push.message).toContain("doesn't have this school, class or curriculum yet");
+          }
+        });
+        it("when the set cannot be sent the learner is not sent again, and the words are the missing-refs ones", async () => {
+          answers(refusal("schoolid"), Object.assign(new Error("connect ECONNREFUSED"), { isAxiosError: true }));
+          const res = await send("X's Admin", "post", "/student/one", goodBody()).expect(201);
+          expect(kinds()).toEqual(["students", "master"]);
+          expect(res.body.push.status).toBe("failed");
+          expect(res.body.push.message).toContain("doesn't have this school, class or curriculum yet");
+        });
+        it("when the second try gets no answer the words are the learning server did not answer", async () => {
+          answers(refusal("schoolid"), "ok", Object.assign(new Error("timeout of 15000ms exceeded"), { isAxiosError: true, code: "ECONNABORTED" }));
+          const res = await send("X's Admin", "post", "/student/one", goodBody()).expect(201);
+          expect(res.body.push.message).toBe("The account was saved, but the learning server did not answer. Run Sync Students for this school on the Schools screen.");
+        });
+        it("a refusal that names another field is not healed", async () => {
+          answers(refusal("genderid"));
+          await send("X's Admin", "post", "/student/one", goodBody()).expect(201);
+          expect(kinds()).toEqual(["students"]);
+        });
+        it("both tries are logged, with the fields the learning server named and never its text", async () => {
+          answers(refusal("schoolid"), "ok", "ok");
+          jest.spyOn(Logger, "info").mockImplementation(() => Logger);
+          await send("X's Admin", "post", "/student/one", goodBody()).expect(201);
+          const logged = (Logger.info as jest.Mock).mock.calls;
+          expect(logged.some((c) => String(c[0]).includes("lacks the school or class") && JSON.stringify(c[1]).includes("schoolid"))).toBe(true);
+          expect(logged.some((c) => String(c[0]).includes("went through after"))).toBe(true);
+          expect(JSON.stringify(logged)).not.toContain("SERVER-TEXT");
+        });
       });
       it("is skipped when no student server is set up", async () => {
         rpi.cloud = undefined;
