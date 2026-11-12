@@ -191,6 +191,7 @@ const seed = () => {
       const n = Number(l.id.slice(-12)) * 10;
       db.add("studentlessonsprogress", { studentlessonprogressid: uuid(n + 1), studentid: l.id, lessonid: t.lesson, levelid: t.level, gradeid: t.grade, curid: t.curriculum });
       db.add("studentlevelsprogress", { studentlevelprogressid: uuid(n + 2), studentid: l.id, levelid: t.level, gradeid: t.grade, curid: t.curriculum });
+      db.add("studentawards", { studentawardid: uuid(n + 8), studentid: l.id, levelid: t.level, gradeid: t.grade, curid: t.curriculum, earnedat: new Date("2024-03-01T10:00:00Z"), earnedat_approximate: false });
       db.add("studentgradesprogress", { studentgradeprogressid: uuid(n + 3), studentid: l.id, gradeid: t.grade, curriculumid: t.curriculum });
       // a lesson quiz result (progresstype 2) and a level quiz result
       db.add("studentprogress", {
@@ -596,6 +597,93 @@ describe("reports are confined to the caller's organisation", () => {
       const res = await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }])).expect(200);
       expect(idsOf(data(res), "levelid")).toEqual([TX.level]);
       expect(learnerOf(res)).toMatchObject({ studentfirstname: TX.learners[0].first });
+    });
+    it.each(IN_X)("%s: another organisation's learner, and the unowned one, answer as one that is not there", async (who) => {
+      const absent = await asAbsent(who, "post", asking(path, "studentid"), [TY.learners[0].id, TU.learners[0].id]);
+      expect(absent.status).toBe(200);
+      expect(absent.body.data).toEqual({ data: [], total: 0, student: null, pageindex: 1, pagesize: 20 });
+    });
+    it.each(IN_X)("%s: a grade of another organisation, with X's learner, answers as a grade that is not there", async (who) => {
+      const absent = await asAbsent(who, "post", asking(path, "gradeid", [{ key: "studentid", value: TX.learners[0].id }]), [TY.grade, TU.grade]);
+      expect(absent.status).toBe(200);
+    });
+    it("a platform user not acting: reaches every organisation's learners, and the unowned one", async () => {
+      const y = await send(NOT_ACTING, "post", path, page([{ key: "studentid", value: TY.learners[0].id }])).expect(200);
+      expect(idsOf(data(y), "levelid")).toEqual([TY.level]);
+      expect(learnerOf(y)).toMatchObject({ studentfirstname: TY.learners[0].first });
+      const u = await send(NOT_ACTING, "post", path, page([{ key: "studentid", value: TU.learners[0].id }])).expect(200);
+      expect(learnerOf(u)).toMatchObject({ studentfirstname: TU.learners[0].first });
+    });
+    it.each(IN_X)("%s: a learner of X enrolled on a curriculum that is not X's reads none of its content", async (who) => {
+      const [y, u] = await enrolments(async () => said(await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }]))));
+      expect([y.status, u.status]).toEqual([200, 200]);
+      expect(JSON.stringify(y)).not.toContain(TY.schoolname);
+      expect(JSON.stringify(u)).not.toContain(TU.schoolname);
+    });
+    fixedLearner(
+      path,
+      page(),
+      (res) => expect(learnerOf(res)).toMatchObject({ studentfirstname: "សាកល្បង" }),
+      (res) => expect(learnerOf(res)).toMatchObject({ studentfirstname: "សាកល្បង" }),
+    );
+  });
+
+  describe("POST /report/student-awards", () => {
+    const path = "/report/student-awards";
+    const learnerOf = (res: request.Response) => (res.body.data as { student: Row | null }).student;
+    it.each(IN_X)("%s: X's learner lists X's content and the learner, none of Y's", async (who) => {
+      const res = await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }])).expect(200);
+      expect(idsOf(data(res), "levelid")).toEqual([TX.level]);
+      expect(learnerOf(res)).toMatchObject({ studentfirstname: TX.learners[0].first });
+    });
+    describe("a stored award names content as it was when it was earned", () => {
+      const OTHER_GRADE = uuid(880001);
+      const OTHER_LEVEL = uuid(880002);
+      const award = (levelid: string, gradeid: string, curid: string) =>
+        db.add("studentawards", { studentawardid: uuid(880100 + db.tables.studentawards.length), studentid: TX.learners[0].id, levelid, gradeid, curid, earnedat: new Date("2024-04-01T10:00:00Z"), earnedat_approximate: false });
+      const gradeNameOf = (gradeid: string) => db.tables.grades.find((g) => g.gradeid === gradeid)!.gradename;
+      const shown = async (who: (typeof IN_X)[number]) => {
+        const res = await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }])).expect(200);
+        expect(JSON.stringify(res.body)).not.toContain(TY.schoolname);
+        expect(JSON.stringify(res.body)).not.toContain(TU.schoolname);
+        return res;
+      };
+      beforeEach(() => {
+        db.add("grades", { gradeid: OTHER_GRADE, gradename: "ថ្នាក់ទី២", gradeorder: 2, gradestatus: true, curriculumid: TX.curriculum });
+        db.add("levels", { levelid: OTHER_LEVEL, levelname: "កម្រិតទី២", levelorder: 2, levelstatus: true, gradeid: OTHER_GRADE });
+      });
+      it.each(IN_X)("%s: a level of another grade of the same curriculum is shown, with its names", async (who) => {
+        award(OTHER_LEVEL, TX.grade, TX.curriculum);
+        const res = await shown(who);
+        expect(idsOf(data(res), "levelid").sort()).toEqual([TX.level, OTHER_LEVEL].sort());
+        expect(data(res).find((r) => r.levelid === OTHER_LEVEL)).toMatchObject({ levelname: db.tables.levels.find((l) => l.levelid === OTHER_LEVEL)!.levelname, levelorder: 2, gradeid: TX.grade, gradename: gradeNameOf(TX.grade) });
+      });
+      it.each(IN_X)("%s: an award of a curriculum that is not X's is left out", async (who) => {
+        award(TX.level, TX.grade, TY.curriculum);
+        expect(idsOf(data(await shown(who)), "levelid")).toEqual([TX.level]);
+      });
+      it.each(IN_X)("%s: a level and grade of another organisation under X's curriculum are shown with null names, none of theirs", async (who) => {
+        award(TY.level, TY.grade, TX.curriculum);
+        const res = await shown(who);
+        expect(data(res)).toHaveLength(2);
+        expect(data(res).find((r) => r.levelid === TY.level)).toMatchObject({ levelname: null, levelorder: null, gradeid: TY.grade, gradename: null, curid: TX.curriculum });
+      });
+      it.each(IN_X)("%s: a level or grade of another organisation, beside the other of X's, shows no name of theirs", async (who) => {
+        award(TY.level, TX.grade, TX.curriculum);
+        award(TX.level, TY.grade, TX.curriculum);
+        const res = await shown(who);
+        expect(data(res)).toHaveLength(3);
+        expect(data(res).find((r) => r.levelid === TY.level)).toMatchObject({ levelname: null, gradename: gradeNameOf(TX.grade) });
+        expect(data(res).filter((r) => r.levelid === TX.level && r.gradeid === TY.grade)[0]).toMatchObject({ gradename: null });
+      });
+    });
+    it.each(IN_X)("%s: each row has the shape the learning server's report gives", async (who) => {
+      db.tables.studentawards.find((a) => a.studentid === TX.learners[0].id)!.earnedat_approximate = true;
+      const res = await send(who, "post", path, page([{ key: "studentid", value: TX.learners[0].id }])).expect(200);
+      expect(data(res)).toHaveLength(1);
+      expect(Object.keys(data(res)[0]).sort()).toEqual(["curid", "curriculumname", "earnedat", "earnedat_approximate", "gradeid", "gradename", "levelid", "levelname", "levelorder", "studentawardid"]);
+      expect(data(res)[0]).toMatchObject({ levelid: TX.level, gradeid: TX.grade, curid: TX.curriculum, levelname: `កម្រិត ${TX.schoolname}`, earnedat_approximate: true });
+      expect(res.body.data).toMatchObject({ total: 1 });
     });
     it.each(IN_X)("%s: another organisation's learner, and the unowned one, answer as one that is not there", async (who) => {
       const absent = await asAbsent(who, "post", asking(path, "studentid"), [TY.learners[0].id, TU.learners[0].id]);
@@ -2880,6 +2968,123 @@ describe("reports are confined to the caller's organisation", () => {
 
   });
 
+  describe("POST /report/online/student-awards", () => {
+    const path = "/report/online/student-awards";
+    const cloudUrl = cloud("student-awards");
+    const key: string = "studentid";
+    const own = TX.learners[0].id;
+    const reply = { data: { error: false, data: { data: [{ studentid: "cloud-row" }], student: { studentfirstname: "cloud" }, total: 1, pageindex: 1, pagesize: 20 } } };
+    const nothing = { data: { error: false, data: { data: [], student: null, total: 0, pageindex: 1, pagesize: 20 } } };
+    const ask = (who: Who, body: object) => send(who, "post", path, body);
+    const answer = (res: request.Response) => said(res);
+    const answerFor = async (who: Who, body: object) => answer(await ask(who, body));
+    /** What the route says when the student API has no rows. */
+    const noRows = async () => {
+      (axios.post as jest.Mock).mockResolvedValueOnce(nothing);
+      const said1 = await answerFor(NOT_ACTING, page());
+      (axios.post as jest.Mock).mockClear();
+      return said1;
+    };
+
+    it.each(IN_X)("%s: another organisation's school, by id or name, and the unowned one, are the 404 of an unknown school and nothing is sent", async (who) => {
+      const byId = await sameAsAbsent((id) => answerFor(who, page([{ key: "schoolid", value: id }, { key, value: own }])), [TY.school, TU.school]);
+      expect(byId.status).toBe(404);
+      const byName = await sameAsAbsent((n) => answerFor(who, page([{ key: "schoolname", value: n }, { key, value: own }])), [TY.schoolname, TU.schoolname], MISSING_NAME);
+      expect(byName.status).toBe(404);
+      // every school the body names is checked, whichever entry it is in
+      const second = await sameAsAbsent((id) => answerFor(who, page([{ key: "schoolid", value: TX.school }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
+      expect(second.status).toBe(404);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: a school of another organisation in the same entry as X's own is the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await answerFor(who, page([{ key: "schoolid", value: [TX.school, MISSING] }]));
+      expect(absent.status).toBe(404);
+      for (const foreign of [TY.school, TU.school]) {
+        expect(await answerFor(who, page([{ key: "schoolid", value: [TX.school, foreign] }]))).toEqual(absent);
+        expect(await answerFor(who, page([{ key: "schoolid", value: [foreign, TX.school] }]))).toEqual(absent);
+      }
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: another organisation's learner, class, curriculum, grade, level, lesson and country, and the unowned ones, get the answer for no rows and nothing is sent", async (who) => {
+      const none = await noRows();
+      const named: Array<[string, (t: Tree) => string]> = [
+        ["studentid", (t) => t.learners[0].id],
+        ["standard", (t) => t.klass],
+        ["curriculumid", (t) => t.curriculum],
+        ["gradeid", (t) => t.grade],
+        ["levelid", (t) => t.level],
+        ["lessonid", (t) => t.lesson],
+        ["countryid", (t) => t.country],
+      ];
+      expect(await answerFor(who, page([{ key: "studentid", value: MISSING }]))).toEqual(none);
+      for (const [field, of] of named) {
+        for (const t of [TY, TU]) {
+          // a reference outside X's scope is answered as one that is not there, with or without X's own beside it
+          expect(await answerFor(who, page([{ key: field, value: of(t) }, { key, value: own }]))).toEqual(none);
+          expect(await answerFor(who, page([{ key, value: own }, { key: field, value: of(t) }]))).toEqual(none);
+        }
+      }
+      // a list of ids with one that is not X's
+      expect(await answerFor(who, page([{ key: "studentid", value: [TX.learners[0].id, TY.learners[0].id] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it("a platform user not acting: sends the body exactly as it came, with the server key and the platform marker", async () => {
+      (axios.post as jest.Mock).mockResolvedValue(reply);
+      const body = page([{ key: "schoolname", value: TY.schoolname }, { key: "studentid", value: TY.learners[0].id }, { key: "schoolid", value: [TX.school, MISSING] }]);
+      const res = await ask(NOT_ACTING, body);
+      expect(res.status).toBe(200);
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      expect(axios.post).toHaveBeenCalledWith(cloudUrl, body, { headers: HEADERS_PLATFORM });
+    });
+    it.each(IN_X)("%s: the student API's answer is handed back as it is", async (who) => {
+      (axios.post as jest.Mock).mockResolvedValue(reply);
+      const res = await ask(who, page([{ key, value: own }]));
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(reply.data);
+    });
+    it.each(IN_X)("%s: an error from the student API is the error it always was", async (who) => {
+      const own500 = await ask(who, page([{ key, value: own }]));
+      expect(own500.status).toBe(500);
+      const platform500 = await ask(NOT_ACTING, page([{ key, value: own }]));
+      expect(platform500.status).toBe(500);
+      expect(answer(own500)).toEqual(answer(platform500));
+    });
+
+    it.each(IN_X)("%s: names X's learner or class: the body is sent as it is, with X's id in the header", async (who) => {
+      (axios.post as jest.Mock).mockResolvedValue(reply);
+      const body = page([{ key, value: own }, { key: "curriculumid", value: TX.curriculum }, { key: "gradeid", value: TX.grade }]);
+      await ask(who, body);
+      await ask(who, { pageindex: 3, pagesize: 5, filter: [{ key, value: own }] });
+      expect((axios.post as jest.Mock).mock.calls).toEqual([
+        [cloudUrl, body, { headers: HEADERS_X }],
+        [cloudUrl, { pageindex: 3, pagesize: 5, filter: [{ key, value: own }] }, { headers: HEADERS_X }],
+      ]);
+    });
+    it.each(IN_X)("%s: a school that is named is X's, resolved and not sent (the report takes no school)", async (who) => {
+      (axios.post as jest.Mock).mockResolvedValue(reply);
+      await ask(who, page([{ key: "schoolname", value: TX.schoolname }, { key, value: own }, { key: "schoolid", value: TX.school }]));
+      expect((axios.post as jest.Mock).mock.calls).toEqual([[cloudUrl, page([{ key, value: own }]), { headers: HEADERS_X }]]);
+    });
+    it.each(IN_X)("%s: another organisation's school is the 404 of an unknown school though the report takes no school", async (who) => {
+      const absent = await sameAsAbsent((id) => answerFor(who, page([{ key, value: own }, { key: "schoolid", value: id }])), [TY.school, TU.school]);
+      expect(absent.status).toBe(404);
+    });
+    it.each(IN_X)("%s: names only a key the student API does not read for this report: the answer is the one for no rows and nothing is sent", async (who) => {
+      const none = await noRows();
+      const unread: [string, string] = key === "standard" ? ["studentid", TX.learners[0].id] : ["standard", TX.klass];
+      expect(await answerFor(who, page([{ key: unread[0], value: unread[1] }]))).toEqual(none);
+      expect(await answerFor(who, page([{ key: unread[0], value: [unread[1]] }, { key, value: [] }]))).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: names no learner and no class: the answer is the one for no rows and nothing is sent (the fixed test learner is not X's to read)", async (who) => {
+      const none = await noRows();
+      expect(await answerFor(who, page([{ key: "curriculumid", value: TX.curriculum }]))).toEqual(none);
+      expect(await answerFor(who, { pageindex: 1, pagesize: 20 })).toEqual(none);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+
+  });
+
   describe("POST /report/online/student-lesson-progress", () => {
     const path = "/report/online/student-lesson-progress";
     const cloudUrl = cloud("student-lesson-progress");
@@ -3035,8 +3240,8 @@ describe("reports are confined to the caller's organisation", () => {
       organisation: { organisationid: X, isplatform: false },
     } as const;
 
-    it("the route table has the fifteen routes", () => {
-      expect(names).toHaveLength(15);
+    it("the route table has the sixteen routes", () => {
+      expect(names).toHaveLength(16);
     });
     it.each(Object.keys(callers2) as Array<keyof typeof callers2>)("%s: every route sends X-Organisation-Id, an organisation id or `platform`, never none", async (who) => {
       (axios.post as jest.Mock).mockResolvedValue({ data: { error: false, data: [] } });

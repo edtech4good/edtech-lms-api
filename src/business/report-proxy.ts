@@ -35,7 +35,7 @@ export interface OnlineReport {
 // then of the fixed-learner fallback): studentprogress studentid and standard (:51, :55; :58-60); studentprogress/class
 // standard (:257; :262-264); studentlevelquiz studentid (:1079; :1083-1085); studentlevelquiz/class standard (:1271;
 // :1274-1276); student-grade-progress standard (:694; :697-699); student-level-progress studentid (:902; :904-905);
-// student-lesson-progress studentid (:966; :969-970). The status and last-completed-quiz reports take a school.
+// student-lesson-progress studentid (:966; :969-970); student-awards studentid (:1024; :1026-1027, rpi feat/level-awards). The status and last-completed-quiz reports take a school.
 export const ONLINE_REPORTS = {
   studentprogress: { path: "studentprogress", shape: "list", school: false, names: ["studentid", "standard"] },
   studentprogressDownload: { path: "studentprogress/download", shape: "download", school: false, names: ["studentid", "standard"] },
@@ -51,6 +51,7 @@ export const ONLINE_REPORTS = {
   studentstatusDownload: { path: "studentstatus/download", shape: "download", school: true, names: [] },
   gradeprogress: { path: "student-grade-progress", shape: "list", school: false, names: ["standard"] },
   levelprogress: { path: "student-level-progress", shape: "list", school: false, names: ["studentid"], student: "null" },
+  awards: { path: "student-awards", shape: "list", school: false, names: ["studentid"], student: "null" },
   lessonprogress: { path: "student-lesson-progress", shape: "list", school: false, names: ["studentid"], student: "null" },
 } as const satisfies Record<string, OnlineReport>;
 export type OnlineReportName = keyof typeof ONLINE_REPORTS;

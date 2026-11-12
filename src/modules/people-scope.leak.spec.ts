@@ -60,6 +60,7 @@ jest.mock("src/business/studentprogress.business", () => ({
       studentlearningprogress: [],
       studentlessonsprogress: [],
       studentlevelsprogress: [],
+      studentawards: [],
     }),
   })),
 }));

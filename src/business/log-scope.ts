@@ -13,6 +13,9 @@ import { studentappusages } from "src/models/data-models/studentappusage";
 import { studentgradesprogress } from "src/models/data-models/studentgradesprogress";
 import { studentlearningprogress } from "src/models/data-models/studentlearningprogress";
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
+import { studentawards } from "src/models/data-models/studentawards";
+import { schools } from "src/models/data-models/school";
+import { andScope } from "src/business/content-scope";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
 import { studentpoints } from "src/models/data-models/studentpoints";
 import { studentprogress } from "src/models/data-models/studentprogress";
@@ -91,6 +94,7 @@ const SPECS: Spec[] = [
   { rows: progressRows("studentlearningprogress"), model: studentlearningprogress, pk: "studentlearningprogressid", student: "studentid", either: "userid" },
   { rows: progressRows("studentgradesprogress"), model: studentgradesprogress, pk: "studentgradeprogressid", student: "studentid" },
   { rows: progressRows("studentlevelsprogress"), model: studentlevelsprogress, pk: "studentlevelprogressid", student: "studentid" },
+  { rows: progressRows("studentawards"), model: studentawards, pk: "studentawardid", student: "studentid" },
   { rows: progressRows("studentlessonsprogress"), model: studentlessonsprogress, pk: "studentlessonprogressid", student: "studentid" },
   { rows: progressRows("studentpoints"), model: studentpoints, pk: "studentpointid", student: "studentid" },
   { rows: progressRows("studentappusages"), model: studentappusages, pk: "studentappusageid", login: "schooluserid" },
@@ -124,7 +128,7 @@ const storedId = (value: unknown): string => String(value ?? "").toLowerCase();
  *    (`studentprogressquestionid`) belongs to a result row of the upload (checked through that row) or to a stored
  *    result whose learner is in the school.
  *  - `progress.studentactives`, `studentlearningprogress`, `studentgradesprogress`, `studentlevelsprogress`,
- *    `studentlessonsprogress`, `studentpoints`: `studentid` (and `userid` on a learning-progress row when it has one).
+ *    `studentawards`, `studentlessonsprogress`, `studentpoints`: `studentid` (and `userid` on a learning-progress row when it has one).
  *  - `progress.studentappusages`: `schooluserid`, a login id.
  * A login passes only when its own `schoolusers` row is in the school and so is every learner row that owns it
  * (`students.schooluserid` is not unique).
@@ -240,6 +244,7 @@ const LESSON: ContentRef = { column: "lessonid", word: "lesson", model: lessons,
 const CONTENT_TABLES: Array<{ table: string; rows: (log: unknown) => Row[]; refs: ContentRef[] }> = [
   { table: "studentgradesprogress", rows: progressRows("studentgradesprogress"), refs: [CURRICULUM("curriculumid"), GRADE] },
   { table: "studentlevelsprogress", rows: progressRows("studentlevelsprogress"), refs: [CURRICULUM("curid"), GRADE, LEVEL] },
+  { table: "studentawards", rows: progressRows("studentawards"), refs: [CURRICULUM("curid"), GRADE, LEVEL] },
   { table: "studentlessonsprogress", rows: progressRows("studentlessonsprogress"), refs: [CURRICULUM("curid"), GRADE, LEVEL, LESSON] },
 ];
 
@@ -338,6 +343,108 @@ export const assertLogPointsRowsComplete = (logdata: unknown): void => {
     throw new ApiError(
       ErrorCode.FILE_REJECTED,
       `That file has points with a missing or invalid value (${lacking.join("; ")}${more}).`,
+      { hint: "Make the file again on the device that wrote it, then upload it again." },
+    );
+  }
+};
+
+/**
+ * An award date: an ISO-8601 date-time with a time (`Z` or an offset, fractional seconds allowed), or a Date, that is
+ * a real calendar date (2026-02-30 is not one) and whose instant, read in UTC (after the offset), falls in a year from
+ * 1000 to 9999.
+ */
+const ISO_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/;
+const inYearRange = (instant: Date): boolean => {
+  const year = instant.getUTCFullYear();
+  return !Number.isNaN(instant.getTime()) && year >= 1000 && year <= 9999;
+};
+const isAwardDate = (value: unknown): boolean => {
+  if (value instanceof Date) return inYearRange(value);
+  if (typeof value !== "string") return false;
+  const m = ISO_DATE_TIME.exec(value);
+  if (!m) return false;
+  const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number);
+  if (year < 1000 || month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
+  if (m[9] !== undefined && (Number(m[9]) > 23 || Number(m[10]) > 59)) return false;
+  const real = new Date(Date.UTC(year, month - 1, day));
+  if (real.getUTCMonth() !== month - 1 || real.getUTCDate() !== day) return false;
+  return inYearRange(new Date(value));
+};
+
+/**
+ * Refuses the upload when a `progress.studentawards` row is not a whole award, before any row is written: its five ids
+ * must be text that is not empty, `earnedat` an ISO-8601 date-time (see `isAwardDate`), and `earnedat_approximate`
+ * true or false (a missing or null one is read as false, the stored default). (The award is stored with INSERT
+ * IGNORE, which would turn a missing or bad value into a stored one instead of refusing it.) The message names each
+ * offending row by its position in the file (1 is the first) and the fields, never a learner or an id; it lists the
+ * first 10 rows and counts the rest. A file without awards passes.
+ */
+export const assertLogAwardRowsComplete = (logdata: unknown): void => {
+  const log = (logdata as { log?: unknown } | null | undefined)?.log;
+  if (log === undefined || log === null) return;
+  const text = (v: unknown) => typeof v === "string" && v.trim().length > 0 && v.length <= 36;
+  const lacking: string[] = [];
+  let count = 0;
+  progressRows("studentawards")(log).forEach((row, at) => {
+    const fields: string[] = ["studentawardid", "studentid", "levelid", "gradeid", "curid"].filter((f) => !text(row[f]));
+    if (!isAwardDate(row.earnedat)) fields.push("earnedat");
+    const approx = row.earnedat_approximate;
+    if (approx !== undefined && approx !== null && typeof approx !== "boolean") fields.push("earnedat_approximate");
+    if (fields.length === 0) return;
+    count += 1;
+    if (lacking.length < LISTED_ROWS) lacking.push(`studentawards row ${at + 1}: ${fields.join(", ")}`);
+  });
+  if (count > 0) {
+    const more = count > lacking.length ? `, and ${count - lacking.length} more` : "";
+    throw new ApiError(
+      ErrorCode.FILE_REJECTED,
+      `That file has awards with a missing or invalid value (${lacking.join("; ")}${more}).`,
+      { hint: "Make the file again on the device that wrote it, then upload it again." },
+    );
+  }
+};
+
+/**
+ * Refuses the upload when a `progress.studentawards` row names a curriculum, grade or level that the uploading school's
+ * organisation does not hold: each of the three ids is checked on its own, through the scope the reports read content
+ * through (a school with no organisation holds nothing). The three are deliberately not checked against each other: an
+ * award records the content as it was when it was earned, and since then a level may have moved to another grade, a
+ * grade to another curriculum, or the learning server's copy of the content may be older than central's. Nothing is
+ * written; the message names each row by its position in the file, never an id. Run it after
+ * `assertLogAwardRowsComplete` and `assertLogRowsNameKnownContent` (which refuses an id that does not exist at all).
+ */
+export const assertLogAwardsNameOwnContent = async (teacher: schoolusers, logdata: unknown, chunkSize = LOOKUP_CHUNK): Promise<void> => {
+  const log = (logdata as { log?: unknown } | null | undefined)?.log;
+  if (log === undefined || log === null) return;
+  const awards = progressRows("studentawards")(log);
+  if (awards.length === 0) return;
+  const id = (v: unknown) => storedId(v);
+  const school = teacher.schoolid ? await schools.findOne({ attributes: ["schoolid", "organisationid"], where: { schoolid: teacher.schoolid } }) : null;
+  const organisationid = school?.organisationid ?? null;
+  const org = organisationid ? { organisationid, isplatform: false, permissions: [] } : null;
+  const held = async (kind: "curriculum" | "grade" | "level", model: typeof curriculums | typeof grades | typeof levels, key: string, field: string): Promise<Set<string>> => {
+    const out = new Set<string>();
+    if (!org) return out;
+    const found = await findInChunks(new Set(awards.map((r) => id(r[field]))), async (chunk) =>
+      (await (model as typeof curriculums).findAll({ attributes: [key], where: await andScope(org, kind, { [key]: { [Op.in]: chunk } }) })) as unknown as Row[], chunkSize);
+    for (const r of found) out.add(storedId(r[key]));
+    return out;
+  };
+  const heldCurriculums = await held("curriculum", curriculums, "curriculumid", "curid");
+  const heldGrades = await held("grade", grades, "gradeid", "gradeid");
+  const heldLevels = await held("level", levels, "levelid", "levelid");
+  const wrong: string[] = [];
+  let count = 0;
+  awards.forEach((row, at) => {
+    if (heldCurriculums.has(id(row.curid)) && heldGrades.has(id(row.gradeid)) && heldLevels.has(id(row.levelid))) return;
+    count += 1;
+    if (wrong.length < LISTED_ROWS) wrong.push(`studentawards row ${at + 1}`);
+  });
+  if (count > 0) {
+    const more = count > wrong.length ? `, and ${count - wrong.length} more` : "";
+    throw new ApiError(
+      ErrorCode.FILE_REJECTED,
+      `That file has awards for a curriculum, grade or level that your organisation does not hold (${wrong.join("; ")}${more}).`,
       { hint: "Make the file again on the device that wrote it, then upload it again." },
     );
   }

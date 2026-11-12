@@ -1,4 +1,5 @@
 import { schoolusers, schoolusersAttributes } from "src/models/data-models/schoolusers";
+import { studentawards, studentawardsAttributes } from "src/models/data-models/studentawards";
 import {
   studentgradesprogress,
   studentgradesprogressAttributes,
@@ -31,6 +32,8 @@ export interface studentpointsprogress {
   studentgradesprogress: studentgradesprogressAttributes[];
   studentlevelsprogress: studentlevelsprogressAttributes[];
   studentlessonsprogress: studentlessonsprogressAttributes[];
+  /** A learner's lasting level awards; the learning server keeps its own award when it already has one. */
+  studentawards: studentawardsAttributes[];
 }
 
 export class StudentProgress {
@@ -41,6 +44,7 @@ export class StudentProgress {
       studentgradesprogress: [],
       studentlevelsprogress: [],
       studentlessonsprogress: [],
+      studentawards: [],
     };
     for await (const schooluser of schoolusers) {
       if (schooluser.student) {
@@ -90,6 +94,15 @@ export class StudentProgress {
         ).map((x) => ({
           ...x.get({ plain: true }),
         }));
+        const sta = (
+          await studentawards.findAll({
+            where: {
+              studentid: student.studentid,
+            },
+          })
+        ).map((x) => ({
+          ...x.get({ plain: true }),
+        }));
         stps.studentprogress = [...stps.studentprogress, ...sp];
         stps.studentlearningprogress = [
           ...stps.studentlearningprogress,
@@ -101,6 +114,7 @@ export class StudentProgress {
           ...stps.studentlessonsprogress,
           ...stlsp,
         ];
+        stps.studentawards = [...stps.studentawards, ...sta];
       }
     }
     return stps;

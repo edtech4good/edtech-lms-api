@@ -5,6 +5,7 @@ import { rpiuseraccess } from "src/models/data-models/rpiuseraccess";
 import { schoolusers } from "src/models/data-models/schoolusers";
 import { studentactives } from "src/models/data-models/studentactives";
 import { studentappusages } from "src/models/data-models/studentappusage";
+import { studentawards } from "src/models/data-models/studentawards";
 import { studentgradesprogress } from "src/models/data-models/studentgradesprogress";
 import { studentlearningprogress } from "src/models/data-models/studentlearningprogress";
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
@@ -38,6 +39,8 @@ export interface studentprogresslog {
   studentlearningprogress: Array<studentlearningprogress>;
   studentgradesprogress: Array<studentgradesprogress>;
   studentlevelsprogress: Array<studentlevelsprogress>;
+  /** Absent in a file from a learning server that does not award levels yet. */
+  studentawards?: Array<studentawards>;
   studentlessonsprogress: Array<studentlessonsprogress>;
   studentpoints: Array<studentpoints>;
   studentappusages: Array<studentappusages>;
@@ -138,6 +141,18 @@ export class LogBusiness {
         "scores",
       ],
     });
+    // An award is immutable: INSERT IGNORE on the primary key and on (studentid, levelid), so an award already here
+    // wins and its `earnedat` is never rewritten. The rows were checked complete before anything was written
+    // (`assertLogAwardRowsComplete`), which matters because IGNORE would also coerce a bad value into a stored one.
+    if (progress.studentawards && progress.studentawards.length > 0) {
+      // a missing or null `earnedat_approximate` is stored as false
+      const awards = progress.studentawards.map((a) => ({ ...a, earnedat_approximate: a.earnedat_approximate === true }));
+      await studentawards.bulkCreate(awards, {
+        transaction: this._transaction,
+        ignoreDuplicates: true,
+        fields: ["studentawardid", "studentid", "levelid", "gradeid", "curid", "earnedat", "earnedat_approximate", "lastupdated"],
+      });
+    }
     await studentlessonsprogress.bulkCreate(progress.studentlessonsprogress, {
       transaction: this._transaction,
       updateOnDuplicate: [

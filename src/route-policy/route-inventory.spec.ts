@@ -56,11 +56,11 @@ import {
 
 // Pinned on purpose. When you add or remove a route, update these numbers AND
 // run `npm run routes:policy -- --write` to refresh the committed files.
-const EXPECTED_TOTAL = 306;
+const EXPECTED_TOTAL = 308;
 const EXPECTED_BY_POLICY = {
   public: 11,
   self: 5,
-  owned: 267,
+  owned: 269,
   platform: 18,
   server: 0,
   global: 5,
@@ -69,13 +69,13 @@ const EXPECTED_BY_POLICY = {
 // How the routes divide by enforcement, stated explicitly (they sum to the
 // total):
 //  - enforced: by a guard (self 5 + global 5 + platform with PlatformGuard 18
-//    = 28), or, for an owned or server route, by the spec it names (267 owned,
-//    listed below, + 0 server = 267) = 295
+//    = 28), or, for an owned or server route, by the spec it names (269 owned,
+//    listed below, + 0 server = 269) = 297
 //  - not applicable (public): 11
 //  - pending the organisation boundary: owned or server without a proving spec
 //    0 + platform without PlatformGuard 0 = 0
 const EXPECTED_ENFORCED_BY_GUARD = 28;
-const EXPECTED_ENFORCED_BY_SPEC = 267;
+const EXPECTED_ENFORCED_BY_SPEC = 269;
 const EXPECTED_ENFORCED = EXPECTED_ENFORCED_BY_GUARD + EXPECTED_ENFORCED_BY_SPEC;
 const EXPECTED_NOT_APPLICABLE = 11;
 const EXPECTED_PENDING = 0;
@@ -219,6 +219,7 @@ const EXPECTED_OWNED_ENFORCED = [
   "POST /question/search",
   "POST /questiontag",
   "POST /questiontag/create",
+  "POST /report/online/student-awards",
   "POST /report/online/student-grade-progress",
   "POST /report/online/student-lesson-progress",
   "POST /report/online/student-level-progress",
@@ -233,6 +234,7 @@ const EXPECTED_OWNED_ENFORCED = [
   "POST /report/online/studentprogress/download",
   "POST /report/online/studentstatus",
   "POST /report/online/studentstatus/download",
+  "POST /report/student-awards",
   "POST /report/student-grade-progress",
   "POST /report/student-lesson-progress",
   "POST /report/student-level-progress",
@@ -444,7 +446,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("pending enforcement", () => {
-    it("divides the routes into 295 enforced (28 by a guard, 267 by a proving spec), 11 not applicable (public) and 0 pending", () => {
+    it("divides the routes into 297 enforced (28 by a guard, 269 by a proving spec), 11 not applicable (public) and 0 pending", () => {
       const count = (state: string) => routes.filter((r) => enforcementState(r) === state).length;
       expect(count("yes")).toBe(EXPECTED_ENFORCED);
       expect(count("n/a")).toBe(EXPECTED_NOT_APPLICABLE);
@@ -476,7 +478,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("owned routes proved by a spec", () => {
-    it("the enforced owned routes are exactly the 267 named ones", () => {
+    it("the enforced owned routes are exactly the 269 named ones", () => {
       const enforced = routes.filter((r) => r.policy === "owned" && enforcementState(r) === "yes");
       expect(enforced.map(key).sort()).toEqual([...EXPECTED_OWNED_ENFORCED].sort());
       expect(enforced).toHaveLength(EXPECTED_OWNED_ENFORCED.length);

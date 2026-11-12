@@ -90,7 +90,8 @@ export class ExportController {
         studentgradesprogress: [],
         studentlearningprogress: [],
         studentlessonsprogress: [],
-        studentlevelsprogress: []
+        studentlevelsprogress: [],
+        studentawards: []
       }
     };
     payload.studentusers = studentusers ? studentusers.map((x) => x.get({ plain: true })) : [];
