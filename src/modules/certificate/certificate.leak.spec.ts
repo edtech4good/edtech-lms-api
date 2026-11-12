@@ -10,6 +10,7 @@ import { Role } from "src/models/enums";
 import { JwtAccessStrategy } from "src/services/auth.strategy";
 import { dbinstance } from "src/services/dbservice";
 import { ContentFake } from "src/test-support/content-fake";
+import { certificates as certificatesModel } from "src/models/data-models/certificates";
 import { shortcodes } from "src/business/certificate-shortcode";
 import { CertificateController, CertificateVerifyController } from "./certificate.controller";
 
@@ -311,6 +312,23 @@ describe("certificates", () => {
       jest.spyOn(shortcodes, "next").mockImplementation(() => codes.shift() ?? "CCCC-CCCC");
       const res = await issue([L(1)]).expect(200);
       expect(res.body.data.issued[0].shortcode).toBe("BBBB-BBBB");
+    });
+
+    it("a code meeting the unique index runs the whole issue once more with new codes, then answers 409", async () => {
+      const clash = () => Object.assign(new Error("Validation error"), { name: "SequelizeUniqueConstraintError", fields: { shortcode: "AAAA-AAAA" } });
+      const create = certificatesModel.create as jest.Mock;
+      const real = create.getMockImplementation()!;
+      create.mockImplementationOnce(async () => { throw clash(); });
+      const ok = await issue([L(1)]).expect(200);
+      expect(ok.body.data.issued).toHaveLength(1);
+      expect(db.tables.certificates).toHaveLength(1);
+      expect(transaction.rollback).toHaveBeenCalledTimes(1);
+      expect(transaction.commit).toHaveBeenCalledTimes(1);
+      create.mockImplementation(async () => { throw clash(); });
+      const refused = await issue([L(4)]).expect(409);
+      expect(refused.body.errormessage ?? refused.body.message).toMatch(/unique certificate code/);
+      expect(db.tables.certificates).toHaveLength(1);
+      create.mockImplementation(real);
     });
 
     it("two issues at once for one learner: the second finds the first's certificate once it holds the lock", async () => {

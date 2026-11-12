@@ -6,8 +6,9 @@
  *    takes gap locks and the two inserts deadlock, InnoDB error 1213);
  *  - two issues at once for the SAME learner leave exactly one unrevoked certificate, and the other call refuses the learner.
  *
- * SCRATCH DATABASE ONLY. It builds every table of the models in the configured database (`sync({ force: true })`, which
- * DROPS tables of those names), runs the certificates migration for its real indexes, and drops the tables again at the end.
+ * SCRATCH DATABASE ONLY: it refuses to run unless the configured database name contains "scratch". It re-creates seven
+ * real tables (`sync({ force: true })`, which DROPS tables of those names), runs the certificates migration for its real indexes,
+ * and drops exactly those eight tables at the end.
  * Foreign-key checks and strict mode are switched off on its own connections so only the rows the code reads need to be
  * written. It runs ONLY when CERTIFICATES_CONCURRENCY_DB_SPEC=1; run it on its own, not alongside the other DB-gated specs,
  * which use the same database. The learning server (axios) is replaced: it answers `ready` for every learner.
@@ -30,6 +31,13 @@ jest.mock("axios", () => ({ __esModule: true, default: { post: jest.fn() } }));
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const migration = require("./migrations/20261112120000-create-certificates");
 
+/** Refuses to touch a database that is not a scratch one: this spec drops and re-creates real table names. */
+const assertScratchDatabase = (name: string) => {
+  if (!/scratch/.test(name)) {
+    throw new Error(`Refusing to run: the configured database "${name}" is not a scratch database (its name must contain "scratch"). This spec creates and drops real tables.`);
+  }
+};
+
 const suite = process.env.CERTIFICATES_CONCURRENCY_DB_SPEC === "1" ? describe : describe.skip;
 
 const ORG = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -38,16 +46,20 @@ const CUR = "00000000-0000-4000-8000-000000000301";
 const GRADE = "00000000-0000-4000-8000-000000000311";
 const LEVEL = "00000000-0000-4000-8000-000000000321";
 const learner = (n: number) => `00000000-0000-4000-8000-${String(1000 + n).padStart(12, "0")}`;
+const TABLES = [organisations, schools, standards, curriculums, grades, levels, students];
 const ROUNDS = 8;
 const SAME = learner(100);
 const org = { organisationid: ORG, isplatform: false };
 
 suite("certificates: concurrent issue", () => {
   let sequelize: Sequelize;
+  let scratchChecked = false;
   const run = (sql: string, replacements: unknown[] = []) => sequelize.query(sql, { replacements });
 
   beforeAll(async () => {
     const db = Config.fortyk.api.database;
+    assertScratchDatabase(db.name);
+    scratchChecked = true;
     const once = (conn: { query: (sql: string, cb: (e: Error | null) => void) => void }, sql: string) =>
       new Promise<void>((resolve, reject) => conn.query(sql, (e) => (e ? reject(e) : resolve())));
     sequelize = new Sequelize(db.name, db.user, db.password, {
@@ -66,7 +78,7 @@ suite("certificates: concurrent issue", () => {
     // the business code reads through the shared instance and the models: point both at this one
     (dbinstance as unknown as { sequelize: Sequelize }).sequelize = sequelize;
     initModels(sequelize);
-    for (const model of [organisations, schools, standards, curriculums, grades, levels, students]) {
+    for (const model of TABLES) {
       try {
         await model.sync({ force: true });
       } catch (e) {
@@ -96,9 +108,11 @@ suite("certificates: concurrent issue", () => {
     }));
   });
   afterAll(async () => {
-    await run("DROP TABLE IF EXISTS certificates");
-    await sequelize.drop();
-    await sequelize.close();
+    // only the tables this spec created, never every registered model's
+    if (sequelize && scratchChecked) {
+      for (const table of [...TABLES.map((m) => m.tableName), "certificates"]) await run(`DROP TABLE IF EXISTS \`${table}\``);
+    }
+    await sequelize?.close();
   });
 
   const issue = (studentids: string[]) => new CertificateBusiness(org as never).issue({ curriculumid: CUR, scope: "level", scopeid: LEVEL, studentids }, "staff-1");

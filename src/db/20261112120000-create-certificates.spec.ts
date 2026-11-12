@@ -3,7 +3,7 @@
  *
  * The migration's SQL runs on one real MySQL connection (a pool of one, so any read outside the migration's transaction
  * would hang). It creates a REAL `certificates` table and drops it again, so point the config at a scratch database and
- * never at a shared one (a temporary table cannot stand in: the migration reads INFORMATION_SCHEMA, which does not list
+ * never at a shared one (it refuses to run unless the database name contains "scratch") (a temporary table cannot stand in: the migration reads INFORMATION_SCHEMA, which does not list
  * temporary tables). It runs ONLY when CERTIFICATES_DB_SPEC=1 is set; otherwise it is skipped.
  *
  * Proved: up creates the columns and the three indexes (the shortcode one unique) with utf8mb4 / utf8mb4_unicode_ci; a
@@ -16,23 +16,33 @@ import { Config } from "src/config";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const migration = require("./migrations/20261112120000-create-certificates");
 
+/** Refuses to touch a database that is not a scratch one: this spec drops and re-creates real table names. */
+const assertScratchDatabase = (name: string) => {
+  if (!/scratch/.test(name)) {
+    throw new Error(`Refusing to run: the configured database "${name}" is not a scratch database (its name must contain "scratch"). This spec creates and drops real tables.`);
+  }
+};
+
 const suite = process.env.CERTIFICATES_DB_SPEC === "1" ? describe : describe.skip;
 
 suite("create-certificates", () => {
   let sequelize: Sequelize;
+  let scratchChecked = false;
   const qi = () => sequelize.getQueryInterface();
   const run = (sql: string) => sequelize.query(sql, { type: QueryTypes.RAW });
 
   beforeAll(() => {
     const db = Config.fortyk.api.database;
+    assertScratchDatabase(db.name);
+    scratchChecked = true;
     sequelize = new Sequelize(db.name, db.user, db.password, { host: db.host, port: db.port, dialect: "mysql", logging: false, pool: { max: 1, min: 1 } });
   });
-  afterAll(async () => sequelize.close());
+  afterAll(async () => sequelize?.close());
   beforeEach(async () => {
     await run("DROP TABLE IF EXISTS certificates");
   });
   afterEach(async () => {
-    await run("DROP TABLE IF EXISTS certificates");
+    if (scratchChecked) await run("DROP TABLE IF EXISTS certificates");
   });
 
   const insert = (code: string) =>
