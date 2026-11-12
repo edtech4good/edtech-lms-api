@@ -1,6 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { ThrottlerModule } from "@nestjs/throttler";
+import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import axios from "axios";
 import { sign } from "jsonwebtoken";
 import request from "supertest";
@@ -216,6 +216,22 @@ describe("certificates", () => {
       expect(d.body.data.length).toBeGreaterThan(0);
     });
 
+    it("asks the learning server with the server key and the acting organisation", async () => {
+      await candidates().expect(200);
+      expect(asked()[0][2].headers).toEqual({ Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": X });
+    });
+
+    it("the learning server refusing the question (400 or 404) says the curriculum is not there yet; a timeout says to retry", async () => {
+      for (const status of [400, 404]) {
+        (axios.post as jest.Mock).mockRejectedValueOnce(Object.assign(new Error("Request failed"), { isAxiosError: true, response: { status } }));
+        const res = await candidates().expect(502);
+        expect(res.body.errormessage ?? res.body.message).toBe("This curriculum (or this part of it) is not on the learning server yet. Publish it, then try again.");
+      }
+      learningDown = true;
+      const res = await candidates().expect(502);
+      expect(res.body.errormessage ?? res.body.message).toMatch(/Try again in a few minutes/);
+    });
+
     it("the learning server down is a 502 with a plain message", async () => {
       learningDown = true;
       const res = await candidates().expect(502);
@@ -245,6 +261,8 @@ describe("certificates", () => {
         { studentid: L(3), status: "cant_check", reasons: learning[L(3)].reasons },
       ]);
       expect(db.tables.certificates).toHaveLength(2);
+      // READ COMMITTED: no gap locks between issues for different learners
+      expect(dbinstance.getdbinstance().transaction).toHaveBeenCalledWith({ isolationLevel: "READ COMMITTED" });
       expect(transaction.commit).toHaveBeenCalledTimes(1);
     });
 
@@ -399,6 +417,12 @@ describe("certificates", () => {
       expect(res.body).toEqual(valid);
       const text = JSON.stringify(res.body);
       for (const leak of ["studentid", "organisationid", "certificateid", "reason", "issuedby", L(1), X, uuid(890)]) expect(text).not.toContain(leak);
+    });
+    it("is rate limited by the throttler guard", () => {
+      const handler = CertificateVerifyController.prototype.verify;
+      expect(Reflect.getMetadata("__guards__", handler)).toContain(ThrottlerGuard);
+      expect(Reflect.getMetadata("THROTTLER:LIMIT", handler)).toBe(30);
+      expect(Reflect.getMetadata("THROTTLER:TTL", handler)).toBe(60);
     });
     it("lower case and no dash work", async () => {
       row();

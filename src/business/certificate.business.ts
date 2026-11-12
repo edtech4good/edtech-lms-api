@@ -11,7 +11,7 @@ import { schools } from "src/models/data-models/school";
 import { standards } from "src/models/data-models/standard";
 import { students } from "src/models/data-models/students";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
-import { dbinstance } from "src/services/dbservice";
+import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 import { normaliseShortcode, shortcodes } from "./certificate-shortcode";
 import { findOwnedCurriculum } from "./content-scope";
 import { heldCurricula } from "./enrolment-published";
@@ -124,13 +124,16 @@ export class CertificateBusiness {
     }
     const partOfCurriculum = () => invalid("scopeid", "That is not part of this curriculum.");
     let scopename: string;
+    let scopeid: string; // the id as the database holds it, not as the request spelled it
     if (body.scope === "curriculum") {
       if (lower(body.scopeid) !== lower(curriculum.curriculumid)) throw partOfCurriculum();
       scopename = curriculum.curriculumname;
+      scopeid = curriculum.curriculumid;
     } else if (body.scope === "grade") {
       const grade = await grades.findOne({ where: { gradeid: body.scopeid, curriculumid: curriculum.curriculumid, isdeleted: false }, attributes: ["gradeid", "gradename"] });
       if (!grade) throw partOfCurriculum();
       scopename = grade.gradename;
+      scopeid = grade.gradeid;
     } else {
       const gradeRows = await grades.findAll({ where: { curriculumid: curriculum.curriculumid, isdeleted: false }, attributes: ["gradeid"] });
       const level = gradeRows.length
@@ -141,8 +144,9 @@ export class CertificateBusiness {
         : null;
       if (!level) throw partOfCurriculum();
       scopename = level.levelname;
+      scopeid = level.levelid;
     }
-    return { organisationid, curriculumid: curriculum.curriculumid, curriculumname: curriculum.curriculumname, scope: body.scope, scopeid: body.scopeid, scopename };
+    return { organisationid, curriculumid: curriculum.curriculumid, curriculumname: curriculum.curriculumname, scope: body.scope, scopeid, scopename };
   }
 
   /** The learning server's answer for these learners, keyed by lower-cased learner id. Any failure is a 502 and nothing else changes. */
@@ -162,8 +166,10 @@ export class CertificateBusiness {
       } catch (error) {
         if (error instanceof ApiError) throw error;
         // only the class of the failure and the upstream status: never the request (it holds the server key)
-        Logger.warn(`certificate eligibility: the learning server was not asked successfully (${(error as Error)?.name ?? "error"}, status ${(error as { response?: { status?: number } })?.response?.status ?? "none"})`);
-        throw badGateway();
+        const upstream = (error as { response?: { status?: number } })?.response?.status;
+        Logger.warn(`certificate eligibility: the learning server was not asked successfully (${(error as Error)?.name ?? "error"}, status ${upstream ?? "none"})`);
+        // it refused the question itself: the curriculum (or this part of it) is not there yet
+        throw upstream === 400 || upstream === 404 ? notOnLearningServer() : badGateway();
       }
       if (!Array.isArray(data)) {
         Logger.warn("certificate eligibility: the learning server's answer had no list");
@@ -262,17 +268,20 @@ export class CertificateBusiness {
     if (ready.length > 0) {
       const base = await this.snapshotBase(scope, ready.map((r) => r.student));
       const ids = ready.map((r) => r.student.studentid).sort();
-      const transaction = await dbinstance.getdbinstance().transaction();
+      // READ COMMITTED: under the default REPEATABLE READ a locking read that matches no row takes gap locks, and two
+      // issues for different learners then deadlock on their inserts. Each statement here sees what is committed now.
+      const transaction = await dbinstance.getdbinstance().transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED });
       try {
         // One unrevoked certificate per learner per scope. Two issues at once for the same learner must not both succeed:
         // the learner's row is locked FOR UPDATE (every issue takes its learners in the same order, so none can wait on
-        // another in a circle), then the unrevoked certificates are read with a locking read, which sees whatever the
-        // first issue committed. The second issue therefore finds the first one's certificate and refuses the learner.
+        // another in a circle), then the unrevoked certificates are read. That read is a plain one: under READ COMMITTED it
+        // sees whatever the first issue committed, and the learner's row lock already serialises issues for one learner,
+        // so it needs no lock of its own (a locking read would add nothing but gap-lock risk). The second issue therefore
+        // finds the first one's certificate and refuses the learner.
         await students.findAll({ where: { studentid: { [Op.in]: ids } }, attributes: ["studentid"], order: [["studentid", "ASC"]], lock: transaction.LOCK.UPDATE, transaction });
         const existing = await certificates.findAll({
           where: { studentid: { [Op.in]: ids }, scope: scope.scope, scopeid: scope.scopeid, revokedat: null },
           attributes: ["studentid"],
-          lock: transaction.LOCK.UPDATE,
           transaction,
         });
         const taken = new Set(existing.map((c) => lower(c.studentid)));
@@ -302,7 +311,7 @@ export class CertificateBusiness {
         }
         await transaction.commit();
       } catch (error) {
-        await transaction.rollback();
+        await rollbackQuietly(transaction);
         throw error;
       }
     }
@@ -354,7 +363,7 @@ export class CertificateBusiness {
       await transaction.commit();
       return certificateView(row);
     } catch (error) {
-      await transaction.rollback();
+      await rollbackQuietly(transaction);
       throw error;
     }
   }
@@ -369,6 +378,10 @@ export class CertificateBusiness {
     return rows.map(certificateView);
   }
 }
+
+export const NOT_ON_LEARNING_SERVER_MESSAGE = "This curriculum (or this part of it) is not on the learning server yet. Publish it, then try again.";
+const notOnLearningServer = () =>
+  new ApiError(ErrorCode.BAD_GATEWAY, NOT_ON_LEARNING_SERVER_MESSAGE, { status: 502, hint: "Nothing was changed." });
 
 const badGateway = () =>
   new ApiError(ErrorCode.BAD_GATEWAY, LEARNING_SERVER_MESSAGE, { status: 502, hint: "Nothing was changed. If it keeps happening, contact support with the reference." });
