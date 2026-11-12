@@ -454,6 +454,7 @@ export const verifyCertificate = async (rawCode: unknown) => {
     curriculumname: snapshot.curriculumname,
     classname: snapshot.classname ?? null,
     organisationname: snapshot.organisationname,
+    schoolname: snapshot.schoolname,
     issuedat: row.issuedat,
     shortcode: row.shortcode,
     look: (organisation?.uitheme === "corporate" ? "corporate" : "school") as "corporate" | "school",

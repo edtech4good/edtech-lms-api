@@ -562,7 +562,7 @@ describe("certificates", () => {
       });
     const valid = {
       error: false,
-      data: { status: "valid", learnername: "សុខា ចាន់", scope: "level", tierlabel: "Module", scopename: "មេរៀនទី២", curriculumname: "ភាសាខ្មែរ", classname: "ថ្នាក់ក", organisationname: "Mekong Learning Group", issuedat: "2026-11-03T04:05:06.000Z", shortcode: "7Q2M-9KXA", look: "school" },
+      data: { status: "valid", learnername: "សុខា ចាន់", scope: "level", tierlabel: "Module", scopename: "មេរៀនទី២", curriculumname: "ភាសាខ្មែរ", classname: "ថ្នាក់ក", organisationname: "Mekong Learning Group", schoolname: "សាលាក", issuedat: "2026-11-03T04:05:06.000Z", shortcode: "7Q2M-9KXA", look: "school" },
     };
     it("a valid code answers with exactly the snapshot's fields, no sign-in", async () => {
       row();
