@@ -15,6 +15,7 @@ import { ApiError } from "src/models/ApiError";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { ApiBearerAuth, ApiResponse, ApiTags } from "@nestjs/swagger";
 import AdmZip from "adm-zip";
+import { syncCertificatesFor } from "src/business/certificate-push";
 import { pushToCloud, rosterApiError, studentsFile, teachersFile } from "src/business/cloud-push";
 import { sendHealing } from "src/business/heal-push";
 import { pushOrganisationSet } from "src/business/publish-push";
@@ -146,13 +147,19 @@ export class SyncController {
     if (studentusers.length <= 0) {
       throw new ApiError(ErrorCode.NOT_FOUND, "There are no students to sync.");
     }
+    const plain = studentusers.map((x) => x.get({ plain: true }));
+    let answer;
     try {
-      const file = JSON.stringify(studentsFile(school.schoolid, studentusers.map((x) => x.get({ plain: true }))));
+      const file = JSON.stringify(studentsFile(school.schoolid, plain));
       // a school or class the learning server lacks is sent once (the organisation's set) before the 409 answers
-      return await sendHealing(school.organisationid, () => pushToCloud("students", "students.ini", file, school.organisationid));
+      answer = await sendHealing(school.organisationid, () => pushToCloud("students", "students.ini", file, school.organisationid));
     } catch (error) {
       throw rosterApiError("students", error) ?? error;
     }
+    // The roster went through: now the certificates of exactly these learners, so the learning server's set matches
+    // central's. Its outcome rides beside the roster's result and never replaces or hides it.
+    const learnerids = plain.map((x) => (x as { student?: { studentid?: string } }).student?.studentid).filter((id): id is string => typeof id === "string");
+    return { ...answer, certificates: await syncCertificatesFor(school.organisationid, learnerids) };
   }
 
   @OrgPolicy("owned", {

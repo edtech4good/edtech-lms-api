@@ -71,6 +71,8 @@ SERVER_SYNC_KEY=a-token-the-classroom-api-also-knows
 
 `LOG_IMPORT_ENABLED` (`true`/`1`, off by default) turns on `PUT log/import`. Leave it unset unless a deployment with classroom Pis still uses this upload path. When it is off, the route returns 404. The protocol is described at https://edtech4good.github.io/docs/architecture/sync.html.
 
+`CERTIFICATE_CHECK_URL` (optional) is the public address certificates are checked at, without a trailing slash (for example `https://admin.example.org/v`). Central sends `<that address>/<code>` to the learning server with each certificate; unset, certificates carry no check link.
+
 ## Seeding a database you can log in to
 
 The migrations create a superadmin whose password you don't know, and no content. Three scripts fix that. Each refuses to run without an explicit opt-in flag, so a migrate-and-seed habit can't touch production by accident.

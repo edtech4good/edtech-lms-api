@@ -12,6 +12,7 @@ import { standards } from "src/models/data-models/standard";
 import { students } from "src/models/data-models/students";
 import { ErrorCode } from "src/models/enums/errorcode.enum";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
+import { pushAffected } from "./certificate-push";
 import { normaliseShortcode, shortcodes } from "./certificate-shortcode";
 import { findOwnedCurriculum } from "./content-scope";
 import { heldCurricula } from "./enrolment-published";
@@ -325,8 +326,12 @@ export class CertificateBusiness {
         }
       }
     }
+    // After the commit, never inside the transaction: the learning server is only told about rows that are committed, and a
+    // push that fails or hangs cannot undo the issue (it is best effort and never throws).
+    const pushed = await pushAffected(scope.organisationid, issued);
     return {
       issued: issued.map(certificateView),
+      pushed,
       refused: requested.filter((id) => refused.has(lower(id))).map((id) => refused.get(lower(id))!),
     };
   }
@@ -363,19 +368,22 @@ export class CertificateBusiness {
       throw invalid("reason", "Give a reason of 1 to 500 characters.");
     }
     const transaction = await dbinstance.getdbinstance().transaction();
+    let row: certificates;
     try {
       // the row is locked, so two revokes at once cannot both succeed
-      const row = await findOwned(certificates, certificateid, this.org, { transaction, lock: transaction.LOCK.UPDATE });
+      row = await findOwned(certificates, certificateid, this.org, { transaction, lock: transaction.LOCK.UPDATE });
       if (row.revokedat) {
         throw new ApiError(ErrorCode.ALREADY_EXISTS, ALREADY_REVOKED_MESSAGE);
       }
       await row.update({ revokedat: new Date(), revokedby, revokereason: text }, { transaction });
       await transaction.commit();
-      return certificateView(row);
     } catch (error) {
       await rollbackQuietly(transaction);
       throw error;
     }
+    // after the commit, best effort: the revoke stands whatever the learning server says
+    const pushed = await pushAffected(row.organisationid, [row]);
+    return { ...certificateView(row), pushed };
   }
 
   async get(certificateid: string) {
@@ -425,7 +433,7 @@ export const verifyCertificate = async (rawCode: unknown) => {
   const row = code
     ? await certificates.findOne({
         where: { shortcode: code },
-        attributes: ["shortcode", "scope", "issuedat", "revokedat", "snapshot"],
+        attributes: ["shortcode", "scope", "issuedat", "revokedat", "snapshot", "organisationid"],
       })
     : null;
   if (!row) {
@@ -435,6 +443,8 @@ export const verifyCertificate = async (rawCode: unknown) => {
     return { status: "revoked" as const, revokedat: row.revokedat, shortcode: row.shortcode };
   }
   const snapshot = row.snapshot;
+  // the look of the public page: the organisation's theme, as the admin's own print page decides it
+  const organisation = await organisations.findOne({ where: { organisationid: row.organisationid }, attributes: ["organisationid", "uitheme"] });
   return {
     status: "valid" as const,
     learnername: snapshot.learnername,
@@ -444,7 +454,9 @@ export const verifyCertificate = async (rawCode: unknown) => {
     curriculumname: snapshot.curriculumname,
     classname: snapshot.classname ?? null,
     organisationname: snapshot.organisationname,
+    schoolname: snapshot.schoolname,
     issuedat: row.issuedat,
     shortcode: row.shortcode,
+    look: (organisation?.uitheme === "corporate" ? "corporate" : "school") as "corporate" | "school",
   };
 };
