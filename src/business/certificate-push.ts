@@ -1,5 +1,5 @@
 import axios from "axios";
-import { Config, Logger } from "src/config";
+import { certificateCheckBase, Config, Logger } from "src/config";
 import { certificates, CertificateScopeName, CertificateSnapshot } from "src/models/data-models/certificates";
 import { Op } from "sequelize";
 import { cloudConfigured, learningServerLogFields, ORGANISATION_HEADER } from "./cloud-push";
@@ -12,6 +12,8 @@ import { PUSH_TIMEOUT_MS } from "./publish-push";
  *
  * What is sent is an allowlist of named fields (`pushRow`): never the revoke reason, who issued or revoked, or the
  * organisation id. A push after an issue or a revoke is best effort and never throws: the staff action already stands.
+ * A Sync Students replace racing an issue, or a slow issue push landing after its revoke push, can leave the learning server
+ * briefly out of date; the next Sync Students heals it.
  */
 
 /** The learning server takes this many rows in one request. */
@@ -23,8 +25,8 @@ const LOOKUP_SIZE = 500;
 
 /** The public check address of a code: `CERTIFICATE_CHECK_URL` (trailing slash removed) + "/" + the code; null when the variable is unset. */
 export const checkurl = (shortcode: string): string | null => {
-  const base = (process.env.CERTIFICATE_CHECK_URL ?? "").trim().replace(/\/+$/, "");
-  return base === "" ? null : `${base}/${shortcode}`;
+  const base = certificateCheckBase();
+  return base === null ? null : `${base}/${shortcode}`;
 };
 
 /** One certificate as the learning server takes it. */
@@ -125,6 +127,8 @@ export const pushCertificates = async (
     const response = await axios.put(`${Config.fortyk.api.rpi.cloud}/import/certificates`, body, {
       headers: { Authorization: Config.fortyk.api.serversynckey, [ORGANISATION_HEADER]: organisationid },
       timeout: PUSH_TIMEOUT_MS,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
     });
     const data = (response?.data as { data?: { upserted?: unknown; deleted?: unknown } } | undefined)?.data;
     total.upserted += countOf(data?.upserted);

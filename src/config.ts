@@ -177,3 +177,25 @@ const checkSyncFormatSetting = (value: string | undefined): void => {
   throw new Error(`Refusing to start: SYNC_FORMAT_DEFAULT must be 3 or unset (got ${JSON.stringify(text.slice(0, 20))}).`);
 };
 checkSyncFormatSetting(process.env.SYNC_FORMAT_DEFAULT);
+
+/**
+ * `CERTIFICATE_CHECK_URL` (optional): the public address certificates are checked at. Trimmed, trailing slashes removed; unset or
+ * blank is null (certificates then carry no check link). It must be a web address the learning server will accept
+ * (`http(s)://` and no white space, with the check link `<it>/XXXX-XXXX` at most 2048 characters), or the server refuses to
+ * start: a malformed one would make the learning server refuse every certificate push. Checked once when this module loads;
+ * read again by `certificateCheckBase` on each use, so tests can vary it.
+ */
+const CHECK_LINK_MAX = 2048;
+const CODE_LENGTH = "/XXXX-XXXX".length;
+export const parseCertificateCheckUrl = (value: string | undefined): string | null => {
+  const base = (value ?? "").trim().replace(/\/+$/, "");
+  if (base === "") return null;
+  if (!/^https?:\/\/\S+$/i.test(base) || base.length + CODE_LENGTH > CHECK_LINK_MAX) {
+    throw new Error(
+      `Refusing to start: CERTIFICATE_CHECK_URL must be a web address starting with http:// or https://, with no spaces, and at most ${CHECK_LINK_MAX - CODE_LENGTH} characters, or be left unset (got ${JSON.stringify(base.slice(0, 20))}).`,
+    );
+  }
+  return base;
+};
+export const certificateCheckBase = (): string | null => parseCertificateCheckUrl(process.env.CERTIFICATE_CHECK_URL);
+parseCertificateCheckUrl(process.env.CERTIFICATE_CHECK_URL);
