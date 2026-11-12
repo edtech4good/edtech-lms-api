@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **308** routes, **297** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
+Of **314** routes, **302** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **12** are not applicable (public) and **0** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
-| public | 11 | 0 | 11 | 0 |
+| public | 12 | 0 | 12 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 269 | 269 | 0 | 0 |
+| owned | 274 | 274 | 0 | 0 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 0 | 0 | 0 | 0 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **308** | **297** | **11** | **0** |
+| **all** | **314** | **302** | **12** | **0** |
 
 ## Policies
 
@@ -89,6 +89,12 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | PUT | `/baselinequestion/deactivate/:baselinequestionid` | BaselinequestionController.deactivate | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
 | GET | `/baselinequestion/getall/:curriculumbaselineid` | BaselinequestionController.getall | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_baseline-endline] |  |
 | PUT | `/baselinequestion/order/:baselinequestionid/:baselinequestionorder` | BaselinequestionController.orderquizquestion | owned | yes | `src/modules/content-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[update_baseline-endline] |  |
+| GET | `/certificate/:certificateid` | CertificateController.get | owned | yes | `src/modules/certificate/certificate.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[list_certificate] |  |
+| POST | `/certificate/:certificateid/revoke` | CertificateController.revoke | owned | yes | `src/modules/certificate/certificate.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[revoke_certificate] |  |
+| POST | `/certificate/candidates` | CertificateController.candidates | owned | yes | `src/modules/certificate/certificate.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[list_certificate] |  |
+| POST | `/certificate/issue` | CertificateController.issue | owned | yes | `src/modules/certificate/certificate.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[create_certificate] |  |
+| GET | `/certificate/student/:studentid` | CertificateController.forStudent | owned | yes | `src/modules/certificate/certificate.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[list_certificate] |  |
+| GET | `/certificates/verify/:shortcode` | CertificateVerifyController.verify | public | n/a |  |  |  | ThrottlerGuard | Answers with the certificate's snapshot only (or, when revoked, the status and time), for whoever holds the code. |
 | GET | `/dropdown/templatetype` | CommonController.getTemplateType | public | n/a |  |  |  | none | Returns a static list of template types. |
 | GET | `/country` | CountryController.getAll | owned | yes | `src/modules/people-scope.leak.spec.ts` | yes |  | AccessGuard(ACCESS, Role.apikey, Role.superadmin, Role.admin, Role.organisationadmin, Role.teacher) | Must list only countries linked to the caller's organisation. |
 | POST | `/country` | CountryController.getall | owned | yes | `src/modules/people-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_country] | Must list only countries linked to the caller's organisation. |
