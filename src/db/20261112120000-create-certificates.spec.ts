@@ -62,7 +62,8 @@ suite("create-certificates", () => {
       ].sort(),
     );
     await insert("AAAA-BBBB");
-    await expect(insert("AAAA-BBBB")).rejects.toThrow(/Duplicate/);
+    // Sequelize reports MySQL's duplicate-key error (1062) as a unique constraint error, whose message is "Validation error"
+    await expect(insert("AAAA-BBBB")).rejects.toMatchObject({ name: "SequelizeUniqueConstraintError" });
   });
 
   it("run again changes nothing", async () => {
