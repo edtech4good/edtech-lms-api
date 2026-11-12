@@ -45,6 +45,12 @@ const adminOf = (organisationid: string) =>
 const ADMIN_X = adminOf(X);
 const ADMIN_Y = adminOf(Y);
 
+const ALLOWED = (label: string) => `${label} must be one of the allowed values.`;
+const refusal = (fields: Array<{ field: string; message: string }>) => ({
+  error: true, data: false, code: "INVALID_INPUT", errormessage: "Some of the information isn't valid.", hint: "Check the highlighted fields.", fields,
+});
+const withoutReference = (body: Record<string, unknown>) => ({ ...body, reference: undefined, logid: undefined, stack: undefined });
+
 const COMPANY = { levelrecognition: "award", graderecognition: "none", curriculumrecognition: "certificate" };
 const SCHOOL = { levelrecognition: "award", graderecognition: "certificate", curriculumrecognition: "none" };
 
@@ -127,7 +133,7 @@ describe("curriculum recognition over HTTP", () => {
     it("refuses a bad value (400 naming the field) and writes nothing", async () => {
       const res = await create(ADMIN_X, { graderecognition: "award" });
       expect(res.status).toBe(400);
-      expect(JSON.stringify(res.body)).toContain("graderecognition");
+      expect(withoutReference(res.body)).toEqual(refusal([{ field: "graderecognition", message: ALLOWED("Graderecognition") }]));
       db.nothingCreated();
     });
   });
@@ -144,17 +150,17 @@ describe("curriculum recognition over HTTP", () => {
       expect(recognitionOf(db.tables.curriculums[0])).toEqual({ levelrecognition: "award", graderecognition: "certificate", curriculumrecognition: "certificate" });
     });
     it.each([
-      ["graderecognition", { graderecognition: "award" }],
-      ["curriculumrecognition", { curriculumrecognition: "award" }],
-      ["levelrecognition", { levelrecognition: "AWARD" }],
-      ["levelrecognition", { levelrecognition: "" }],
-      ["levelrecognition", { levelrecognition: null }],
-    ])("a bad value is a 400 naming %s and nothing is written", async (field, over) => {
+      ["graderecognition", { graderecognition: "award" }, [{ field: "graderecognition", message: ALLOWED("Graderecognition") }]],
+      ["curriculumrecognition", { curriculumrecognition: "award" }, [{ field: "curriculumrecognition", message: ALLOWED("Curriculumrecognition") }]],
+      ["levelrecognition", { levelrecognition: "AWARD" }, [{ field: "levelrecognition", message: ALLOWED("Levelrecognition") }]],
+      ["levelrecognition", { levelrecognition: "" }, [{ field: "levelrecognition", message: ALLOWED("Levelrecognition") }, { field: "levelrecognition", message: "Levelrecognition can't be empty." }]],
+      ["levelrecognition", { levelrecognition: null }, [{ field: "levelrecognition", message: ALLOWED("Levelrecognition") }, { field: "levelrecognition", message: "Levelrecognition isn't valid." }]],
+    ])("a bad value is a 400 naming %s and nothing is written", async (_field, over, fields) => {
       seedX();
       const before = db.snapshot();
       const res = await edit(ADMIN_X, CUR_X, { ...over });
       expect(res.status).toBe(400);
-      expect(JSON.stringify(res.body)).toContain(field);
+      expect(withoutReference(res.body)).toEqual(refusal(fields));
       expect(db.snapshot()).toEqual(before);
     });
     it("with none of the fields leaves the stored values unchanged, and writes the name", async () => {
@@ -167,7 +173,6 @@ describe("curriculum recognition over HTTP", () => {
       const before = db.snapshot();
       const res = await edit(ADMIN_X, CUR_Y, { levelrecognition: "certificate" });
       const absent = await edit(ADMIN_X, "66666666-6666-4666-8666-666666666666", { levelrecognition: "certificate" });
-      expect(res.status).toBeGreaterThanOrEqual(400);
       expect({ status: res.status, body: { ...res.body, reference: undefined, logid: undefined } }).toEqual({
         status: absent.status,
         body: { ...absent.body, reference: undefined, logid: undefined },
