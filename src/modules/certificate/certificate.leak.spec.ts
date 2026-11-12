@@ -96,6 +96,8 @@ const seed = () => {
   learner(L(3), "វិបុល", SCH_SCHOOL, K_2, [CUR_X]);
   learner(L(4), "ចន្ទា", SCH_SCHOOL, K_2, [CUR_X]);
   learner(L(5), "សុភា", SCH_SCHOOL, null, [CUR_X2]); // not enrolled in CUR_X
+  learner(L(6), "គ្រូ", SCH_SCHOOL, K_2, [CUR_X]);
+  db.tables.students.find((r) => r.studentid === L(6))!.is_teacher_acc = true; // a teacher account stored as a student row
   learner(L_Y, "Yara", SCH_Y, null, [CUR_Y]);
   learning = {
     [L(1)]: { status: "ready", reasons: [], quizcount: 4, passedcount: 4 },
@@ -166,6 +168,13 @@ describe("certificates", () => {
       expect(asked()[0][1].studentids.sort()).toEqual([L(2), L(3), L(4)].sort());
       expect(asked()[0][2].headers["X-Organisation-Id"]).toBe(X);
       expect(asked()[0][0]).toMatch(/\/report\/certificate-eligibility$/);
+    });
+
+    it("leaves a teacher account out", async () => {
+      learning[L(6)] = { status: "ready", reasons: [], quizcount: 4, passedcount: 4 };
+      const res = await candidates().expect(200);
+      expect(Object.keys(byId(res.body.data))).not.toContain(L(6));
+      expect(asked()[0][1].studentids).not.toContain(L(6));
     });
 
     it("whole row of a ready learner and of an issued one", async () => {
@@ -279,6 +288,17 @@ describe("certificates", () => {
       ]);
       expect(db.tables.certificates).toHaveLength(1);
       expect(asked()).toHaveLength(0);
+    });
+
+    it("refuses a teacher account exactly like an unknown id", async () => {
+      learning[L(6)] = { status: "ready", reasons: [], quizcount: 4, passedcount: 4 };
+      const res = await issue([L(6), MISSING]).expect(200);
+      expect(res.body.data.issued).toEqual([]);
+      expect(res.body.data.refused).toEqual([
+        { studentid: L(6), status: "not_found", reasons: [] },
+        { studentid: MISSING, status: "not_found", reasons: [] },
+      ]);
+      db.nothingCreated();
     });
 
     it("re-checks on the learning server: a not_yet learner named by the client is refused and nothing is written", async () => {

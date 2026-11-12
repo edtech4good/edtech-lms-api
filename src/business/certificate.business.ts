@@ -189,9 +189,10 @@ export class CertificateBusiness {
     if (studentids) where.studentid = { [Op.in]: studentids };
     const rows = await students.findAll({
       where: await andInOwnedSchools(where, this.org),
-      attributes: ["studentid", "studentfirstname", "studentlastname", "standard", "schoolid", "curriculumid", "curriculumids"],
+      attributes: ["studentid", "studentfirstname", "studentlastname", "standard", "schoolid", "curriculumid", "curriculumids", "is_teacher_acc"],
     });
-    return rows.filter((s) => heldCurricula(s).includes(scope.curriculumid));
+    // a teacher account is stored as a student row, but it is not a learner
+    return rows.filter((s) => !s.is_teacher_acc && heldCurricula(s).includes(scope.curriculumid));
   }
 
   /** The unrevoked certificate each of these learners holds for the scope, by lower-cased learner id. */
