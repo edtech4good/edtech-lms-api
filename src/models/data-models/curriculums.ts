@@ -3,6 +3,7 @@ import * as Sequelize from "sequelize";
 import { DataTypes, Model, Optional } from "sequelize";
 import type { grades, gradesId } from "./grades";
 import type { students, studentsId } from "./students";
+import type { CurriculumRecognition, GradeRecognition, LevelRecognition } from "../../business/curriculum-recognition";
 
 export interface curriculumsAttributes {
   curriculumid: string;
@@ -15,6 +16,9 @@ export interface curriculumsAttributes {
   created_at?: Date;
   created_by?: string;
   organisationid: string;
+  levelrecognition?: LevelRecognition;
+  graderecognition?: GradeRecognition;
+  curriculumrecognition?: CurriculumRecognition;
   updated_at?: Date;
   updated_by?: string;
   deleted_at?: Date;
@@ -41,6 +45,9 @@ export class curriculums
   created_at!: Date;
   created_by!: string;
   organisationid!: string;
+  levelrecognition!: LevelRecognition;
+  graderecognition!: GradeRecognition;
+  curriculumrecognition!: CurriculumRecognition;
   updated_at!: Date;
   updated_by!: string;
   deleted_at!: Date;
@@ -120,6 +127,21 @@ export class curriculums
         created_by: {
           type: DataTypes.STRING(36),
           allowNull: true
+        },
+        levelrecognition: {
+          type: DataTypes.STRING(16),
+          allowNull: false,
+          defaultValue: "award",
+        },
+        graderecognition: {
+          type: DataTypes.STRING(16),
+          allowNull: false,
+          defaultValue: "certificate",
+        },
+        curriculumrecognition: {
+          type: DataTypes.STRING(16),
+          allowNull: false,
+          defaultValue: "none",
         },
         updated_at: {
           type: 'TIMESTAMP',

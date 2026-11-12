@@ -1,4 +1,5 @@
 import joi from "joi";
+import { ALLOWED_RECOGNITION, firstBadRecognitionField, RecognitionField } from "src/business/curriculum-recognition";
 import {
   ANSWER_BEARING_FIELDS,
   FEEDBACK_KEYS,
@@ -487,6 +488,15 @@ export function contentProblems(body: unknown): string[] {
     if (repeated) problems.push(`contenttranslations: ${rows(repeated)} repeat${repeated === 1 ? "s" : ""} a table, row, field, subkey and language that is already in the payload`);
     for (const [table, n] of missingParent) problems.push(`contenttranslations: ${rows(n)} ${n === 1 ? "names" : "name"} a ${table} row (rowid) that is not in the payload`);
   }
+
+  // The per-tier recognition keys on a curriculum row are optional; when present each must be one of its tier's values.
+  const recognitionProblems = new Map<string, number>();
+  for (const row of tables.curriculums ?? []) {
+    if (!isRow(row)) continue;
+    const bad = firstBadRecognitionField(row as Record<string, unknown>);
+    if (bad !== null) recognitionProblems.set(bad, (recognitionProblems.get(bad) ?? 0) + 1);
+  }
+  for (const [field, n] of recognitionProblems) problems.push(`curriculums: ${n} with a ${field} that is not one of ${ALLOWED_RECOGNITION[field as RecognitionField].join(", ")}`);
 
   for (const { table, column, to } of LISTS) {
     const list = tables[table];

@@ -206,6 +206,20 @@ describe("trimIdLists", () => {
 describe("what the sync serves", () => {
   beforeEach(() => seed());
 
+  it("the published curriculum row carries its three stored recognition values, as published (a later edit is served after the next publish)", async () => {
+    Object.assign(stored("curriculums", "curriculumid", A), { levelrecognition: "none", graderecognition: "certificate", curriculumrecognition: "certificate" });
+    await publish(A);
+    const pick = (payload: Record<string, Row[]>) => {
+      const row = payload.curriculums.find((c) => c.curriculumid === A)!;
+      return { levelrecognition: row.levelrecognition, graderecognition: row.graderecognition, curriculumrecognition: row.curriculumrecognition };
+    };
+    expect(pick(await served())).toEqual({ levelrecognition: "none", graderecognition: "certificate", curriculumrecognition: "certificate" });
+    stored("curriculums", "curriculumid", A).levelrecognition = "award";
+    expect(pick(await served()).levelrecognition).toBe("none");
+    await publish(A);
+    expect(pick(await served()).levelrecognition).toBe("award");
+  });
+
   it("a draft edit (a lesson renamed, not published) is not served; publishing it is", async () => {
     await publish(A);
     stored("lessons", "lessonid", L2).lessonname = "Lesson two, renamed";

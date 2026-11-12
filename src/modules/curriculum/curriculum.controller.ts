@@ -66,6 +66,7 @@ import {
 import { CurriculumGetAllResponse } from "./models/CurriculumGetAllResponse";
 import { CurriculumRequest } from "./models/CurriculumRequest";
 import { CurriculumResponse } from "./models/CurriculumResponse";
+import { recognitionForNewCurriculum, recognitionFrom } from "src/business/curriculum-recognition";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 import { Org, OrgContext, OrgOrServer } from "src/decorators/org.decorator";
 import { assertSameOwner, ownerForNewContent, ownerOfCurriculum, ownerOfSubject } from "src/business/content-owner";
@@ -166,6 +167,8 @@ export class CurriculumController {
       curriculumid: "",
       isdeleted: false,
       curriculumstatus: false,
+      // the preset defaults of the owning organisation, unless the request names values (validated by the request schema)
+      ...(await recognitionForNewCurriculum(organisationid, body)),
     };
 
     const data = await new CurriculumBusiness().createCurriculum(temp, user);
@@ -586,7 +589,9 @@ export class CurriculumController {
       curriculumid,
       curriculumname: body.curriculumname,
       curriculumdescription: body.curriculumdescription,
-      subjectid: body.subjectid
+      subjectid: body.subjectid,
+      // only the fields the request names; an absent one leaves the stored value as it is
+      ...recognitionFrom(body),
     }, user);
     if (data) {
       await new CurriculumBusiness().updatecurriculumcountry(body.countryid, data.curriculumid);

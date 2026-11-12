@@ -287,3 +287,19 @@ describe("the student API's translation rules (bilingual content, B-1), as centr
     expect(run((b) => { delete b.contenttranslations[0].organisationid; })).toEqual(["contenttranslations: 1 carry no organisationid"]);
   });
 });
+
+describe("the student API's per-tier recognition rule on a curriculum row, as central's contract port applies it", () => {
+  const withRow = (over: Row) => changed((b) => { b.curriculums[0] = { ...b.curriculums[0], ...over }; });
+  it("keys that are absent, or hold a value of their tier, pass", () => {
+    expect(contentProblems(JSON.parse(JSON.stringify(payload())))).toEqual([]);
+    expect(withRow({ levelrecognition: "certificate", graderecognition: "none", curriculumrecognition: "certificate" })).toEqual([]);
+  });
+  it.each([
+    ["levelrecognition", "AWARD", "none, award, certificate"],
+    ["levelrecognition", null, "none, award, certificate"],
+    ["graderecognition", "award", "none, certificate"],
+    ["curriculumrecognition", "award", "none, certificate"],
+  ])("a bad %s (%s) is a problem naming the field", (field, value, allowed) => {
+    expect(withRow({ [field]: value })).toEqual([`curriculums: 1 with a ${field} that is not one of ${allowed}`]);
+  });
+});
