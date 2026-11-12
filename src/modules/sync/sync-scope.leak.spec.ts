@@ -1021,6 +1021,74 @@ describe("the content sync is one organisation's", () => {
     });
   });
 
+  // ───────────────────────────── Sync Students also sends the learners' certificates ─────────────────────────────
+  describe("POST /sync/cloud/:schoolname/students sends the synced learners' certificates", () => {
+    const saved = Config.fortyk.api.rpi.cloud;
+    beforeEach(() => {
+      Config.fortyk.api.rpi.cloud = "http://learning.example.test";
+    });
+    afterEach(() => {
+      Config.fortyk.api.rpi.cloud = saved;
+    });
+    const kinds = () => (axios.put as jest.Mock).mock.calls.map((c) => String(c[0]).split("/import/")[1]);
+    const certificateCalls = () => (axios.put as jest.Mock).mock.calls.filter((c) => String(c[0]).endsWith("/import/certificates"));
+    const certificate = (n: number, extra: Row = {}) =>
+      db.add("certificates", {
+        certificateid: uuid(9000 + n), shortcode: "7Q2M-9KX" + "ABCDEFGH"[n], organisationid: X, studentid: TX.student, curriculumid: TX.curriculum, scope: "level", scopeid: TX.level,
+        issuedat: new Date("2026-11-01T00:00:00Z"), issuedby: "staff-0", revokedat: null, revokedby: null, revokereason: null,
+        snapshot: { learnername: "សុខា", curriculumname: "ភាសាខ្មែរ", scopename: "កម្រិត", tierlabel: "Level", classname: null, organisationname: "Group", schoolname: "School", quizcount: 2 }, ...extra,
+      });
+
+    it("after the roster, pushes every certificate of the synced learners (revoked ones too) with replaceForStudents naming them", async () => {
+      certificate(1);
+      certificate(2, { revokedat: new Date("2026-11-05T00:00:00Z"), revokedby: "staff-0", revokereason: "SECRET-REASON" });
+      certificate(3, { organisationid: Y }); // another organisation's row for the same id: never sent
+      const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`).expect(200);
+      expect(kinds()).toEqual(["students", "certificates"]);
+      const [url, body, config] = certificateCalls()[0];
+      expect(url).toBe("http://learning.example.test/import/certificates");
+      expect(config.headers).toEqual({ Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": X });
+      expect(body.replaceForStudents).toEqual([TX.student]);
+      expect(body.certificates.map((r: Row) => r.certificateid).sort()).toEqual([uuid(9001), uuid(9002)]);
+      expect(JSON.stringify(body)).not.toContain("SECRET-REASON");
+      expect(res.body.data).toBe(true);
+      expect(res.body.certificates).toMatchObject({ status: "pushed" });
+    });
+
+    it("a learner with no certificates is still named in replaceForStudents, so stale ones are cleared", async () => {
+      await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`).expect(200);
+      const [, body] = certificateCalls()[0];
+      expect(body).toEqual({ certificates: [], replaceForStudents: [TX.student] });
+    });
+
+    it("a certificate push that fails is reported beside the roster result, which stays intact", async () => {
+      certificate(1);
+      (axios.put as jest.Mock).mockImplementation(async (url: string) => {
+        if (String(url).endsWith("/import/certificates")) throw Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { errormessage: "SERVER-TEXT" } }, config: { headers: { Authorization: "SECRET-KEY" } } });
+        return { status: 200 };
+      });
+      const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`).expect(200);
+      expect(res.body.error).toBe(false);
+      expect(res.body.data).toBe(true);
+      expect(res.body.certificates.status).toBe("failed");
+      expect(JSON.stringify(res.body)).not.toContain("SERVER-TEXT");
+      expect(JSON.stringify(res.body)).not.toContain("SECRET-KEY");
+    });
+
+    it("no learning server set up: the roster answer says the certificates were skipped, and only the roster is sent", async () => {
+      Config.fortyk.api.rpi.cloud = "your-cloud-endpoint";
+      const res = await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`).expect(200);
+      expect(kinds()).toEqual(["students"]);
+      expect(res.body.certificates.status).toBe("skipped");
+    });
+
+    it("a roster the learning server refuses sends no certificates", async () => {
+      (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("x"), { isAxiosError: true, response: { status: 500, data: {} } }));
+      await send("X's Admin", "post", `/sync/cloud/${TX.school}/students`).expect(500);
+      expect(certificateCalls()).toHaveLength(0);
+    });
+  });
+
   // ───────────────────────────── a roster the learning server refuses ─────────────────────────────
   describe("a roster push the learning server refuses by field", () => {
     const refusal = (fields: Array<{ field: string; message: string }> | undefined, status = 400) =>

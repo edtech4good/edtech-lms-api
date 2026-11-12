@@ -73,7 +73,7 @@ let learningDown: boolean;
 const asked = () => (axios.post as jest.Mock).mock.calls;
 
 const seed = () => {
-  db.add("organisations", { organisationid: X, organisationname: "Mekong Learning Group" });
+  db.add("organisations", { organisationid: X, organisationname: "Mekong Learning Group", uitheme: "kids" });
   db.add("organisations", { organisationid: Y, organisationname: "Other Group" });
   const cur = (id: string, org: string, name: string, level: string) =>
     db.add("curriculums", { curriculumid: id, curriculumname: name, organisationid: org, curriculumstatus: true, levelrecognition: level, graderecognition: "certificate", curriculumrecognition: "none" });
@@ -138,6 +138,7 @@ describe("certificates", () => {
     jest.spyOn(dbinstance.getdbinstance(), "transaction").mockResolvedValue(transaction as never);
     transaction.commit.mockClear();
     transaction.rollback.mockClear();
+    (axios.put as jest.Mock).mockReset().mockResolvedValue({ status: 200, data: { error: false, data: { upserted: 0, deleted: 0 } } });
     (axios.post as jest.Mock).mockReset().mockImplementation(async (_url: string, body: { studentids: string[] }) => {
       if (learningDown) throw Object.assign(new Error("connect ECONNREFUSED"), { isAxiosError: true });
       return { data: { error: false, data: body.studentids.filter((id) => learning[id]).map((id) => ({ studentid: id, reasons: [], quizcount: 0, passedcount: 0, ...learning[id] })) } };
@@ -439,6 +440,120 @@ describe("certificates", () => {
     });
   });
 
+  describe("certificates pushed to the learning server", () => {
+    const puts = () => (axios.put as jest.Mock).mock.calls;
+    const saved = { cloud: Config.fortyk.api.rpi.cloud, check: process.env.CERTIFICATE_CHECK_URL };
+    beforeEach(() => {
+      Config.fortyk.api.rpi.cloud = "http://learning.example.test";
+      process.env.CERTIFICATE_CHECK_URL = "https://admin.example.test/v/";
+    });
+    afterEach(() => {
+      Config.fortyk.api.rpi.cloud = saved.cloud;
+      if (saved.check === undefined) delete process.env.CERTIFICATE_CHECK_URL;
+      else process.env.CERTIFICATE_CHECK_URL = saved.check;
+    });
+    const revoke = (id: string, reason = "Issued to the wrong learner") => send("admin", "post", `/certificate/${id}/revoke`, { reason });
+
+    it("issue: after the commit, one push of the issued rows, with the organisation header and the server key", async () => {
+      let committedAtPush = -1;
+      (axios.put as jest.Mock).mockImplementation(async () => {
+        committedAtPush = transaction.commit.mock.calls.length;
+        return { status: 200, data: { error: false, data: { upserted: 2, deleted: 0 } } };
+      });
+      const res = await issue([L(1), L(4)]).expect(200);
+      expect(res.body.data.pushed).toBe(true);
+      expect(committedAtPush).toBe(1); // the push happened after the transaction committed, never before or inside it
+      expect(puts()).toHaveLength(1);
+      const [url, body, config] = puts()[0];
+      expect(url).toBe("http://learning.example.test/import/certificates");
+      expect(config.headers).toEqual({ Authorization: Config.fortyk.api.serversynckey, "X-Organisation-Id": X });
+      expect(Object.keys(body)).toEqual(["certificates"]);
+      expect(body.certificates.map((r: { studentid: string }) => r.studentid).sort()).toEqual([L(1), L(4)].sort());
+      const made = res.body.data.issued.find((c: { studentid: string }) => c.studentid === L(1));
+      const sent = body.certificates.find((r: { studentid: string }) => r.studentid === L(1));
+      expect(sent).toEqual({
+        certificateid: made.certificateid, shortcode: made.shortcode, studentid: L(1), curriculumid: CUR_X, scope: "level", scopeid: LEVEL_X,
+        issuedat: expect.any(Date), revokedat: null, snapshot: made.snapshot, checkurl: `https://admin.example.test/v/${made.shortcode}`,
+      });
+    });
+
+    it("issue: a push the learning server refuses leaves the issue standing, with pushed false and no personal data in the log", async () => {
+      (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("Request failed with status code 400"), { isAxiosError: true, response: { status: 400, data: { code: "INVALID_INPUT", fields: [{ field: "certificates row 1 studentid" }], errormessage: "សុខា ចាន់" } }, config: { headers: { Authorization: "SECRET-KEY" } } }));
+      const res = await issue([L(1)]).expect(200);
+      expect(res.body.data.pushed).toBe(false);
+      expect(res.body.data.issued).toHaveLength(1);
+      expect(db.tables.certificates).toHaveLength(1);
+      const logged = JSON.stringify((Logger.warn as jest.Mock).mock.calls);
+      expect(logged).toContain("push of certificates");
+      for (const leak of ["SECRET-KEY", "សុខា", L(1)]) expect(logged).not.toContain(leak);
+    });
+
+    it("issue: with no learning server set up, pushed is false and nothing is called", async () => {
+      Config.fortyk.api.rpi.cloud = "your-cloud-endpoint";
+      const res = await issue([L(1)]).expect(200);
+      expect(res.body.data.pushed).toBe(false);
+      expect(res.body.data.issued).toHaveLength(1);
+      expect(puts()).toHaveLength(0);
+    });
+
+    it("issue: when nothing is issued nothing is pushed", async () => {
+      const res = await issue([L(2)]).expect(200);
+      expect(res.body.data.issued).toEqual([]);
+      expect(puts()).toHaveLength(0);
+    });
+
+    it("revoke: after the commit, the one row is pushed with its revokedat and no reason", async () => {
+      const made = (await issue([L(1)])).body.data.issued[0];
+      (axios.put as jest.Mock).mockClear();
+      let committedAtPush = -1;
+      (axios.put as jest.Mock).mockImplementation(async () => {
+        committedAtPush = transaction.commit.mock.calls.length;
+        return { status: 200, data: {} };
+      });
+      transaction.commit.mockClear();
+      const res = await revoke(made.certificateid, "SECRET-REASON").expect(200);
+      expect(res.body.data.pushed).toBe(true);
+      expect(committedAtPush).toBe(1);
+      expect(puts()).toHaveLength(1);
+      const [, body, config] = puts()[0];
+      expect(config.headers["X-Organisation-Id"]).toBe(X);
+      expect(body.certificates).toHaveLength(1);
+      expect(body.certificates[0]).toMatchObject({ certificateid: made.certificateid, revokedat: expect.any(Date) });
+      expect(JSON.stringify(body)).not.toContain("SECRET-REASON");
+    });
+
+    it("revoke: a failed push leaves the revoke standing, with pushed false", async () => {
+      const made = (await issue([L(1)])).body.data.issued[0];
+      (axios.put as jest.Mock).mockRejectedValue(Object.assign(new Error("timeout of 30000ms exceeded"), { isAxiosError: true, code: "ECONNABORTED" }));
+      const res = await revoke(made.certificateid).expect(200);
+      expect(res.body.data.pushed).toBe(false);
+      expect(res.body.data.revokedat).toBeTruthy();
+      expect(db.tables.certificates[0].revokedat).toBeTruthy();
+    });
+
+    it("what is pushed never carries the revoke reason, who issued or revoked, or the organisation id", async () => {
+      const made = (await issue([L(1)])).body.data.issued[0];
+      await revoke(made.certificateid, "SECRET-REASON").expect(200);
+      expect(puts()).toHaveLength(2);
+      for (const [, body] of puts()) {
+        for (const row of body.certificates) {
+          expect(Object.keys(row).sort()).toEqual(["certificateid", "checkurl", "curriculumid", "issuedat", "revokedat", "scope", "scopeid", "shortcode", "snapshot", "studentid"]);
+        }
+        const text = JSON.stringify(body);
+        for (const leak of ["revokereason", "revokedby", "issuedby", "organisationid", "SECRET-REASON", "staff-1", X]) expect(text).not.toContain(leak);
+      }
+    });
+
+    it("checkurl is the base and the code, a trailing slash handled, and null when the variable is unset", async () => {
+      process.env.CERTIFICATE_CHECK_URL = "  https://admin.example.test/v//  ";
+      const a = await issue([L(1)]).expect(200);
+      expect(puts()[0][1].certificates[0].checkurl).toBe(`https://admin.example.test/v/${a.body.data.issued[0].shortcode}`);
+      delete process.env.CERTIFICATE_CHECK_URL;
+      await issue([L(4)]).expect(200);
+      expect(puts()[1][1].certificates[0].checkurl).toBeNull();
+    });
+  });
+
   describe("GET /certificates/verify/:shortcode", () => {
     const row = () =>
       issueRow(L(1), {
@@ -447,7 +562,7 @@ describe("certificates", () => {
       });
     const valid = {
       error: false,
-      data: { status: "valid", learnername: "សុខា ចាន់", scope: "level", tierlabel: "Module", scopename: "មេរៀនទី២", curriculumname: "ភាសាខ្មែរ", classname: "ថ្នាក់ក", organisationname: "Mekong Learning Group", issuedat: "2026-11-03T04:05:06.000Z", shortcode: "7Q2M-9KXA" },
+      data: { status: "valid", learnername: "សុខា ចាន់", scope: "level", tierlabel: "Module", scopename: "មេរៀនទី២", curriculumname: "ភាសាខ្មែរ", classname: "ថ្នាក់ក", organisationname: "Mekong Learning Group", issuedat: "2026-11-03T04:05:06.000Z", shortcode: "7Q2M-9KXA", look: "school" },
     };
     it("a valid code answers with exactly the snapshot's fields, no sign-in", async () => {
       row();
@@ -455,6 +570,13 @@ describe("certificates", () => {
       expect(res.body).toEqual(valid);
       const text = JSON.stringify(res.body);
       for (const leak of ["studentid", "organisationid", "certificateid", "reason", "issuedby", L(1), X, uuid(890)]) expect(text).not.toContain(leak);
+    });
+    it("look is corporate when the organisation's theme is corporate, school otherwise", async () => {
+      row();
+      db.tables.organisations.find((o) => o.organisationid === X)!.uitheme = "corporate";
+      expect((await send(null, "get", "/certificates/verify/7Q2M-9KXA").expect(200)).body).toEqual({ ...valid, data: { ...valid.data, look: "corporate" } });
+      db.tables.organisations.find((o) => o.organisationid === X)!.uitheme = "kids";
+      expect((await send(null, "get", "/certificates/verify/7Q2M-9KXA").expect(200)).body.data.look).toBe("school");
     });
     it("is rate limited by the throttler guard", () => {
       const handler = CertificateVerifyController.prototype.verify;
@@ -473,6 +595,7 @@ describe("certificates", () => {
       db.tables.certificates[0].revokereason = "secret reason";
       const res = await send(null, "get", "/certificates/verify/7Q2M-9KXA").expect(200);
       expect(res.body).toEqual({ error: false, data: { status: "revoked", revokedat: "2026-11-05T00:00:00.000Z", shortcode: "7Q2M-9KXA" } });
+      expect(JSON.stringify(res.body)).not.toContain("look");
     });
     it("an unknown code and a malformed one are the same 404", async () => {
       row();
