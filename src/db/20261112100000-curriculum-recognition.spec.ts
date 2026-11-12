@@ -63,6 +63,15 @@ suite("curriculum-recognition", () => {
     expect(before[0].levelrecognition).toBe("certificate");
   });
 
+  it("finishes a run that stopped after the ALTERs: the company row still on the school defaults is set, a school row is not", async () => {
+    await run("ALTER TABLE curriculums ADD COLUMN levelrecognition VARCHAR(16) NOT NULL DEFAULT 'award', ADD COLUMN graderecognition VARCHAR(16) NOT NULL DEFAULT 'certificate', ADD COLUMN curriculumrecognition VARCHAR(16) NOT NULL DEFAULT 'none'");
+    await up();
+    expect(await rows()).toEqual([
+      { curriculumid: "cur-company", levelrecognition: "award", graderecognition: "none", curriculumrecognition: "certificate" },
+      { curriculumid: "cur-school", levelrecognition: "award", graderecognition: "certificate", curriculumrecognition: "none" },
+    ]);
+  });
+
   it("down drops the three columns", async () => {
     await up();
     await down();
