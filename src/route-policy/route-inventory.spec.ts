@@ -56,11 +56,11 @@ import {
 
 // Pinned on purpose. When you add or remove a route, update these numbers AND
 // run `npm run routes:policy -- --write` to refresh the committed files.
-const EXPECTED_TOTAL = 308;
+const EXPECTED_TOTAL = 314;
 const EXPECTED_BY_POLICY = {
-  public: 11,
+  public: 12,
   self: 5,
-  owned: 269,
+  owned: 274,
   platform: 18,
   server: 0,
   global: 5,
@@ -69,15 +69,15 @@ const EXPECTED_BY_POLICY = {
 // How the routes divide by enforcement, stated explicitly (they sum to the
 // total):
 //  - enforced: by a guard (self 5 + global 5 + platform with PlatformGuard 18
-//    = 28), or, for an owned or server route, by the spec it names (269 owned,
-//    listed below, + 0 server = 269) = 297
-//  - not applicable (public): 11
+//    = 28), or, for an owned or server route, by the spec it names (274 owned,
+//    listed below, + 0 server = 274) = 302
+//  - not applicable (public): 12
 //  - pending the organisation boundary: owned or server without a proving spec
 //    0 + platform without PlatformGuard 0 = 0
 const EXPECTED_ENFORCED_BY_GUARD = 28;
-const EXPECTED_ENFORCED_BY_SPEC = 269;
+const EXPECTED_ENFORCED_BY_SPEC = 274;
 const EXPECTED_ENFORCED = EXPECTED_ENFORCED_BY_GUARD + EXPECTED_ENFORCED_BY_SPEC;
-const EXPECTED_NOT_APPLICABLE = 11;
+const EXPECTED_NOT_APPLICABLE = 12;
 const EXPECTED_PENDING = 0;
 // The owned routes that name a spec proving them, pinned by name so adding or
 // removing one is a conscious edit.
@@ -111,6 +111,8 @@ const EXPECTED_OWNED_ENFORCED = [
   "DELETE /translations/:tablename/:rowid/:language",
   "DELETE /user/:lmsuserid",
   "GET /baselinequestion/getall/:curriculumbaselineid",
+  "GET /certificate/:certificateid",
+  "GET /certificate/student/:studentid",
   "GET /country",
   "GET /country/:countryid",
   "GET /country/all",
@@ -191,6 +193,9 @@ const EXPECTED_OWNED_ENFORCED = [
   "GET /user/:lmsuserid",
   "POST /baselinequestion/clone",
   "POST /baselinequestion/create",
+  "POST /certificate/:certificateid/revoke",
+  "POST /certificate/candidates",
+  "POST /certificate/issue",
   "POST /country",
   "POST /curriculum",
   "POST /curriculum/create",
@@ -446,7 +451,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("pending enforcement", () => {
-    it("divides the routes into 297 enforced (28 by a guard, 269 by a proving spec), 11 not applicable (public) and 0 pending", () => {
+    it("divides the routes into 302 enforced (28 by a guard, 274 by a proving spec), 12 not applicable (public) and 0 pending", () => {
       const count = (state: string) => routes.filter((r) => enforcementState(r) === state).length;
       expect(count("yes")).toBe(EXPECTED_ENFORCED);
       expect(count("n/a")).toBe(EXPECTED_NOT_APPLICABLE);
@@ -478,7 +483,7 @@ describe("route inventory (real application wiring)", () => {
   });
 
   describe("owned routes proved by a spec", () => {
-    it("the enforced owned routes are exactly the 269 named ones", () => {
+    it("the enforced owned routes are exactly the 274 named ones", () => {
       const enforced = routes.filter((r) => r.policy === "owned" && enforcementState(r) === "yes");
       expect(enforced.map(key).sort()).toEqual([...EXPECTED_OWNED_ENFORCED].sort());
       expect(enforced).toHaveLength(EXPECTED_OWNED_ENFORCED.length);

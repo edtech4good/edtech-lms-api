@@ -146,6 +146,7 @@ import { studentgradesprogress } from "src/models/data-models/studentgradesprogr
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
 import { studentawards } from "src/models/data-models/studentawards";
+import { certificates } from "src/models/data-models/certificates";
 import { studentactives } from "src/models/data-models/studentactives";
 import { studentpoints } from "src/models/data-models/studentpoints";
 import { logfiles } from "src/models/data-models/logfiles";
@@ -195,6 +196,7 @@ export {
   studentgradesprogress,
   studentlevelsprogress,
   studentawards,
+  certificates,
   studentlessonsprogress,
   studentactives,
   studentpoints
@@ -313,6 +315,7 @@ export function initModels(sequelize: Sequelize) {
   studentgradesprogress.initModel(sequelize);
   studentlevelsprogress.initModel(sequelize);
   studentawards.initModel(sequelize);
+  certificates.initModel(sequelize);
   studentlessonsprogress.initModel(sequelize);
   studentactives.initModel(sequelize);
   studentpoints.initModel(sequelize);
@@ -693,6 +696,7 @@ export function initModels(sequelize: Sequelize) {
     studentgradesprogress,
     studentlevelsprogress,
     studentawards,
+    certificates,
     studentlessonsprogress,
     studentactives,
     studentpoints,

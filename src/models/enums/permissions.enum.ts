@@ -8,6 +8,13 @@ export enum Permission {
     PUBLISH_CURRICULUM = "publish_curriculum",
     SYNC_CONTENT = "sync_content",
 
+    /** Certificates: see a learner's certificates, the learners a certificate could be issued to, and read one. */
+    LIST_CERTIFICATE = "list_certificate",
+    /** Issue certificates to learners who have passed every quiz of a level, grade or curriculum. */
+    CREATE_CERTIFICATE = "create_certificate",
+    /** Revoke an issued certificate (with a reason). */
+    REVOKE_CERTIFICATE = "revoke_certificate",
+
     CREATE_BASELINEENDLINE = "create_baseline-endline",
     VIEW_BASELINEENDLINE = "view_baseline-endline",
     UPDATE_BASELINEENDLINE = "update_baseline-endline",

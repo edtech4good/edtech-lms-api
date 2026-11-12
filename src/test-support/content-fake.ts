@@ -38,6 +38,7 @@ import { logfiles } from "src/models/data-models/logfiles";
 import { studentgradesprogress } from "src/models/data-models/studentgradesprogress";
 import { studentlessonsprogress } from "src/models/data-models/studentlessonprogress";
 import { studentawards } from "src/models/data-models/studentawards";
+import { certificates } from "src/models/data-models/certificates";
 import { studentlevelsprogress } from "src/models/data-models/studentlevelsprogress";
 import { studentprogress } from "src/models/data-models/studentprogress";
 import { students } from "src/models/data-models/students";
@@ -109,6 +110,7 @@ const MODELS = {
   studentlessonsprogress: [studentlessonsprogress, "studentlessonprogressid"],
   studentlevelsprogress: [studentlevelsprogress, "studentlevelprogressid"],
   studentawards: [studentawards, "studentawardid"],
+  certificates: [certificates, "certificateid"],
   studentgradesprogress: [studentgradesprogress, "studentgradeprogressid"],
   rpiuseraccess: [rpiuseraccess, "rpiuseraccessid"],
   studentappusages: [studentappusages, "studentappusageid"],
@@ -248,6 +250,7 @@ const IGNORE_CASE = ["questiontagname", "documenttagname"];
 const UNIQUE_KEYS: Partial<Record<ContentTable, readonly string[]>> = {
   contenttranslations: ["tablename", "rowid", "field", "subkey", "language"],
   studentawards: ["studentid", "levelid"],
+  certificates: ["shortcode"],
 };
 const lower = (v: unknown) => String(v ?? "").toLowerCase();
 // what the wrapper adds to a row: never copied back into it

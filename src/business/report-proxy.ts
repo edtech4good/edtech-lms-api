@@ -203,4 +203,25 @@ export class ReportProxy {
       },
     });
   }
+
+  /**
+   * Asks the learning server which of these learners have passed every quiz of a level, grade or curriculum
+   * (`POST report/certificate-eligibility`). The caller has already checked that the curriculum and every learner are the
+   * acting organisation's (the learners are read from its own schools), so the body is sent as it is, with the server key
+   * and the acting organisation's id in the same header every forwarded report request carries; the learning server
+   * confines the answer to that organisation again. Its own answer, and its errors, are handed back as they are.
+   */
+  async certificateEligibility(body: { curriculumid: string; scope: string; scopeid: string; studentids: string[] }) {
+    scopeOf(this.org); // throws first when there is no scope
+    return axios.post(`${Config.fortyk.api.rpi.cloud}/report/certificate-eligibility`, body, {
+      headers: {
+        Authorization: Config.fortyk.api.serversynckey,
+        ...organisationHeader(this.org),
+      },
+      timeout: CERTIFICATE_ELIGIBILITY_TIMEOUT_MS,
+    });
+  }
 }
+
+/** Gives up on the learning server after this long: a certificate screen should not hang on it. */
+export const CERTIFICATE_ELIGIBILITY_TIMEOUT_MS = 20_000;
