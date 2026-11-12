@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CurriculumRequest {
   @ApiProperty()
@@ -11,4 +11,10 @@ export class CurriculumRequest {
   curriculumstatus: boolean = false;
   @ApiProperty()
   countryid: [] = [];
+  @ApiPropertyOptional({ enum: ['none', 'award', 'certificate'] })
+  levelrecognition?: 'none' | 'award' | 'certificate';
+  @ApiPropertyOptional({ enum: ['none', 'certificate'] })
+  graderecognition?: 'none' | 'certificate';
+  @ApiPropertyOptional({ enum: ['none', 'certificate'] })
+  curriculumrecognition?: 'none' | 'certificate';
 }

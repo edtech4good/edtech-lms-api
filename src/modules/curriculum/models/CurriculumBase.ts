@@ -1,4 +1,4 @@
-import { ApiExtraModels, ApiProperty } from '@nestjs/swagger';
+import { ApiExtraModels, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IResponse } from 'src/models/IResponse';
 
 export class CurriculumBase {
@@ -14,6 +14,12 @@ export class CurriculumBase {
   isdeleted: boolean = false;
   @ApiProperty()
   countryid?: [string];
+  @ApiPropertyOptional({ enum: ['none', 'award', 'certificate'] })
+  levelrecognition?: string;
+  @ApiPropertyOptional({ enum: ['none', 'certificate'] })
+  graderecognition?: string;
+  @ApiPropertyOptional({ enum: ['none', 'certificate'] })
+  curriculumrecognition?: string;
 }
 
 

@@ -2,7 +2,15 @@ import joi, { SchemaMap } from 'joi';
 import { IPaging } from 'src/models/IPaging';
 import { emptyString } from 'src/validators/custom.validator';
 import { RequestValidator } from '../../models/RequestValidator';
+import { ALLOWED_RECOGNITION } from 'src/business/curriculum-recognition';
 import { filterValue } from "src/validators/organisation-filter";
+
+// Optional on create and edit; a value outside the tier's list (any case but lower, null, a number) is a 400 naming the field.
+const recognitionKeys = {
+  levelrecognition: joi.string().valid(...ALLOWED_RECOGNITION.levelrecognition).strict().label("levelrecognition"),
+  graderecognition: joi.string().valid(...ALLOWED_RECOGNITION.graderecognition).strict().label("graderecognition"),
+  curriculumrecognition: joi.string().valid(...ALLOWED_RECOGNITION.curriculumrecognition).strict().label("curriculumrecognition"),
+};
 
 const createcurriculum: RequestValidator = ({
   body: joi.object().keys({
@@ -10,6 +18,7 @@ const createcurriculum: RequestValidator = ({
     curriculumdescription: joi.string().max(500).min(3).custom(emptyString("Curriculum description")).label("Curriculum description").allow(null, ''),
     countryid: joi.array().items(joi.string()).required().label("Country Id"),
     subjectid: joi.string().required().uuid().label('Subject ID'),
+    ...recognitionKeys,
   }),
 });
 
@@ -19,6 +28,7 @@ const updatecurriculum: RequestValidator = ({
     curriculumdescription: joi.string().max(500).min(3).custom(emptyString("Curriculum description")).label("Curriculum description").allow(null, ''),
     countryid: joi.array().items(joi.string()).required().label("Country Id"),
     subjectid: joi.string().required().uuid().label('Subject ID'),
+    ...recognitionKeys,
   }),
   params: joi.object().keys({
     curriculumid: joi.string().required().uuid().label('Curriculum ID'),

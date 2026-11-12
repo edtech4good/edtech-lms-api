@@ -29,6 +29,7 @@ import { andScope, findOwnedCurriculum } from "./content-scope";
 import { andOrganisation, extractOrganisationFilter } from "./row-owner";
 import { andInOwnedSchools } from "./school-scope";
 import { withdrawPublications } from "./publication-withdraw";
+import { RECOGNITION_FIELDS } from "./curriculum-recognition";
 import { dbinstance, rollbackQuietly } from "src/services/dbservice";
 
 /**
@@ -152,8 +153,11 @@ export class CurriculumBusiness {
       tempdt.updated_at = new Date();
       tempdt.updated_by = user.lmsuserid;
       tempdt.subjectid = curriculum.subjectid;
+      // recognition: only the fields the caller names are written (a bad value was refused by the request schema)
+      const changed = RECOGNITION_FIELDS.filter((f) => curriculum[f] !== undefined);
+      for (const f of changed) (tempdt as any)[f] = curriculum[f];
       await tempdt.save({
-        fields: ["curriculumname", "curriculumdescription", "subjectid", 'updated_at', 'updated_by'],
+        fields: ["curriculumname", "curriculumdescription", "subjectid", 'updated_at', 'updated_by', ...changed],
       });
       //await tempdt.reload();
       return tempdt;
