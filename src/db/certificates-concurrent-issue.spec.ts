@@ -16,6 +16,13 @@ import axios from "axios";
 import { Sequelize } from "sequelize";
 import { Config } from "src/config";
 import { CertificateBusiness } from "src/business/certificate.business";
+import { curriculums } from "src/models/data-models/curriculums";
+import { grades } from "src/models/data-models/grades";
+import { levels } from "src/models/data-models/levels";
+import { organisations } from "src/models/data-models/organisations";
+import { schools } from "src/models/data-models/school";
+import { standards } from "src/models/data-models/standard";
+import { students } from "src/models/data-models/students";
 import { initModels } from "src/models/data-models/init-models";
 import { dbinstance } from "src/services/dbservice";
 
@@ -59,7 +66,13 @@ suite("certificates: concurrent issue", () => {
     // the business code reads through the shared instance and the models: point both at this one
     (dbinstance as unknown as { sequelize: Sequelize }).sequelize = sequelize;
     initModels(sequelize);
-    await sequelize.sync({ force: true });
+    for (const model of [organisations, schools, standards, curriculums, grades, levels, students]) {
+      try {
+        await model.sync({ force: true });
+      } catch (e) {
+        throw new Error(`could not create ${model.tableName}: ${(e as { parent?: { sqlMessage?: string } }).parent?.sqlMessage ?? (e as Error).message}`);
+      }
+    }
     await run("DROP TABLE IF EXISTS certificates");
     await migration.up(sequelize.getQueryInterface());
 
