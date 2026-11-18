@@ -213,6 +213,31 @@ describe("layout v2: which option is correct", () => {
     expect(problems.filter((p) => p.startsWith("C2 question 1"))).toEqual([]);
   });
 
+  it("refuses an option that is only partly green (a wrong option with one green word, the right one unmarked); a fully green option still works", () => {
+    // B has one green word, the right option C carries no mark: B must not silently become the answer
+    const sharedXml = `<si><r><rPr><sz val="10"/><color theme="1"/></rPr><t xml:space="preserve">S?\r\nA. a\r\nB. one </t></r><r><rPr><color rgb="FF00FF00"/></rPr><t>green</t></r><r><rPr><color theme="1"/></rPr><t xml:space="preserve"> word\r\nC. c</t></r></si>`;
+    const zip = new AdmZip(book([{ name: "Module 2", cells: moduleCells(2, [{ C: "placeholder", D: q(`${km("s")}?`, kmOpts(3, 2, "g")) }]) }]));
+    const sst = zip.readAsText("xl/sharedStrings.xml");
+    zip.updateFile("xl/sharedStrings.xml", Buffer.from(sst.replace(/<si><t xml:space="preserve">placeholder<\/t><\/si>/, sharedXml)));
+    expect(refused(zip.toBuffer(), {})).toContain("C2 question 1: option B is partly green; colour the whole option or none of it");
+    // a fully green option is the answer
+    expect(correctOf(convert(both(q("S?", enOpts(3, 2, "g")), [2])).content.lessons[0].practice[0])).toBe(2);
+  });
+
+  it("refuses an option that is only partly bold in a bold-fallback cell, but ignores partly bold where green or a tick decides", () => {
+    const sharedBold = (green: boolean) =>
+      `<si><r><rPr><sz val="10"/></rPr><t xml:space="preserve">S?\r\nA. a\r\nB. one </t></r><r><rPr><b/></rPr><t>bold</t></r><r><rPr><sz val="10"/></rPr><t xml:space="preserve"> word\r\n</t></r><r><rPr>${green ? '<color rgb="FF00FF00"/>' : "<b/>"}</rPr><t>C. c</t></r></si>`;
+    const make = (green: boolean) => {
+      const zip = new AdmZip(book([{ name: "Module 2", cells: moduleCells(2, [{ C: "placeholder", D: q(`${km("s")}?`, kmOpts(3, 2, "g")) }]) }]));
+      const sst = zip.readAsText("xl/sharedStrings.xml");
+      zip.updateFile("xl/sharedStrings.xml", Buffer.from(sst.replace(/<si><t xml:space="preserve">placeholder<\/t><\/si>/, sharedBold(green))));
+      return zip.toBuffer();
+    };
+    expect(refused(make(false))).toContain("C2 question 1: option B is partly bold; make the whole option bold or none of it");
+    // C is green, so the cell is not a fallback cell and B's partial bold means nothing
+    expect(correctOf(convert(make(true)).content.lessons[0].practice[0])).toBe(2);
+  });
+
   it("still refuses English and Khmer that mark different options", () => {
     expect(refused(both(q("S?", enOpts(3, 0, "g")), [2]))).toEqual(["lesson 1 practice question 1: English and Khmer mark a different option correct"]);
   });
@@ -246,6 +271,23 @@ describe("layout v2: a lesson whose English cell is empty", () => {
     expect(notices).toContain("lesson 1 practice: C2 (English) is empty, so the English text is the Khmer copied from D2");
     expect(notices).toContain("lesson 1 quiz: E2 (English) is empty, so the English text is the Khmer copied from F2");
     expect([...copiedEnglish].sort()).toEqual(["1:practice", "1:quiz"]);
+  });
+
+  it("reads a cell that says only N/A, NA or a dash as empty", () => {
+    for (const t of ["N/A", " n/a ", "NA", "-", "na\r\n"]) {
+      // no practice at all: both cells N/A
+      const none = convert(oneLesson({ C: t, D: t, E: simple("a").E, F: simple("a").F }));
+      expect(none.content.lessons[0].practice).toEqual([]);
+      expect(none.content.lessons[0].quiz).toHaveLength(1);
+      // English N/A beside Khmer questions follows the Khmer-copied rule
+      const copied = convert(oneLesson({ ...simple("a"), C: t }));
+      expect(copied.content.lessons[0].practice[0].text.en).toBe(`${km("pa")}?`);
+      expect(copied.notices).toContain("lesson 1 practice: C2 (English) is empty, so the English text is the Khmer copied from D2");
+      // Khmer N/A beside English questions is still refused
+      expect(refused(oneLesson({ ...simple("a"), D: t }))).toEqual(["lesson 1 practice: D2 (Khmer) is empty but C2 (English) has 1 question; the Khmer is required"]);
+    }
+    // other short text is still a question cell, and still refused
+    expect(refused(oneLesson({ ...simple("a"), C: "N/A please" })).join("|")).toContain("C2 question 1 has no options");
   });
 
   it("refuses an empty Khmer cell beside an English one, and has no practice when both are empty", () => {

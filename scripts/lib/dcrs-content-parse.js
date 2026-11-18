@@ -292,22 +292,25 @@ function parseQuizCell(text, where, problems, notices = [], opts = {}) {
       }
       const option = { text: body, correct: ticked };
       if (v2) {
-        // What the author's formatting says of this option's text (not its letter): green anywhere in it, bold over more than half of it.
+        // What the author's formatting says of this option's text (not its letter, not its tick): green or bold counts only over ALL of it;
+        // over part of it the option is refused (below), so a stray coloured word never picks an answer.
         const from = qlines[optionAt + j].at + (line.length - m[2].length);
         let letters = 0;
         let boldLetters = 0;
-        let green = false;
+        let greenLetters = 0;
         if (format !== null) {
-          for (let k = from; k < from + m[2].length; k++) {
+          for (let k = from; k < from + body.length; k++) {
             if (/\s/.test(norm[k])) continue;
             letters += 1;
-            if (format[k] === "g" || format[k] === "B") green = true;
+            if (format[k] === "g" || format[k] === "B") greenLetters += 1;
             if (format[k] === "b" || format[k] === "B") boldLetters += 1;
           }
         }
         option.ticked = ticked;
-        option.green = green;
-        option.bold = letters > 0 && boldLetters * 2 > letters;
+        option.green = letters > 0 && greenLetters === letters;
+        option.bold = letters > 0 && boldLetters === letters;
+        option.partlyGreen = greenLetters > 0 && greenLetters < letters;
+        option.partlyBold = boldLetters > 0 && boldLetters < letters;
       }
       options.push(option);
     });
@@ -329,11 +332,17 @@ function parseQuizCell(text, where, problems, notices = [], opts = {}) {
       if (tickOnly.length > 0 && greenOnly.length > 0) {
         problems.push(`${q.at}: a tick marks option ${letter(tickOnly[0])} but green marks option ${letter(greenOnly[0])}; they must mark the same option`);
       }
+      for (const o of q.options) {
+        if (o.partlyGreen) problems.push(`${q.at}: option ${letter(o)} is partly green; colour the whole option or none of it`);
+        else if (!marked && o.partlyBold) problems.push(`${q.at}: option ${letter(o)} is partly bold; make the whole option bold or none of it`);
+      }
       for (const o of q.options) o.correct = marked ? o.ticked || o.green : o.bold;
       for (const o of q.options) {
         delete o.ticked;
         delete o.green;
         delete o.bold;
+        delete o.partlyGreen;
+        delete o.partlyBold;
       }
     }
     for (const q of parsed) {
@@ -671,7 +680,12 @@ function parseCells(cells, options = {}) {
     if (!v2 && ref.length === 0) problems.push(`C${r} (video reference) is empty`);
     const ident = order === 1 ? `DCRS-M${module}-` : `DCRS-M${module}-L${order}-`;
     const label = `lesson ${order}`;
-    const read = (c) => parseQuizCell(cells[`${c}${r}`], `${c}${r}`, problems, notices, v2 ? { v2: true, format: options.formats?.[`${c}${r}`] } : undefined);
+    // v2: a cell that says only N/A (or NA, or a dash) holds no questions, as an empty one does
+    const NOT_APPLICABLE = /^(?:n\/?a|-)$/i;
+    const read = (c) =>
+      v2 && NOT_APPLICABLE.test(String(cells[`${c}${r}`] ?? "").trim())
+        ? []
+        : parseQuizCell(cells[`${c}${r}`], `${c}${r}`, problems, notices, v2 ? { v2: true, format: options.formats?.[`${c}${r}`] } : undefined);
     const readSet = (enCol, kmCol, kind, name) => {
       let en = read(enCol);
       const km = read(kmCol);
