@@ -21,6 +21,11 @@
  *    stem, and the two heads must have the same number of lines. A head of two lines on ONE side only is a title line
  *    ("Practice N ...") the database does not hold: it is dropped, with a notice, and the last line is the stem.
  *
+ * Layout v2 (the six-sheet workbook, one module a sheet; `options.layout = "v2"`) differs: columns are A module title, B lesson title, C/D practice
+ * (EN/KM), E/F quiz (EN/KM), there is no video reference, the correct option is the one that ends with a tick or whose text is green (else, in a cell
+ * with no tick or green at all, the bold option), "- A." options are read, a Khmer-only cell is copied to English, and the folders are searched
+ * recursively (videos M<mm>_L<ll>.mp4; one recording per question, M<mm>_L<ll>_(P|Q)<k>[_suffix].m4a).
+ *
  * The spreadsheet's text is copied exactly (no trimming inside a line, no normalising), with one
  * exception: a lesson number in front of the English lesson title alone is dropped (see parseCells).
  *
@@ -40,6 +45,8 @@ const TICK = /\s+[\u2713\u2714]\s*$/; // the tick is separated from the option t
 // ("1.") is a number in front of a stem, never an option.
 const KHMER_MARKERS = "\u1780\u1781\u1782\u1783";
 const OPTION = new RegExp(`^([A-Za-z${KHMER_MARKERS}])\\.\\s+(.+)$`);
+// Layout v2 also takes a leading dash ("- A. text"); the dash is not part of the option.
+const OPTION_V2 = new RegExp(`^(?:-\\s*)?([A-Za-z${KHMER_MARKERS}])\\.\\s+(.+)$`);
 const KHMER_ORDINAL = ["first", "second", "third", "fourth"];
 const NUMBER_PREFIX = /^[0-9\u17e0-\u17e9]+[.)]\s+/;
 const MODULE_TITLE = /^Module\s+(\d+)\b/i;
@@ -80,38 +87,129 @@ function entryText(zip, name) {
   return entry.getData().toString("utf8");
 }
 
-/** The cells of the first sheet. `file` is a path or a Buffer. */
-function readCellsFromXlsx(file) {
+/** True for a run's `<b/>` (or `<b val="1"/>`), false for `<b val="0"/>` or no bold at all. */
+const isBold = (rpr) => {
+  const b = /<b\b([^>]*?)\/?>/.exec(rpr);
+  return b !== null && !/\bval="(?:0|false)"/i.test(b[1]);
+};
+/** True for a run whose font colour is the rgb green (FF00FF00, or 00FF00). Theme and indexed colours are never green here. */
+const isGreen = (rpr) => /<color\b[^>]*\brgb="(?:FF)?00FF00"/i.test(rpr);
+
+/**
+ * The formatting of every character of an <si> or <is>: a string of the same length as its text (`text`, as `textOf` gives it), one code
+ * per UTF-16 unit: "." plain, "b" bold, "g" green, "B" bold and green. Null when the element has no rich-text runs, or when the runs do not
+ * add up to the text (then nothing is claimed about the formatting).
+ */
+function formatOf(xml, text) {
+  const without = xml.replace(/<rPh\b[\s\S]*?<\/rPh>/g, "");
+  const runs = [...without.matchAll(/<r\b[^>]*>([\s\S]*?)<\/r>/g)];
+  if (runs.length === 0) return null;
+  let codes = "";
+  let joined = "";
+  for (const run of runs) {
+    const rpr = /<rPr\b[^>]*>([\s\S]*?)<\/rPr>/.exec(run[1])?.[1] ?? "";
+    const bold = isBold(rpr);
+    const green = isGreen(rpr);
+    const t = textOf(run[1].replace(/<rPr\b[^>]*>[\s\S]*?<\/rPr>/, ""));
+    joined += t;
+    codes += (green ? (bold ? "B" : "g") : bold ? "b" : ".").repeat(t.length);
+  }
+  return joined === text ? codes : null;
+}
+
+/** Line endings to "\n", keeping the format string in step (a dropped "\r" drops its code). */
+function normaliseLines(text, codes) {
+  if (!/\r/.test(text)) return { text, codes };
+  let t = "";
+  let c = "";
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\r") {
+      if (text[i + 1] === "\n") continue;
+      t += "\n";
+    } else t += text[i];
+    c += codes === null ? "" : codes[i];
+  }
+  return { text: t, codes: codes === null ? null : c };
+}
+
+const SHEET_ENTRY = /^(?:\/?xl\/)?(worksheets\/[A-Za-z0-9_.-]+\.xml)$/;
+const attr = (attrs, name) => {
+  const m = new RegExp(`\\b${name}="([^"]*)"`).exec(attrs);
+  return m ? unescapeXml(m[1]) : null;
+};
+
+/** The zip entry of the sheet `selector` names: its name, or (when no sheet has that name and it is all digits) its 1-based place in the workbook. */
+function sheetEntryFor(zip, selector) {
+  const workbook = entryText(zip, "xl/workbook.xml");
+  const rels = entryText(zip, "xl/_rels/workbook.xml.rels");
+  if (workbook === null || rels === null) throw new ParseRefused(["xl/workbook.xml or its relationships are missing, so a sheet cannot be chosen"]);
+  const sheets = [...workbook.matchAll(/<sheet\b([^>]*?)\/?>/g)].map((m) => ({ name: attr(m[1], "name"), rid: attr(m[1], "r:id") }));
+  const wanted = String(selector);
+  let found = sheets.find((x) => x.name === wanted);
+  if (!found && /^[0-9]+$/.test(wanted)) found = sheets[Number(wanted) - 1];
+  if (!found) throw new ParseRefused([`--sheet ${wanted}: no such sheet (the workbook has ${sheets.length}: ${sheets.map((x, i) => `${i + 1} "${x.name}"`).join(", ")})`]);
+  const rel = [...rels.matchAll(/<Relationship\b([^>]*?)\/?>/g)].find((m) => attr(m[1], "Id") === found.rid);
+  const target = rel ? SHEET_ENTRY.exec(attr(rel[1], "Target") ?? "") : null;
+  if (!target) throw new ParseRefused([`--sheet ${wanted}: the sheet's file cannot be found in the workbook`]);
+  return `xl/${target[1]}`;
+}
+
+/**
+ * One sheet's cells and their formatting: `{ cells: { A1: "text", ... }, formats: { A1: "..b.g" } }`. `selector` is the sheet's name or 1-based
+ * place; with none, the first sheet (xl/worksheets/sheet1.xml). `formats[ref]` is the format string of `formatOf`, there only for a cell with
+ * rich-text runs. `file` is a path or a Buffer.
+ */
+function readSheetFromXlsx(file, selector) {
   let zip;
   try {
     zip = new AdmZip(file);
   } catch {
     throw new ParseRefused(["not a readable .xlsx file"]);
   }
-  const sheet = entryText(zip, "xl/worksheets/sheet1.xml");
-  if (sheet === null) throw new ParseRefused(["xl/worksheets/sheet1.xml is missing"]);
+  const entry = selector === undefined ? "xl/worksheets/sheet1.xml" : sheetEntryFor(zip, selector);
+  const sheet = entryText(zip, entry);
+  if (sheet === null) throw new ParseRefused([`${entry} is missing`]);
   const sharedXml = entryText(zip, "xl/sharedStrings.xml");
   const shared = [];
-  if (sharedXml !== null) for (const m of sharedXml.matchAll(/<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g)) shared.push(textOf(m[1] ?? ""));
+  if (sharedXml !== null) {
+    for (const m of sharedXml.matchAll(/<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g)) {
+      const text = textOf(m[1] ?? "");
+      shared.push({ text, codes: formatOf(m[1] ?? "", text) });
+    }
+  }
 
   const cells = {};
+  const formats = {};
   for (const m of sheet.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
     const ref = /\br="([A-Z]+[0-9]+)"/.exec(m[1]);
     if (!ref || m[2] === undefined) continue;
     const type = /\bt="(\w+)"/.exec(m[1])?.[1];
     let text;
+    let codes = null;
     if (type === "s") {
       const v = /<v>([0-9]+)<\/v>/.exec(m[2]);
-      text = v ? shared[Number(v[1])] : undefined;
+      text = v ? shared[Number(v[1])]?.text : undefined;
+      codes = v ? shared[Number(v[1])]?.codes ?? null : null;
     } else if (type === "inlineStr") {
-      text = textOf(/<is\b[^>]*>([\s\S]*?)<\/is>/.exec(m[2])?.[1] ?? "");
+      const inner = /<is\b[^>]*>([\s\S]*?)<\/is>/.exec(m[2])?.[1] ?? "";
+      text = textOf(inner);
+      codes = formatOf(inner, text);
     } else if (type === "str") {
       const v = /<v>([\s\S]*?)<\/v>/.exec(m[2]);
       text = v ? unescapeXml(v[1]) : undefined;
     }
-    if (text !== undefined) cells[ref[1]] = text.replace(/\r\n?/g, "\n");
+    if (text !== undefined) {
+      const n = normaliseLines(text, codes);
+      cells[ref[1]] = n.text;
+      if (n.codes !== null && /[^.]/.test(n.codes)) formats[ref[1]] = n.codes;
+    }
   }
-  return cells;
+  return { cells, formats };
+}
+
+/** The cells of the first sheet. `file` is a path or a Buffer. */
+function readCellsFromXlsx(file) {
+  return readSheetFromXlsx(file).cells;
 }
 
 // ---- the text -------------------------------------------------------------------------------
@@ -133,21 +231,36 @@ function splitBilingual(text, where, problems) {
  * that starts with an option (the author may leave a blank line between the stem and the options); questions are separated by
  * blank lines. Anything wrong is pushed to `problems`; what is taken by position and not by the letter written goes to `notices`.
  */
-function parseQuizCell(text, where, problems, notices = []) {
-  const blocks = String(text ?? "")
-    .replace(/\r\n?/g, "\n")
-    .split(/\n[ \t]*\n/)
-    .map((b) => b.split("\n").map((l) => l.trim()).filter((l) => l.length > 0))
-    .filter((lines) => lines.length > 0);
+function parseQuizCell(text, where, problems, notices = [], opts = {}) {
+  const v2 = opts.v2 === true;
+  const optionRe = v2 ? OPTION_V2 : OPTION;
+  const norm = String(text ?? "").replace(/\r\n?/g, "\n");
+  // The cell's format string (one code per character, see formatOf) is only trusted when it fits the text.
+  const format = typeof opts.format === "string" && opts.format.length === norm.length ? opts.format : null;
+  // Blocks of lines, a line being { text (trimmed), at (where its text starts in the cell) }. A blank line (spaces and tabs only) ends a block.
+  const blocks = [];
+  let block = [];
+  let offset = 0;
+  for (const raw of norm.split("\n")) {
+    if (/^[ \t]*$/.test(raw)) {
+      if (block.length > 0) blocks.push(block);
+      block = [];
+    } else if (raw.trim().length > 0) {
+      block.push({ text: raw.trim(), at: offset + (raw.length - raw.trimStart().length) });
+    }
+    offset += raw.length + 1;
+  }
+  if (block.length > 0) blocks.push(block);
   const questions = [];
   for (const lines of blocks) {
     const previous = questions[questions.length - 1];
-    if (previous && !previous.some((l) => OPTION.test(l)) && OPTION.test(lines[0])) previous.push(...lines);
+    if (previous && !previous.some((l) => optionRe.test(l.text)) && optionRe.test(lines[0].text)) previous.push(...lines);
     else questions.push([...lines]);
   }
-  return questions.map((lines, i) => {
+  const parsed = questions.map((qlines, i) => {
     const at = `${where} question ${i + 1}`;
-    const optionAt = lines.findIndex((l) => OPTION.test(l));
+    const lines = qlines.map((l) => l.text);
+    const optionAt = lines.findIndex((l) => optionRe.test(l));
     const head = optionAt === -1 ? lines : lines.slice(0, optionAt);
     const rest = optionAt === -1 ? [] : lines.slice(optionAt);
     // The head: one line is the stem (its number, if any, goes). Longer, every line is kept (`head`); matchQuestions decides what the two sides
@@ -157,7 +270,7 @@ function parseQuizCell(text, where, problems, notices = []) {
     const stem = head.length === 1 ? head[0].replace(NUMBER_PREFIX, "") : head.length >= 2 ? head.slice(1).join("\n") : "";
     const options = [];
     rest.forEach((line, j) => {
-      const m = OPTION.exec(line);
+      const m = optionRe.exec(line);
       if (!m) {
         problems.push(`${at}: line ${optionAt + j + 1} is not an option ("A. text")`);
         return;
@@ -170,20 +283,75 @@ function parseQuizCell(text, where, problems, notices = []) {
       } else if (m[1].toUpperCase() !== String.fromCharCode(65 + j)) {
         problems.push(`${at}: option letters must run A, B, C in order (found ${m[1]} at position ${j + 1})`);
       }
-      const correct = TICK.test(m[2]);
+      const ticked = TICK.test(m[2]);
       const body = m[2].replace(TICK, "");
-      if (/[\u2713\u2714]/.test(body)) {
-        problems.push(/[\u2713\u2714]\s*$/.test(body)
+      if (/[✓✔]/.test(body)) {
+        problems.push(/[✓✔]\s*$/.test(body)
           ? `${at}: the tick at the end of option ${m[1]} must be separated from the option text by a space`
           : `${at}: a tick that is not at the end of option ${m[1]}`);
       }
-      options.push({ text: body, correct });
+      const option = { text: body, correct: ticked };
+      if (v2) {
+        // What the author's formatting says of this option's text (not its letter, not its tick): green or bold counts only over ALL of it;
+        // over part of it the option is refused (below), so a stray coloured word never picks an answer.
+        const from = qlines[optionAt + j].at + (line.length - m[2].length);
+        let letters = 0;
+        let boldLetters = 0;
+        let greenLetters = 0;
+        if (format !== null) {
+          for (let k = from; k < from + body.length; k++) {
+            if (/\s/.test(norm[k])) continue;
+            letters += 1;
+            if (format[k] === "g" || format[k] === "B") greenLetters += 1;
+            if (format[k] === "b" || format[k] === "B") boldLetters += 1;
+          }
+        }
+        option.ticked = ticked;
+        option.green = letters > 0 && greenLetters === letters;
+        option.bold = letters > 0 && boldLetters === letters;
+        option.partlyGreen = greenLetters > 0 && greenLetters < letters;
+        option.partlyBold = boldLetters > 0 && boldLetters < letters;
+      }
+      options.push(option);
     });
     if (options.length === 0) problems.push(`${at} has no options`);
-    const correct = options.filter((o) => o.correct).length;
-    if (options.length > 0 && correct !== 1) problems.push(`${at} has ${correct} options marked correct; it needs exactly 1`);
-    return { head, title, stem, options };
+    if (!v2) {
+      const correct = options.filter((o) => o.correct).length;
+      if (options.length > 0 && correct !== 1) problems.push(`${at} has ${correct} options marked correct; it needs exactly 1`);
+    }
+    return { head, title, stem, options, at };
   });
+  if (v2) {
+    // The correct option of a v2 cell: the one that ends with a tick or is green. A cell with no option marked either way anywhere falls back to
+    // the bold option (per cell, never per question); only option lines are looked at, so a bold stem means nothing.
+    const marked = parsed.some((q) => q.options.some((o) => o.ticked || o.green));
+    for (const q of parsed) {
+      const letter = (o) => String.fromCharCode(65 + q.options.indexOf(o));
+      const tickOnly = q.options.filter((o) => o.ticked && !o.green);
+      const greenOnly = q.options.filter((o) => o.green && !o.ticked);
+      if (tickOnly.length > 0 && greenOnly.length > 0) {
+        problems.push(`${q.at}: a tick marks option ${letter(tickOnly[0])} but green marks option ${letter(greenOnly[0])}; they must mark the same option`);
+      }
+      for (const o of q.options) {
+        if (o.partlyGreen) problems.push(`${q.at}: option ${letter(o)} is partly green; colour the whole option or none of it`);
+        else if (!marked && o.partlyBold) problems.push(`${q.at}: option ${letter(o)} is partly bold; make the whole option bold or none of it`);
+      }
+      for (const o of q.options) o.correct = marked ? o.ticked || o.green : o.bold;
+      for (const o of q.options) {
+        delete o.ticked;
+        delete o.green;
+        delete o.bold;
+        delete o.partlyGreen;
+        delete o.partlyBold;
+      }
+    }
+    for (const q of parsed) {
+      const correct = q.options.filter((o) => o.correct).length;
+      if (q.options.length > 0 && correct !== 1) problems.push(`${q.at} has ${correct} options marked correct; it needs exactly 1`);
+    }
+  }
+  for (const q of parsed) delete q.at;
+  return parsed;
 }
 
 /**
@@ -350,6 +518,98 @@ function videoSourcesOf(folder, moduleNumber, orders, keep, problems, notices) {
   return sources;
 }
 
+const MAX_FOLDER_FILES = 50000;
+/** Every regular file under `folder` (links are not followed), as absolute paths, sorted. A folder that cannot be read is `null`. */
+function filesUnder(folder) {
+  const found = [];
+  const walk = (dir, depth) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory() && depth < 8) walk(full, depth + 1);
+      else if (entry.isFile()) found.push(full);
+      if (found.length > MAX_FOLDER_FILES) throw new Error("too many files");
+    }
+  };
+  try {
+    walk(folder, 0);
+  } catch {
+    return null;
+  }
+  return found.sort();
+}
+const hasContent = (file) => fs.statSync(file).size > 0;
+const within = (folder, file) => path.relative(folder, file);
+
+const VIDEO_FILE_V2 = /^M(\d{2})_L(\d{2})\.mp4$/i;
+/**
+ * Layout v2's video of each lesson: `M<mm>_L<ll>.mp4` anywhere under `folder`, as `{ [order]: absolute path }`. A lesson in `keep` needs none.
+ * A lesson with no file (or an empty one), or with two, is a reason to refuse; a file of another module or of no lesson is only noted.
+ */
+function videoSourcesV2(folder, moduleNumber, orders, keep, problems, notices) {
+  const files = filesUnder(folder);
+  if (files === null) {
+    problems.push("--video-folder is not a readable folder");
+    return {};
+  }
+  const byOrder = {};
+  const wanted = new Set(orders);
+  for (const file of files) {
+    const m = VIDEO_FILE_V2.exec(path.basename(file));
+    if (!m) continue;
+    const [mod, order] = [Number(m[1]), Number(m[2])];
+    if (mod !== moduleNumber || !wanted.has(order)) notices.push(`${within(folder, file)} matches no lesson of this module; not used`);
+    else (byOrder[order] ??= []).push(file);
+  }
+  const sources = {};
+  for (const order of orders) {
+    const name = `M${pad2(moduleNumber)}_L${pad2(order)}.mp4`;
+    const list = byOrder[order] ?? [];
+    if (keep.has(order)) {
+      if (list.length > 0) notices.push(`lesson ${order}: its video is kept, so ${name} in the folder is not used`);
+    } else if (list.length > 1) problems.push(`lesson ${order}: its video ${name} is in the folder more than once (${list.map((f) => within(folder, f)).join(", ")})`);
+    else if (list.length === 1 && hasContent(list[0])) sources[order] = list[0];
+    else problems.push(`lesson ${order}: its video ${name} is not in the folder (or is not a file with something in it)`);
+  }
+  return sources;
+}
+
+const AUDIO_FILE = /^M(\d{2})_L(\d{2})_([PQ])(\d+)(?:_[A-Za-z0-9_]+)?\.m4a$/i;
+/**
+ * The recordings under `folder`: `M<mm>_L<ll>_(P|Q)<k>[_suffix].m4a`, P a practice question and Q a quiz question of lesson <ll>, k counted from 1 in
+ * the sheet's order. Returns `{ files: [{ order, kind, k, file }], problems }` for the caller to hold against the lessons (it knows how many
+ * questions there are). A file of another module, with no content, or a second file for one question is refused here; other .m4a files are noted.
+ */
+function audioFilesOf(folder, moduleNumber, problems, notices) {
+  const all = filesUnder(folder);
+  if (all === null) {
+    problems.push("--audio-folder is not a readable folder");
+    return [];
+  }
+  const picked = new Map();
+  for (const file of all) {
+    const name = path.basename(file);
+    if (!/\.m4a$/i.test(name) || name.startsWith("._")) continue;
+    const m = AUDIO_FILE.exec(name);
+    if (!m) {
+      notices.push(`${within(folder, file)} is not named like M02_L01_P1.m4a; not used`);
+      continue;
+    }
+    const [mod, order, kind, k] = [Number(m[1]), Number(m[2]), m[3].toUpperCase(), Number(m[4])];
+    if (mod !== moduleNumber) {
+      problems.push(`${within(folder, file)}: the file is for module ${mod}, but this sheet is module ${moduleNumber}`);
+      continue;
+    }
+    if (!hasContent(file)) {
+      problems.push(`${within(folder, file)}: the file is empty`);
+      continue;
+    }
+    const key = `${order}:${kind}:${k}`;
+    if (picked.has(key)) problems.push(`lesson ${order} ${kind === "P" ? "practice" : "quiz"} question ${k} has two recordings (${within(folder, picked.get(key).file)} and ${within(folder, file)})`);
+    else picked.set(key, { order, kind, k, file });
+  }
+  return [...picked.values()];
+}
+
 const COLUMNS = ["A", "B", "C", "D", "E", "F", "G"];
 
 /**
@@ -360,7 +620,12 @@ const COLUMNS = ["A", "B", "C", "D", "E", "F", "G"];
  *   `options.videoFolder`: the folder holding M<module>-L<lesson>-MP4.mp4 for each lesson (each lesson's `video.source`);
  *   `options.keepVideo`: lesson numbers whose existing video stays: `video: { ref, keep: true }` and no file is looked for;
  *   `options.programme`: `{ en, km }`, the programme's name (optional here; from normaliseProgramme; the seed refuses a file without it);
- *   `options.notices`: an array that receives what was changed or taken by position, in words (no refusal).
+ *   `options.notices`: an array that receives what was changed or taken by position, in words (no refusal);
+ *   `options.layout`: "v2" for the six-sheet workbook (columns: A module title, B lesson title, C/D practice EN/KM, E/F quiz EN/KM; no video reference, so the
+ *     reference is the video's file stem, M02_L01); in v2 `options.formats` (from readSheetFromXlsx) lets a green or bold option mark the correct one,
+ *     a Khmer-only cell is copied to English, "- A." options are read, and `videoFolder` is searched recursively for M<mm>_L<ll>.mp4;
+ *   `options.audioFolder`: (v2) the folder searched for M<mm>_L<ll>_(P|Q)<k>[_suffix].m4a; each recording becomes `audio: { source }` of its question;
+ *   `options.copiedEnglish`: a Set that receives "<lesson>:practice" / "<lesson>:quiz" for each set whose English is the Khmer copied (v2).
  * Every lesson needs a video decision: a file (`videoFolder`, or `videoSource` for a one-lesson sheet) or a place in `keepVideo`; a lesson with
  * neither is refused, because the import would overwrite its document row with a new file name.
  * The video reference in column C is kept as written and nothing is derived from it.
@@ -370,6 +635,9 @@ const COLUMNS = ["A", "B", "C", "D", "E", "F", "G"];
 function parseCells(cells, options = {}) {
   const problems = [];
   const notices = options.notices ?? [];
+  const v2 = options.layout === "v2";
+  if (options.layout !== undefined && !v2) problems.push(`--layout ${options.layout}: the only layout that can be named is v2`);
+  const col = v2 ? { pEn: "C", pKm: "D", qEn: "E", qKm: "F" } : { ref: "C", pEn: "D", pKm: "E", qEn: "F", qKm: "G" };
   const moduleTitle = splitBilingual(cells.A2, "A2 (module title)", problems);
   // A title that is itself refused has no English line to read a number from; that is the one reason given, not a second one about the number.
   const module = problems.length === 0 ? moduleNumberOf(moduleTitle.en, options.module, problems) : null;
@@ -394,7 +662,7 @@ function parseCells(cells, options = {}) {
   if (options.videoSource !== undefined && options.videoFolder !== undefined) problems.push("--video-source and --video-folder cannot be used together");
   const sources =
     options.videoFolder !== undefined && module !== null
-      ? videoSourcesOf(options.videoFolder, module, rows.map((_, i) => i + 1), keep, problems, notices)
+      ? (v2 ? videoSourcesV2 : videoSourcesOf)(options.videoFolder, module, rows.map((_, i) => i + 1), keep, problems, notices)
       : {};
 
   const lessons = rows.map((r, i) => {
@@ -407,12 +675,34 @@ function parseCells(cells, options = {}) {
       lessonTitle.en = lessonTitle.en.replace(/^[0-9]+\.?\s+/, "");
       if (Number(numbered[1]) !== order && numbered[1].length < 3) notices.push(`B${r}: the English title began with ${numbered[1]}, and this is lesson ${order} by its row; the row decides`);
     }
-    const ref = String(cells[`C${r}`] ?? "").trim();
-    if (ref.length === 0) problems.push(`C${r} (video reference) is empty`);
+    // v2 has no video reference column: the reference is the stem of the video's file name
+    const ref = v2 ? `M${pad2(module ?? 0)}_L${pad2(order)}` : String(cells[`C${r}`] ?? "").trim();
+    if (!v2 && ref.length === 0) problems.push(`C${r} (video reference) is empty`);
     const ident = order === 1 ? `DCRS-M${module}-` : `DCRS-M${module}-L${order}-`;
     const label = `lesson ${order}`;
-    const practice = matchQuestions(parseQuizCell(cells[`D${r}`], `D${r}`, problems, notices), parseQuizCell(cells[`E${r}`], `E${r}`, problems, notices), "P", `${label} practice`, ident, r, problems, notices);
-    const quiz = matchQuestions(parseQuizCell(cells[`F${r}`], `F${r}`, problems, notices), parseQuizCell(cells[`G${r}`], `G${r}`, problems, notices), "Q", `${label} quiz`, ident, r, problems, notices);
+    // v2: a cell that says only N/A (or NA, or a dash) holds no questions, as an empty one does
+    const NOT_APPLICABLE = /^(?:n\/?a|-)$/i;
+    const read = (c) =>
+      v2 && NOT_APPLICABLE.test(String(cells[`${c}${r}`] ?? "").trim())
+        ? []
+        : parseQuizCell(cells[`${c}${r}`], `${c}${r}`, problems, notices, v2 ? { v2: true, format: options.formats?.[`${c}${r}`] } : undefined);
+    const readSet = (enCol, kmCol, kind, name) => {
+      let en = read(enCol);
+      const km = read(kmCol);
+      if (v2 && en.length === 0 && km.length > 0) {
+        // The English cell is empty and the Khmer has questions: the Khmer stands in for English too (text, options, correct answer).
+        notices.push(`lesson ${order} ${name}: ${enCol}${r} (English) is empty, so the English text is the Khmer copied from ${kmCol}${r}`);
+        options.copiedEnglish?.add(`${order}:${name}`);
+        en = km;
+      } else if (v2 && km.length === 0 && en.length > 0) {
+        problems.push(`lesson ${order} ${name}: ${kmCol}${r} (Khmer) is empty but ${enCol}${r} (English) has ${en.length} question${en.length === 1 ? "" : "s"}; the Khmer is required`);
+        return [];
+      }
+      return matchQuestions(en, km, kind, `${label} ${name}`, ident, r, problems, notices);
+    };
+    const practice = readSet(col.pEn, col.pKm, "P", "practice");
+    const quiz = readSet(col.qEn, col.qKm, "Q", "quiz");
+    if (v2 && !isBlank(cells[`G${r}`])) problems.push(`G${r} has text, but layout v2 ends at column F`);
     const source = keep.has(order) ? undefined : sources[order] ?? (order === 1 && rows.length === 1 ? options.videoSource : undefined);
     // A lesson that is not kept is written a video file name, and the import overwrites its document row with it: so it must have a file
     // (with --video-folder, a lesson without its file is refused by videoSourcesOf; --video-source on a sheet of several lessons is refused above).
@@ -435,6 +725,29 @@ function parseCells(cells, options = {}) {
       quiz,
     };
   });
+  if (options.audioFolder !== undefined && !v2) problems.push("--audio-folder is for layout v2");
+  if (v2 && options.audioFolder !== undefined && module !== null) {
+    const found = audioFilesOf(options.audioFolder, module, problems, notices);
+    const given = new Set();
+    for (const { order, kind, k, file } of found) {
+      const name = kind === "P" ? "practice" : "quiz";
+      const lesson = lessons[order - 1];
+      const question = lesson?.[name][k - 1];
+      if (!lesson) problems.push(`${within(options.audioFolder, file)}: the sheet has no lesson ${order}`);
+      else if (!question) problems.push(`${within(options.audioFolder, file)}: lesson ${order} has ${lesson[name].length} ${name} question${lesson[name].length === 1 ? "" : "s"}, not ${k}`);
+      else {
+        question.audio = { source: file };
+        given.add(question);
+      }
+    }
+    for (const lesson of lessons) {
+      for (const name of ["practice", "quiz"]) {
+        lesson[name].forEach((q, j) => {
+          if (!given.has(q)) notices.push(`lesson ${lesson.order} ${name} question ${j + 1}: no audio file`);
+        });
+      }
+    }
+  }
   if (problems.length > 0) throw new ParseRefused(problems);
   return {
     ...(options.programme ? { programme: { en: options.programme.en, km: options.programme.km } } : {}),
@@ -443,4 +756,37 @@ function parseCells(cells, options = {}) {
   };
 }
 
-module.exports = { ParseRefused, readCellsFromXlsx, parseCells, parseQuizCell, splitBilingual, normaliseProgramme, readProgramme, videoFileName, videoSourcesOf };
+/**
+ * A Markdown review document for a person to check the answers against the author's sheet: per lesson, practice then quiz, each question
+ * numbered; the Khmer stem, the Khmer options with the correct one marked with a tick box, then the English stem and its correct option
+ * (or "(English: Khmer copied)" for a set whose English is the Khmer), and the audio file the question got (or "no audio").
+ * `copiedEnglish`: the Set of "<lesson>:practice" / "<lesson>:quiz" that parseCells filled.
+ */
+function answerKeyMarkdown(content, copiedEnglish = new Set()) {
+  const one = (text) => String(text).replace(/\s*\n\s*/g, " / ");
+  const out = [`# Answer key: module ${content.module.number}`, "", `${one(content.module.name.en)} | ${one(content.module.name.km)}`, ""];
+  for (const lesson of content.lessons) {
+    out.push(`## Lesson ${lesson.order}: ${one(lesson.name.en)} | ${one(lesson.name.km)}`, "");
+    for (const kind of ["practice", "quiz"]) {
+      out.push(`### ${kind === "practice" ? "Practice" : "Quiz"}`, "");
+      if (lesson[kind].length === 0) out.push("(no questions)", "");
+      lesson[kind].forEach((q, i) => {
+        out.push(`**${kind === "practice" ? "Practice" : "Quiz"} question ${i + 1}**`, "", `Khmer: ${one(q.text.km)}`, "");
+        q.options.forEach((o, j) => out.push(`- ${String.fromCharCode(65 + j)}. ${o.text.km}${o.correct ? " ✅" : ""}`));
+        out.push("");
+        if (copiedEnglish.has(`${lesson.order}:${kind}`)) out.push("(English: Khmer copied)", "");
+        else {
+          out.push(`English: ${one(q.text.en)}`, "");
+          q.options.forEach((o, j) => {
+            if (o.correct) out.push(`- ${String.fromCharCode(65 + j)}. ${o.text.en} ✅`);
+          });
+          out.push("");
+        }
+        out.push(`Audio: ${q.audio ? path.basename(q.audio.source) : "no audio"}`, "");
+      });
+    }
+  }
+  return `${out.join("\n")}\n`;
+}
+
+module.exports = { ParseRefused, readCellsFromXlsx, readSheetFromXlsx, answerKeyMarkdown, videoSourcesV2, audioFilesOf, parseCells, parseQuizCell, splitBilingual, normaliseProgramme, readProgramme, videoFileName, videoSourcesOf };

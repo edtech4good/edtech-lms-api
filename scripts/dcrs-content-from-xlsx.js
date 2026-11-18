@@ -5,6 +5,15 @@
  *
  *   node scripts/dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module N] [--programme <file>]
  *       [--video-folder <dir>] [--keep-video N[,N...]] [--video-source name.mp4]
+ *       [--layout v2] [--sheet <name or 1-based place>] [--audio-folder <dir>] [--answer-key <file.md>]
+ *
+ * Layout v2 (`--layout v2`) is the six-sheet workbook: one module a sheet (`--sheet "Module 2"` or `--sheet 2`; without it the first sheet is read),
+ * columns A module title, B lesson title, C/D practice EN/KM, E/F quiz EN/KM, no video reference. The correct option ends with a tick or is green
+ * (a cell with neither anywhere falls back to the bold option); a lesson whose English cell is empty takes the Khmer for English, with a notice.
+ * `--video-folder` is then searched recursively for M<mm>_L<ll>.mp4, and `--audio-folder` for M<mm>_L<ll>_(P|Q)<k>[_suffix].m4a, one recording per
+ * practice (P) or quiz (Q) question, counted from 1 in the sheet's order; each becomes the question's `audio: { source }` and the seed prints the copy
+ * to make into the media folder (dcrs-m<m>-l<l>-p<k>.m4a). `--answer-key <file.md>` writes a Markdown document to check the answers by (outside any git tree).
+ * Rules: scripts/lib/dcrs-content-parse.js.
  *
  * The module number is read from the English module title in A2 ("Module 2: ..."); `--module N` gives it when the title has none,
  * and must agree with the title when it has one. A file with neither is refused. Module 1 keeps the seed's fixed ids; a later
@@ -32,7 +41,7 @@
  */
 const fs = require("fs");
 const path = require("path");
-const { readCellsFromXlsx, parseCells, readProgramme, ParseRefused } = require("./lib/dcrs-content-parse");
+const { readSheetFromXlsx, parseCells, readProgramme, answerKeyMarkdown, ParseRefused } = require("./lib/dcrs-content-parse");
 
 /**
  * Why `outDir` may not hold the content, or null. The text is the client's, so it must not land in any git working
@@ -73,6 +82,19 @@ function main(argv) {
       if (list === undefined || !/^[0-9]+(,[0-9]+)*$/.test(list)) fail("--keep-video needs lesson numbers, like 1 or 1,3");
       options.keepVideo = [...(options.keepVideo ?? []), ...list.split(",").map(Number)];
     }
+    else if (argv[i] === "--layout") {
+      if (argv[i + 1] !== "v2") fail("--layout must be v2 (without it the original layout is read)");
+      options.layout = argv[++i];
+    } else if (argv[i] === "--sheet") {
+      if (argv[i + 1] === undefined || argv[i + 1].startsWith("--") || argv[i + 1].trim() === "") fail("--sheet needs a sheet name or its place (1, 2, ...)");
+      options.sheet = argv[++i];
+    } else if (argv[i] === "--audio-folder") {
+      if (argv[i + 1] === undefined || argv[i + 1].startsWith("--")) fail("--audio-folder needs a folder");
+      options.audioFolder = path.resolve(argv[++i]);
+    } else if (argv[i] === "--answer-key") {
+      if (argv[i + 1] === undefined || argv[i + 1].startsWith("--")) fail("--answer-key needs a file name");
+      options.answerKey = path.resolve(argv[++i]);
+    }
     else if (argv[i] === "--programme") {
       if (argv[i + 1] === undefined || argv[i + 1].startsWith("--")) fail("--programme needs a file");
       options.programmeFile = argv[++i];
@@ -80,7 +102,7 @@ function main(argv) {
     else if (argv[i].startsWith("--")) fail(`unknown option ${argv[i]}`);
     else args.push(argv[i]);
   }
-  if (args.length !== 2) fail("usage: dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module N] [--programme <file>] [--video-folder <dir>] [--keep-video N[,N...]] [--video-source name.mp4]");
+  if (args.length !== 2) fail("usage: dcrs-content-from-xlsx.js <file.xlsx> <output-dir> [--module N] [--programme <file>] [--video-folder <dir>] [--keep-video N[,N...]] [--video-source name.mp4] [--layout v2] [--sheet <name|n>] [--audio-folder <dir>] [--answer-key <file.md>]");
   if (options.module !== undefined && !(Number.isInteger(options.module) && options.module >= 1)) fail("--module must be a whole number from 1");
   if (options.videoSource !== undefined && !/^[A-Za-z0-9._-]+$/.test(options.videoSource)) fail("--video-source must be a plain file name");
 
@@ -89,8 +111,17 @@ function main(argv) {
   const refusal = outputFolderRefusal(outDir, path.resolve(__dirname, ".."));
   if (refusal) fail(refusal);
 
+  if (options.answerKey !== undefined) {
+    const keyDir = path.dirname(options.answerKey);
+    if (!fs.existsSync(keyDir) || !fs.statSync(keyDir).isDirectory()) fail("the answer key's folder does not exist");
+    const keyRefusal = outputFolderRefusal(keyDir, path.resolve(__dirname, ".."));
+    if (keyRefusal) fail(keyRefusal.replace("the output directory", "the answer key's folder"));
+    if (fs.existsSync(options.answerKey)) fail("the answer key file already exists; it is not overwritten");
+  }
+
   let content;
   const notices = [];
+  const copiedEnglish = new Set();
   try {
     // the programme file named with --programme, else programme.json next to the spreadsheet when there is one
     const sidecar = options.programmeFile ? path.resolve(options.programmeFile) : path.join(path.dirname(file), "programme.json");
@@ -100,19 +131,27 @@ function main(argv) {
       programme = read.programme;
       for (const note of read.notes) console.log(`programme: ${note}`);
     }
-    content = parseCells(readCellsFromXlsx(file), { ...options, programme, notices });
+    const sheet = readSheetFromXlsx(file, options.sheet);
+    content = parseCells(sheet.cells, { ...options, formats: sheet.formats, programme, notices, copiedEnglish });
   } catch (err) {
     if (err instanceof ParseRefused) fail(err.problems.join("\n  "));
     throw err;
   }
   fs.writeFileSync(path.join(outDir, "content.json"), `${JSON.stringify(content, null, 2)}\n`, { flag: "wx" });
+  if (options.answerKey !== undefined) fs.writeFileSync(options.answerKey, answerKeyMarkdown(content, copiedEnglish), { flag: "wx" });
   for (const note of notices) console.log(`notice: ${note}`);
   for (const lesson of content.lessons) {
     const video = lesson.video.keep ? "its existing video is kept" : lesson.video.source ? `video ${lesson.video.source} to ${lesson.video.filename}` : `video ${lesson.video.filename} (no source recorded)`;
-    console.log(`lesson ${lesson.order}: reference "${lesson.video.ref}"; ${lesson.practice.length} practice and ${lesson.quiz.length} quiz questions; ${video}`);
+    const audio = [...lesson.practice, ...lesson.quiz].filter((q) => q.audio).length;
+    console.log(`lesson ${lesson.order}: reference "${lesson.video.ref}"; ${lesson.practice.length} practice and ${lesson.quiz.length} quiz questions; ${video}${options.audioFolder !== undefined ? `; ${audio} audio file${audio === 1 ? "" : "s"}` : ""}`);
   }
   const count = (kind) => content.lessons.reduce((sum, l) => sum + l[kind].length, 0);
   const n = content.lessons.length;
+  if (options.audioFolder !== undefined) {
+    const withAudio = content.lessons.reduce((sum, l) => sum + [...l.practice, ...l.quiz].filter((q) => q.audio).length, 0);
+    console.log(`audio: ${withAudio} of ${count("practice") + count("quiz")} questions have a recording.`);
+  }
+  if (options.answerKey !== undefined) console.log(`answer key written: ${options.answerKey}`);
   console.log(
     `content.json written: module ${content.module.number}, ${n} lesson${n === 1 ? "" : "s"}, ${count("practice")} practice and ${count("quiz")} quiz questions, ${content.programme ? "with" : "no"} programme name.`,
   );
