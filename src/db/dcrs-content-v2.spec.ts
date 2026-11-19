@@ -396,7 +396,7 @@ describe("layout v2: the audio folder", () => {
     const other = tmp();
     touch(path.join(other, "voice memo.m4a"));
     touch(path.join(other, "._M02_L01_P1.m4a"));
-    expect(convert(audioBook(), { audioFolder: other }).notices).toContain("voice memo.m4a is not named like M02_L01_P1.m4a; not used");
+    expect(convert(audioBook(), { audioFolder: other }).notices).toContain("voice memo.m4a is not named like M02_L01_P1.m4a (a question) or M02_L01_P1_Choice_A.m4a (an answer); not used");
   });
 });
 
@@ -447,6 +447,23 @@ describe("layout v2: a recording for each answer", () => {
       "lesson 1 practice question 2 option B has two recordings (x/M02_L01_P2_Choice_B.m4a and y/M02_L01_P2_B_Voice_Enhanced.m4a)",
       "M02_L01_Q3_Choice_A.m4a: lesson 1 has 2 quiz questions, not 3",
     ].sort());
+  });
+
+  it("refuses a near-miss answer name instead of taking it as the question's recording, even when the question has no _Question file", () => {
+    for (const bad of ["Choice_1", "Choice_I", "Answer_A", "Option_A", "ChoiceA", "Choice_A_", "Choice-A", "choice_a_"]) {
+      const aud = tmp();
+      touch(path.join(aud, `M02_L01_P1_${bad}.m4a`));
+      expect(refused(sheet(), { audioFolder: aud })).toEqual([
+        `M02_L01_P1_${bad}.m4a: this looks like an answer recording, but answer recordings are named like M02_L01_P1_Choice_A.m4a, with one letter A-H; it is not used as the question's recording`,
+      ]);
+    }
+    const ok = tmp();
+    for (const f of ["M02_L01_P1_Question_A", "M02_L01_P2_Audio", "M02_L01_Q1_Voice_Enhanced", "M02_L01_Q2_Optional"]) touch(path.join(ok, `${f}.m4a`));
+    const { content } = convert(sheet(), { audioFolder: ok });
+    expect(path.basename(content.lessons[0].practice[0].audio.source)).toBe("M02_L01_P1_Question_A.m4a");
+    expect(path.basename(content.lessons[0].practice[1].audio.source)).toBe("M02_L01_P2_Audio.m4a");
+    expect(path.basename(content.lessons[0].quiz[0].audio.source)).toBe("M02_L01_Q1_Voice_Enhanced.m4a");
+    expect(path.basename(content.lessons[0].quiz[1].audio.source)).toBe("M02_L01_Q2_Optional.m4a");
   });
 
   it("notes a question with some but not all option recordings, naming the letters, and says nothing for one with none", () => {

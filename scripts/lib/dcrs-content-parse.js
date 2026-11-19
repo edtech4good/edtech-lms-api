@@ -578,6 +578,9 @@ const AUDIO_FILE = /^M(\d{2})_L(\d{2})_([PQ])(\d+)(?:_[A-Za-z0-9_]+)?\.m4a$/i;
 // An answer's recording: M<mm>_L<ll>_(P|Q)<k>_Choice_<X>[_suffix].m4a or ..._<X>[_suffix].m4a, X one letter A-H standing alone as a segment.
 // It is tried before AUDIO_FILE, so "_Choice_A" and "_A" are never a question's suffix; "_Audio" or "_Voice_Enhanced" still are.
 const OPTION_AUDIO_FILE = /^M(\d{2})_L(\d{2})_([PQ])(\d+)_(?:Choice_)?([A-H])(?:_[A-Za-z0-9_]+)?\.m4a$/i;
+// A name that looks like an answer's recording (suffix starting Choice, Option or Answer, alone or with one letter or digit after it) but is not one the rule
+// above accepts is refused, never taken as the question's own recording: a learner would hear an answer read as the question.
+const ANSWER_LIKE_SUFFIX = /^M\d{2}_L\d{2}_[PQ]\d+_(?:choice|option|answer)(?:[^A-Za-z]|[A-Za-z](?:[^A-Za-z]|$)|$)/i;
 /**
  * The recordings under `folder`: `M<mm>_L<ll>_(P|Q)<k>[_suffix].m4a` for a question, P a practice question and Q a quiz question of lesson <ll>, k counted
  * from 1 in the sheet's order, and `M<mm>_L<ll>_(P|Q)<k>_Choice_<X>[_suffix].m4a` (or `_<X>`) for its answer X (A = the first option in the sheet's order).
@@ -596,9 +599,13 @@ function audioFilesOf(folder, moduleNumber, problems, notices) {
     const name = path.basename(file);
     if (!/\.m4a$/i.test(name) || name.startsWith("._")) continue;
     const om = OPTION_AUDIO_FILE.exec(name);
+    if (!om && ANSWER_LIKE_SUFFIX.test(name)) {
+      problems.push(`${within(folder, file)}: this looks like an answer recording, but answer recordings are named like M02_L01_P1_Choice_A.m4a, with one letter A-H; it is not used as the question's recording`);
+      continue;
+    }
     const m = om ?? AUDIO_FILE.exec(name);
     if (!m) {
-      notices.push(`${within(folder, file)} is not named like M02_L01_P1.m4a; not used`);
+      notices.push(`${within(folder, file)} is not named like M02_L01_P1.m4a (a question) or M02_L01_P1_Choice_A.m4a (an answer); not used`);
       continue;
     }
     const [mod, order, kind, k] = [Number(m[1]), Number(m[2]), m[3].toUpperCase(), Number(m[4])];
