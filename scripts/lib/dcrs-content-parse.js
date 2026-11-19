@@ -36,6 +36,7 @@
 const fs = require("fs");
 const AdmZip = require("adm-zip");
 const path = require("path");
+const crypto = require("crypto");
 const { LESSON_IDS, MAX_LESSONS_LATER_MODULE } = require("./dcrs-content-plan");
 
 const KHMER = /[\u1780-\u17ff]/;
@@ -574,10 +575,15 @@ function videoSourcesV2(folder, moduleNumber, orders, keep, problems, notices) {
 }
 
 const AUDIO_FILE = /^M(\d{2})_L(\d{2})_([PQ])(\d+)(?:_[A-Za-z0-9_]+)?\.m4a$/i;
+// An answer's recording: M<mm>_L<ll>_(P|Q)<k>_Choice_<X>[_suffix].m4a or ..._<X>[_suffix].m4a, X one letter A-H standing alone as a segment.
+// It is tried before AUDIO_FILE, so "_Choice_A" and "_A" are never a question's suffix; "_Audio" or "_Voice_Enhanced" still are.
+const OPTION_AUDIO_FILE = /^M(\d{2})_L(\d{2})_([PQ])(\d+)_(?:Choice_)?([A-H])(?:_[A-Za-z0-9_]+)?\.m4a$/i;
 /**
- * The recordings under `folder`: `M<mm>_L<ll>_(P|Q)<k>[_suffix].m4a`, P a practice question and Q a quiz question of lesson <ll>, k counted from 1 in
- * the sheet's order. Returns `{ files: [{ order, kind, k, file }], problems }` for the caller to hold against the lessons (it knows how many
- * questions there are). A file of another module, with no content, or a second file for one question is refused here; other .m4a files are noted.
+ * The recordings under `folder`: `M<mm>_L<ll>_(P|Q)<k>[_suffix].m4a` for a question, P a practice question and Q a quiz question of lesson <ll>, k counted
+ * from 1 in the sheet's order, and `M<mm>_L<ll>_(P|Q)<k>_Choice_<X>[_suffix].m4a` (or `_<X>`) for its answer X (A = the first option in the sheet's order).
+ * Returns `[{ order, kind, k, file, option? }]` (`option` is the 0-based option, absent for a question's own recording) for the caller to hold against the lessons (it
+ * knows how many questions and options there are). A file of another module, with no content, or a second file for one question or option is refused here;
+ * other .m4a files are noted.
  */
 function audioFilesOf(folder, moduleNumber, problems, notices) {
   const all = filesUnder(folder);
@@ -589,7 +595,8 @@ function audioFilesOf(folder, moduleNumber, problems, notices) {
   for (const file of all) {
     const name = path.basename(file);
     if (!/\.m4a$/i.test(name) || name.startsWith("._")) continue;
-    const m = AUDIO_FILE.exec(name);
+    const om = OPTION_AUDIO_FILE.exec(name);
+    const m = om ?? AUDIO_FILE.exec(name);
     if (!m) {
       notices.push(`${within(folder, file)} is not named like M02_L01_P1.m4a; not used`);
       continue;
@@ -603,9 +610,11 @@ function audioFilesOf(folder, moduleNumber, problems, notices) {
       problems.push(`${within(folder, file)}: the file is empty`);
       continue;
     }
-    const key = `${order}:${kind}:${k}`;
-    if (picked.has(key)) problems.push(`lesson ${order} ${kind === "P" ? "practice" : "quiz"} question ${k} has two recordings (${within(folder, picked.get(key).file)} and ${within(folder, file)})`);
-    else picked.set(key, { order, kind, k, file });
+    const option = om ? om[5].toUpperCase().charCodeAt(0) - 65 : undefined;
+    const key = `${order}:${kind}:${k}:${option ?? ""}`;
+    const what = `lesson ${order} ${kind === "P" ? "practice" : "quiz"} question ${k}${option === undefined ? "" : ` option ${String.fromCharCode(65 + option)}`}`;
+    if (picked.has(key)) problems.push(`${what} has two recordings (${within(folder, picked.get(key).file)} and ${within(folder, file)})`);
+    else picked.set(key, { order, kind, k, file, ...(option === undefined ? {} : { option }) });
   }
   return [...picked.values()];
 }
@@ -624,7 +633,8 @@ const COLUMNS = ["A", "B", "C", "D", "E", "F", "G"];
  *   `options.layout`: "v2" for the six-sheet workbook (columns: A module title, B lesson title, C/D practice EN/KM, E/F quiz EN/KM; no video reference, so the
  *     reference is the video's file stem, M02_L01); in v2 `options.formats` (from readSheetFromXlsx) lets a green or bold option mark the correct one,
  *     a Khmer-only cell is copied to English, "- A." options are read, and `videoFolder` is searched recursively for M<mm>_L<ll>.mp4;
- *   `options.audioFolder`: (v2) the folder searched for M<mm>_L<ll>_(P|Q)<k>[_suffix].m4a; each recording becomes `audio: { source }` of its question;
+ *   `options.audioFolder`: (v2) the folder searched for M<mm>_L<ll>_(P|Q)<k>[_suffix].m4a; each recording becomes `audio: { source, sha256 }` of its question, and
+ *     M<mm>_L<ll>_(P|Q)<k>_Choice_<X>[_suffix].m4a (or _<X>) the `audio` of its option X (A = the first);
  *   `options.copiedEnglish`: a Set that receives "<lesson>:practice" / "<lesson>:quiz" for each set whose English is the Khmer copied (v2).
  * Every lesson needs a video decision: a file (`videoFolder`, or `videoSource` for a one-lesson sheet) or a place in `keepVideo`; a lesson with
  * neither is refused, because the import would overwrite its document row with a new file name.
@@ -729,14 +739,23 @@ function parseCells(cells, options = {}) {
   if (v2 && options.audioFolder !== undefined && module !== null) {
     const found = audioFilesOf(options.audioFolder, module, problems, notices);
     const given = new Set();
-    for (const { order, kind, k, file } of found) {
+    const optionsGiven = new Map(); // question -> the options (0-based) that got a recording
+    const sha256Of = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+    for (const { order, kind, k, file, option } of found) {
       const name = kind === "P" ? "practice" : "quiz";
       const lesson = lessons[order - 1];
       const question = lesson?.[name][k - 1];
       if (!lesson) problems.push(`${within(options.audioFolder, file)}: the sheet has no lesson ${order}`);
       else if (!question) problems.push(`${within(options.audioFolder, file)}: lesson ${order} has ${lesson[name].length} ${name} question${lesson[name].length === 1 ? "" : "s"}, not ${k}`);
-      else {
-        question.audio = { source: file };
+      else if (option !== undefined) {
+        if (option >= question.options.length) {
+          problems.push(`${within(options.audioFolder, file)}: lesson ${order} ${name} question ${k} has ${question.options.length} options, so there is no option ${String.fromCharCode(65 + option)}`);
+        } else {
+          question.options[option].audio = { source: file, sha256: sha256Of(file) };
+          optionsGiven.set(question, [...(optionsGiven.get(question) ?? []), option]);
+        }
+      } else {
+        question.audio = { source: file, sha256: sha256Of(file) };
         given.add(question);
       }
     }
@@ -744,6 +763,11 @@ function parseCells(cells, options = {}) {
       for (const name of ["practice", "quiz"]) {
         lesson[name].forEach((q, j) => {
           if (!given.has(q)) notices.push(`lesson ${lesson.order} ${name} question ${j + 1}: no audio file`);
+          const some = optionsGiven.get(q);
+          if (some && some.length < q.options.length) {
+            const letters = [...some].sort((a, b) => a - b).map((o) => String.fromCharCode(65 + o));
+            notices.push(`lesson ${lesson.order} ${name} question ${j + 1}: answer recordings for ${some.length} of ${q.options.length} options (${letters.join(", ")})`);
+          }
         });
       }
     }
@@ -772,7 +796,7 @@ function answerKeyMarkdown(content, copiedEnglish = new Set()) {
       if (lesson[kind].length === 0) out.push("(no questions)", "");
       lesson[kind].forEach((q, i) => {
         out.push(`**${kind === "practice" ? "Practice" : "Quiz"} question ${i + 1}**`, "", `Khmer: ${one(q.text.km)}`, "");
-        q.options.forEach((o, j) => out.push(`- ${String.fromCharCode(65 + j)}. ${o.text.km}${o.correct ? " ✅" : ""}`));
+        q.options.forEach((o, j) => out.push(`- ${String.fromCharCode(65 + j)}. ${o.text.km}${o.correct ? " ✅" : ""}${o.audio ? ` (${path.basename(o.audio.source)})` : ""}`));
         out.push("");
         if (copiedEnglish.has(`${lesson.order}:${kind}`)) out.push("(English: Khmer copied)", "");
         else {
