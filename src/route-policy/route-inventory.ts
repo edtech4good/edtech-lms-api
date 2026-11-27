@@ -33,7 +33,7 @@ import {
   ORG_POLICY_TIE_BREAK,
   OrgPolicyName,
 } from "src/decorators/orgPolicy.decorator";
-import { PERMISSIONS_KEY } from "src/decorators/requirePermissions.decorator";
+import { PERMISSIONS_ALL_KEY, PERMISSIONS_KEY } from "src/decorators/requirePermissions.decorator";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { PlatformGuard } from "src/guards/platform.guard";
 import { Role, TokenType } from "src/models/enums";
@@ -88,6 +88,8 @@ export interface RouteRecord {
    * metadata wins over class metadata (it is not a union).
    */
   permissions: string[];
+  /** The permissions all of which are required (`RequireAllPermissions`); also listed in `permissions`. */
+  permissionsAll?: string[];
   /** Token types of the AccessGuards on the route (ACCESS, REFRESH, ...). */
   tokenTypes: string[];
   /**
@@ -388,12 +390,19 @@ export async function enumerateRoutes(): Promise<RouteRecord[]> {
           .filter((i): i is AccessGuardInfo => i !== undefined);
         const policy = getOrgPolicy(handlerFn);
         // Exactly what CheckPermissionsGuard asks for.
-        const permissions = asArray<string>(
+        const permissionsAny = asArray<string>(
           reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
             handlerFn,
             metatype as never,
           ]),
         );
+        const permissionsAll = asArray<string>(
+          reflector.getAllAndOverride<string[]>(PERMISSIONS_ALL_KEY, [
+            handlerFn,
+            metatype as never,
+          ]),
+        );
+        const permissions = [...permissionsAny, ...permissionsAll];
         const hasPlatformGuard = guards.some((g) => g === PlatformGuard);
         const schoolUserAdmitted =
           access.length > 0 &&
@@ -439,6 +448,7 @@ export async function enumerateRoutes(): Promise<RouteRecord[]> {
                   access.every((i) => i.roles.includes(Role.apikey)),
                 hasPlatformGuard,
                 permissions,
+                ...(permissionsAll.length > 0 ? { permissionsAll } : {}),
                 tokenTypes: access.map((i) => TOKEN_NAMES.get(i.tokentype) ?? i.tokentype),
                 schoolUserAdmitted,
                 enforcedBy: policy?.enforcedBy,
@@ -547,7 +557,9 @@ const cell = (value: string): string => value.replace(/\|/g, "\\|").replace(/\n/
 const guardsCell = (r: RouteRecord): string => {
   const guards = r.guards.map((g) =>
     g === "CheckPermissionsGuard" && r.permissions.length > 0
-      ? `CheckPermissionsGuard[${r.permissions.join(", ")}]`
+      ? r.permissionsAll && r.permissionsAll.length > 0
+        ? `CheckPermissionsGuard[all of: ${r.permissionsAll.join(", ")}]`
+        : `CheckPermissionsGuard[${r.permissions.join(", ")}]`
       : g,
   );
   return guards.length > 0 ? guards.join(", ") : "none";
