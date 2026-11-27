@@ -49,6 +49,7 @@ export const ONLINE_REPORTS = {
   classlevelquizDownload: { path: "studentlevelquiz/class/download", shape: "download", school: false, names: ["standard"] },
   studentstatus: { path: "studentstatus", shape: "list", school: true, names: [] },
   studentstatusDownload: { path: "studentstatus/download", shape: "download", school: true, names: [] },
+  learnerprogress: { path: "learner-progress", shape: "list", school: true, names: [] },
   gradeprogress: { path: "student-grade-progress", shape: "list", school: false, names: ["standard"] },
   levelprogress: { path: "student-level-progress", shape: "list", school: false, names: ["studentid"], student: "null" },
   lessonprogress: { path: "student-lesson-progress", shape: "list", school: false, names: ["studentid"], student: "null" },

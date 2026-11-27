@@ -19,7 +19,7 @@ import { ApiTags, ApiBearerAuth, ApiResponse, ApiBody, ApiParam, ApiQuery } from
 import { json2csv } from "json-2-csv";
 import { ReportBusiness } from "src/business/report.business";
 import { ReportDownload } from "src/business/report.download";
-import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
+import { RequireAllPermissions, RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { SchemaValidationInterceptor } from "src/interceptors";
@@ -802,6 +802,47 @@ export class ReportController {
       });
     }
     const response = await new ReportProxy(org).post("studentstatus", body);
+    return {
+      error: false,
+      data: {
+        data: response.data.data.data,
+        total: response.data.data.total,
+        pageindex: response.data.data?.pageindex || 0,
+        pagesize: response.data.data?.pagesize || 0,
+      },
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
+  @Post('online/learner-progress')
+  @ApiResponse({
+    status: 200,
+    description: "Fetched learner progress successfully",
+  })
+  @ApiResponse({
+    status: 403,
+    description: "The caller lacks view_online_report or view_student",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @ApiBody({ required: false, type: IMultiPaging })
+  @HttpCode(HttpStatus.OK)
+  @RequireAllPermissions(Permission.VIEW_ONLINE_REPORT, Permission.VIEW_STUDENT)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  async getOnlineLearnerProgress(
+    @Org() org: OrgContext,
+    @Body() body: IMultiPaging,
+    @User() user: LmsUserToken,
+  ): Promise<any> {
+    if (user && user.schools && user.schools.length > 0) {
+      body.filter?.push({
+        key: 'schoolid',
+        value: user?.schools ?? ''
+      });
+    }
+    const response = await new ReportProxy(org).post("learnerprogress", body);
     return {
       error: false,
       data: {

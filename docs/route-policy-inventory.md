@@ -30,17 +30,17 @@ pending routes are pinned in
 
 Pending refers only to the organisation boundary; every route keeps the authentication and permission guards shown in the Guards column.
 
-Of **306** routes, **295** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
+Of **307** routes, **296** are enforced (by a guard: self, global, and platform routes with `PlatformGuard`; or, for an owned or server route, by the spec it names), **11** are not applicable (public) and **0** are pending.
 
 | Policy | Routes | Enforced | Not applicable | Pending |
 |---|---|---|---|---|
 | public | 11 | 0 | 11 | 0 |
 | self | 5 | 5 | 0 | 0 |
-| owned | 267 | 267 | 0 | 0 |
+| owned | 268 | 268 | 0 | 0 |
 | platform | 18 | 18 | 0 | 0 |
 | server | 0 | 0 | 0 | 0 |
 | global | 5 | 5 | 0 | 0 |
-| **all** | **306** | **295** | **11** | **0** |
+| **all** | **307** | **296** | **11** | **0** |
 
 ## Policies
 
@@ -253,6 +253,7 @@ Routes admitting the API key: 12. Routes admitting a school-user token: 7.
 | GET | `/report/disability` | ReportController.getStudentDisability | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach, view_reach_school] |  |
 | GET | `/report/gender` | ReportController.getStudentGender | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach, view_reach_school] |  |
 | GET | `/report/offlineonline` | ReportController.getStudentsOfflineOnline | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_plus_reach, view_reach_school] |  |
+| POST | `/report/online/learner-progress` | ReportController.getOnlineLearnerProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[all of: view_online_report, view_student] |  |
 | POST | `/report/online/student-grade-progress` | ReportController.getOnlineStudentGradeProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_report] |  |
 | POST | `/report/online/student-lesson-progress` | ReportController.getOnlineStudentLessonProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_report] |  |
 | POST | `/report/online/student-level-progress` | ReportController.getOnlineStudentLevelProgress | owned | yes | `src/modules/report-scope.leak.spec.ts` |  |  | AccessGuard(ACCESS), CheckPermissionsGuard[view_online_report] |  |
