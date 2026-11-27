@@ -32,6 +32,20 @@ import { User } from "src/decorators/user.decorator";
 import { showallsyncrecords } from "./report.request.validator";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
 
+/**
+ * A staff account limited to schools asks only for them: its school list is ANDed into the body's filter, whether or
+ * not the body came with a `filter` list (or with a body at all).
+ */
+const withSchoolRestriction = (body: IMultiPaging, user: LmsUserToken | undefined): IMultiPaging => {
+  if (!user || !Array.isArray(user.schools) || user.schools.length === 0) {
+    return body;
+  }
+  return {
+    ...(body ?? {}),
+    filter: [...(Array.isArray(body?.filter) ? body.filter : []), { key: "schoolid", value: user.schools }],
+  };
+};
+
 @ApiTags("Report")
 @Controller("report")
 @ApiBearerAuth()
@@ -361,12 +375,7 @@ export class ReportController {
     @Body() body: IMultiPaging,
     @User() user: LmsUserToken,
   ): Promise<any> {
-    if(user && user.schools && user.schools.length > 0) {
-      body.filter?.push({
-        key: 'schoolid',
-        value: user?.schools ?? ''
-      });
-    }
+    body = withSchoolRestriction(body, user);
     const data = await new ReportBusiness(org).getStudentStatus({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
@@ -831,12 +840,7 @@ export class ReportController {
     @Body() body: IMultiPaging,
     @User() user: LmsUserToken,
   ): Promise<any> {
-    if(user && user.schools && user.schools.length > 0) {
-      body.filter?.push({
-        key: 'schoolid',
-        value: user?.schools ?? ''
-      });
-    }
+    body = withSchoolRestriction(body, user);
     const response = await new ReportProxy(org).post("studentstatus", body);
     return {
       error: false,
@@ -872,12 +876,7 @@ export class ReportController {
     @Body() body: IMultiPaging,
     @User() user: LmsUserToken,
   ): Promise<any> {
-    if (user && user.schools && user.schools.length > 0) {
-      body.filter?.push({
-        key: 'schoolid',
-        value: user?.schools ?? ''
-      });
-    }
+    body = withSchoolRestriction(body, user);
     const response = await new ReportProxy(org).post("learnerprogress", body);
     return {
       error: false,
@@ -1370,12 +1369,7 @@ export class ReportController {
     @User() user: LmsUserToken,
     @Response({ passthrough: true }) res: any
   ) {
-    if(user && user.schools && user.schools.length > 0) {
-      body.filter?.push({
-        key: 'schoolid',
-        value: user?.schools ?? ''
-      });
-    }
+    body = withSchoolRestriction(body, user);
     const data = await new ReportBusiness(org).getStudentStatus(body, true);
     const formatedData = new ReportDownload().formatStudentActivity(data.rows, body?.filter);
     const csvString = await json2csv(formatedData);
@@ -1410,12 +1404,7 @@ export class ReportController {
     @User() user: LmsUserToken,
     @Response({ passthrough: true }) res: any
   ) {
-    if(user && user.schools && user.schools.length > 0) {
-      body.filter?.push({
-        key: 'schoolid',
-        value: user?.schools ?? ''
-      });
-    }
+    body = withSchoolRestriction(body, user);
     const response = await new ReportProxy(org).post("studentstatusDownload", body);
     const formatedData = new ReportDownload().formatStudentActivityOnline(response.data.data, body?.filter);
     const csvString = await json2csv(formatedData);
