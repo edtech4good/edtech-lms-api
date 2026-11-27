@@ -3362,8 +3362,8 @@ describe("reports are confined to the caller's organisation", () => {
       organisation: { organisationid: X, isplatform: false },
     } as const;
 
-    it("the route table has the sixteen routes", () => {
-      expect(names).toHaveLength(16);
+    it("the route table has the seventeen routes", () => {
+      expect(names).toHaveLength(17);
     });
     it.each(Object.keys(callers2) as Array<keyof typeof callers2>)("%s: every route sends X-Organisation-Id, an organisation id or `platform`, never none", async (who) => {
       (axios.post as jest.Mock).mockResolvedValue({ data: { error: false, data: [] } });
