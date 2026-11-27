@@ -21,7 +21,7 @@ export class CheckPermissionsGuard implements CanActivate {
         }
         const { user } = context.switchToHttp().getRequest();
         const held = user.permissions ?? [];
-        if (requiredAll && !requiredAll.every((perm) => this.hasPermission(held, perm))) {
+        if (requiredAll && (requiredAll.length === 0 || !requiredAll.every((perm) => this.hasPermission(held, perm)))) {
             return false;
         }
         return !requiredPerms || requiredPerms.some((perm) => this.hasPermission(held, perm));

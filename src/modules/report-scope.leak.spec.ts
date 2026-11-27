@@ -2729,6 +2729,39 @@ describe("reports are confined to the caller's organisation", () => {
       expect((await limited([TY.school])).status).toBe(404);
       expect(axios.post).toHaveBeenCalledTimes(1);
     });
+    describe("a staff account limited to one of X's two schools", () => {
+      const SCHOOL_B = uuid(1950);
+      const limitedTo = (route: string, schools: string[], body?: object) =>
+        request(app.getHttpServer())
+          .post(route)
+          .set("Authorization", bearer({ lmsuserid: "ad", lmsuserroles: [Role.admin], permissions: PERMS, organisationid: X, isplatform: false, schools }))
+          .set("Connection", "close")
+          .send(body as object);
+      beforeEach(() => {
+        db.add("schools", { schoolid: SCHOOL_B, schoolname: "សាលា ក៣", organisationid: X, countryid: TX.country, curriculums: [], created_at: NEVER });
+      });
+      it.each([
+        ["/report/online/learner-progress", "learner-progress"],
+        ["/report/online/studentstatus", "studentstatus"],
+      ])("%s: a body with no filter list, or no body at all, is sent with only that school", async (route, cloudPath) => {
+        (axios.post as jest.Mock).mockResolvedValue(reply);
+        for (const body of [{ pageindex: 1, pagesize: 0 }, undefined]) {
+          (axios.post as jest.Mock).mockClear();
+          expect((await limitedTo(route, [TX.school], body)).status).toBe(200);
+          expect((axios.post as jest.Mock).mock.calls).toEqual([
+            [cloud(cloudPath), { ...(body ?? {}), filter: [{ key: "schoolid", value: TX.school }] }, { headers: HEADERS_X }],
+          ]);
+        }
+      });
+      it.each(["/report/online/learner-progress", "/report/online/studentstatus"])("%s: naming the other school of the same organisation is the empty answer and nothing is sent", async (route) => {
+        (axios.post as jest.Mock).mockResolvedValue(reply);
+        const res = await limitedTo(route, [TX.school], page([{ key: "schoolid", value: SCHOOL_B }]));
+        expect(res.status).toBe(200);
+        expect(data(res)).toEqual([]);
+        expect((res.body.data as { total: number }).total).toBe(0);
+        expect(axios.post).not.toHaveBeenCalled();
+      });
+    });
     it.each(IN_X)("%s: an error from the student API is the error it always was", async (who) => {
       const own500 = await ask(who, page());
       expect(own500.status).toBe(500);
