@@ -143,13 +143,17 @@ function main(argv) {
   for (const lesson of content.lessons) {
     const video = lesson.video.keep ? "its existing video is kept" : lesson.video.source ? `video ${lesson.video.source} to ${lesson.video.filename}` : `video ${lesson.video.filename} (no source recorded)`;
     const audio = [...lesson.practice, ...lesson.quiz].filter((q) => q.audio).length;
-    console.log(`lesson ${lesson.order}: reference "${lesson.video.ref}"; ${lesson.practice.length} practice and ${lesson.quiz.length} quiz questions; ${video}${options.audioFolder !== undefined ? `; ${audio} audio file${audio === 1 ? "" : "s"}` : ""}`);
+    const optionAudio = [...lesson.practice, ...lesson.quiz].reduce((sum, q) => sum + q.options.filter((o) => o.audio).length, 0);
+    console.log(`lesson ${lesson.order}: reference "${lesson.video.ref}"; ${lesson.practice.length} practice and ${lesson.quiz.length} quiz questions; ${video}${options.audioFolder !== undefined ? `; ${audio} audio file${audio === 1 ? "" : "s"}, ${optionAudio} answer recording${optionAudio === 1 ? "" : "s"}` : ""}`);
   }
   const count = (kind) => content.lessons.reduce((sum, l) => sum + l[kind].length, 0);
   const n = content.lessons.length;
   if (options.audioFolder !== undefined) {
     const withAudio = content.lessons.reduce((sum, l) => sum + [...l.practice, ...l.quiz].filter((q) => q.audio).length, 0);
-    console.log(`audio: ${withAudio} of ${count("practice") + count("quiz")} questions have a recording.`);
+    const all = content.lessons.flatMap((l) => [...l.practice, ...l.quiz]);
+    const optionTotal = all.reduce((sum, x) => sum + x.options.length, 0);
+    const optionsWith = all.reduce((sum, x) => sum + x.options.filter((o) => o.audio).length, 0);
+    console.log(`audio: ${withAudio} of ${count("practice") + count("quiz")} questions have a recording; ${optionsWith} of ${optionTotal} answer options have a recording.`);
   }
   if (options.answerKey !== undefined) console.log(`answer key written: ${options.answerKey}`);
   console.log(

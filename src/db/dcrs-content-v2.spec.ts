@@ -6,6 +6,7 @@
  */
 import AdmZip from "adm-zip";
 import { spawnSync } from "child_process";
+import { createHash } from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -300,6 +301,7 @@ describe("layout v2: a lesson whose English cell is empty", () => {
 
 // ---- video and audio folders -------------------------------------------------------------------
 
+const sha = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
 const touch = (file: string, bytes = "x") => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, bytes);
@@ -361,7 +363,7 @@ describe("layout v2: the audio folder", () => {
       ["M02_L01_P1.m4a", "M02_L01_P2_Voice_Enhanced.m4a", "M02_L01_Q1_Stronger_Noise_Reduction.M4A", null],
       [null, null],
     ]);
-    expect(content.lessons[0].practice[0].audio).toEqual({ source: path.join(aud, "L01", "M02_L01_P1.m4a") });
+    expect(content.lessons[0].practice[0].audio).toEqual({ source: path.join(aud, "L01", "M02_L01_P1.m4a"), sha256: sha("x") });
     expect(notices).toContain("lesson 1 quiz question 2: no audio file");
     expect(notices).toContain("lesson 2 practice question 1: no audio file");
     expect(notices).not.toContain("lesson 1 practice question 1: no audio file");
@@ -369,7 +371,7 @@ describe("layout v2: the audio folder", () => {
     // and the plan writes the heading for the questions that have a file only
     const plan = planContent(withProgramme(content), ID, { organisationid: "o", now: new Date(0), levelSwitch: "draft" });
     const headings = plan.steps.filter((s: Json) => s.kind === "upsert" && s.table === "questions").map((s: Json) => JSON.parse(s.values.questionheading).headingfile?.filename ?? null);
-    expect(headings.filter((h: string | null) => h !== null).sort()).toEqual(["dcrs-m2-l1-p1.m4a", "dcrs-m2-l1-p2.m4a", "dcrs-m2-l1-q1.m4a"]);
+    expect(headings.filter((h: string | null) => h !== null).sort()).toEqual(["dcrs-m2-l1-p1", "dcrs-m2-l1-p2", "dcrs-m2-l1-q1"].map((n) => `${n}-${sha("x").slice(0, 8)}.m4a`));
   });
 
   it("refuses a question that does not exist, a lesson that does not exist, two files for one question and a file of another module", () => {
@@ -394,7 +396,95 @@ describe("layout v2: the audio folder", () => {
     const other = tmp();
     touch(path.join(other, "voice memo.m4a"));
     touch(path.join(other, "._M02_L01_P1.m4a"));
-    expect(convert(audioBook(), { audioFolder: other }).notices).toContain("voice memo.m4a is not named like M02_L01_P1.m4a; not used");
+    expect(convert(audioBook(), { audioFolder: other }).notices).toContain("voice memo.m4a is not named like M02_L01_P1.m4a (a question) or M02_L01_P1_Choice_A.m4a (an answer); not used");
+  });
+});
+
+describe("layout v2: a recording for each answer", () => {
+  const optAudio = (q: Json) => q.options.map((o: Json) => (o.audio ? path.basename(o.audio.source) : null));
+  const sheet = () => audioBook(); // lesson 1: P1, P2 (3 options each), Q1, Q2 (3 options each)
+
+  it("maps _Choice_A.._Choice_C beside _Question to the options of the right question", () => {
+    const aud = tmp();
+    for (const f of ["M02_L01_P1_Question", "M02_L01_P1_Choice_A", "M02_L01_P1_Choice_B", "M02_L01_P1_Choice_C"]) touch(path.join(aud, "L01", "P1", `${f}.m4a`), f);
+    const { content, notices } = convert(sheet(), { audioFolder: aud });
+    const p1 = content.lessons[0].practice[0];
+    expect(path.basename(p1.audio.source)).toBe("M02_L01_P1_Question.m4a");
+    expect(optAudio(p1)).toEqual(["M02_L01_P1_Choice_A.m4a", "M02_L01_P1_Choice_B.m4a", "M02_L01_P1_Choice_C.m4a"]);
+    expect(p1.options[1].audio).toEqual({ source: path.join(aud, "L01", "P1", "M02_L01_P1_Choice_B.m4a"), sha256: sha("M02_L01_P1_Choice_B") });
+    expect(optAudio(content.lessons[0].practice[1])).toEqual([null, null, null]);
+    expect(notices.filter((n) => n.includes("answer recordings"))).toEqual([]);
+    expect(() => validateContent(withProgramme(content), ID)).not.toThrow();
+  });
+
+  it("accepts a bare _A, a lower-case _choice_b and a suffix after the letter, and keeps _Voice_Enhanced and _Question as question files", () => {
+    const aud = tmp();
+    touch(path.join(aud, "M02_L01_P1_A.m4a"));
+    touch(path.join(aud, "M02_L01_P1_choice_b.m4a"));
+    touch(path.join(aud, "M02_L01_P1_Choice_C_Voice_Enhanced.m4a"));
+    touch(path.join(aud, "M02_L01_P2_Voice_Enhanced.m4a"));
+    touch(path.join(aud, "M02_L01_Q1_Question.m4a"));
+    touch(path.join(aud, "M02_L01_Q2_Audio.m4a"));
+    const { content } = convert(sheet(), { audioFolder: aud });
+    expect(optAudio(content.lessons[0].practice[0])).toEqual(["M02_L01_P1_A.m4a", "M02_L01_P1_choice_b.m4a", "M02_L01_P1_Choice_C_Voice_Enhanced.m4a"]);
+    expect(content.lessons[0].practice[0].audio).toBeUndefined();
+    expect(path.basename(content.lessons[0].practice[1].audio.source)).toBe("M02_L01_P2_Voice_Enhanced.m4a");
+    expect(optAudio(content.lessons[0].practice[1])).toEqual([null, null, null]);
+    expect(path.basename(content.lessons[0].quiz[0].audio.source)).toBe("M02_L01_Q1_Question.m4a");
+    expect(path.basename(content.lessons[0].quiz[1].audio.source)).toBe("M02_L01_Q2_Audio.m4a");
+  });
+
+  it("refuses an option beyond the count, two files for one option, an option of a question that is not there and one of another module", () => {
+    const aud = tmp();
+    touch(path.join(aud, "M02_L01_P1_Choice_D.m4a")); // 3 options
+    touch(path.join(aud, "x", "M02_L01_P2_Choice_B.m4a"));
+    touch(path.join(aud, "y", "M02_L01_P2_B_Voice_Enhanced.m4a")); // a second file for P2 option B
+    touch(path.join(aud, "M02_L01_Q3_Choice_A.m4a")); // lesson 1 has two quiz questions
+    touch(path.join(aud, "M03_L01_P1_Choice_A.m4a"));
+    expect(refused(sheet(), { audioFolder: aud }).sort()).toEqual([
+      "M02_L01_P1_Choice_D.m4a: lesson 1 practice question 1 has 3 options, so there is no option D",
+      "M03_L01_P1_Choice_A.m4a: the file is for module 3, but this sheet is module 2",
+      "lesson 1 practice question 2 option B has two recordings (x/M02_L01_P2_Choice_B.m4a and y/M02_L01_P2_B_Voice_Enhanced.m4a)",
+      "M02_L01_Q3_Choice_A.m4a: lesson 1 has 2 quiz questions, not 3",
+    ].sort());
+  });
+
+  it("refuses a near-miss answer name instead of taking it as the question's recording, even when the question has no _Question file", () => {
+    for (const bad of ["Choice_1", "Choice_I", "Answer_A", "Option_A", "ChoiceA", "Choice_A_", "Choice-A", "choice_a_"]) {
+      const aud = tmp();
+      touch(path.join(aud, `M02_L01_P1_${bad}.m4a`));
+      expect(refused(sheet(), { audioFolder: aud })).toEqual([
+        `M02_L01_P1_${bad}.m4a: this looks like an answer recording, but answer recordings are named like M02_L01_P1_Choice_A.m4a, with one letter A-H; it is not used as the question's recording`,
+      ]);
+    }
+    const ok = tmp();
+    for (const f of ["M02_L01_P1_Question_A", "M02_L01_P2_Audio", "M02_L01_Q1_Voice_Enhanced", "M02_L01_Q2_Optional"]) touch(path.join(ok, `${f}.m4a`));
+    const { content } = convert(sheet(), { audioFolder: ok });
+    expect(path.basename(content.lessons[0].practice[0].audio.source)).toBe("M02_L01_P1_Question_A.m4a");
+    expect(path.basename(content.lessons[0].practice[1].audio.source)).toBe("M02_L01_P2_Audio.m4a");
+    expect(path.basename(content.lessons[0].quiz[0].audio.source)).toBe("M02_L01_Q1_Voice_Enhanced.m4a");
+    expect(path.basename(content.lessons[0].quiz[1].audio.source)).toBe("M02_L01_Q2_Optional.m4a");
+  });
+
+  it("notes a question with some but not all option recordings, naming the letters, and says nothing for one with none", () => {
+    const aud = tmp();
+    touch(path.join(aud, "M02_L01_P1_Choice_A.m4a"));
+    touch(path.join(aud, "M02_L01_P1_Choice_C.m4a"));
+    const { notices } = convert(sheet(), { audioFolder: aud });
+    expect(notices).toContain("lesson 1 practice question 1: answer recordings for 2 of 3 options (A, C)");
+    expect(notices.filter((n) => n.includes("answer recordings"))).toHaveLength(1);
+    expect(notices).toContain("lesson 1 practice question 1: no audio file");
+  });
+
+  it("writes the answer key with each option's recording file name beside the option", () => {
+    const aud = tmp();
+    touch(path.join(aud, "M02_L01_P1_Choice_B.m4a"));
+    const { content, copiedEnglish } = convert(sheet(), { audioFolder: aud });
+    const md: string = answerKeyMarkdown(content, copiedEnglish);
+    const lines = md.split("\n");
+    expect(lines.filter((l) => l.startsWith("- A. ") && l.includes("M02_L01_P1_Choice_B.m4a"))).toEqual([]);
+    expect(lines.filter((l) => l.startsWith("- B. ") && l.endsWith("(M02_L01_P1_Choice_B.m4a)")).length).toBe(1);
+    expect(lines.filter((l) => l.includes("(M02_L01_P1_Choice_B.m4a)"))).toHaveLength(1);
   });
 });
 
@@ -455,7 +545,7 @@ describe("dcrs-content-from-xlsx with layout v2", () => {
     expect(r.status).toBe(0);
     const content = JSON.parse(fs.readFileSync(path.join(out, "content.json"), "utf8"));
     expect(content.module.number).toBe(2);
-    expect(content.lessons[1].quiz[0].audio).toEqual({ source: path.join(aud, "M02_L02_Q1.m4a") });
+    expect(content.lessons[1].quiz[0].audio).toEqual({ source: path.join(aud, "M02_L02_Q1.m4a"), sha256: sha("x") });
     expect(r.stdout).toContain("audio: 1 of 4 questions have a recording");
     expect(r.stdout).toContain("content.json written: module 2, 2 lessons, 2 practice and 2 quiz questions, with programme name.");
     expect(fs.readFileSync(key, "utf8")).toContain("Audio: M02_L02_Q1.m4a");
