@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { PERMISSIONS_KEY } from "src/decorators/requirePermissions.decorator";
+import { PERMISSIONS_ALL_KEY, PERMISSIONS_KEY } from "src/decorators/requirePermissions.decorator";
 import { Permission, SUPERADMIN } from "src/models/enums/permissions.enum";
 
 @Injectable()
@@ -12,11 +12,19 @@ export class CheckPermissionsGuard implements CanActivate {
             context.getHandler(),
             context.getClass(),
         ]);
-        if (!requiredPerms) {
+        const requiredAll = this.reflector.getAllAndOverride<Permission[]>(PERMISSIONS_ALL_KEY, [
+            context.getHandler(),
+            context.getClass(),
+        ]);
+        if (!requiredPerms && !requiredAll) {
             return true;
         }
         const { user } = context.switchToHttp().getRequest();
-        return requiredPerms.some((perm) => this.hasPermission(user.permissions ?? [], perm));
+        const held = user.permissions ?? [];
+        if (requiredAll && (requiredAll.length === 0 || !requiredAll.every((perm) => this.hasPermission(held, perm)))) {
+            return false;
+        }
+        return !requiredPerms || requiredPerms.some((perm) => this.hasPermission(held, perm));
     }
 
     hasPermission(permissions: Array<string>, perm: string): boolean {

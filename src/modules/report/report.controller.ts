@@ -19,7 +19,7 @@ import { ApiTags, ApiBearerAuth, ApiResponse, ApiBody, ApiParam, ApiQuery } from
 import { json2csv } from "json-2-csv";
 import { ReportBusiness } from "src/business/report.business";
 import { ReportDownload } from "src/business/report.download";
-import { RequirePermissions } from "src/decorators/requirePermissions.decorator";
+import { RequireAllPermissions, RequirePermissions } from "src/decorators/requirePermissions.decorator";
 import { AccessGuard } from "src/guards/access.guard";
 import { CheckPermissionsGuard } from "src/guards/checkPermission.guard";
 import { SchemaValidationInterceptor } from "src/interceptors";
@@ -31,6 +31,20 @@ import { LmsUserToken } from "src/models/token.model";
 import { User } from "src/decorators/user.decorator";
 import { showallsyncrecords } from "./report.request.validator";
 import { OrgPolicy } from "src/decorators/orgPolicy.decorator";
+
+/**
+ * A staff account limited to schools asks only for them: its school list is ANDed into the body's filter, whether or
+ * not the body came with a `filter` list (or with a body at all).
+ */
+const withSchoolRestriction = (body: IMultiPaging, user: LmsUserToken | undefined): IMultiPaging => {
+  if (!user || !Array.isArray(user.schools) || user.schools.length === 0) {
+    return body;
+  }
+  return {
+    ...(body ?? {}),
+    filter: [...(Array.isArray(body?.filter) ? body.filter : []), { key: "schoolid", value: user.schools }],
+  };
+};
 
 @ApiTags("Report")
 @Controller("report")
@@ -361,12 +375,7 @@ export class ReportController {
     @Body() body: IMultiPaging,
     @User() user: LmsUserToken,
   ): Promise<any> {
-    if(user && user.schools && user.schools.length > 0) {
-      body.filter?.push({
-        key: 'schoolid',
-        value: user?.schools ?? ''
-      });
-    }
+    body = withSchoolRestriction(body, user);
     const data = await new ReportBusiness(org).getStudentStatus({
       pageindex: body?.pageindex || 0,
       pagesize: body?.pagesize || 0,
@@ -831,13 +840,44 @@ export class ReportController {
     @Body() body: IMultiPaging,
     @User() user: LmsUserToken,
   ): Promise<any> {
-    if(user && user.schools && user.schools.length > 0) {
-      body.filter?.push({
-        key: 'schoolid',
-        value: user?.schools ?? ''
-      });
-    }
+    body = withSchoolRestriction(body, user);
     const response = await new ReportProxy(org).post("studentstatus", body);
+    return {
+      error: false,
+      data: {
+        data: response.data.data.data,
+        total: response.data.data.total,
+        pageindex: response.data.data?.pageindex || 0,
+        pagesize: response.data.data?.pagesize || 0,
+      },
+    };
+  }
+
+  @OrgPolicy("owned", { enforcedBy: "src/modules/report-scope.leak.spec.ts" })
+  @Post('online/learner-progress')
+  @ApiResponse({
+    status: 200,
+    description: "Fetched learner progress successfully",
+  })
+  @ApiResponse({
+    status: 403,
+    description: "The caller lacks view_online_report or view_student",
+  })
+  @ApiResponse({
+    status: 500,
+    description: "Server error",
+  })
+  @ApiBody({ required: false, type: IMultiPaging })
+  @HttpCode(HttpStatus.OK)
+  @RequireAllPermissions(Permission.VIEW_ONLINE_REPORT, Permission.VIEW_STUDENT)
+  @UseGuards(AccessGuard(TokenType.ACCESS), CheckPermissionsGuard)
+  async getOnlineLearnerProgress(
+    @Org() org: OrgContext,
+    @Body() body: IMultiPaging,
+    @User() user: LmsUserToken,
+  ): Promise<any> {
+    body = withSchoolRestriction(body, user);
+    const response = await new ReportProxy(org).post("learnerprogress", body);
     return {
       error: false,
       data: {
@@ -1329,12 +1369,7 @@ export class ReportController {
     @User() user: LmsUserToken,
     @Response({ passthrough: true }) res: any
   ) {
-    if(user && user.schools && user.schools.length > 0) {
-      body.filter?.push({
-        key: 'schoolid',
-        value: user?.schools ?? ''
-      });
-    }
+    body = withSchoolRestriction(body, user);
     const data = await new ReportBusiness(org).getStudentStatus(body, true);
     const formatedData = new ReportDownload().formatStudentActivity(data.rows, body?.filter);
     const csvString = await json2csv(formatedData);
@@ -1369,12 +1404,7 @@ export class ReportController {
     @User() user: LmsUserToken,
     @Response({ passthrough: true }) res: any
   ) {
-    if(user && user.schools && user.schools.length > 0) {
-      body.filter?.push({
-        key: 'schoolid',
-        value: user?.schools ?? ''
-      });
-    }
+    body = withSchoolRestriction(body, user);
     const response = await new ReportProxy(org).post("studentstatusDownload", body);
     const formatedData = new ReportDownload().formatStudentActivityOnline(response.data.data, body?.filter);
     const csvString = await json2csv(formatedData);

@@ -2734,6 +2734,128 @@ describe("reports are confined to the caller's organisation", () => {
 
   });
 
+  describe("POST /report/online/learner-progress", () => {
+    const path = "/report/online/learner-progress";
+    const cloudUrl = cloud("learner-progress");
+    const reply = { data: { error: false, data: { data: [{ studentid: "cloud-row" }], total: 1, pageindex: 1, pagesize: 20 } } };
+    const ask = (who: Who, body: object) => send(who, "post", path, body);
+    const askWith = (permissions: string[], body: object, roles: Role[] = [Role.admin]) =>
+      request(app.getHttpServer())
+        .post(path)
+        .set("Authorization", bearer({ lmsuserid: "ad", lmsuserroles: roles, permissions, organisationid: X, isplatform: false }))
+        .set("Connection", "close")
+        .send(body);
+    const without = (...names: string[]) => PERMS.filter((p) => !names.includes(p));
+
+    it.each(IN_X)("%s: 200, and the student API is asked with X's schools only when no school is named", async (who) => {
+      (axios.post as jest.Mock).mockResolvedValue(reply);
+      const res = await ask(who, page([{ key: "standard", value: TX.klass }, { key: "search", value: "សុខ" }]));
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(reply.data);
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      expect(axios.post).toHaveBeenCalledWith(
+        cloudUrl,
+        page([{ key: "standard", value: TX.klass }, { key: "search", value: "សុខ" }, { key: "schoolid", value: [TX.school] }]),
+        { headers: HEADERS_X },
+      );
+    });
+    it.each(IN_X)("%s: another organisation's school, by id, and the unowned one, are the 404 of an unknown school and nothing is sent", async (who) => {
+      const absent = await sameAsAbsent((id) => ask(who, page([{ key: "schoolid", value: id }])).then(said), [TY.school, TU.school]);
+      expect(absent.status).toBe(404);
+      const mixed = await ask(who, page([{ key: "schoolid", value: [TX.school, TY.school] }]));
+      expect(said(mixed)).toEqual(absent);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it.each(IN_X)("%s: another organisation's class gets the answer for no rows and nothing is sent", async (who) => {
+      const res = await ask(who, page([{ key: "standard", value: TY.klass }]));
+      expect(res.status).toBe(200);
+      expect(data(res)).toEqual([]);
+      expect((res.body.data as { total: number }).total).toBe(0);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it("the body is forwarded with its paging, standard and search kept, and the school as one entry", async () => {
+      (axios.post as jest.Mock).mockResolvedValue(reply);
+      await ask("X's Organisation Admin", { pageindex: 3, pagesize: 50, filter: [{ key: "schoolid", value: TX.school }, { key: "standard", value: TX.klass }, { key: "search", value: "ab" }] });
+      expect(axios.post).toHaveBeenCalledWith(
+        cloudUrl,
+        { pageindex: 3, pagesize: 50, filter: [{ key: "standard", value: TX.klass }, { key: "search", value: "ab" }, { key: "schoolid", value: TX.school }] },
+        { headers: HEADERS_X },
+      );
+    });
+    it("a platform user not acting: sends the body exactly as it came, with the platform marker", async () => {
+      (axios.post as jest.Mock).mockResolvedValue(reply);
+      const body = page([{ key: "search", value: "ab" }]);
+      const res = await ask(NOT_ACTING, body);
+      expect(res.status).toBe(200);
+      expect(axios.post).toHaveBeenCalledWith(cloudUrl, body, { headers: HEADERS_PLATFORM });
+    });
+    it("an account holding view_online_report without view_student (a Teacher's permissions) is refused with 403 and nothing is sent", async () => {
+      const res = await askWith(["view_online_report"], page(), [Role.teacher]);
+      expect(res.status).toBe(403);
+      expect((await askWith(without("view_student"), page())).status).toBe(403);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it("an account holding view_student without view_online_report is refused with 403 and nothing is sent", async () => {
+      expect((await askWith(["view_student"], page())).status).toBe(403);
+      expect((await askWith(without("view_online_report"), page())).status).toBe(403);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+    it("an account holding both permissions is admitted", async () => {
+      (axios.post as jest.Mock).mockResolvedValue(reply);
+      expect((await askWith(["view_online_report", "view_student"], page())).status).toBe(200);
+    });
+    it("a staff account limited to schools: another organisation's school is the 404 of an unknown school", async () => {
+      (axios.post as jest.Mock).mockResolvedValue(reply);
+      const limited = (schools: string[]) =>
+        request(app.getHttpServer())
+          .post(path)
+          .set("Authorization", bearer({ lmsuserid: "ad", lmsuserroles: [Role.admin], permissions: PERMS, organisationid: X, isplatform: false, schools }))
+          .set("Connection", "close")
+          .send(page());
+      expect((await limited([TX.school])).status).toBe(200);
+      expect((axios.post as jest.Mock).mock.calls).toEqual([[cloudUrl, page([{ key: "schoolid", value: TX.school }]), { headers: HEADERS_X }]]);
+      expect((await limited([TY.school])).status).toBe(404);
+      expect(axios.post).toHaveBeenCalledTimes(1);
+    });
+    describe("a staff account limited to one of X's two schools", () => {
+      const SCHOOL_B = uuid(1950);
+      const limitedTo = (route: string, schools: string[], body?: object) =>
+        request(app.getHttpServer())
+          .post(route)
+          .set("Authorization", bearer({ lmsuserid: "ad", lmsuserroles: [Role.admin], permissions: PERMS, organisationid: X, isplatform: false, schools }))
+          .set("Connection", "close")
+          .send(body as object);
+      beforeEach(() => {
+        db.add("schools", { schoolid: SCHOOL_B, schoolname: "សាលា ក៣", organisationid: X, countryid: TX.country, curriculums: [], created_at: NEVER });
+      });
+      it.each([
+        ["/report/online/learner-progress", "learner-progress"],
+        ["/report/online/studentstatus", "studentstatus"],
+      ])("%s: a body with no filter list, or no body at all, is sent with only that school", async (route, cloudPath) => {
+        (axios.post as jest.Mock).mockResolvedValue(reply);
+        for (const body of [{ pageindex: 1, pagesize: 0 }, undefined]) {
+          (axios.post as jest.Mock).mockClear();
+          expect((await limitedTo(route, [TX.school], body)).status).toBe(200);
+          expect((axios.post as jest.Mock).mock.calls).toEqual([
+            [cloud(cloudPath), { ...(body ?? {}), filter: [{ key: "schoolid", value: TX.school }] }, { headers: HEADERS_X }],
+          ]);
+        }
+      });
+      it.each(["/report/online/learner-progress", "/report/online/studentstatus"])("%s: naming the other school of the same organisation is the empty answer and nothing is sent", async (route) => {
+        (axios.post as jest.Mock).mockResolvedValue(reply);
+        const res = await limitedTo(route, [TX.school], page([{ key: "schoolid", value: SCHOOL_B }]));
+        expect(res.status).toBe(200);
+        expect(data(res)).toEqual([]);
+        expect((res.body.data as { total: number }).total).toBe(0);
+        expect(axios.post).not.toHaveBeenCalled();
+      });
+    });
+    it.each(IN_X)("%s: an error from the student API is the error it always was", async (who) => {
+      const own500 = await ask(who, page());
+      expect(own500.status).toBe(500);
+    });
+  });
+
   describe("POST /report/online/student-grade-progress", () => {
     const path = "/report/online/student-grade-progress";
     const cloudUrl = cloud("student-grade-progress");
@@ -3240,8 +3362,8 @@ describe("reports are confined to the caller's organisation", () => {
       organisation: { organisationid: X, isplatform: false },
     } as const;
 
-    it("the route table has the sixteen routes", () => {
-      expect(names).toHaveLength(16);
+    it("the route table has the seventeen routes", () => {
+      expect(names).toHaveLength(17);
     });
     it.each(Object.keys(callers2) as Array<keyof typeof callers2>)("%s: every route sends X-Organisation-Id, an organisation id or `platform`, never none", async (who) => {
       (axios.post as jest.Mock).mockResolvedValue({ data: { error: false, data: [] } });
